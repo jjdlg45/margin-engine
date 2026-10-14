@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
-import pytest
 
 from margin_engine.config import Rules
 from margin_engine.ledger.pipeline import run_pipeline
@@ -464,9 +463,3 @@ def test_billed_freight_in_invoice_revenue(tmp_path: Path) -> None:
     row = line(led, "L1")
     assert row["billed_charge_alloc_cents"] == 1_200
     assert row["invoice_revenue_cents"] == 51_200
-
-
-def test_economic_floor_example_from_spec() -> None:
-    # Spec example: cost $100, m = 5% -> pocket floor $105.26 (arrives Phase 5;
-    # placeholder keeps the hand-calc visible here).
-    pytest.skip("floor math lands in Phase 5 guidance module")

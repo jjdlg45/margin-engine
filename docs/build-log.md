@@ -254,3 +254,35 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
   being glaring against the pair's own history. Thresholds unchanged.
 - Re-verified across seeds 5/17/29 at default scale: recall 98.8-99.3%
   (target >= 90), false-flag rate 0.9-1.1% (target <= 5%): PASS.
+
+---
+## Phase 5 — Price guidance (2026-10-13)
+
+**Built**
+- `guidance/bands.py`: P25/P50/P75 reference bands of the normalized price index
+  within commercial segments; observation unit configurable (default: median
+  price per customer x item x month). Data-quality anomalies excluded from
+  bands; commercial outliers kept (they happened). Economic floor in exact
+  integer math: pocket floor = C/(1-m); invoice floor = (C/(1-m)+F)/(1-d) with
+  per-row deduction rates (customer rebate program bp). Six line statuses;
+  infeasible corridors (floor above band P75) get insufficient_pricing_headroom
+  and NO target — never a relabeled or doctored number. Targets/starts are
+  max(P50/P75, floor), labeled `provisional_historical` until Phase 7.
+
+**Verification**
+- Floor fixtures exact to the cent: $100 @ 5% -> $105.26 (spec example);
+  $60 @ 5% -> $63.16; $60 @ 20% -> $75.00; invoice floor with F=$2, d=3% ->
+  $110.58; d=0 -> equals pocket floor: PASS.
+- Infeasible corridor: flagged insufficient_pricing_headroom, target null: PASS.
+- insufficient_data when band observations < minimum: PASS.
+- Targets never below floor (integration world): PASS. All targets labeled
+  provisional_historical: PASS. Bands ordered P25<=P50<=P75: PASS.
+- Data-quality lines excluded from band percentiles (fixture): PASS.
+- ruff, mypy (strict), pytest 93 passed: PASS.
+
+**Decisions**
+- Floor %-deductions d = the customer's rebate program rate; freight
+  concessions are order-specific and not baked into the floor (documented
+  limitation — they still reduce pocket revenue in the waterfall).
+- Unit cost for the floor = latest known per-unit product cost (landed net of
+  vendor rebates) for the pair.

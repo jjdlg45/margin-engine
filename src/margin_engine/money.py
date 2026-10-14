@@ -87,9 +87,11 @@ def assert_parse_ok(
         raise MoneyParseError(msg)
 
 
-def div_half_even_expr(numer: pl.Expr, denom: int) -> pl.Expr:
-    """numer / denom rounded half-even, exact integer arithmetic (Int64 exprs)."""
-    if denom <= 0:
+def div_half_even_expr(numer: pl.Expr, denom: int | pl.Expr) -> pl.Expr:
+    """numer / denom rounded half-even, exact integer arithmetic (Int64 exprs).
+
+    denom may be a per-row expression (must be positive at runtime)."""
+    if isinstance(denom, int) and denom <= 0:
         msg = "denominator must be positive"
         raise ValueError(msg)
     q = numer.floordiv(denom)
