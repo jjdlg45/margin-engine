@@ -1,0 +1,140 @@
+# Mapping for the synthetic ERP export (synth/). Declares column names AND
+# business meaning. The engine refuses to compute anything whose semantics are
+# not declared here.
+
+source_system: synth_erp
+lines_file: invoice_lines.csv
+decimal_separator: "."
+
+lines:
+  source_line_key: {column: LINE_KEY}
+  invoice_id: {column: INV_NO}
+  invoice_date: {column: INV_DT, format: "%m/%d/%Y"}
+  order_id: {column: ORD_NO}
+  customer_id: {column: CUST_NO}
+  item_id: {column: ITEM_NO}
+  quantity: {column: QTY_SHP}
+  uom: {column: SELL_UOM}
+  net_amount:
+    column: EXT_NET
+    currency: USD
+    sign_convention: natural
+    discounts_embedded: true
+  unit_price:
+    column: UNIT_PRC
+    currency: USD
+    authoritative: false   # EXT_NET is authoritative; UNIT_PRC is informational
+  list_price:
+    column: LIST_PRC
+    currency: USD
+  on_invoice_discount:
+    column: DISC_AMT
+    currency: USD
+    sign_convention: positive_reduces_revenue
+  unit_cost:
+    column: UNIT_CST
+    currency: USD
+    cost_basis: average
+    includes_inbound_freight: false
+    includes_duty: false
+    includes_vendor_rebates: false
+    per_uom: base_uom
+    missing_as: blank
+  transaction_type:
+    column: TXN_CD
+    code_map: {S: sale, R: return, C: credit}
+    reversal_handling: own_code
+  credit_reason: {column: REASON_CD}
+  original_invoice_ref: {column: ORIG_INV}
+  sales_rep_id: {column: REP_ID}
+  channel: {column: CHNL}
+  customer_rebate_amount:
+    column: REB_AMT
+    currency: USD
+    sign_convention: positive_reduces_revenue
+  rebate_program_id: {column: REB_PGM}
+  freight_concession:
+    column: FRT_CONC
+    currency: USD
+    sign_convention: positive_reduces_revenue
+  contract_id: {column: CONTRACT_NO}
+  currency: {column: CURR}
+
+credit_reason_map:
+  price_correction: price_correction
+  damage: damage
+  shortage: shortage
+  quality: quality
+
+reference_tables:
+  price_list:
+    file: price_list.csv
+    date_format: "%m/%d/%Y"
+    columns: {item_id: ITEM_NO, effective_date: EFF_DT, list_price: LIST_PRC}
+  uom_conversions:
+    file: uom_conversions.csv
+    columns: {item_id: ITEM_NO, from_uom: FROM_UOM, to_uom: TO_UOM, factor: FACTOR}
+  customers:
+    file: customers.csv
+    columns:
+      customer_id: CUST_NO
+      industry: INDUSTRY
+      region: REGION
+      size_band: SIZE_BAND
+      channel: CHNL
+      contract_type: CONTRACT_TYPE
+      parent_account_id: PARENT_ACCT
+      sales_rep_id: REP_ID
+  items:
+    file: items.csv
+    columns:
+      item_id: ITEM_NO
+      item_family: FAMILY
+      item_category: CATEGORY
+      supplier_id: SUPPLIER
+      item_role: ITEM_ROLE
+      is_service: SVC_FLAG
+      base_uom: BASE_UOM
+      weight: WEIGHT_LB
+      cube: CUBE_FT
+  contracts:
+    file: contracts.csv
+    date_format: "%m/%d/%Y"
+    columns:
+      contract_id: CONTRACT_NO
+      customer_id: CUST_NO
+      item_family: FAMILY
+      start_date: START_DT
+      end_date: END_DT
+      discount_pct: DISC_PCT
+      price_protected: PROTECTED
+  rebate_programs:
+    file: rebate_programs.csv
+    columns:
+      rebate_program_id: PGM_ID
+      customer_id: CUST_NO
+      program_kind: KIND
+      rate_pct: RATE_PCT
+  rebate_settlements:
+    file: rebate_settlements.csv
+    columns:
+      customer_id: CUST_NO
+      period: PERIOD
+      rebate_program_id: PGM_ID
+      amount: AMT
+  order_charges:
+    file: order_charges.csv
+    columns: {order_id: ORD_NO, charge_code: CHG_CD, amount: AMT}
+  freight_log:
+    file: freight_log.csv
+    columns: {order_id: ORD_NO, amount: FRT_EXP_AMT}
+  vendor_rebate_programs:
+    file: vendor_rebate_programs.csv
+    columns: {supplier_id: SUPPLIER, rate_pct: RATE_PCT}
+  landed_cost_components:
+    file: landed_cost_components.csv
+    columns:
+      item_id: ITEM_NO
+      period: PERIOD
+      inbound_freight_per_unit: INB_FRT_PU
+      duty_per_unit: DUTY_PU

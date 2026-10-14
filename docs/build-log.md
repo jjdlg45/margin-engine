@@ -99,3 +99,65 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
 **Known gaps**
 - Commercial outliers are price-only modifications (no demand response); acceptable
   for detection tests, noted for honesty.
+
+---
+## Phase 2 — Ingest, classification, ledger, waterfall, reconciliation (2026-10-13)
+
+**Built**
+- `ingest/mapping.py`: mapping schema (pydantic, extra=forbid). Every amount field
+  declares currency + sign convention; unit_cost additionally requires cost_basis,
+  three inclusion flags, and per_uom (line vs. base unit). Missing semantics raise
+  MappingError naming the field, the missing semantic and the calculation that needs
+  it. `config/mappings/synth_erp.yaml` maps the generator's export.
+- `money.py`: digit-exact string->Int64 parsing at scale 1e-4 (no float pass),
+  refusal to truncate >4dp values, half-even integer division as polars exprs,
+  Decimal conversion at report boundaries. All internal money is Int64 cents.
+- `ingest/loader.py`: mapping-driven CSV->canonical frame; actionable errors for
+  missing columns, bad dates, unparseable money, undeclared transaction codes;
+  comma-decimal support; net computed from authoritative unit price when mapped.
+- `transactions/classify.py`: verified-duplicate removal (same key AND identical
+  content; key collisions flagged, kept), look-alike flagging (kept), credit
+  classification by configured reasons, all 5.3 flags. Two views per 5.4.
+- `waterfall/allocate.py`: exact proportional allocator, integer math, residual
+  deterministically to the largest line; signed-driver mode for settlements so
+  returns carry negative rebate shares; unallocatable groups left as visible residual.
+- `waterfall/engine.py`: 7-stage waterfall. UOM normalization (missing conversions =
+  actionable error), effective-dated gross list (list never manufactured from
+  invoice price), billed charges -> invoice revenue (allocated), rebates/concessions/
+  price credits -> pocket (credit dollars count exactly once: attributed credits zero
+  on the credit row), landed cost build-up per declared semantics, vendor rebates net
+  against base cost, freight expense + claims -> cost-to-serve, contribution.
+- `waterfall/reconcile.py`: 7 exact checks (row/net conservation incl. removed dups,
+  allocation conservation for charges/settlements/freight, stage identities); any
+  failure raises. `ledger/pipeline.py`: single entry point + DuckDB persistence with
+  source_line_key audit trail (parquet handoff; works where pyarrow DLLs are blocked).
+
+**Verification vs. section 8**
+- 11 deterministic fixtures exact to the cent (normal sale, stacked discounts,
+  line + settlement rebates, vendor rebate, freight concession vs. expense, partial
+  return, price-correction credit, damage credit to cost, zero-cost service, missing
+  cost, landed build-up, UOM normalization, billed freight): PASS.
+- Property tests (hypothesis, 25 examples x random qty/price/sign/deductions):
+  reconciliation always exact: PASS.
+- Mapping tests: equivalent data via two different layouts -> identical canonical
+  frames; 10 failure modes all actionable: PASS.
+- Recovery vs. planted truth (seed 11 world): line rebates exact; concessions exact;
+  vendor rebates exact (cost-known lines); billed freight exact per order;
+  settlement rebates and freight expense allocated within ±5% per customer: PASS.
+- Ledger reconciliation on full synth world exact; negative settlement residual
+  (-$68.17) is return-only customer-quarters, visible in residual report: PASS.
+- ruff, mypy (strict), pytest 66 passed / 1 skipped (Phase 5 floor placeholder).
+
+**Decisions**
+- Money as Int64 cents internally (spec allows Decimal or integer cents); Decimal at
+  boundaries. Parsing is digit-wise, never through float.
+- Settlement rebates allocate over sales AND returns with signed weights (matches
+  accrual economics); groups with non-positive driver sum stay unallocated residual.
+- Vendor rebates apply to base purchase cost, not freight/duty.
+- Gross list value comes from the effective-dated price_list reference x normalized
+  quantity; the line-level list column only feeds the missing-list flag.
+- DuckDB ingestion via polars-written parquet (pyarrow DLL blocked on this machine).
+
+**Known gaps**
+- Billed-freight allocation driver is net share (weight driver arrives with Phase 13
+  cost-to-serve data); order totals remain exact either way.
