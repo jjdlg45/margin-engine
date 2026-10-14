@@ -22,7 +22,8 @@ def corrupt_prices(
     cfg: GeneratorConfig, lines: pl.DataFrame, rng: np.random.Generator
 ) -> pl.DataFrame:
     """Plant data-entry price errors (x10 or /10) and genuine commercial
-    outliers (extra ~25% discount). Net and discount stay consistent."""
+    outliers (deep one-off discounts, 50-60% off the realized price, e.g.
+    clearance or a strategic concession). Net and discount stay consistent."""
     n = lines.height
     r = rng.random(n)
     data_err = r < cfg.mess.price_outlier_rate
@@ -33,7 +34,7 @@ def corrupt_prices(
     err_dir = rng.random(n) < 0.5
     factor[data_err & err_dir] = 10.0
     factor[data_err & ~err_dir] = 0.1
-    factor[comm] = 0.75
+    factor[comm] = rng.uniform(0.40, 0.50, int(comm.sum()))
 
     price = lines["unit_price_cents"].to_numpy()
     new_price = np.maximum(1, np.round(price * factor).astype(np.int64))

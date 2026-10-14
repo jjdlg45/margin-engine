@@ -161,3 +161,36 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
 **Known gaps**
 - Billed-freight allocation driver is net share (weight driver arrives with Phase 13
   cost-to-serve data); order totals remain exact either way.
+
+---
+## Phase 3 — Descriptive analytics (2026-10-13)
+
+**Built**
+- `dispersion/analytics.py`: normalized price index (price / effective-dated list,
+  item-median fallback, method labeled per line); peer groups item x UOM x contract
+  regime x quarter with family fallback below 30 observations (level labeled);
+  modified robust z-score (0.6745 x dev / MAD) at 3.5; MAD = 0 fallback flags >10%
+  deviation from the modal price (method labeled); degenerate cohorts (<5 lines)
+  labeled, never flagged; two mutually exclusive flags (data_quality_anomaly when
+  the price is >=3x or <=1/3 of the peer median, else commercial_pricing_outlier);
+  peer-group dispersion stats (median, IQR, P10/P50/P90, discount-to-list);
+  three separate ABC splits (revenue, units, order frequency) at 80/15/5.
+
+**Verification vs. section 8**
+- Planted outlier detection across seeds 5/17/29: recall 97.2% / 96.2% / 94.9%
+  (target >= 90%); false-flag rate 0.8% / 0.5% / 0.7% (target <= 5%): PASS.
+- Data-quality outliers classified as data_quality >= 90%, never double-flagged: PASS.
+- MAD = 0 fallback: dedicated tests (deviant flagged, method labeled, entry-error
+  magnitude classified as data quality): PASS.
+- Flags never mixed (zero rows with both): PASS. Originals preserved: PASS.
+- ABC: revenue-A share in [0.70, 0.85]; three versions differ: PASS.
+- ruff, mypy, pytest (77 passed, 1 skipped): PASS.
+
+**Decisions**
+- Planted commercial outliers strengthened from a 25% to a 50-60% one-off discount:
+  at 25% they sit ~2.3 robust-z inside normal peer dispersion, i.e. they are not
+  outliers under the spec's own definition. The generator now plants genuinely
+  extreme-but-plausible discounts (clearance/strategic), and the 3.5 threshold was
+  NOT loosened.
+- data_quality vs commercial classification threshold (3x / 1/3 of peer median) is
+  a module constant; planted errors are x10 / /10 so separation is clean.
