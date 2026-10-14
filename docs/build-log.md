@@ -47,3 +47,55 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
   they activate as later phases import them.
 
 ---
+## Phase 1 — Synthetic generator with planted truth (2026-10-13)
+
+**Built**
+- `synth/` package: `config.py` (GeneratorConfig + 5 scenario presets), `entities.py`
+  (customers, items, reps, 6 planted segments, effective-dated list price history,
+  contracts, rebate programs, UOM conversions), `demand.py` (structural model),
+  `lines.py` (invoice lines, exact deduction math), `mess.py` (11 mess types),
+  `output.py` (ERP-styled export + ground truth), `generate.py` (orchestrator + CLI),
+  `money.py` (exact integer-cents half-even division; no float pass).
+- Structural model: log price index = segment base + pair effect
+  + 0.6·(cost shock + tariff shock) [instruments] + 0.08·demand shock [endogeneity]
+  + rep targeting of price-sensitive customers; demand is Poisson with planted
+  segment elasticity. Naive bias direction (toward zero) recorded in ground truth.
+- Contract pairs get fixed protected pricing (no shocks, no discounting).
+- Mess: linked partial returns, credit memos with reasons, zero-cost service items,
+  missing costs (truth kept), alternate-UOM re-expression (net amount unchanged so
+  reconciliation stays exact), verified duplicates (same source key) and look-alike
+  duplicates (new key), data-entry price outliers (x10, /10), commercial outliers
+  (extra 25% discount), malformed zero-qty rows, stockouts.
+- Export: `erp/invoice_lines.csv` with deliberately non-canonical column names
+  (LINE_KEY, INV_NO, QTY_SHP, EXT_NET, UNIT_CST, TXN_CD...), 13 reference tables
+  (price list, settlements, order charges, freight log, supplier cost index, tariff
+  schedule, landed components...), `ground_truth/` (truth_summary.json,
+  line_truth.parquet, panel_truth.parquet with full availability panel).
+
+**Verification (vs. Phase 1 criteria)**
+- Same seed → byte-identical CSVs and identical truth summary: PASS.
+- Every mess type appears; rates within ±50% of configured: PASS.
+- Preset conditions: well_identified first-stage slope ≈ 0.6 (> 0.3): PASS;
+  weak_instrument slope < 0.15: PASS; invalid_instrument tariff→demand leak
+  detectable (corr > 0.05) and absent in baseline: PASS; sparse produces < 8k lines
+  at test scale: PASS; price_constant has exactly zero within-pair price variation
+  (list revisions disabled in that preset): PASS.
+- Endogeneity: within-pair corr(price, demand shock) > 0.05: PASS.
+- Returns all linked to existing invoices, negative qty: PASS. Credits all carry
+  reasons: PASS. Settlement table == sum of planted line truth to the cent: PASS.
+- Scale: 597,968 lines (2,200 customers / 1,800 items) generated successfully.
+- ruff, mypy, pytest: all pass (26 tests).
+
+**Decisions**
+- Ground-truth totals and reference-table aggregates computed on the deduped frame;
+  verified-duplicate copies are export artifacts, not additional dollars.
+- Price corruption (outliers) applied BEFORE deduction truths so rebates/freight stay
+  internally consistent with corrupted prices, as in a real ERP.
+- price_constant preset also disables list revisions, so prices are truly constant.
+- Settlement-rebate allocation test will be near-trivially exact (allocation basis
+  matches generation); noted so the ±5% target isn't mistaken for a strong test there.
+  Freight expense allocation is the non-trivial one (fixed + variable components).
+
+**Known gaps**
+- Commercial outliers are price-only modifications (no demand response); acceptable
+  for detection tests, noted for honesty.
