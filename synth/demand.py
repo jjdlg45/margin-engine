@@ -56,7 +56,11 @@ def _ar1(rng: np.random.Generator, n_series: int, months: int, sd: float, ar: fl
     out[:, 0] = innov[:, 0]
     for t in range(1, months):
         out[:, t] = ar * out[:, t - 1] + innov[:, t]
-    return out
+    # Instruments are SHOCKS: demean each series so persistent AR(1) paths do
+    # not plant permanent supplier/category price-level differences that would
+    # contaminate the segment structure. Within-series time variation (what
+    # identifies elasticities through pair fixed effects) is untouched.
+    return out - out.mean(axis=1, keepdims=True)
 
 
 def build_pairs(

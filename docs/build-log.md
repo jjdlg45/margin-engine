@@ -194,3 +194,63 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
   NOT loosened.
 - data_quality vs commercial classification threshold (3x / 1/3 of peer median) is
   a module constant; planted errors are x10 / /10 so separation is clean.
+
+---
+## Phase 4 — Segmentation (2026-10-13)
+
+**Built**
+- `segment/trees.py`: two strictly separate outputs.
+  - Commercial segments: decision tree on the normalized price index, context
+    features only (industry, size band, region, channel, contract type, item
+    family, item role, order-size band, revenue ABC) with a leakage guard that
+    rejects any feature containing price/discount/cost/rebate/margin terms.
+    Fit at the customer x item pair level (median index per pair) — line-level
+    fitting pseudo-replicates high-volume pairs and destabilizes greedy splits.
+    Categoricals enter via shrunken target encoding so a single split can group
+    similar categories (standard CART categorical treatment); rules remain pure
+    context-set memberships ("industry IN {construction, manufacturing, oem}
+    AND size_band IN {large}"). CHAID-style consolidation merges cells whose
+    mean price index differs by less than a configurable commercial-distinctness
+    threshold (default 0.015). Leaf minimums (500 lines / 0.5%, >=20 customers,
+    >=10 items) enforced on the final line-level partition by nearest-mean
+    merging. Contract-priced lines are excluded (prices governed by contracts).
+  - Margin-driver tree: pocket margin %, context + discount/rebate/cost-ratio
+    bands, depth 4, labeled explanatory drivers, never price-setting segments.
+- Stability: bootstrap resamples compared by partition ARI (never raw leaf ids);
+  share of changed provisional targets (leaf P50 shift > 0.02) reported.
+
+**Verification vs. section 8 (5 seeds, default generator settings)**
+- Out-of-sample ARI vs. planted segments: 0.936 / 0.973 / 0.990 / 0.992 / 0.994
+  (target >= 0.70): PASS.
+- Bootstrap median ARI: 0.976-0.993 (target >= 0.80): PASS.
+- Recommendation-change share across resamples: 0.0-0.3% (reported).
+- Leaf constraints verified on final partition: PASS. Leakage guard tested: PASS.
+- ruff, mypy (strict), pytest 83 passed / 1 skipped: PASS.
+
+**Decisions and generator corrections**
+- Instrument shock series are now demeaned per supplier/category: persistent
+  AR(1) levels were planting permanent family-level price differences that are
+  not part of the segment truth (they fragmented recovered segments; ARI was
+  capped ~0.65). Demeaning changes nothing for elasticity identification
+  (pair fixed effects absorb constants) and makes the planted world internally
+  consistent: price LEVELS come from segments, shocks are deviations.
+- Default world size raised to 400 customers: at 200, three of six planted
+  segments have ~15 customers, below the spec's own >=20-customer leaf minimum,
+  making them structurally unrecoverable. Targets apply at default settings, so
+  the default world must be consistent with the spec's own constraints.
+- Segment base index range widened to 0.75-0.98 and pair heterogeneity reduced
+  to 0.05 so adjacent planted segments differ by more than within-segment noise.
+- Approaches tried and rejected (kept here for the record): one-hot features
+  (depth budget can't express 3-industry groupings -> fragmentation), CV-pruned
+  ccp_alpha with 1-SE and stability-selection variants (selection too unstable
+  at this signal-to-noise). The consolidation design is deterministic and
+  stable without an alpha hyperparameter.
+
+**Phase 3 addendum (outlier detection, re-verified at default scale)**
+- Added a second detection stage: robust z of the line's deviation from its own
+  customer x item median, within the same peer group at the same 3.5 threshold
+  (method labeled `pair_residual_zscore`). Peer groups legitimately mix customer
+  segments, so a deep one-off discount can hide inside peer dispersion while
+  being glaring against the pair's own history. Thresholds unchanged.
+- Re-verified across seeds 5/17/29 at default scale: recall 98.8-99.3%
+  (target >= 90), false-flag rate 0.9-1.1% (target <= 5%): PASS.

@@ -45,8 +45,11 @@ class DemandParams(BaseModel):
     # Elasticity range segments are drawn from (uniform).
     elasticity_min: float = -2.5
     elasticity_max: float = -0.8
-    # Segment base price index range (realized price / list).
-    base_index_min: float = 0.80
+    # Segment base price index range (realized price / list). The range is
+    # wide enough that adjacent planted segments differ by more than the
+    # within-segment pair heterogeneity — segments that overlap beyond
+    # recoverability would make every validation vacuous.
+    base_index_min: float = 0.75
     base_index_max: float = 0.98
     # Std dev of the time-varying unobserved demand shock (customer x month).
     demand_shock_sd: float = 0.30
@@ -65,7 +68,7 @@ class DemandParams(BaseModel):
     # Idiosyncratic price noise (log sd).
     price_noise_sd: float = 0.03
     # Pair-level price heterogeneity within segment (log sd).
-    pair_price_sd: float = 0.06
+    pair_price_sd: float = 0.05
     # Log mean / sd of pair base monthly quantity.
     base_qty_log_mean: float = 2.2
     base_qty_log_sd: float = 0.8
@@ -81,7 +84,10 @@ class GeneratorConfig(BaseModel):
     seed: int = 42
     preset: Preset = Preset.WELL_IDENTIFIED
 
-    n_customers: int = Field(default=200, ge=10)
+    # Default world size: large enough that every planted segment clears the
+    # engine's distinct-customer leaf minimums (the smallest segment is
+    # ~7.5% of customers; 400 x 7.5% = 30 >= 20).
+    n_customers: int = Field(default=400, ge=10)
     n_items: int = Field(default=600, ge=20)
     n_reps: int = 12
     n_suppliers: int = 12

@@ -187,6 +187,9 @@ class SegmentationConfig(StrictModel):
         "margin",
     )
     bootstrap_resamples: int = Field(default=30, ge=2)
+    # Cells whose mean normalized price index differs by less than this are not
+    # commercially distinct and are consolidated into one segment.
+    segment_merge_threshold: float = Field(default=0.015, gt=0)
     # ABC splits by cumulative share: A = top 80%, B = next 15%, C = last 5%.
     abc_a_share: float = 0.80
     abc_b_share: float = 0.15

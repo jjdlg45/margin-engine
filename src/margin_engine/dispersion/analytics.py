@@ -136,19 +136,59 @@ def flag_outliers(df: pl.DataFrame, rules: Rules) -> pl.DataFrame:
         .otherwise(pl.lit("mad_zero_modal_fallback"))
         .alias("outlier_method"),
     )
-    is_outlier = (
+    peer_outlier = (
         pl.when(too_small)
         .then(False)
         .when(mad_ok)
         .then(pl.col("robust_z").abs() > oc.zscore_threshold)
         .otherwise(fallback_dev > oc.mad_zero_fallback_pct)
     )
+
+    # Second stage: one-off deviations from the line's own customer x item
+    # typical price. Peer groups mix customer segments, so a deep one-off
+    # discount can hide inside wide peer dispersion while being glaring
+    # against the pair's own history. Same robust z, same threshold, within
+    # the same peer group; the firing method is labeled.
+    if "customer_id" not in df.columns or "item_id" not in df.columns:
+        ratio0 = pl.col("price_index") / pl.col("_pg_median")
+        entry_err0 = (ratio0 >= DATA_QUALITY_RATIO) | (ratio0 <= 1 / DATA_QUALITY_RATIO)
+        return df.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("pair_residual_z"),
+            (peer_outlier & entry_err0).alias("flag_data_quality_anomaly"),
+            (peer_outlier & ~entry_err0).alias("flag_commercial_pricing_outlier"),
+        ).drop("_absdev", "_pi_r")
+    df = df.with_columns(
+        pl.col("price_index").median().over("customer_id", "item_id").alias("_pair_med"),
+        pl.len().over("customer_id", "item_id").alias("_pair_n"),
+    ).with_columns((pl.col("price_index") / pl.col("_pair_med")).alias("_resid"))
+    df = df.with_columns(
+        pl.col("_resid").median().over("peer_group").alias("_r_med"),
+    ).with_columns(
+        (pl.col("_resid") - pl.col("_r_med")).abs().median().over("peer_group").alias("_r_mad")
+    )
+    resid_z = k * (pl.col("_resid") - pl.col("_r_med")) / pl.col("_r_mad")
+    resid_outlier = (
+        (pl.col("_pair_n") >= 3)
+        & (pl.col("_r_mad") > 0)
+        & ~too_small
+        & (resid_z.abs() > oc.zscore_threshold)
+    )
+    df = df.with_columns(
+        pl.when(pl.col("_r_mad") > 0).then(resid_z).otherwise(None).alias("pair_residual_z"),
+        pl.when(peer_outlier)
+        .then(pl.col("outlier_method"))
+        .when(resid_outlier)
+        .then(pl.lit("pair_residual_zscore"))
+        .otherwise(pl.col("outlier_method"))
+        .alias("outlier_method"),
+    )
+    is_outlier = peer_outlier | resid_outlier
     ratio = pl.col("price_index") / pl.col("_pg_median")
     looks_entry_error = (ratio >= DATA_QUALITY_RATIO) | (ratio <= 1 / DATA_QUALITY_RATIO)
     return df.with_columns(
         (is_outlier & looks_entry_error).alias("flag_data_quality_anomaly"),
         (is_outlier & ~looks_entry_error).alias("flag_commercial_pricing_outlier"),
-    ).drop("_absdev", "_pi_r")
+    ).drop("_absdev", "_pi_r", "_pair_med", "_resid", "_r_med")
 
 
 def peer_group_stats(df: pl.DataFrame) -> pl.DataFrame:
