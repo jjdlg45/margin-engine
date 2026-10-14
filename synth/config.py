@@ -52,14 +52,14 @@ class DemandParams(BaseModel):
     base_index_min: float = 0.75
     base_index_max: float = 0.98
     # Std dev of the time-varying unobserved demand shock (customer x month).
-    demand_shock_sd: float = 0.30
+    demand_shock_sd: float = 0.22
     # AR(1) persistence of instrument processes.
     instrument_ar: float = 0.70
     # Innovation sd of supplier cost shock and category tariff shock (log scale).
     cost_shock_sd: float = 0.05
     tariff_shock_sd: float = 0.04
     # Pass-through of instrument shocks into realized price (first-stage strength).
-    price_passthrough: float = 0.60
+    price_passthrough: float = 0.75
     # Endogenous rep discounting: d(log price)/d(demand shock). Positive means
     # reps cut price when demand is weak -> naive OLS biased TOWARD ZERO.
     endogeneity_gamma: float = 0.08
@@ -70,8 +70,13 @@ class DemandParams(BaseModel):
     # Pair-level price heterogeneity within segment (log sd).
     pair_price_sd: float = 0.05
     # Log mean / sd of pair base monthly quantity.
-    base_qty_log_mean: float = 2.2
-    base_qty_log_sd: float = 0.8
+    base_qty_log_mean: float = 2.6
+    base_qty_log_sd: float = 0.7
+    # Multiplicative quantity noise (log sd). Quantity is exactly log-linear:
+    # Q = max(1, round(exp(log mu + eps))), so the planted elasticity IS the
+    # estimand of log-log and PPML models (a Poisson draw would make E[log Q]
+    # nonlinear in log price and the planted beta unrecoverable in principle).
+    qty_noise_sd: float = 0.20
     # Monthly purchase incidence probability for an active, available pair.
     purchase_prob: float = 0.60
 
@@ -137,7 +142,7 @@ class GeneratorConfig(BaseModel):
         base: dict[str, object] = {"seed": seed, "preset": preset}
         demand = DemandParams()
         if preset is Preset.WEAK_INSTRUMENT:
-            demand = demand.model_copy(update={"price_passthrough": 0.03})
+            demand = demand.model_copy(update={"price_passthrough": 0.005})
         elif preset is Preset.INVALID_INSTRUMENT:
             # Tariff shock leaks directly into demand: exclusion violated for
             # one instrument; the overidentification test should reject.
@@ -157,10 +162,10 @@ class GeneratorConfig(BaseModel):
             base["list_revisions_max"] = 0
         base["demand"] = demand
         if preset is Preset.SPARSE:
-            base["n_customers"] = 60
+            base["n_customers"] = 40
             base["assortment_min"] = 4
-            base["assortment_max"] = 10
-            demand = demand.model_copy(update={"purchase_prob": 0.15})
+            base["assortment_max"] = 8
+            demand = demand.model_copy(update={"purchase_prob": 0.10})
             base["demand"] = demand
         base.update(overrides)
         return cls.model_validate(base)

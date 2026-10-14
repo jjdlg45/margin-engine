@@ -235,8 +235,17 @@ class SensitivityConfig(StrictModel):
     robustness_max_spread: float = Field(default=0.20, gt=0)
     max_ci_width: float = Field(default=1.0, gt=0)
     overid_alpha: float = Field(default=0.05, gt=0, lt=1)
+    # Cluster level for IV inference. "supplier_month" is where the cost
+    # instrument varies (spec default); "month" is coarser and also absorbs
+    # customer-month demand-shock correlation across suppliers — use it when
+    # residuals are correlated across items a customer buys in the same month.
+    cluster_level: Literal["supplier_month", "month"] = "supplier_month"
     shrinkage: Literal["empirical_bayes_to_parent_segment"] = "empirical_bayes_to_parent_segment"
     min_observations: int = Field(default=30, ge=2)
+    # IV-based statuses (iv_estimated / causal) additionally require this much
+    # support; below it the estimate is reported but capped at descriptive.
+    min_iv_observations: int = Field(default=200, ge=2)
+    min_iv_pairs: int = Field(default=50, ge=2)
     min_price_variation_cv: float = Field(default=0.01, ge=0)
 
 

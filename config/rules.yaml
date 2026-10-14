@@ -69,6 +69,11 @@ sensitivity:
   robustness_max_spread: 0.20
   max_ci_width: 1.0
   overid_alpha: 0.05
+  # Month-level clustering: coarser than supplier x month (where the cost
+  # instrument varies) so that demand-shock correlation across the items a
+  # customer buys in one month is inside, not across, clusters. Validated by
+  # the CI-coverage simulation (see build log / README).
+  cluster_level: month
   instruments:
     - name: supplier_cost_shock
       column: supplier_cost_shock

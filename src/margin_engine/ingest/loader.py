@@ -254,7 +254,15 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
                 )
                 raise MappingError(msg)
             exprs.append(pl.col(canon).str.to_date(fmt).alias(canon))
-        elif canon in ("factor", "rate_pct", "discount_pct", "weight", "cube"):
+        elif canon in (
+            "factor",
+            "rate_pct",
+            "discount_pct",
+            "weight",
+            "cube",
+            "cost_idx",
+            "duty_pct",
+        ):
             exprs.append(pl.col(canon).cast(pl.Float64).alias(canon))
         elif canon in ("is_service", "price_protected"):
             exprs.append((pl.col(canon).cast(pl.Int64) != 0).alias(canon))

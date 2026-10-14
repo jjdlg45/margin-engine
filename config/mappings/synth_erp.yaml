@@ -138,3 +138,9 @@ reference_tables:
       period: PERIOD
       inbound_freight_per_unit: INB_FRT_PU
       duty_per_unit: DUTY_PU
+  supplier_cost_index:
+    file: supplier_cost_index.csv
+    columns: {supplier_id: SUPPLIER, period: PERIOD, cost_idx: COST_IDX}
+  tariff_schedule:
+    file: tariff_schedule.csv
+    columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}

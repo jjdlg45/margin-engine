@@ -30,6 +30,7 @@ dev = [
     "hypothesis>=6.115",
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
+    "pandas-stubs>=3.0.5.260914",
 ]
 
 [build-system]

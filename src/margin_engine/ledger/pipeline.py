@@ -45,6 +45,8 @@ REFERENCE_TABLES = [
     "freight_log",
     "vendor_rebate_programs",
     "landed_cost_components",
+    "supplier_cost_index",
+    "tariff_schedule",
 ]
 
 

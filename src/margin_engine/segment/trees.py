@@ -433,21 +433,22 @@ def _consolidate_by_mean(leaves: np.ndarray, y: np.ndarray, threshold: float) ->
     return out
 
 
-def _enforce_minimums_nearest(lines: pl.DataFrame, cell_col: str, tc: TreeConfig) -> pl.DataFrame:
-    """Merge cells violating line/customer/item minimums into the cell with the
-    nearest median price index. Adds `_cell_valid`."""
-    assigned = lines[cell_col].to_numpy().astype(np.int64).copy()
-    min_lines = _min_leaf(lines.height, tc)
-    cust = lines["customer_id"].to_numpy()
-    item = lines["item_id"].to_numpy()
-    pidx = lines["price_index"].to_numpy()
+def _enforce_minimums_pairs(
+    pairs: pl.DataFrame, cells: np.ndarray, tc: TreeConfig, total_lines: int
+) -> np.ndarray:
+    """Pair-level constraint merge: cells violating the LINE-count / distinct
+    customer / distinct item minimums merge into the nearest-median cell.
+    Line counts come from the pairs' n_lines weights."""
+    assigned = cells.copy()
+    min_lines = max(tc.min_leaf_lines, int(np.ceil(total_lines * tc.min_leaf_lines_pct)))
+    frame_base = pairs.select("customer_id", "item_id", "n_lines", "price_index")
     for _ in range(64):
-        frame = pl.DataFrame({"cell": assigned, "c": cust, "i": item, "p": pidx})
+        frame = frame_base.with_columns(pl.Series("cell", assigned))
         stats = frame.group_by("cell").agg(
-            pl.len().alias("n"),
-            pl.col("c").n_unique().alias("nc"),
-            pl.col("i").n_unique().alias("ni"),
-            pl.col("p").median().alias("p50"),
+            pl.col("n_lines").sum().alias("n"),
+            pl.col("customer_id").n_unique().alias("nc"),
+            pl.col("item_id").n_unique().alias("ni"),
+            pl.col("price_index").median().alias("p50"),
         )
         if stats.height <= 1:
             break
@@ -458,7 +459,6 @@ def _enforce_minimums_nearest(lines: pl.DataFrame, cell_col: str, tc: TreeConfig
         )
         if bad.height == 0:
             break
-        # Merge the single worst (smallest) violating cell per iteration.
         worst = bad.sort("n").to_dicts()[0]
         others = stats.filter(pl.col("cell") != worst["cell"])
         target = (
@@ -467,7 +467,8 @@ def _enforce_minimums_nearest(lines: pl.DataFrame, cell_col: str, tc: TreeConfig
             .to_dicts()[0]["cell"]
         )
         assigned[assigned == worst["cell"]] = target
-    return lines.with_columns(pl.Series("_cell_valid", assigned))
+    return assigned
+
 
 
 def _extract_rules_merged(
@@ -601,11 +602,14 @@ def fit_commercial_segments(
     threshold = rules.segmentation.segment_merge_threshold
     pair_min = pair_tc.min_leaf_lines
 
+    total_lines = int(pairs["n_lines"].sum())
+
     def fit_partition(
         fit_idx: np.ndarray,
-    ) -> tuple[DecisionTreeRegressor, TargetEncoder, dict[int, int], np.ndarray, pl.DataFrame]:
+    ) -> tuple[DecisionTreeRegressor, TargetEncoder, dict[int, int], np.ndarray]:
         """Grow tree on the given pairs, consolidate commercially
-        indistinguishable leaves, enforce minimums on lines."""
+        indistinguishable leaves, enforce minimums — all at pair level
+        (line counts carried as weights), so bootstraps stay cheap."""
         fit_pairs = pairs[fit_idx.tolist()]
         enc = TargetEncoder(names).fit(fit_pairs, "price_index")
         m = DecisionTreeRegressor(max_depth=tc.max_depth, min_samples_leaf=pair_min, random_state=0)
@@ -615,17 +619,17 @@ def fit_commercial_segments(
         cell_of = _consolidate_by_mean(fit_leaves, fit_pairs["price_index"].to_numpy(), threshold)
         all_leaves = m.apply(enc.transform(pairs))
         cells = np.array([cell_of.get(int(leaf), int(leaf)) for leaf in all_leaves], dtype=np.int64)
-        lines = work.join(
-            pairs.select(*pair_keys).with_columns(pl.Series("_cell", cells)),
-            on=pair_keys,
-            how="left",
-        )
-        lines = _enforce_minimums_nearest(lines, "_cell", tc)
-        return m, enc, cell_of, lines["_cell_valid"].to_numpy(), lines
+        cells = _enforce_minimums_pairs(pairs, cells, tc, total_lines)
+        return m, enc, cell_of, cells
 
     train_idx = np.flatnonzero(~test_mask)
-    model, encoder, cell_of_full, full_leaves, lines_full = fit_partition(train_idx)
+    model, encoder, cell_of_full, full_cells = fit_partition(train_idx)
     notes = list(notes_pre)
+
+    pair_assign = pairs.select(*pair_keys).with_columns(pl.Series("_cell_valid", full_cells))
+    lines_full = work.join(pair_assign, on=pair_keys, how="left")
+    full_leaves = lines_full["_cell_valid"].to_numpy()
+
     ari = None
     if planted_segment_col is not None and planted_segment_col in lines_full.columns:
         test_pairs = pairs.filter(pl.Series(test_mask)).select(pair_keys)
@@ -637,23 +641,36 @@ def fit_commercial_segments(
             )
         )
 
-    # Bootstrap stability: resample pairs, refit, compare line partitions.
+    # Bootstrap stability at pair level (weighted by nothing: each pair counts
+    # once; the partition is defined on pairs).
     n_boot = rules.segmentation.bootstrap_resamples
-    p50_full = lines_full.group_by("_cell_valid").agg(pl.col("price_index").median().alias("p50"))
-    target_full = lines_full.join(p50_full, on="_cell_valid", how="left")["p50"].to_numpy()
+    y_pairs = pairs["price_index"].to_numpy()
+    p50_full_map = (
+        pairs.with_columns(pl.Series("_c", full_cells))
+        .group_by("_c")
+        .agg(pl.col("price_index").median().alias("p50"))
+    )
+    full_target = dict(p50_full_map.iter_rows())
+    target_full = np.array([full_target[c] for c in full_cells])
     aris: list[float] = []
     changed_shares: list[float] = []
     for _b in range(n_boot):
         idx = rng.integers(0, n, n)
-        _, _, _, bleaves, blines = fit_partition(idx)
-        aris.append(float(adjusted_rand_score(full_leaves, bleaves)))
-        bp50 = blines.group_by("_cell_valid").agg(pl.col("price_index").median().alias("p50"))
-        btarget = blines.join(bp50, on="_cell_valid", how="left")["p50"].to_numpy()
+        _, _, _, bcells = fit_partition(idx)
+        aris.append(float(adjusted_rand_score(full_cells, bcells)))
+        bmap = (
+            pairs.with_columns(pl.Series("_c", bcells))
+            .group_by("_c")
+            .agg(pl.col("price_index").median().alias("p50"))
+        )
+        bdict = dict(bmap.iter_rows())
+        btarget = np.array([bdict[c] for c in bcells])
         changed_shares.append(float(np.mean(np.abs(btarget - target_full) > 0.02)))
 
     assignments = lines_full.select("source_line_key").with_columns(
         pl.Series("segment_leaf", full_leaves.astype(np.int64))
     )
+    _ = y_pairs
     return TreeResult(
         kind="commercial_segments",
         target="price_index",
