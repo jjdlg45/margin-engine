@@ -1,0 +1,105 @@
+# Margin Engine policy configuration.
+# Every value here is a business-policy or model choice; algorithms live in code.
+# All sections validate against pydantic models in src/margin_engine/config.py —
+# unknown keys and out-of-range values fail at load time.
+
+schema:
+  version: 1
+
+mapping:
+  mapping_file: config/mappings/synth_erp.yaml
+  fail_on_missing_semantics: true
+
+units_and_currency:
+  reporting_currency: USD
+  currency_decimals: 2
+  fx_rate_policy: invoice_date
+
+transactions:
+  dedupe_on: source_key
+  flag_lookalike_duplicates: true
+  price_credit_reasons: [price_correction, customer_rebate]
+  cost_credit_reasons: [damage, shortage, quality, warranty]
+
+costing:
+  missing_cost_policy: exclude_from_cost_metrics
+  zero_cost_policy: flag_for_review
+  vendor_rebate_treatment: adjust_acquisition_cost
+
+waterfall:
+  allocation_basis_priority: [actual, weight, cube, handling_units, lines, extended_price]
+  rounding: half_even
+  residual_assignment: largest_line
+
+outliers:
+  method: modified_robust_zscore
+  zscore_threshold: 3.5
+  min_peer_group_size: 30
+  mad_zero_fallback_pct: 0.10
+
+segmentation:
+  commercial_tree:
+    max_depth: 5
+    min_leaf_lines: 500
+    min_leaf_lines_pct: 0.005
+    min_leaf_customers: 20
+    min_leaf_items: 10
+  margin_driver_tree:
+    max_depth: 4
+    min_leaf_lines: 500
+    min_leaf_lines_pct: 0.005
+    min_leaf_customers: 20
+    min_leaf_items: 10
+  bootstrap_resamples: 30
+  abc_a_share: 0.80
+  abc_b_share: 0.15
+
+price_guidance:
+  band_percentiles: [0.25, 0.50, 0.75]
+  observation_unit: customer_item_month_median
+  min_pocket_margin: "0.05"
+  min_band_observations: 10
+  provisional_target_percentile: 0.50
+  provisional_start_percentile: 0.75
+
+sensitivity:
+  panel_period: month
+  active_assortment_lookback_months: 6
+  min_first_stage_f: 10.0
+  robustness_max_spread: 0.20
+  max_ci_width: 1.0
+  overid_alpha: 0.05
+  instruments:
+    - name: supplier_cost_shock
+      column: supplier_cost_shock
+      varies_at: "supplier_id:month"
+      exclusion_rationale: >
+        Supplier-specific input cost shocks shift the prices a distributor pays
+        and therefore the prices it charges, but individual customers' demand
+        for an item does not depend on the supplier's upstream costs except
+        through the price they are charged. Valid unless customers observe and
+        react to supplier conditions directly (e.g. anticipated shortages).
+    - name: category_tariff_shock
+      column: category_tariff_shock
+      varies_at: "item_category:month"
+      exclusion_rationale: >
+        Tariff changes on an import category move landed cost for all items in
+        the category. Customer-level demand shocks do not cause tariff policy,
+        and tariffs affect purchase quantity only through the realized price.
+        Valid unless demand and tariff policy share a driver (e.g. a boom in a
+        sector that also triggers protection).
+
+opportunity:
+  baseline_window_months: 12
+  exclude_contract_protected: true
+  exclude_insufficient_data: true
+
+tariff_scenarios:
+  pass_through_levels: [0.0, 0.5, 1.0]
+  exclude_contract_protected: true
+  cost_pool: new_receipts
+
+reporting:
+  output_formats: [parquet, csv, html]
+  show_evidence_status: true
+  show_data_coverage: true

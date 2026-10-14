@@ -1,0 +1,318 @@
+"""Pydantic models for rules.yaml — all business policy, thresholds and model choices.
+
+Config controls policy; code controls algorithms. Every section here maps to a
+top-level key in rules.yaml and carries the defaults from the build spec
+(section 8). Any real deployment overrides these in YAML, never in code.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from enum import StrEnum
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class StrictModel(BaseModel):
+    """Base model: unknown keys are errors so typos in YAML fail loudly."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+# ---------------------------------------------------------------------------
+# schema
+# ---------------------------------------------------------------------------
+
+
+class SchemaConfig(StrictModel):
+    """Config-file versioning so old configs are detected, not misread."""
+
+    version: int = 1
+
+
+# ---------------------------------------------------------------------------
+# mapping
+# ---------------------------------------------------------------------------
+
+
+class MappingConfig(StrictModel):
+    """Which mapping YAML to use and how strictly to enforce semantics."""
+
+    mapping_file: str | None = None
+    # Fail closed: a calculation that needs a semantic the mapping does not
+    # declare raises an actionable error instead of guessing.
+    fail_on_missing_semantics: bool = True
+
+
+# ---------------------------------------------------------------------------
+# units_and_currency
+# ---------------------------------------------------------------------------
+
+
+class UnitsCurrencyConfig(StrictModel):
+    reporting_currency: str = "USD"
+    currency_decimals: int = Field(default=2, ge=0, le=6)
+    # Run 2 (Phase 9): conversion policy. Default documented: rate as of invoice date.
+    fx_rate_policy: Literal["invoice_date", "month_average", "fixed"] = "invoice_date"
+    canonical_uom_policy: Literal["base_selling_unit"] = "base_selling_unit"
+
+
+# ---------------------------------------------------------------------------
+# transactions
+# ---------------------------------------------------------------------------
+
+
+class TransactionsConfig(StrictModel):
+    # Duplicates removed only on verified identity (stable source key).
+    dedupe_on: Literal["source_key", "verified_identity"] = "source_key"
+    flag_lookalike_duplicates: bool = True
+    # Credit-memo reasons that reduce realized revenue (price-related).
+    price_credit_reasons: tuple[str, ...] = ("price_correction", "customer_rebate")
+    # Reasons routed to cost categories instead of revenue.
+    cost_credit_reasons: tuple[str, ...] = ("damage", "shortage", "quality", "warranty")
+    zero_quantity_treatment: Literal["exclude_and_flag"] = "exclude_and_flag"
+
+
+# ---------------------------------------------------------------------------
+# costing
+# ---------------------------------------------------------------------------
+
+
+class CostBasis(StrEnum):
+    STANDARD = "standard"
+    AVERAGE = "average"
+    FIFO = "fifo"
+    LANDED = "landed"
+
+
+class CostingConfig(StrictModel):
+    # Whether product cost (as mapped) already includes these components.
+    # Must be declared in the mapping; these are engine-level fallbacks that
+    # apply only when the mapping says nothing AND fail_on_missing_semantics
+    # is False (not the default).
+    missing_cost_policy: Literal["exclude_from_cost_metrics"] = "exclude_from_cost_metrics"
+    zero_cost_policy: Literal["flag_for_review"] = "flag_for_review"
+    vendor_rebate_treatment: Literal["adjust_acquisition_cost"] = "adjust_acquisition_cost"
+
+
+# ---------------------------------------------------------------------------
+# waterfall
+# ---------------------------------------------------------------------------
+
+
+class AllocationBasis(StrEnum):
+    ACTUAL = "actual"
+    WEIGHT = "weight"
+    CUBE = "cube"
+    HANDLING_UNITS = "handling_units"
+    LINES = "lines"
+    EXTENDED_PRICE = "extended_price"
+
+
+class WaterfallConfig(StrictModel):
+    # Allocation basis priority: actual -> weight/cube -> handling units ->
+    # lines/orders -> extended-price share (fallback only).
+    allocation_basis_priority: tuple[AllocationBasis, ...] = (
+        AllocationBasis.ACTUAL,
+        AllocationBasis.WEIGHT,
+        AllocationBasis.CUBE,
+        AllocationBasis.HANDLING_UNITS,
+        AllocationBasis.LINES,
+        AllocationBasis.EXTENDED_PRICE,
+    )
+    rounding: Literal["half_even"] = "half_even"
+    # Rounding residual goes deterministically to the largest line in the group.
+    residual_assignment: Literal["largest_line"] = "largest_line"
+    # Freight: concessions reduce pocket revenue; actual outbound freight
+    # expense is cost-to-serve. Fixed by accounting policy, surfaced here so
+    # the report can state it.
+    freight_concession_stage: Literal["pocket_revenue"] = "pocket_revenue"
+    freight_expense_stage: Literal["cost_to_serve"] = "cost_to_serve"
+
+
+# ---------------------------------------------------------------------------
+# outliers
+# ---------------------------------------------------------------------------
+
+
+class OutlierConfig(StrictModel):
+    method: Literal["modified_robust_zscore"] = "modified_robust_zscore"
+    zscore_threshold: float = Field(default=3.5, gt=0)
+    mad_consistency_constant: float = 0.6745
+    # Peer group: item x UOM x contract regime x quarter; family fallback below.
+    peer_group_keys: tuple[str, ...] = ("item_id", "uom", "contract_regime", "quarter")
+    min_peer_group_size: int = Field(default=30, ge=2)
+    fallback_group_keys: tuple[str, ...] = ("item_family", "uom", "contract_regime", "quarter")
+    # MAD = 0 fallback: flag prices deviating from the modal price by > 10%.
+    mad_zero_fallback_pct: float = Field(default=0.10, gt=0)
+
+
+# ---------------------------------------------------------------------------
+# segmentation
+# ---------------------------------------------------------------------------
+
+
+class TreeConfig(StrictModel):
+    max_depth: int = Field(ge=1)
+    min_leaf_lines: int = Field(default=500, ge=1)
+    min_leaf_lines_pct: float = Field(default=0.005, ge=0, le=1)
+    min_leaf_customers: int = Field(default=20, ge=1)
+    min_leaf_items: int = Field(default=10, ge=1)
+
+
+class SegmentationConfig(StrictModel):
+    # Commercial segments: context features only — leakage guard.
+    commercial_tree: TreeConfig = TreeConfig(max_depth=5)
+    margin_driver_tree: TreeConfig = TreeConfig(max_depth=4)
+    context_features: tuple[str, ...] = (
+        "industry",
+        "size_band",
+        "region",
+        "channel",
+        "contract_type",
+        "item_family",
+        "item_role",
+        "order_size_band",
+        "revenue_abc",
+    )
+    # Columns that must never appear in commercial-segment features.
+    forbidden_commercial_features: tuple[str, ...] = (
+        "price",
+        "discount",
+        "cost",
+        "rebate",
+        "margin",
+    )
+    bootstrap_resamples: int = Field(default=30, ge=2)
+    # ABC splits by cumulative share: A = top 80%, B = next 15%, C = last 5%.
+    abc_a_share: float = 0.80
+    abc_b_share: float = 0.15
+
+
+# ---------------------------------------------------------------------------
+# price_guidance
+# ---------------------------------------------------------------------------
+
+
+class PriceGuidanceConfig(StrictModel):
+    band_percentiles: tuple[float, float, float] = (0.25, 0.50, 0.75)
+    # Observation unit: one representative (median) price per customer x item x month.
+    observation_unit: Literal["customer_item_month_median", "line"] = "customer_item_month_median"
+    min_pocket_margin: Decimal = Decimal("0.05")
+    min_band_observations: int = Field(default=10, ge=1)
+    # Provisional target/start until optimization is supported (Phase 7).
+    provisional_target_percentile: float = 0.50
+    provisional_start_percentile: float = 0.75
+
+
+# ---------------------------------------------------------------------------
+# sensitivity
+# ---------------------------------------------------------------------------
+
+
+class InstrumentConfig(StrictModel):
+    name: str
+    column: str
+    varies_at: str  # clustering level, e.g. "supplier_id:month" or "item_category:month"
+    # Required for causal_elasticity_supported: a documented economic argument
+    # for why the instrument is excludable. No rationale, no top status.
+    exclusion_rationale: str | None = None
+
+
+class SensitivityConfig(StrictModel):
+    panel_period: Literal["month"] = "month"
+    # Zero rows only where the pair is in active assortment and item available:
+    # purchased in the prior N months and not stocked out.
+    active_assortment_lookback_months: int = Field(default=6, ge=1)
+    min_first_stage_f: float = Field(default=10.0, gt=0)
+    instruments: tuple[InstrumentConfig, ...] = ()
+    robustness_max_spread: float = Field(default=0.20, gt=0)
+    max_ci_width: float = Field(default=1.0, gt=0)
+    overid_alpha: float = Field(default=0.05, gt=0, lt=1)
+    shrinkage: Literal["empirical_bayes_to_parent_segment"] = "empirical_bayes_to_parent_segment"
+    min_observations: int = Field(default=30, ge=2)
+    min_price_variation_cv: float = Field(default=0.01, ge=0)
+
+
+# ---------------------------------------------------------------------------
+# opportunity
+# ---------------------------------------------------------------------------
+
+
+class OpportunityConfig(StrictModel):
+    baseline_window_months: int = Field(default=12, ge=1)
+    exclude_contract_protected: bool = True
+    exclude_insufficient_data: bool = True
+    # Expected contribution change only at causal_elasticity_supported;
+    # iv_estimated shown as a labeled sensitivity range; else fixed-volume only.
+    volume_response_requires: Literal["causal_elasticity_supported"] = "causal_elasticity_supported"
+
+
+# ---------------------------------------------------------------------------
+# tariff_scenarios
+# ---------------------------------------------------------------------------
+
+
+class TariffScenariosConfig(StrictModel):
+    pass_through_levels: tuple[float, ...] = (0.0, 0.5, 1.0)
+    exclude_contract_protected: bool = True
+    # Run 2 (Phase 14): which cost pool the scenario hits.
+    cost_pool: Literal["new_receipts", "existing_pool", "blend"] = "new_receipts"
+
+
+# ---------------------------------------------------------------------------
+# reporting
+# ---------------------------------------------------------------------------
+
+
+class ReportingConfig(StrictModel):
+    output_formats: tuple[Literal["parquet", "csv", "html"], ...] = ("parquet", "csv", "html")
+    show_evidence_status: bool = True
+    show_data_coverage: bool = True
+
+
+# ---------------------------------------------------------------------------
+# root
+# ---------------------------------------------------------------------------
+
+
+class Rules(StrictModel):
+    """Root model for rules.yaml."""
+
+    schema_: SchemaConfig = Field(default=SchemaConfig(), alias="schema")
+    mapping: MappingConfig = MappingConfig()
+    units_and_currency: UnitsCurrencyConfig = UnitsCurrencyConfig()
+    transactions: TransactionsConfig = TransactionsConfig()
+    costing: CostingConfig = CostingConfig()
+    waterfall: WaterfallConfig = WaterfallConfig()
+    outliers: OutlierConfig = OutlierConfig()
+    segmentation: SegmentationConfig = SegmentationConfig()
+    price_guidance: PriceGuidanceConfig = PriceGuidanceConfig()
+    sensitivity: SensitivityConfig = SensitivityConfig()
+    opportunity: OpportunityConfig = OpportunityConfig()
+    tariff_scenarios: TariffScenariosConfig = TariffScenariosConfig()
+    reporting: ReportingConfig = ReportingConfig()
+
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _abc_shares_valid(self) -> Rules:
+        seg = self.segmentation
+        if seg.abc_a_share + seg.abc_b_share >= 1.0:
+            msg = "segmentation: abc_a_share + abc_b_share must be < 1.0"
+            raise ValueError(msg)
+        return self
+
+
+def load_rules(path: str | Path) -> Rules:
+    """Load and schema-validate rules.yaml. Raises on unknown keys or bad values."""
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        msg = f"rules file {path} must be a YAML mapping, got {type(raw).__name__}"
+        raise TypeError(msg)
+    return Rules.model_validate(raw)
