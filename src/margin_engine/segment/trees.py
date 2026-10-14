@@ -203,70 +203,6 @@ def _valid_node_assignment(
     return assigned
 
 
-def _select_ccp_alpha(
-    x: np.ndarray, y: np.ndarray, min_leaf: int, max_depth: int, seed: int
-) -> float:
-    """Cost-complexity pruning strength by 5-fold cross-validation with a
-    1-SE rule: the largest alpha whose CV error is within one standard error
-    (across folds) of the minimum. Prunes noise splits that would fragment
-    real segments, and is stable because no single random split decides."""
-    rng = np.random.default_rng(seed)
-    n = len(y)
-    base = DecisionTreeRegressor(max_depth=max_depth, min_samples_leaf=min_leaf, random_state=0)
-    path = base.cost_complexity_pruning_path(x, y)
-    pos = np.unique(path.ccp_alphas[path.ccp_alphas > 0])
-    if len(pos) == 0:
-        return 0.0
-    # Log-spaced candidates across the positive range: path alphas span several
-    # orders of magnitude and index-based subsampling misses the critical scale.
-    alphas = np.concatenate([[0.0], np.geomspace(pos.min(), pos.max(), 14)])
-    folds = rng.integers(0, 5, n)
-    fold_mse = np.zeros((len(alphas), 5))
-    for k in range(5):
-        tr, va = folds != k, folds == k
-        if va.sum() == 0 or tr.sum() == 0:
-            continue
-        for ai, a in enumerate(alphas):
-            m = DecisionTreeRegressor(
-                max_depth=max_depth, min_samples_leaf=min_leaf, random_state=0, ccp_alpha=float(a)
-            )
-            m.fit(x[tr], y[tr])
-            fold_mse[ai, k] = float(((m.predict(x[va]) - y[va]) ** 2).mean())
-    cv_mean = fold_mse.mean(axis=1)
-    cv_se = fold_mse.std(axis=1) / np.sqrt(5)
-    best = int(np.argmin(cv_mean))
-    threshold = cv_mean[best] + cv_se[best]
-    eligible = [float(alphas[i]) for i in range(len(alphas)) if cv_mean[i] <= threshold]
-
-    # Among statistically equivalent alphas (within 1 SE of the CV minimum),
-    # choose the one whose partitions are most stable under resampling: fit a
-    # handful of bootstrap trees per alpha and score mean pairwise ARI of the
-    # induced partitions. Stability is a first-class requirement (spec 8.8),
-    # so it drives the tie-break, not the accuracy threshold.
-    if len(eligible) == 1:
-        return eligible[0]
-    n_stab = 6
-    best_alpha, best_score = eligible[0], -1.0
-    for a in eligible:
-        parts = []
-        for _s in range(n_stab):
-            idx = rng.integers(0, n, n)
-            m = DecisionTreeRegressor(
-                max_depth=max_depth, min_samples_leaf=min_leaf, random_state=0, ccp_alpha=a
-            )
-            m.fit(x[idx], y[idx])
-            parts.append(m.apply(x))
-        scores = [
-            adjusted_rand_score(parts[i], parts[j])
-            for i in range(n_stab)
-            for j in range(i + 1, n_stab)
-        ]
-        score = float(np.mean(scores))
-        if score > best_score + 1e-9 or (abs(score - best_score) <= 1e-9 and a > best_alpha):
-            best_alpha, best_score = a, score
-    return best_alpha
-
-
 def _fit_constrained(
     x: np.ndarray, y: np.ndarray, df: pl.DataFrame, tc: TreeConfig, seed: int = 0
 ) -> tuple[DecisionTreeRegressor, np.ndarray, list[str]]:
@@ -275,9 +211,12 @@ def _fit_constrained(
     into their parent nodes."""
     notes: list[str] = []
     min_leaf = _min_leaf(len(y), tc)
-    alpha = _select_ccp_alpha(x, y, min_leaf, tc.max_depth, seed)
+    # No CV pruning here: the shallow depth and the configured line/customer/
+    # item minimums bound complexity, and CV alpha selection costs dozens of
+    # full fits on line-level data (the commercial tree has its own
+    # consolidation mechanism at pair level).
     model = DecisionTreeRegressor(
-        max_depth=tc.max_depth, min_samples_leaf=min_leaf, random_state=seed, ccp_alpha=alpha
+        max_depth=tc.max_depth, min_samples_leaf=min_leaf, random_state=seed
     )
     model.fit(x, y)
     raw_leaves = model.apply(x)
@@ -468,7 +407,6 @@ def _enforce_minimums_pairs(
         )
         assigned[assigned == worst["cell"]] = target
     return assigned
-
 
 
 def _extract_rules_merged(

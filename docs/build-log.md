@@ -376,3 +376,51 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
 - Status gating: causal -> expected change; iv -> range only; descriptive ->
   fixed volume only: PASS. Leakage reconciles, surcharges excluded: PASS.
 - ruff, mypy (strict), 13 opportunity tests + full suite: PASS.
+
+---
+## Phase 8 — CLI, report, manifest, docs, performance (2026-10-14)
+
+**Built**
+- `margin-engine run --data <dir> --mapping <yaml> [--rules] [--out]`: full
+  pipeline (ingest -> classify -> waterfall -> reconcile -> dispersion ->
+  segmentation -> guidance -> panel -> sensitivity -> opportunity) with stage
+  timings; outputs every table as Parquet AND CSV (money columns converted to
+  *_usd dollars in CSV for Excel / Power BI), DuckDB store, single-file HTML
+  report, run manifest.
+- `manifest/run_manifest.py`: rules + mapping sha256, per-file input
+  fingerprints, software versions, cleaning decisions (dedupes, flags),
+  parameters and stage timings — any result reproducible months later.
+- `report/`: Jinja2 HTML report — reconciliation checks with pass/fail,
+  visible residuals, waterfall with coverage labels, dispersion counts,
+  segment rules with stability, sensitivity table with evidence statuses and
+  both CIs, guidance status distribution (labeled provisional), three-level
+  opportunity (never summed), manifest summary. Professional tone, no emojis.
+- README with the full planted-vs-recovered validation table; docs/methodology.md
+  with model detail and status definitions; committed demo set in data/sample
+  (30 customers, 7.3k lines).
+
+**Verification**
+- End-to-end CLI run completes on a fresh world; report renders with all
+  sections; manifest complete (hashes, versions, decisions, timings); outputs
+  in both formats; CSVs carry dollars not cents: PASS (tests/test_full_run.py).
+- Performance: 597,673 lines, full Run-1 pipeline in 40.1s (target < 2 min),
+  peak working set 3.97 GB, on AMD64 Family 25 (Ryzen), Windows 11. Stage
+  timings: ingest/waterfall 2.5s, dispersion 0.5s, segmentation 8.0s (30
+  bootstrap resamples), guidance 0.4s, panel 1.1s, sensitivity 11.7s,
+  opportunity 0.1s, exports 14.2s.
+- Performance fix: the margin-driver tree previously ran cross-validated
+  ccp-alpha selection on line-level one-hot data (~75 full fits, 350s at 500k
+  lines). Depth-4 with the spec's leaf minimums bounds complexity without it;
+  removed, nothing else changed. Segmentation quality tests unchanged and green.
+- Full quality gates: ruff, ruff format, mypy (strict on src), complete pytest
+  suite (see commit).
+
+**Known gaps / notes for the owner**
+- The elasticity recovery target is measured at the planted-segment grain
+  (truth is defined there; segmentation is gated separately by ARI).
+  End-to-end on engine cells: median 0.058 / P90 0.170 — reported in README.
+- Windows Smart App Control blocks pytest.exe, pyarrow and scikit-learn>=1.6
+  wheels on this machine; the project pins sklearn<1.6, avoids pyarrow
+  entirely, and documents `python -m pytest`. CI on Ubuntu unaffected.
+- Freight billed allocation driver is net share until Phase 13 brings weight
+  data into cost-to-serve.

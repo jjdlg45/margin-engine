@@ -1,0 +1,130 @@
+{
+  "generator_config": {
+    "seed": 7,
+    "preset": "well_identified",
+    "n_customers": 30,
+    "n_items": 80,
+    "n_reps": 12,
+    "n_suppliers": 12,
+    "n_categories": 8,
+    "n_families": 20,
+    "months": 24,
+    "start_year": 2024,
+    "start_month": 1,
+    "assortment_min": 10,
+    "assortment_max": 40,
+    "long_tail_share": 0.3,
+    "service_item_share": 0.02,
+    "list_revisions_min": 1,
+    "list_revisions_max": 3,
+    "line_rebate_share": 0.3,
+    "settlement_rebate_share": 0.25,
+    "rebate_rate_min": 0.01,
+    "rebate_rate_max": 0.05,
+    "freight_billed_share": 0.4,
+    "freight_concession_share": 0.25,
+    "vendor_rebate_supplier_share": 0.4,
+    "vendor_rebate_rate": 0.02,
+    "contract_customer_share": 0.25,
+    "mess": {
+      "return_rate": 0.04,
+      "credit_memo_rate": 0.02,
+      "missing_cost_rate": 0.01,
+      "uom_alt_rate": 0.08,
+      "verified_dup_rate": 0.005,
+      "lookalike_dup_rate": 0.003,
+      "price_outlier_rate": 0.002,
+      "commercial_outlier_rate": 0.002,
+      "zero_qty_rate": 0.001,
+      "stockout_rate": 0.02
+    },
+    "demand": {
+      "elasticity_min": -2.5,
+      "elasticity_max": -0.8,
+      "base_index_min": 0.75,
+      "base_index_max": 0.98,
+      "demand_shock_sd": 0.22,
+      "instrument_ar": 0.7,
+      "cost_shock_sd": 0.05,
+      "tariff_shock_sd": 0.04,
+      "price_passthrough": 0.75,
+      "endogeneity_gamma": 0.08,
+      "tariff_demand_leak": 0.0,
+      "price_noise_sd": 0.03,
+      "pair_price_sd": 0.05,
+      "base_qty_log_mean": 2.6,
+      "base_qty_log_sd": 0.7,
+      "qty_noise_sd": 0.2,
+      "purchase_prob": 0.6
+    }
+  },
+  "segments": [
+    {
+      "segment_id": 0,
+      "name": "national_heavy",
+      "rule": "heavy industry AND large",
+      "elasticity": -2.4874904533395332,
+      "base_price_index": 0.7450526530456557
+    },
+    {
+      "segment_id": 1,
+      "name": "regional_heavy",
+      "rule": "heavy industry AND NOT large",
+      "elasticity": -2.1202786199030426,
+      "base_price_index": 0.7992122841838277
+    },
+    {
+      "segment_id": 2,
+      "name": "light_large",
+      "rule": "light industry AND large",
+      "elasticity": -1.7924314309754807,
+      "base_price_index": 0.8449706942875205
+    },
+    {
+      "segment_id": 3,
+      "name": "light_core",
+      "rule": "light industry AND NOT large AND channel IN (field, inside)",
+      "elasticity": -1.5074792810009408,
+      "base_price_index": 0.8876793495284372
+    },
+    {
+      "segment_id": 4,
+      "name": "light_ecom",
+      "rule": "light industry AND NOT large AND channel = ecommerce",
+      "elasticity": -1.1599833715088776,
+      "base_price_index": 0.9320303242681931
+    },
+    {
+      "segment_id": 5,
+      "name": "long_tail_items",
+      "rule": "item role = long_tail (overrides customer rule)",
+      "elasticity": -0.7626446554603739,
+      "base_price_index": 0.9777842561210077
+    }
+  ],
+  "naive_bias_direction": "toward_zero",
+  "naive_bias_explanation": "Reps discount when the demand shock is negative (endogeneity_gamma > 0), so realized price covaries positively with unobserved demand. OLS on realized prices is therefore biased upward, i.e. toward zero / less negative than the true elasticity.",
+  "mess_counts": {
+    "returns": 250,
+    "credits": 15,
+    "missing_cost": 79,
+    "uom_alt": 146,
+    "verified_dup_keys": 30,
+    "lookalike_dups": 20,
+    "data_quality_outliers": 15,
+    "commercial_outliers": 18,
+    "zero_qty_rows": 7,
+    "zero_cost_service_lines": 83
+  },
+  "planted_totals_cents": {
+    "net_cents": 720390536,
+    "line_rebate_cents": 5774578,
+    "settlement_rebate_cents": 9112093,
+    "freight_concession_cents": 4066540,
+    "freight_expense_cents": 10032563,
+    "billed_freight_cents": 3634211,
+    "vendor_rebate_cents": 2779286
+  },
+  "n_lines_exported": 7336,
+  "n_customers": 30
+}
