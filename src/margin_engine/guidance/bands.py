@@ -120,20 +120,41 @@ def build_guidance(
         .drop("unit_cost_f")
     )
 
-    # Percentage post-invoice deductions: the customer's rebate program rate.
-    # Freight concessions are order-specific and NOT baked into the floor;
-    # documented limitation (they appear in pocket waterfall, not the floor).
+    # Percentage post-invoice deductions d: the customer's rebate program rate
+    # plus the customer's realized freight-concession rate (concessions / net
+    # on sale lines), both in basis points. Both reduce pocket revenue, so both
+    # belong in the invoice floor (spec 5.5 / Phase 5).
     if rebate_programs is not None:
         rp = rebate_programs.with_columns(
-            (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("deduction_bp")
+            (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rebate_bp")
         )
         pair = pair.join(
-            rp.select("customer_id", "deduction_bp"), on="customer_id", how="left"
-        ).with_columns(pl.col("deduction_bp").fill_null(0))
+            rp.select("customer_id", "rebate_bp"), on="customer_id", how="left"
+        ).with_columns(pl.col("rebate_bp").fill_null(0))
     else:
-        pair = pair.with_columns(pl.lit(0, dtype=pl.Int64).alias("deduction_bp"))
-        notes.append("no rebate_programs reference: floor assumes zero % deductions")
-    pair = pair.with_columns(pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"))
+        pair = pair.with_columns(pl.lit(0, dtype=pl.Int64).alias("rebate_bp"))
+        notes.append("no rebate_programs reference: floor assumes zero rebate deduction")
+    if "freight_concession_cents" in base.columns:
+        conc = (
+            base.filter(pl.col("net_amount_cents") > 0)
+            .group_by("customer_id")
+            .agg(
+                (
+                    pl.col("freight_concession_cents").sum()
+                    * 10_000
+                    // pl.col("net_amount_cents").sum()
+                ).alias("concession_bp")
+            )
+        )
+        pair = pair.join(conc, on="customer_id", how="left").with_columns(
+            pl.col("concession_bp").fill_null(0)
+        )
+    else:
+        pair = pair.with_columns(pl.lit(0, dtype=pl.Int64).alias("concession_bp"))
+    pair = pair.with_columns(
+        (pl.col("rebate_bp") + pl.col("concession_bp")).alias("deduction_bp"),
+        pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"),
+    )
 
     pair = pair.with_columns(
         pocket_floor_cents(pl.col("unit_cost_cents"), min_margin_bp).alias("pocket_floor_cents"),

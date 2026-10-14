@@ -113,8 +113,9 @@ x month. The economic floor is exact integer math:
     invoice floor = (C / (1 - m) + F) / (1 - d)
 
 with C the latest per-unit landed cost net of vendor rebates, m the minimum
-pocket margin, d the customer's rebate-program rate, F fixed per-unit
-deductions. Statuses: in_band, below_reference, below_floor, above_reference,
+pocket margin, d the customer's rebate-program rate plus the customer's
+realized freight-concession rate (both reduce pocket revenue), F fixed
+per-unit deductions. Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (floor above band P75 — flagged, never papered
 over with a fake target), insufficient_data. Targets and starts are
 max(P50/P75, floor) and labeled `provisional_historical`: historical

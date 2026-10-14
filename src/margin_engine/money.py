@@ -53,8 +53,16 @@ def assert_parse_ok(
     parsed_col: str,
     file_label: str,
     decimal_separator: str = ".",
+    key_col: str | None = None,
 ) -> None:
-    """Fail actionably when non-empty raw values did not parse."""
+    """Fail actionably when non-empty raw values did not parse. When key_col is
+    given, up to 10 offending source line keys are listed."""
+
+    def keys_of(frame: pl.DataFrame) -> str:
+        if key_col and key_col in frame.columns:
+            return f" Offending line keys (up to 10): {frame[key_col].head(10).to_list()}."
+        return ""
+
     bad = df.filter(
         pl.col(raw_col).cast(pl.String).str.strip_chars().fill_null("").ne("")
         & pl.col(parsed_col).is_null()
@@ -63,7 +71,8 @@ def assert_parse_ok(
         sample = bad[raw_col].head(5).to_list()
         msg = (
             f"{file_label}: column '{raw_col}' has {bad.height} unparseable money "
-            f"value(s), e.g. {sample}. Fix the data or the mapping's decimal_separator."
+            f"value(s), e.g. {sample}. Fix the data or the mapping's "
+            f"decimal_separator.{keys_of(bad)}"
         )
         raise MoneyParseError(msg)
     # Values with more than PARSE_SCALE decimals would be silently truncated: refuse.
@@ -82,7 +91,7 @@ def assert_parse_ok(
     if too_precise.height:
         msg = (
             f"{file_label}: column '{raw_col}' has values with more than "
-            f"{PARSE_SCALE} decimal places; refusing to truncate money."
+            f"{PARSE_SCALE} decimal places; refusing to truncate money.{keys_of(too_precise)}"
         )
         raise MoneyParseError(msg)
 

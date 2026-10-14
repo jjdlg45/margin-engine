@@ -99,7 +99,8 @@ def build_world_panel(
 
 
 # ---------------------------------------------------------------------------
-# Multi-seed recovery study (end-to-end with ENGINE segments)
+# Multi-seed recovery studies: planted-segment grain (gated) and
+# end-to-end on engine-recovered segments (gated separately below)
 # ---------------------------------------------------------------------------
 
 STUDY_SEEDS = [2, 8, 15, 21, 34]
@@ -137,9 +138,51 @@ def test_elasticity_recovery_targets(study: list[dict[str, Any]]) -> None:
     p90 = float(np.quantile(errs, 0.9))
     worst = max(errs)
     # Worst case is REPORTED per spec, not a pass/fail bound.
-    print(f"\nelasticity recovery: median={median:.3f} p90={p90:.3f} worst={worst:.3f}")
+    print(
+        f"\nelasticity recovery (planted grain): median={median:.3f} p90={p90:.3f} worst={worst:.3f}"
+    )
     assert median <= 0.10, f"median abs error {median:.3f} > 0.10"
     assert p90 <= 0.15, f"P90 abs error {p90:.3f} > 0.15"
+
+
+@pytest.fixture(scope="module")
+def study_end_to_end(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
+    """End-to-end recovery: segmentation is the ENGINE's own (not planted),
+    estimates per engine cell compared against the planted elasticity of the
+    cell's modal planted segment (cells below 0.9 purity have no single truth
+    and are excluded from the comparison; their estimates still exist)."""
+    tmp = tmp_path_factory.mktemp("sens_e2e")
+    rules = rules_full()
+    results = []
+    for seed in STUDY_SEEDS:
+        panel, truth, seg_map = build_world_panel(
+            tmp, Preset.WELL_IDENTIFIED, seed, use_engine_segments=True
+        )
+        sens = run_sensitivity(panel, rules)
+        for r in sens.to_dicts():
+            planted = seg_map.get(r["segment"])
+            if planted is None:
+                continue
+            r["seed"] = seed
+            r["true_elasticity"] = truth[planted]
+            results.append(r)
+    return results
+
+
+def test_end_to_end_elasticity_recovery(study_end_to_end: list[dict[str, Any]]) -> None:
+    errs = sorted(
+        abs(r["iv"] - r["true_elasticity"]) for r in study_end_to_end if r["iv"] is not None
+    )
+    assert len(errs) >= 20
+    median = float(np.median(errs))
+    p90 = float(np.quantile(errs, 0.9))
+    worst = max(errs)
+    print(
+        f"\nelasticity recovery (end-to-end, engine segments): "
+        f"median={median:.3f} p90={p90:.3f} worst={worst:.3f}"
+    )
+    assert median <= 0.10, f"end-to-end median abs error {median:.3f} > 0.10"
+    assert p90 <= 0.15, f"end-to-end P90 abs error {p90:.3f} > 0.15"
 
 
 def test_naive_biased_toward_zero_every_seed(study: list[dict[str, Any]]) -> None:
@@ -311,3 +354,33 @@ def test_shrinkage_reports_raw_and_shrunk(tmp_path: Path) -> None:
     )
     assert between.height == est.height
     assert (est["effective_sample_size"] > 0).all()
+
+
+def test_realistic_noise_preset_informational(tmp_path: Path) -> None:
+    """INFORMATIONAL, not gated: the realistic_noise preset uses Poisson count
+    quantities (the planted beta is then only approximately the log-log
+    estimand) and pre-tightening noise levels. Recovery metrics are printed and
+    reported in the README; the assertions below check only that estimation
+    runs and labels itself honestly."""
+    rules = rules_full()
+    errs: list[float] = []
+    for seed in (2, 8, 15):
+        panel, truth, seg_map = build_world_panel(
+            tmp_path, Preset.REALISTIC_NOISE, seed, use_engine_segments=False
+        )
+        sens = run_sensitivity(panel, rules)
+        for r in sens.to_dicts():
+            assert r["status"] in (
+                STATUS_INSUFFICIENT,
+                STATUS_DESCRIPTIVE,
+                "iv_estimated_elasticity",
+                STATUS_CAUSAL,
+            )
+            planted = seg_map.get(r["segment"])
+            if planted is not None and r["iv"] is not None:
+                errs.append(abs(r["iv"] - truth[planted]))
+    assert len(errs) >= 10
+    print(
+        f"\nrealistic_noise recovery (informational): median={np.median(errs):.3f} "
+        f"p90={np.quantile(errs, 0.9):.3f} worst={max(errs):.3f}"
+    )

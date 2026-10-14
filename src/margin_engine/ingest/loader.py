@@ -65,12 +65,13 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
         pl.col(lm.item_id.column).alias("item_id"),
         pl.col(lm.quantity.column).cast(pl.Float64, strict=False).alias("quantity"),
     )
-    # Unparseable dates are a data error, reported actionably.
-    bad_dates = out.filter(pl.col("invoice_date").is_null()).height
-    if bad_dates:
+    # Unparseable dates are a data error, reported actionably with line keys.
+    bad_dates = out.filter(pl.col("invoice_date").is_null())
+    if bad_dates.height:
+        keys = bad_dates["source_line_key"].head(10).to_list()
         msg = (
-            f"{path}: {bad_dates} invoice_date value(s) do not match declared "
-            f"format '{lm.invoice_date.format}'."
+            f"{path}: {bad_dates.height} invoice_date value(s) do not match declared "
+            f"format '{lm.invoice_date.format}'. Offending line keys (up to 10): {keys}"
         )
         raise MappingError(msg)
 
@@ -119,7 +120,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
     )
     check = pl.concat([raw, parsed], how="horizontal")
     for name, (src, _) in scaled_cols.items():
-        assert_parse_ok(check, src, name, str(path), sep)
+        assert_parse_ok(check, src, name, str(path), sep, lm.source_line_key.column)
     out = pl.concat(
         [
             out,
@@ -142,6 +143,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             "unit_price_scaled",
             str(path),
             sep,
+            lm.source_line_key.column,
         )
         out = pl.concat([out, up], how="horizontal")
         if lm.net_amount is None and lm.unit_price.authoritative:
@@ -164,6 +166,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             "list_price_scaled",
             str(path),
             sep,
+            lm.source_line_key.column,
         )
         out = pl.concat([out, lp], how="horizontal")
 
@@ -175,6 +178,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             "unit_cost_scaled",
             str(path),
             sep,
+            lm.source_line_key.column,
         )
         out = pl.concat([out, uc], how="horizontal")
         if lm.unit_cost.missing_as == "zero_is_missing":

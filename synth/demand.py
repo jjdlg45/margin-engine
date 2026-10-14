@@ -242,8 +242,11 @@ def simulate_panel(
     mu = np.exp(np.clip(log_mu, -10, 8))
     bought = available & (rng.random(n_obs) < buy_p)
     qty = np.zeros(n_obs, dtype=np.int64)
-    eps_q = rng.normal(0, d.qty_noise_sd, int(bought.sum()))
-    qty[bought] = np.maximum(1, np.round(np.exp(np.log(mu[bought]) + eps_q))).astype(np.int64)
+    if d.qty_process == "poisson":
+        qty[bought] = np.maximum(1, rng.poisson(mu[bought]))
+    else:
+        eps_q = rng.normal(0, d.qty_noise_sd, int(bought.sum()))
+        qty[bought] = np.maximum(1, np.round(np.exp(np.log(mu[bought]) + eps_q))).astype(np.int64)
 
     # --- unit cost per pair-month (moves with supplier cost shock) ------
     base_cost = items["base_cost_cents"].to_numpy()[it]

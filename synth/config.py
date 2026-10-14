@@ -18,6 +18,11 @@ class Preset(StrEnum):
     INVALID_INSTRUMENT = "invalid_instrument"
     SPARSE = "sparse"
     PRICE_CONSTANT = "price_constant"
+    # Harder, informational-only world: Poisson count quantities (E[log Q] is
+    # then nonlinear in log price, so the planted beta is only approximately
+    # the log-log estimand) and the noise levels from before the default world
+    # was tightened. Recovery on this preset is REPORTED, not gated.
+    REALISTIC_NOISE = "realistic_noise"
 
 
 class MessRates(BaseModel):
@@ -77,6 +82,9 @@ class DemandParams(BaseModel):
     # estimand of log-log and PPML models (a Poisson draw would make E[log Q]
     # nonlinear in log price and the planted beta unrecoverable in principle).
     qty_noise_sd: float = 0.20
+    # Quantity process: "loglinear" (default, exactly recoverable estimand) or
+    # "poisson" (count draws; used by the realistic_noise preset).
+    qty_process: str = "loglinear"
     # Monthly purchase incidence probability for an active, available pair.
     purchase_prob: float = 0.60
 
@@ -160,6 +168,15 @@ class GeneratorConfig(BaseModel):
             # No list revisions either: prices are truly constant within pair.
             base["list_revisions_min"] = 0
             base["list_revisions_max"] = 0
+        elif preset is Preset.REALISTIC_NOISE:
+            demand = demand.model_copy(
+                update={
+                    "qty_process": "poisson",
+                    "demand_shock_sd": 0.30,
+                    "price_passthrough": 0.60,
+                    "pair_price_sd": 0.06,
+                }
+            )
         base["demand"] = demand
         if preset is Preset.SPARSE:
             base["n_customers"] = 40

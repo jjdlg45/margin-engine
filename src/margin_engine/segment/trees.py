@@ -512,10 +512,17 @@ def fit_commercial_segments(
             work = work.filter(pl.col("contract_id").is_null())
 
     pair_keys = ["customer_id", "item_id"]
-    pairs = work.group_by(pair_keys).agg(
-        pl.col("price_index").median().alias("price_index"),
-        pl.len().alias("n_lines"),
-        *[pl.col(f).mode().first().alias(f) for f in CONTEXT_FEATURES],
+    # Sorted: group_by row order is otherwise nondeterministic, and the
+    # train/test split and bootstrap draws index into this frame — unsorted,
+    # the whole segmentation would vary run to run with the same seed.
+    pairs = (
+        work.group_by(pair_keys)
+        .agg(
+            pl.col("price_index").median().alias("price_index"),
+            pl.len().alias("n_lines"),
+            *[pl.col(f).sort().mode().sort().first().alias(f) for f in CONTEXT_FEATURES],
+        )
+        .sort(pair_keys)
     )
     _leakage_guard(CONTEXT_FEATURES, rules)
     names = list(CONTEXT_FEATURES)

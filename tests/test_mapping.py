@@ -217,3 +217,34 @@ k1,i1,2024-02-03,c1,x1,7,EA,19.99,10.0000,SALE
 """
     df = _load(tmp_path, mapping, csv)
     assert df["net_amount_cents"].to_list() == [13_993]  # 7 x 19.99
+
+
+def test_cli_exits_1_with_clean_message_on_mapping_error(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from margin_engine.cli import app
+
+    csv = CSV_A.replace("250.00", "2S0.00")  # unparseable money on line k1
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "lines.csv").write_text(csv, encoding="utf-8")
+    mp = _write_mapping(tmp_path, BASE_MAPPING)
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["run", "--data", str(tmp_path), "--mapping", str(mp), "--out", str(tmp_path / "o")]
+    )
+    assert result.exit_code == 1
+    combined = (result.output or "") + str(result.exception or "")
+    assert "ERROR" in combined or "unparseable" in combined
+    assert "Traceback" not in (result.output or "")
+
+
+def test_money_error_lists_offending_keys(tmp_path: Path) -> None:
+    csv = CSV_A.replace("250.00", "2S0.00")
+    with pytest.raises(MoneyParseError, match="k1"):
+        _load(tmp_path, BASE_MAPPING, csv)
+
+
+def test_date_error_lists_offending_keys(tmp_path: Path) -> None:
+    csv = CSV_A.replace("2024-02-03", "03/02/2024")
+    with pytest.raises(MappingError, match="k1"):
+        _load(tmp_path, BASE_MAPPING, csv)

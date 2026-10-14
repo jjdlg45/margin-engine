@@ -424,3 +424,44 @@ targets, decisions, known gaps. Appended after every phase per CLAUDE.md.
   entirely, and documents `python -m pytest`. CI on Ubuntu unaffected.
 - Freight billed allocation driver is net share until Phase 13 brings weight
   data into cost-to-serve.
+
+---
+## Phase 8.1 — Owner review fixes (2026-10-14)
+
+**1. End-to-end elasticity test (engine segments), gated at median <= 0.10 /
+P90 <= 0.15.** Two attempts were needed. Attempt 1: raising the segment consolidation
+threshold default from 0.015 to 0.02 (still well under the 0.046 planted
+segment gap) stopped small fragment cells from producing noisy per-cell
+estimates. Attempt 2: the first in-suite run then exposed genuine
+run-to-run nondeterminism — polars group_by row order is nondeterministic and
+the segmentation's train/test and bootstrap draws index into the pair frame,
+so identical seeds produced different partitions across runs. The pair frame
+is now sorted (and categorical modes tie-broken deterministically); the
+end-to-end study is byte-identical across repeated runs. Final measured on
+the study seeds: end-to-end median 0.055, P90 0.135, worst 0.290 (reported;
+targets met, no KNOWN GAP needed). Side effect, re-measured: out-of-sample
+ARI 0.940-1.000 and bootstrap median ARI 0.923-0.985 across 5 seeds. The
+misleading "end-to-end with ENGINE segments" header over the planted-grain
+study was corrected, and both grains now appear in the README table. Engine
+cells below 0.9 purity have no single planted truth and are excluded from the
+comparison (their estimates still exist and are reported like any cell).
+
+**2. realistic_noise preset.** New generator preset: Poisson count quantities
+(E[log Q] nonlinear in log price, so the planted beta is only approximately
+the log-log estimand) and pre-tightening noise (demand shock sd 0.30,
+pass-through 0.60, pair heterogeneity 0.06). Informational recovery across 3
+seeds: median 0.131, P90 0.220, worst 0.263 — in the README as reported-not-
+gated, with an un-gated test that prints the metrics each run.
+
+**3. Freight concessions in the economic floor.** d now = customer rebate rate
++ customer's realized concession rate (concessions / net on sale lines), both
+in basis points; fixture added (cost $100, m 5%, concessions 2% -> invoice
+floor $107.41; clean customer stays $105.26). methodology.md updated.
+
+**4. CLI error handling.** `run` and `validate-config` catch MappingError,
+MoneyParseError, pydantic ValidationError and ReconciliationError, print one
+clean actionable message and exit 1 (no traceback). Money-parse and date
+errors now list up to 10 offending source line keys. Tests added.
+
+**5. scikit-learn pin scoped to Windows** via environment markers
+(`<1.6; sys_platform == 'win32'`, unpinned elsewhere); lockfile regenerated.

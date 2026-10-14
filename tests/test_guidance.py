@@ -188,3 +188,36 @@ def test_data_quality_lines_excluded_from_bands() -> None:
     )
     result = build_guidance(df, rules, None)
     assert result.bands["band_p75"][0] == pytest.approx(0.9)
+
+
+def test_floor_includes_freight_concessions() -> None:
+    """Phase 5: d includes the customer's realized concession rate. Cost $100,
+    m = 5%, rebate 0, concessions 2% of net -> invoice floor = 105.26/0.98
+    = $107.41; a customer without concessions keeps $105.26."""
+    rules = Rules.model_validate({"price_guidance": {"min_band_observations": 1}})
+    n = 10
+    rows = []
+    for i in range(n):
+        rows.append(("CC", f"L{i}", 200))  # concession customer: 2% of net
+        rows.append(("C0", f"M{i}", 0))  # clean customer
+    df = pl.DataFrame(
+        {
+            "customer_id": [r[0] for r in rows],
+            "item_id": ["I1"] * len(rows),
+            "segment_leaf": [1] * len(rows),
+            "price_index": [0.95] * len(rows),
+            "invoice_date": pl.Series([date(2024, 1, 15)] * len(rows), dtype=pl.Date),
+            "quantity_norm": [1.0] * len(rows),
+            "product_cost_cents": [10_000] * len(rows),
+            "eff_list_cents": [20_000] * len(rows),
+            "net_amount_cents": [10_000] * len(rows),
+            "freight_concession_cents": [r[2] for r in rows],
+            "contract_id": [None] * len(rows),
+            "flag_data_quality_anomaly": [False] * len(rows),
+        }
+    )
+    result = build_guidance(df, rules, None)
+    by_cust = {r["customer_id"]: r for r in result.guidance.to_dicts()}
+    assert by_cust["C0"]["invoice_floor_cents"] == 10_526
+    assert by_cust["CC"]["deduction_bp"] == 200
+    assert by_cust["CC"]["invoice_floor_cents"] == 10_741

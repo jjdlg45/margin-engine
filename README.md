@@ -62,9 +62,11 @@ multiple random seeds (see `docs/build-log.md` for the full record and
 | Rebate / freight recovery — actual amounts | Exact | Exact |
 | Rebate / freight recovery — allocated amounts | Within ±5% of planted | Within ±5% per customer |
 | Planted outlier detection (seeds 5/17/29) | ≥ 90% recall, ≤ 5% false flags | 98.8–99.3% recall, 0.9–1.1% false flags |
-| Commercial segments vs. planted, out-of-sample ARI (5 seeds) | ≥ 0.70 | 0.936–0.994 |
-| Segment bootstrap stability, median ARI | ≥ 0.80 | 0.976–0.993 |
-| Elasticity recovery, `well_identified`, 5 seeds × 6 segments | median ≤ 0.10, P90 ≤ 0.15 | median 0.052, P90 0.124, worst 0.204 (reported) |
+| Commercial segments vs. planted, out-of-sample ARI (5 seeds) | ≥ 0.70 | 0.940–1.000 |
+| Segment bootstrap stability, median ARI | ≥ 0.80 | 0.923–0.985 |
+| Elasticity recovery (planted-segment grain), 5 seeds × 6 segments | median ≤ 0.10, P90 ≤ 0.15 | median 0.052, P90 0.124, worst 0.204 (reported) |
+| Elasticity recovery (end-to-end, engine segments, purity ≥ 0.9 cells) | median ≤ 0.10, P90 ≤ 0.15 | median 0.055, P90 0.135, worst 0.290 (reported) |
+| `realistic_noise` preset (Poisson quantities, pre-tightening noise) | informational, not gated | median 0.131, P90 0.220, worst 0.263 |
 | 95% CI coverage, 20 simulations (120 estimates) | 90–98% | 92.5% |
 | Naive estimator bias | Toward zero on every seed | Toward zero on every seed and segment |
 | `weak_instrument` preset | Never causal-supported; weak-IV-robust CI reported | Holds (AR set reported, incl. empty-set outcome) |
@@ -72,10 +74,14 @@ multiple random seeds (see `docs/build-log.md` for the full record and
 | `price_constant` / `sparse` presets | Never above descriptive | Holds |
 | Performance, full pipeline, 597,673 lines | Under 2 minutes | 40.1s, peak memory 3.97 GB (AMD64 Family 25 / Ryzen, Windows 11; stage timings in the run manifest) |
 
-The elasticity recovery target is measured at the planted-segment grain, where
-the truth is defined; segmentation quality is gated separately by the ARI
-targets. End-to-end on engine-recovered segments (purity ≥ 0.9 cells): median
-0.058, P90 0.170 — reported for transparency.
+Elasticity recovery is gated at both grains: the planted-segment grain (where
+the truth is defined) and end-to-end on engine-recovered segments, where each
+engine cell is compared against the planted elasticity of its modal planted
+segment (cells mixing planted segments below 0.9 purity have no single truth
+and are excluded from the comparison). The `realistic_noise` row shows the same
+estimator on a deliberately harder world — Poisson count quantities, where the
+planted beta is only approximately the log-log estimand, and higher noise — as
+an honest indication of degradation; it is reported, not gated.
 
 ## Run it
 

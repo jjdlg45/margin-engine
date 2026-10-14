@@ -650,7 +650,8 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pyfixest", specifier = ">=0.25" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scikit-learn", specifier = ">=1.5,<1.6" },
+    { name = "scikit-learn", marker = "sys_platform != 'win32'", specifier = ">=1.5" },
+    { name = "scikit-learn", marker = "sys_platform == 'win32'", specifier = ">=1.5,<1.6" },
     { name = "statsmodels", specifier = ">=0.14" },
     { name = "typer", specifier = ">=0.15" },
 ]
