@@ -46,6 +46,7 @@ def run_cost_scenario(
     sensitivity: pl.DataFrame,
     shock: CostShock,
     rules: Rules,
+    cost_method: str = "average",
 ) -> pl.DataFrame:
     """Evaluate one cost shock under each configured pass-through strategy."""
     ts = rules.tariff_scenarios
@@ -133,7 +134,14 @@ def run_cost_scenario(
             (pl.col("recovered_cents") / pl.col("incremental_cost_cents")).alias("recovered_pct"),
         )
         rows.append(agg)
-    return pl.concat(rows, how="vertical")
+    from margin_engine.extended.inventory import scenario_timing_statement
+
+    return pl.concat(rows, how="vertical").with_columns(
+        pl.lit(rules.tariff_scenarios.cost_pool).alias("cost_pool"),
+        pl.lit(scenario_timing_statement(cost_method, rules.tariff_scenarios.cost_pool)).alias(
+            "cogs_timing"
+        ),
+    )
 
 
 def combined_scenario_no_double_count(
