@@ -16,6 +16,8 @@ import polars as pl
 
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
+from margin_engine.extended.cost_to_serve import run_cost_to_serve
+from margin_engine.extended.hierarchy import apply_analysis_level
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.manifest.run_manifest import (
@@ -70,7 +72,17 @@ def run_full(
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
 
     t = time.perf_counter()
-    flagged, peer_stats, _abc = run_dispersion(res.observations, res.reference["items"], rules)
+    cts = run_cost_to_serve(res.ledger, rules)
+    res.ledger = cts.lines
+    res.notes.extend(cts.notes)
+    timings["cost_to_serve"] = time.perf_counter() - t
+
+    t = time.perf_counter()
+    analysis_obs, h_notes = apply_analysis_level(
+        res.observations, res.reference["customers"], rules
+    )
+    res.notes.extend(h_notes)
+    flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
 
     t = time.perf_counter()
@@ -116,6 +128,9 @@ def run_full(
         "sensitivity": sens,
         "opportunities": opps,
         "leakage": leak,
+        "order_economics": cts.order_economics,
+        "customer_economics": cts.customer_economics,
+        "service_policy_flags": cts.service_flags,
         "reconciliation": res.reconciliation.to_frame(),
     }
     if res.unallocated_settlements is not None and res.unallocated_settlements.height:
