@@ -507,3 +507,33 @@ error return with fee and billed freight (pocket -262.00, CTS 27.00 on the
 planted numbers) and defective return with no recovery, both exact; planted
 recovery test asserts fees/freight/reasons recover exactly on a generated
 world. CLAUDE.md 5.2/5.3/8.10 updated.
+
+---
+## Phase 8.3 — Sample data, estimated returns path, settlement residuals (2026-10-14)
+
+**1. Committed sample data.** data/sample regenerated with the current
+generator (seed 7, 30 customers, includes the return-economics columns and the
+return_freight_log). New test runs the README demo command (CLI `run`) against
+the committed sample and asserts exit 0, reconciliation PASS and a rendered
+report — committed data can no longer drift from the mapping or generator.
+
+**2. Estimated returns path.** New fixture strips RESTOCK_FEE,
+RTN_FRT_BILLED and the return_freight_log from the mapping and asserts the
+policy defaults apply (15% customer-error fee estimate, billed freight =
+estimated expense when the customer pays, default handling), every amount is
+labeled `estimated`, and the run reconciles. New `return_handling_status`
+column: `estimated` when handling comes from config defaults (always, today);
+a future source of actual handling charges would set `actual`.
+
+**3. Settlement residuals.** Signed allocation now flips the sign of a group
+whose total signed weight is negative (shares amount x w / W are unchanged by
+negating both), so return-only settlement groups allocate instead of becoming
+residual; only groups with NO matching lines (or an exactly-zero signed basis)
+remain unallocated. Those settlements are listed individually (customer,
+period, program, amount) in a new `unallocated_settlements` export and a
+report table, and the reconciliation rows for every allocation check now carry
+allocated, residual and source total as separate amounts (reconciliation.csv
+and the HTML report). Fixtures: return-only group allocates -3.00 to the
+return line (pocket -97.00) while a line-less settlement stays listed with a
+7.00 residual; allocation-level tests cover all-negative and exactly-zero
+signed groups.

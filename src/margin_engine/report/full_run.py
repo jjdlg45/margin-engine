@@ -118,6 +118,8 @@ def run_full(
         "leakage": leak,
         "reconciliation": res.reconciliation.to_frame(),
     }
+    if res.unallocated_settlements is not None and res.unallocated_settlements.height:
+        exports["unallocated_settlements"] = res.unallocated_settlements
     for fmt in rules.reporting.output_formats:
         if fmt == "parquet":
             for name, frame in exports.items():

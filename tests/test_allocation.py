@@ -96,11 +96,22 @@ def test_property_sums_exact_and_within_one_cent(weights: list[int], amount: int
 def test_property_signed_weights(weights: list[int], amount: int) -> None:
     out = _alloc(weights, amount, signed_driver=True)
     total_w = sum(weights)
-    if total_w <= 0:
-        # Unallocatable group: left to the caller's residual report.
+    if total_w == 0:
+        # Only an exactly-zero signed total is unallocatable.
         assert all(a == 0 for a in out)
         return
     assert sum(out) == amount
     for a, w in zip(out, weights, strict=True):
         exact = Fraction(amount * w, total_w)
         assert abs(Fraction(a) - exact) < 1, (a, exact)
+
+
+def test_return_only_group_allocates_fully() -> None:
+    """A settlement over a return-only group (all-negative signed weights) is
+    allocated, not left as residual: the single return line carries the whole
+    (negative) settlement amount."""
+    assert _alloc([-10_000], -300, signed_driver=True) == [-300]
+    # Two returns split proportionally: exact shares -200 / -100 of -300.
+    assert _alloc([-10_000, -5_000], -300, signed_driver=True) == [-200, -100]
+    # Exactly offsetting sale and return: no defined shares, unallocatable.
+    assert _alloc([5_000, -5_000], -300, signed_driver=True) == [0, 0]

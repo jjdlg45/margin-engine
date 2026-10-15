@@ -565,3 +565,113 @@ def test_defective_return_no_recovery(tmp_path: Path) -> None:
     assert ret["return_freight_exp_cents"] == 850
     assert ret["return_handling_cents"] == 1_500 + 6 * 50
     assert ret["cost_to_serve_cents"] == 850 + 1_800
+
+
+def test_return_only_settlement_group_allocates(tmp_path: Path) -> None:
+    """A settlement for a quarter where the customer only has a return (rebate
+    give-back, negative settlement) is allocated to the return line — not left
+    as residual. Residual remains only for settlements with no lines at all."""
+    w = FixtureWorld(tmp_path)
+    w.add_item("X1")
+    w.add_list_price("X1", "01/01/2024", "100.00")
+    w.add_line(
+        INV_NO="RET1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=-1,
+        UNIT_PRC="100.00",
+        EXT_NET="-100.00",
+        LIST_PRC="100.00",
+        UNIT_CST="50.0000",
+        TXN_CD="R",
+        ORIG_INV="INV0",
+        INV_DT="02/10/2024",
+        REASON_CD="DEFECT",
+    )
+    w.rebate_settlements.append(
+        {"CUST_NO": "C1", "PERIOD": "2024-Q1", "PGM_ID": "RP1", "AMT": "-3.00"}
+    )
+    # A second settlement with NO lines anywhere: must be listed, not forced.
+    w.rebate_settlements.append(
+        {"CUST_NO": "C9", "PERIOD": "2024-Q1", "PGM_ID": "RP1", "AMT": "7.00"}
+    )
+    data = w.write()
+    res = run_pipeline(data, MAPPING, Rules())
+    assert res.reconciliation.all_pass
+    ret = line(res.ledger, "L1")
+    assert ret["rebate_settlement_alloc_cents"] == -300
+    # Pocket gives the rebate back: -100.00 - (-3.00) = -97.00.
+    assert ret["pocket_revenue_cents"] == -10_000 + 300
+    # Only the line-less settlement remains as residual, listed individually.
+    assert res.reconciliation.residuals["settlement_rebates_unallocated_cents"] == 700
+    assert res.unallocated_settlements is not None
+    listed = res.unallocated_settlements.to_dicts()
+    assert len(listed) == 1
+    assert listed[0]["customer_id"] == "C9"
+    assert listed[0]["period"] == "2024-Q1"
+    assert listed[0]["amount_cents"] == 700
+    # Reconciliation row carries the three component amounts separately.
+    settle_check = next(
+        c for c in res.reconciliation.checks if c["check"] == "settlement_rebate_allocation"
+    )
+    assert settle_check["allocated_cents"] == -300
+    assert settle_check["residual_cents"] == 700
+    assert settle_check["source_total_cents"] == 400
+
+
+def test_estimated_return_economics_path(tmp_path: Path) -> None:
+    """Mapping WITHOUT restocking fee / billed return freight / return freight
+    log: policy defaults apply, everything is labeled estimated, and the run
+    reconciles."""
+    import yaml as _yaml
+
+    w = FixtureWorld(tmp_path)
+    w.add_item("X1")
+    w.add_list_price("X1", "01/01/2024", "80.00")
+    w.add_line(
+        INV_NO="INV1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=10,
+        UNIT_PRC="80.00",
+        EXT_NET="800.00",
+        LIST_PRC="80.00",
+        UNIT_CST="40.0000",
+    )
+    w.add_line(
+        INV_NO="RET1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=-4,
+        UNIT_PRC="80.00",
+        EXT_NET="-320.00",
+        LIST_PRC="80.00",
+        UNIT_CST="40.0000",
+        TXN_CD="R",
+        ORIG_INV="INV1",
+        INV_DT="04/10/2024",
+        REASON_CD="CUST_ERR",
+    )
+    data = w.write()
+    # Strip the actual-return-economics declarations from the mapping.
+    raw = _yaml.safe_load(MAPPING.read_text(encoding="utf-8"))
+    del raw["lines"]["restocking_fee"]
+    del raw["lines"]["return_freight_billed"]
+    del raw["reference_tables"]["return_freight_log"]
+    stripped = tmp_path / "mapping_no_returns.yaml"
+    stripped.write_text(_yaml.safe_dump(raw), encoding="utf-8")
+
+    res = run_pipeline(data, stripped, Rules())
+    assert res.reconciliation.all_pass
+    ret = line(res.ledger, "L2")
+    # Policy: customer_error -> 15% restocking fee estimate = $48.00; customer
+    # pays return freight -> billed estimate equals the estimated expense
+    # (config default $12.00 per return).
+    assert ret["return_freight_exp_cents"] == 1_200
+    assert ret["return_freight_exp_status"] == "estimated"
+    assert ret["return_recovery_cents"] == 4_800 + 1_200
+    assert ret["return_recovery_status"] == "estimated"
+    assert ret["return_handling_cents"] == 1_500 + 4 * 50
+    assert ret["return_handling_status"] == "estimated"
+    assert ret["pocket_revenue_cents"] == -32_000 + 6_000
+    assert any("estimated" in n for n in res.notes)

@@ -21,7 +21,16 @@ class ReconciliationReport:
     checks: list[dict[str, Any]] = field(default_factory=list)
     residuals: dict[str, int] = field(default_factory=dict)
 
-    def add(self, name: str, expected_cents: int, actual_cents: int) -> None:
+    def add(
+        self,
+        name: str,
+        expected_cents: int,
+        actual_cents: int,
+        *,
+        allocated_cents: int | None = None,
+        residual_cents: int | None = None,
+        source_total_cents: int | None = None,
+    ) -> None:
         ok = expected_cents == actual_cents
         self.checks.append(
             {
@@ -29,6 +38,9 @@ class ReconciliationReport:
                 "expected_cents": expected_cents,
                 "actual_cents": actual_cents,
                 "diff_cents": actual_cents - expected_cents,
+                "allocated_cents": allocated_cents,
+                "residual_cents": residual_cents,
+                "source_total_cents": source_total_cents,
                 "pass": ok,
             }
         )
@@ -80,27 +92,42 @@ def reconcile(
     )
     # 3. Billed charges: allocated + residual == source table total.
     if order_charges is not None:
+        alloc = int(wf["billed_charge_alloc_cents"].fill_null(0).sum())
+        resid = residuals.get("billed_charges_unallocated_cents", 0)
+        total = int(order_charges["amount_cents"].sum())
         rep.add(
             "billed_charges_allocation",
-            int(order_charges["amount_cents"].sum()),
-            int(wf["billed_charge_alloc_cents"].fill_null(0).sum())
-            + residuals.get("billed_charges_unallocated_cents", 0),
+            total,
+            alloc + resid,
+            allocated_cents=alloc,
+            residual_cents=resid,
+            source_total_cents=total,
         )
     # 4. Settlement rebates: allocated + residual == settlement table total.
     if rebate_settlements is not None:
+        alloc = int(wf["rebate_settlement_alloc_cents"].fill_null(0).sum())
+        resid = residuals.get("settlement_rebates_unallocated_cents", 0)
+        total = int(rebate_settlements["amount_cents"].sum())
         rep.add(
             "settlement_rebate_allocation",
-            int(rebate_settlements["amount_cents"].sum()),
-            int(wf["rebate_settlement_alloc_cents"].fill_null(0).sum())
-            + residuals.get("settlement_rebates_unallocated_cents", 0),
+            total,
+            alloc + resid,
+            allocated_cents=alloc,
+            residual_cents=resid,
+            source_total_cents=total,
         )
     # 5. Freight expense: allocated + residual == freight log total.
     if freight_log is not None:
+        alloc = int(wf["freight_expense_alloc_cents"].fill_null(0).sum())
+        resid = residuals.get("freight_expense_unallocated_cents", 0)
+        total = int(freight_log["amount_cents"].sum())
         rep.add(
             "freight_expense_allocation",
-            int(freight_log["amount_cents"].sum()),
-            int(wf["freight_expense_alloc_cents"].fill_null(0).sum())
-            + residuals.get("freight_expense_unallocated_cents", 0),
+            total,
+            alloc + resid,
+            allocated_cents=alloc,
+            residual_cents=resid,
+            source_total_cents=total,
         )
     # 5b. Return freight expense: actual allocations + residual == log total.
     if return_freight_log is not None:
@@ -110,10 +137,15 @@ def reconcile(
                 & (pl.col("return_freight_exp_status") == "actual")
             )["return_freight_exp_cents"].sum()
         )
+        resid = residuals.get("return_freight_unallocated_cents", 0)
+        total = int(return_freight_log["amount_cents"].sum())
         rep.add(
             "return_freight_allocation",
-            int(return_freight_log["amount_cents"].sum()),
-            actual_alloc + residuals.get("return_freight_unallocated_cents", 0),
+            total,
+            actual_alloc + resid,
+            allocated_cents=actual_alloc,
+            residual_cents=resid,
+            source_total_cents=total,
         )
     # 6. Stage identity on sale lines: pocket = invoice - deductions + credits.
     sale = wf.filter(pl.col("transaction_type") == "sale")

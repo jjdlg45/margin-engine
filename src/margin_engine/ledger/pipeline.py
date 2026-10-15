@@ -29,6 +29,7 @@ class PipelineResult:
     observations: pl.DataFrame  # clean sales for behavioral estimation
     removed_duplicates: pl.DataFrame
     reconciliation: ReconciliationReport
+    unallocated_settlements: pl.DataFrame | None
     reference: dict[str, pl.DataFrame | None]
     notes: list[str]
 
@@ -93,6 +94,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         observations=obs,
         removed_duplicates=classified.removed_duplicates,
         reconciliation=report,
+        unallocated_settlements=wf.unallocated_settlements,
         reference=ref,
         notes=notes,
     )

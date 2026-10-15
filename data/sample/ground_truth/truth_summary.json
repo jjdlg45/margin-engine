@@ -55,6 +55,7 @@
       "base_qty_log_mean": 2.6,
       "base_qty_log_sd": 0.7,
       "qty_noise_sd": 0.2,
+      "qty_process": "loglinear",
       "purchase_prob": 0.6
     }
   },
@@ -105,11 +106,11 @@
   "naive_bias_direction": "toward_zero",
   "naive_bias_explanation": "Reps discount when the demand shock is negative (endogeneity_gamma > 0), so realized price covaries positively with unobserved demand. OLS on realized prices is therefore biased upward, i.e. toward zero / less negative than the true elasticity.",
   "mess_counts": {
-    "returns": 250,
-    "credits": 15,
-    "missing_cost": 79,
-    "uom_alt": 146,
-    "verified_dup_keys": 30,
+    "returns": 251,
+    "credits": 14,
+    "missing_cost": 80,
+    "uom_alt": 150,
+    "verified_dup_keys": 29,
     "lookalike_dups": 20,
     "data_quality_outliers": 15,
     "commercial_outliers": 18,
@@ -117,14 +118,14 @@
     "zero_cost_service_lines": 83
   },
   "planted_totals_cents": {
-    "net_cents": 720390536,
-    "line_rebate_cents": 5774578,
-    "settlement_rebate_cents": 9112093,
-    "freight_concession_cents": 4066540,
-    "freight_expense_cents": 10032563,
+    "net_cents": 721216833,
+    "line_rebate_cents": 5767256,
+    "settlement_rebate_cents": 9144003,
+    "freight_concession_cents": 4085951,
+    "freight_expense_cents": 10056703,
     "billed_freight_cents": 3634211,
-    "vendor_rebate_cents": 2779286
+    "vendor_rebate_cents": 2790530
   },
-  "n_lines_exported": 7336,
+  "n_lines_exported": 7334,
   "n_customers": 30
 }

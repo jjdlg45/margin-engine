@@ -85,3 +85,36 @@ def test_csv_money_columns_in_dollars(full_run: tuple[Path, FullRunResult]) -> N
     df = pl.read_csv(out / "leakage.csv")
     assert any(c.endswith("_usd") for c in df.columns)
     assert not any(c.endswith("_cents") for c in df.columns)
+
+
+def test_committed_sample_runs_via_cli(tmp_path: Path) -> None:
+    """The README demo command must work on the committed sample dataset, so
+    data/sample can never drift from the current mapping or generator."""
+    from typer.testing import CliRunner
+
+    from margin_engine.cli import app
+
+    sample = REPO / "data" / "sample" / "erp"
+    assert sample.exists(), "committed sample dataset missing"
+    rules = yaml.safe_load((REPO / "config" / "rules.yaml").read_text(encoding="utf-8"))
+    rules["segmentation"]["bootstrap_resamples"] = 2
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text(yaml.safe_dump(rules), encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--data",
+            str(sample),
+            "--mapping",
+            str(MAPPING),
+            "--rules",
+            str(rules_path),
+            "--out",
+            str(tmp_path / "out"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Reconciliation: PASS" in result.output
+    assert (tmp_path / "out" / "report.html").exists()

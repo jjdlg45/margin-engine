@@ -56,13 +56,20 @@ def allocate_exact(
     work = work.with_columns((w if signed_driver else w.abs()).alias("_w"))
     work = work.with_columns(pl.col("_w").sum().over(group_key).alias("_w_sum"))
     if signed_driver:
-        # Unallocatable groups (driver sum <= 0): zero the amount; residual is
-        # total minus allocated, computed by the caller.
+        # A negative total (e.g. a return-only settlement group) still has
+        # well-defined shares: amount x w / W == amount x (-w) / (-W), so flip
+        # the group's signs and allocate normally. Only an exactly-zero total
+        # is unallocatable (zeroed here; the caller reports the residual).
+        flip = pl.col("_w_sum") < 0
         work = work.with_columns(
-            pl.when(pl.col("_w_sum") <= 0).then(0).otherwise(pl.col("_grp_amt")).alias("_grp_amt")
+            pl.when(flip).then(-pl.col("_w")).otherwise(pl.col("_w")).alias("_w"),
+            pl.when(flip).then(-pl.col("_w_sum")).otherwise(pl.col("_w_sum")).alias("_w_sum"),
+        )
+        work = work.with_columns(
+            pl.when(pl.col("_w_sum") == 0).then(0).otherwise(pl.col("_grp_amt")).alias("_grp_amt")
         ).with_columns(
-            pl.when(pl.col("_w_sum") <= 0).then(0).otherwise(pl.col("_w")).alias("_w"),
-            pl.when(pl.col("_w_sum") <= 0).then(1).otherwise(pl.col("_w_sum")).alias("_w_sum"),
+            pl.when(pl.col("_w_sum") == 0).then(0).otherwise(pl.col("_w")).alias("_w"),
+            pl.when(pl.col("_w_sum") == 0).then(1).otherwise(pl.col("_w_sum")).alias("_w_sum"),
         )
     else:
         # Zero-driver groups: equal weights.

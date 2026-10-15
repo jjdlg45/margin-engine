@@ -31,6 +31,9 @@ class WaterfallResult:
     lines: pl.DataFrame
     residuals: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    # Settlement rows that could not be attributed to any line (no lines in
+    # the customer-period group, or an exactly-zero signed basis).
+    unallocated_settlements: pl.DataFrame | None = None
 
 
 def normalize_quantity(
@@ -153,6 +156,7 @@ def _return_economics(
         pl.lit(0, dtype=pl.Int64).alias("return_freight_exp_cents"),
         pl.lit(None, dtype=pl.String).alias("return_recovery_status"),
         pl.lit(None, dtype=pl.String).alias("return_freight_exp_status"),
+        pl.lit(None, dtype=pl.String).alias("return_handling_status"),
     ]
     rets = lines.filter(is_ret)
     if rets.height == 0:
@@ -215,13 +219,16 @@ def _return_economics(
         .alias("return_freight_exp_cents")
     )
 
-    # --- handling (always a config estimate) ------------------------------
+    # --- handling ----------------------------------------------------------
+    # Today handling always comes from config defaults (status `estimated`);
+    # a future source of actual handling charges would set `actual` here.
     rets = rets.with_columns(
         (
             pl.lit(rc.default_handling_cost_per_return_cents, dtype=pl.Int64)
             + pl.lit(rc.default_handling_cost_per_unit_cents, dtype=pl.Int64)
             * pl.col("quantity").abs().round(0).cast(pl.Int64)
-        ).alias("return_handling_cents")
+        ).alias("return_handling_cents"),
+        pl.lit("estimated").alias("return_handling_status"),
     )
 
     # --- recovery revenue --------------------------------------------------
@@ -363,6 +370,28 @@ def build_waterfall(
             "rebate_settlement_alloc_cents",
             signed_driver=True,
         )
+        # A settlement is allocated whenever its group's total signed weight is
+        # nonzero (return-only groups allocate too). Residual arises ONLY when
+        # no lines match the group (or the signed total is exactly zero); those
+        # settlements are listed individually for the report.
+        alloc_by_group = dict(
+            sale_lines.group_by("_settle_key")
+            .agg(pl.col("rebate_settlement_alloc_cents").sum())
+            .iter_rows()
+        )
+        unallocated = (
+            rebate_settlements.with_columns(
+                (pl.col("customer_id") + "|" + pl.col("period")).alias("_settle_key")
+            )
+            .with_columns(
+                pl.col("_settle_key")
+                .replace_strict(alloc_by_group, default=0, return_dtype=pl.Int64)
+                .alias("_allocated")
+            )
+            .filter((pl.col("_allocated") == 0) & (pl.col("amount_cents") != 0))
+            .drop("_settle_key", "_allocated")
+        )
+        unallocated_settlements = unallocated
         lines = pl.concat(
             [
                 sale_lines.with_columns(
@@ -383,10 +412,11 @@ def build_waterfall(
         residuals["settlement_rebates_unallocated_cents"] = total_settle - alloc_settle
         if total_settle - alloc_settle:
             notes.append(
-                "part of settlement rebates could not be allocated (no matching "
-                "customer-period sale lines); kept as visible residual"
+                f"{unallocated.height} settlement row(s) have no matching lines in "
+                f"their customer-period group; kept as visible residual"
             )
     else:
+        unallocated_settlements = None
         lines = lines.with_columns(
             pl.lit(0, dtype=pl.Int64).alias("rebate_settlement_alloc_cents"),
             pl.lit(None, dtype=pl.String).alias("rebate_settlement_status"),
@@ -606,4 +636,9 @@ def build_waterfall(
     lines = lines.with_columns(
         (pl.col("pocket_gp_cents") - pl.col("cost_to_serve_cents")).alias("contribution_cents")
     )
-    return WaterfallResult(lines=lines, residuals=residuals, notes=notes)
+    return WaterfallResult(
+        lines=lines,
+        residuals=residuals,
+        notes=notes,
+        unallocated_settlements=unallocated_settlements,
+    )

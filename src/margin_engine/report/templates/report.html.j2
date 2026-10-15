@@ -33,12 +33,24 @@
   <span class="kpi"><span class="v">{{ coverage.missing_cost_revenue_share }}</span>revenue with missing cost</span>
 </div>
 <table>
-  <tr><th>Reconciliation check</th><th>Expected (cents)</th><th>Actual (cents)</th><th>Status</th></tr>
+  <tr><th>Reconciliation check</th><th>Expected (cents)</th><th>Actual (cents)</th><th>Allocated</th><th>Residual</th><th>Source total</th><th>Status</th></tr>
   {% for c in reconciliation %}
   <tr><td>{{ c.check }}</td><td>{{ c.expected_cents }}</td><td>{{ c.actual_cents }}</td>
+      <td>{{ c.allocated_cents if c.allocated_cents is not none else "-" }}</td>
+      <td>{{ c.residual_cents if c.residual_cents is not none else "-" }}</td>
+      <td>{{ c.source_total_cents if c.source_total_cents is not none else "-" }}</td>
       <td><span class="status {{ 'ok' if c.pass else 'bad' }}">{{ 'PASS' if c.pass else 'FAIL' }}</span></td></tr>
   {% endfor %}
 </table>
+{% if unallocated_settlements %}
+<p class="muted">Unallocated settlements (no matching lines in the customer-period group):</p>
+<table>
+  <tr><th>Customer</th><th>Period</th><th>Program</th><th>Amount (cents)</th></tr>
+  {% for u in unallocated_settlements %}
+  <tr><td>{{ u.customer_id }}</td><td>{{ u.period }}</td><td>{{ u.rebate_program_id }}</td><td>{{ u.amount_cents }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% if residuals %}
 <p class="muted">Visible residuals (dollars kept, not forced onto lines):
   {% for r in residuals %}{{ r.residual }} = {{ r.amount_cents }}c{{ ", " if not loop.last }}{% endfor %}</p>
