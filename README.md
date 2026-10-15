@@ -139,12 +139,21 @@ No code changes are needed for a new source system.
 - Validation demonstrates recovery of planted truth in synthetic worlds. It
   does not demonstrate real-world accuracy beyond what those tests measure.
 
+## Run 2 modules (delivered)
+
+Multi-currency conversion with per-currency reconciliation; customer
+hierarchies (ship-to / bill-to / parent analysis levels) and price-protected
+contracts; tiered retrospective rebates (accruals trued up at settlement, both
+shown and labeled); kit revenue allocation and free goods as their own type;
+activity-based cost-to-serve with order/customer economics and service-policy
+flags; receipts-based inventory costing (standard / average / FIFO) with
+honest COGS-timing statements; data-driven KVI candidates with tightened
+corridors; quote win/loss curves with win-aware optimization; cross-price
+effects within substitution groups. Each module switches off (and says so)
+when its input data is absent. Validation per module in `docs/build-log.md`.
+
 ## Roadmap
 
-- Run 2: multi-currency and UOM, customer hierarchies and contracts, tiered
-  retrospective rebates, kits and free goods, cost-to-serve activity rates,
-  inventory costing timing, product roles / KVI candidates, quotes and
-  win/loss, substitution and cross-price effects.
 - Run 3: FastAPI service, React UI, optional plain-English explanation agent
   (computed outputs only; the engine runs fully without it).
 

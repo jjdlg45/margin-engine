@@ -537,3 +537,219 @@ and the HTML report). Fixtures: return-only group allocates -3.00 to the
 return line (pocket -97.00) while a line-less settlement stays listed with a
 7.00 residual; allocation-level tests cover all-negative and exactly-zero
 signed groups.
+
+---
+## Phase 9 — Multi-currency and units of measure (2026-10-14)
+
+**Built**
+- Generator: per-customer currencies (`currency_shares`, default single-currency
+  so every Run-1 world stays byte-identical — the currency draw is skipped and
+  the fx path uses its own RNG stream seed+777), planted monthly USD-per-unit
+  fx path (random walk, exported as fx_rates.csv, horizon +2 months for lagged
+  returns), revenue-side money on foreign lines converted to local currency
+  with exact integer math; internal USD values stashed as usd_* for truth
+  totals. Costs, price list and expense logs stay in the reporting currency
+  (a US distributor invoicing abroad at the month's rate).
+- Engine: `ingest/fx.py` — mapping fields declare `currency: line_currency`;
+  conversion at ingest at the invoice-month rate (policy `invoice_date`;
+  other policies fail closed as unimplemented), originals kept in *_src
+  columns + fx_rate_ppm per line; settlements convert at the quarter's
+  last-month rate, order charges at the order month's rate (customer/order
+  currency derived from lines; a customer in two currencies is an actionable
+  error). Missing rate for any currency-period: actionable error with pairs
+  listed. Reconciliation adds per-currency source conservation checks.
+- UOM side was built in Phase 2 (normalization + conversions + exact fixture);
+  Phase 9 adds the combined mixed-currency + mixed-UOM fixture.
+
+**Verification**
+- Mixed-currency fixture exact: EUR 100.00 @ 1.25 -> $125.00; deductions
+  converted at the same rate; cost stays USD; per-currency conservation exact.
+- Combined currency+UOM fixture exact (24 EA EUR line -> 2 CS, $220.00 net,
+  USD gross list 240.00).
+- Fail-closed: missing rate and missing fx table raise actionable errors.
+- Generated mixed world (USD/EUR/GBP): all reconciliation checks pass incl.
+  per-currency; engine conversions exactly reproducible from exported amounts
+  + fx table; converted ledger total within 2c/line of the planted USD world
+  (round-trip rounding only; verified dup copies excluded as always).
+- ruff, mypy strict, full pytest suite: see phase commit.
+
+---
+## Phase 10 — Customer hierarchies and contracts (2026-10-14)
+
+**Built:** generator bill-to grouping (~30% of ship-tos share bill-tos in 2-3s;
+separate RNG stream seed+555 keeps existing worlds identical) exported in
+customers.csv; `hierarchy` config section (analysis_level ship_to | bill_to |
+parent, 8.10 updated); `extended/hierarchy.py` swaps the analysis key on
+analytics frames (ship-to id kept for audit; ledger always ship-to grain),
+wired into the full run before dispersion/segmentation.
+
+**Verification:** hierarchy map falls back to self for unassigned levels;
+bill-to grouping reduces distinct analysis customers without moving a cent;
+ship_to level is identity. National-agreement vs local-branch behavior
+separated as planted: within national contract pairs the median price spread is
+< 0.002 vs > 0.01 on open-market pairs. End-to-end on a generated world:
+contract-protected pairs receive zero opportunity records. 5/5 tests.
+
+## Phase 11 — Tiered and retrospective rebates (2026-10-14)
+
+**Built:** generator plants a shared tiered program (TIER01): data-driven
+thresholds (P50/P85 of tiered customers' customer-year nets), rates 1/2/3%,
+per-line accrual truth (rate of the tier of cumulative YTD net including the
+line) and retrospective FY settlements (final-tier rate x full-year net),
+exported as rebate_program_tiers.csv and tiered_settlements.csv. Engine
+`extended/tiered.py`: accruals (estimated) during the period; settled
+customer-years allocate the actual (largest remainder, signed) and the
+waterfall USES it (labels in tiered_rebate_status; accruals stay visible);
+true-up = actual - accrued reported; unallocatable settlements residual +
+reconciliation check; pocket identity extended. Tiered programs measure and
+settle in the reporting currency.
+
+**Verification:** hand fixtures exact (accrual 1%/2% tier walk; settlement
+true-up +6.00; line-less settlement residual); planted tier rates and accruals
+recover exactly on customer-years free of planted look-alike-duplicate
+ambiguity (flagged uncertain rows accrue as genuine until resolved — every
+mismatch sits in a contaminated customer-year, asserted); all three planted
+tiers occur; accrual vs settlement reconciles (allocated + residual == table;
+true-up identity). 5/5 tests.
+
+## Phase 12 — Kits, bundles and free goods (2026-10-14)
+
+**Built:** generator kits (~1.5% of sale lines spawn 2-3 zero-priced component
+lines sharing a KIT id; components carry real cost and planted vendor-rebate
+truth) and free goods (zero-price promo lines, transaction code F). Mapping:
+kit_parent_id field + free_good transaction type. Engine `_kit_allocation`:
+within (invoice, kit), parent revenue reallocates to components by relative
+standalone price (effective list x normalized qty, largest remainder); parent
+labeled and zeroed; reallocation nets to zero per kit with a reconciliation
+check; config waterfall.kit_allocation_method. Free goods are their own
+transaction type: excluded from observations and dispersion entirely, zero
+pocket revenue, real cost kept.
+
+**Verification:** hand fixtures exact (60/40 split; non-divisible Hamilton sum
+10001 -> 3334/3334/3333); generated kits reallocate to exactly zero per kit;
+free goods never reach dispersion; classification fixture. 5/5 tests.
+
+## Phase 13 — Cost-to-serve and order economics (2026-10-14)
+
+**Built:** `cost_to_serve` config section (per-order/line/delivery rates,
+special handling, service-policy thresholds; 8.10 updated); engine
+`extended/cost_to_serve.py`: activity costs per sale line (per-order+delivery
+split exactly across the order's sale lines by largest remainder; deliveries
+proxied by orders, labeled), folded into cost-to-serve and contribution;
+order-level and customer-level economics tables; service-policy flags
+(minimum order value, delivery frequency) kept strictly separate from pricing
+opportunities. Freight-expense allocation upgraded to the weight driver (spec
+allocation priority) now that item weights flow through. Generator plants
+unprofitable small-order customers (~6%, every line its own tiny order; RNG
+stream seed+444; ids in truth summary). Full run exports order/customer
+economics and service flags.
+
+**Verification:** hand-calc activity fixture exact (13.50+1.50 per line,
+conservation 30.00/order); every planted small-order customer flagged (all
+show strongly negative contribution); order and customer economics reconcile
+to line sums exactly; activity conservation exact (orders x 27.00 + lines x
+1.50). min_order_value default set to $500 (realistic distributor minimum;
+documented policy choice). 3/3 tests.
+
+---
+## Phase 14 — Inventory costing timing (2026-10-14/15)
+
+**Built:** `extended/inventory.py` — receipts-based COGS under standard,
+average (moving weighted average with exact value conservation: the pool
+decreases by exactly the rounded COGS) and FIFO (layer consumption), all
+integer cents; sales beyond receipts costed at last known cost and FLAGGED
+(`insufficient_receipts`), never invented. Generator exports receipts.csv
+(monthly receipts covering ~115% of sold units at the planted month cost).
+Tariff scenarios now carry cost_pool and an honest `cogs_timing` statement per
+method (FIFO: after existing layers; average: immediate dilution; standard: at
+the next revision — a policy, stated not guessed).
+
+**Verification:** timing fixtures exact per method (FIFO 5000/11000/6000;
+average 5000/11333/5667 with exact conservation through rounding; standard at
+declared or first-receipt cost); insufficient receipts flagged; generated
+receipts cost the whole world under all methods with zero shortage flags and
+exact value identities. 8/8 tests.
+
+## Phase 15 — Product roles and key value items (2026-10-14/15)
+
+**Built:** `extended/kvi.py` — data-driven KVI candidate score: percentile
+ranks of order frequency, customer breadth, and price comparability (low
+within-item IQR) at half weight; top configured share labeled CANDIDATES
+(`candidate_score_not_decision`). Role-specific guidance: KVI corridors pulled
+toward the segment median (`price_guidance.kvi_corridor_shrink`, labeled
+`kvi_tightened_corridor`). Generator plants real KVI behavior: broader
+carriage (+50% inclusion), higher purchase frequency (x1.6), tighter planted
+price dispersion (x0.3 pair sd — well-known street prices), all on separate
+RNG streams.
+
+**Verification:** planted-KVI recall in top candidates 96.6-97.1% across seeds
+12/22/33 (target >= 80%); corridor tightening strictly inside the normal band,
+centered on the same median, labeled; non-KVI corridors untouched. 2/2 tests
+(+ multi-seed measurement).
+
+## Phase 16 — Quotes and win/loss (2026-10-15)
+
+**Built:** generator quotes (own RNG stream seed+888): per-segment planted
+logistic win curves (b in [-8, -4], intercept calibrated to ~50% at typical
+index), ~1.2 quotes per pair, won deals close ~3% below quote; exported
+quotes.csv with outcomes and close prices. Engine `extended/quotes.py`:
+per-segment logistic fit of outcome on the quote price index (effective-dated
+list at quote date), uncertainty + evidence status (insufficient_data on few
+quotes / no variation / separation; estimated_win_curve otherwise);
+negotiation gap from won deals informs the start price; win-aware optimization
+argmax (P-C) x Q(P) x P_win(P) on a grid, floor-clipped, for causal+estimated
+segments only.
+
+**Verification:** planted win-curve price coefficient recovered with median
+relative error 4.4% (target <= 15%; worst 21.9% reported — one thin segment);
+negotiation gap recovered within 1pp; uncertainty and statuses always present;
+degenerate fits fail closed; steeper win curves pull the optimum down
+monotonically. 5/5 tests.
+
+## Phase 17 — Substitution and cross-price effects (2026-10-15)
+
+**Built:** generator substitution groups (opt-in `n_substitution_groups`,
+default 0 so Run-1 worlds keep clean own-price identification): same-category
+different-supplier item pairs (competing brands — which also keeps the two
+prices separable by supplier-cost instruments), co-carried by customers (80%
+partner inclusion, stream seed+112), with planted positive cross elasticities
+(U(0.3, 0.8), stream seed+111) entering partner demand. Engine
+`extended/substitution.py`: cross-price FE-2SLS ONLY within declared groups,
+[log pA, log pB] instrumented by both items' cost/tariff shocks; pair FE with
+explicit seasonal controls (month FE would absorb instruments entirely in a
+single-pair panel — found and documented); per-regressor cluster-robust
+first-stage F; statuses mirror Phase 6, including
+"instruments do not separate the two prices" for shared-supplier-and-category
+pairs — labeled, never estimated. Labeled substitution-recapture adjustment
+for price-increase scenarios (clip(cross/|own|, 0, 0.9) x substitute margin),
+shown next to, never merged into, the unadjusted number.
+
+**Verification:** 9/10 estimated cross effects positive (planted direction;
+target recovery on well_identified); estimates only within groups; every
+unsupported case carries a reason and no causal claim; causal-cross status
+requires min first-stage F >= 10 with reported SEs; adjustment labeled with
+the recapture rate. 4/4 tests.
+
+---
+## Run 2 final gating notes (2026-10-15)
+
+- The complete suite was re-gated three times; mid-run races from editing
+  shared files during an in-flight suite produced two phantom failure batches
+  (noted to avoid repeating: no edits during gating runs).
+- Real regressions caught and fixed by the gate: kit components lacked planted
+  vendor-rebate truth and cost flags; free-good copies inherited missing-cost
+  flags; the sparse preset stopped being sparse once KVI carriage boosted
+  volumes (now preset-disabled via kvi_carriage_prob).
+- KVI planting was softened (carriage 0.5 -> 0.35, frequency boost 1.6 -> 1.3,
+  dispersion factor 0.3 -> 0.5) after the original tuning distorted the
+  estimation worlds: CI coverage had dropped to 86.7%. After softening,
+  KVI recall IMPROVED to 96.7-100% and coverage returned to 0.900 — exactly at
+  the lower bound of the 90-98% target band. The thin margin is noted
+  honestly: coverage on this metric is boundary-tight, not comfortably inside.
+- The generator-level invalid/valid instrument checks now assert the PARTIAL
+  tariff effect (controlling for price): the raw correlation nets the planted
+  leak (+1.5) against the price channel (~-1.3) to near zero by construction.
+  A positive measurement-attenuation artifact (~0.3-0.5, monthly price
+  aggregation) exists even in valid worlds and is documented in the tests;
+  thresholds are 1.0 / 0.8 against the invalid preset's measured 1.8-2.0.
+  The engine-side gate remains the Phase 6 overidentification test.

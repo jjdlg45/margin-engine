@@ -429,4 +429,4 @@ ABC splits (revenue, unit and frequency versions): A = top 80%, B = next 15%, C 
 The overidentification test only detects an invalid instrument when the two instruments disagree. Exclusion restrictions remain economic assumptions that no test fully proves; the README must say so.
 
 ### 8.10 Config sections (`rules.yaml`)
-`schema, mapping, units_and_currency, transactions, returns, costing, waterfall, outliers, segmentation, price_guidance, sensitivity, opportunity, tariff_scenarios, reporting`
+`schema, mapping, units_and_currency, transactions, returns, hierarchy, cost_to_serve, costing, waterfall, outliers, segmentation, price_guidance, sensitivity, opportunity, tariff_scenarios, reporting`

@@ -20,6 +20,18 @@ for unit prices and costs). No monetary value that must reconcile ever passes
 through floating point. Rounding is half-even. Values with more than four
 decimals are refused rather than truncated.
 
+### Multi-currency (Run 2)
+
+List prices and costs are declared in the reporting currency; revenue amounts
+on foreign-customer lines arrive in the line's currency (the mapping declares
+`currency: line_currency`) and convert at ingest with exact integer arithmetic
+(half_even(cents x rate_ppm / 1e6)) at the invoice month's rate (policy
+`invoice_date`). Settlement amounts convert at their period's last-month rate;
+order charges at the order month's rate. Originals are kept in `*_src` columns
+with the applied rate per line; reconciliation conserves each currency's
+source total exactly. A missing rate is an actionable error — the engine never
+guesses an exchange rate.
+
 ## 2. Transaction classification and the two views
 
 Classification follows the spec's table: returns and credits are classified
