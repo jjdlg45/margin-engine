@@ -29,6 +29,8 @@ LINE_COLUMNS = [
     "REP_ID",
     "CHNL",
     "FRT_CONC",
+    "RESTOCK_FEE",
+    "RTN_FRT_BILLED",
     "REB_AMT",
     "REB_PGM",
     "CONTRACT_NO",
@@ -43,6 +45,8 @@ LINE_DEFAULTS: dict[str, str] = {
     "REP_ID": "REP1",
     "CHNL": "field",
     "FRT_CONC": "0.00",
+    "RESTOCK_FEE": "0.00",
+    "RTN_FRT_BILLED": "0.00",
     "REB_AMT": "0.00",
     "REB_PGM": "",
     "CONTRACT_NO": "",
@@ -66,6 +70,7 @@ class FixtureWorld:
     order_charges: list[dict[str, str]] = field(default_factory=list)
     freight_log: list[dict[str, str]] = field(default_factory=list)
     rebate_settlements: list[dict[str, str]] = field(default_factory=list)
+    return_freight_log: list[dict[str, str]] = field(default_factory=list)
     vendor_rebate_programs: list[dict[str, str]] = field(default_factory=list)
     landed_cost_components: list[dict[str, str]] = field(default_factory=list)
 
@@ -117,6 +122,7 @@ class FixtureWorld:
         dump("order_charges.csv", self.order_charges)
         dump("freight_log.csv", self.freight_log)
         dump("rebate_settlements.csv", self.rebate_settlements)
+        dump("return_freight_log.csv", self.return_freight_log)
         dump("vendor_rebate_programs.csv", self.vendor_rebate_programs)
         dump("landed_cost_components.csv", self.landed_cost_components)
         return self.tmp

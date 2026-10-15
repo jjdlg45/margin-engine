@@ -5,12 +5,18 @@ on a configurable observation unit (default: one median price per customer x
 item x month). Historical bands are NOT optimal prices and every target/start
 is labeled `provisional_historical` until Phase 7 optimization is supported.
 
-Economic floor (exact integer math, half-even):
+Economic floor (exact integer math, computed at FULL precision and rounded
+exactly once at the end):
     pocket floor  = C / (1 - m)
     invoice floor = (C / (1 - m) + F) / (1 - d)
 with C = unit product cost (cents), m = minimum pocket margin, F = fixed
 per-unit post-invoice deductions (cents), d = percentage post-invoice
 deductions (basis points).
+
+Rounding is policy (price_guidance.floor_rounding): "ceiling" by default — a
+floor exists to guarantee the minimum margin, and rounding it down would quietly
+break that guarantee by a fraction of a cent; "half_even" is available for
+deployments that prefer symmetric rounding and accept that property's loss.
 
 Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (corridor infeasible against the floor),
@@ -20,6 +26,7 @@ insufficient_data. Infeasible corridors are flagged, never relabeled.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import polars as pl
 
@@ -35,18 +42,44 @@ STATUS_IN_BAND = "in_band"
 STATUS_ABOVE_REFERENCE = "above_reference"
 STATUS_NO_HEADROOM = "insufficient_pricing_headroom"
 
+FloorRounding = Literal["ceiling", "half_even"]
 
-def pocket_floor_cents(cost_cents: pl.Expr, min_margin_bp: int) -> pl.Expr:
-    """C / (1 - m), half-even to the cent. m in basis points."""
-    return div_half_even_expr(cost_cents * 10_000, 10_000 - min_margin_bp)
+
+def _div_ceil_expr(numer: pl.Expr, denom: pl.Expr | int) -> pl.Expr:
+    """Ceiling division for positive denominators, exact integer arithmetic."""
+    return -((-numer).floordiv(denom))
+
+
+def pocket_floor_cents(
+    cost_cents: pl.Expr, min_margin_bp: int, rounding: FloorRounding = "ceiling"
+) -> pl.Expr:
+    """C / (1 - m) at full precision, rounded once. m in basis points."""
+    numer = cost_cents * 10_000
+    denom = 10_000 - min_margin_bp
+    if rounding == "ceiling":
+        return _div_ceil_expr(numer, denom)
+    return div_half_even_expr(numer, denom)
 
 
 def invoice_floor_cents(
-    cost_cents: pl.Expr, min_margin_bp: int, fixed_deduction_cents: pl.Expr, deduction_bp: pl.Expr
+    cost_cents: pl.Expr,
+    min_margin_bp: int,
+    fixed_deduction_cents: pl.Expr,
+    deduction_bp: pl.Expr,
+    rounding: FloorRounding = "ceiling",
 ) -> pl.Expr:
-    """(C/(1-m) + F) / (1 - d), half-even to the cent. d in basis points."""
-    pocket = pocket_floor_cents(cost_cents, min_margin_bp)
-    return div_half_even_expr((pocket + fixed_deduction_cents) * 10_000, 10_000 - deduction_bp)
+    """(C/(1-m) + F) / (1 - d) at FULL precision — no intermediate rounding of
+    the pocket floor — rounded once at the end. d in basis points.
+
+    Exact integer form:
+        (C*10^8 + F*(10^4 - m)*10^4) / ((10^4 - m) * (10^4 - d))
+    """
+    m_den = 10_000 - min_margin_bp
+    numer = cost_cents * 10_000 * 10_000 + fixed_deduction_cents * m_den * 10_000
+    denom = m_den * (10_000 - deduction_bp)
+    if rounding == "ceiling":
+        return _div_ceil_expr(numer, denom)
+    return div_half_even_expr(numer, denom)
 
 
 @dataclass
@@ -156,13 +189,17 @@ def build_guidance(
         pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"),
     )
 
+    rounding = pg.floor_rounding
     pair = pair.with_columns(
-        pocket_floor_cents(pl.col("unit_cost_cents"), min_margin_bp).alias("pocket_floor_cents"),
+        pocket_floor_cents(pl.col("unit_cost_cents"), min_margin_bp, rounding).alias(
+            "pocket_floor_cents"
+        ),
         invoice_floor_cents(
             pl.col("unit_cost_cents"),
             min_margin_bp,
             pl.col("fixed_deduction_cents"),
             pl.col("deduction_bp"),
+            rounding,
         ).alias("invoice_floor_cents"),
     ).with_columns(
         pl.when(pl.col("eff_list_cents") > 0)

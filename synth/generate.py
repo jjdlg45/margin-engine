@@ -38,12 +38,14 @@ from synth.output import export_erp_lines, export_ground_truth, export_reference
 
 _DEFAULT_COLUMNS: dict[str, Any] = {
     "credit_reason": None,
+    "return_reason_code": None,
     "original_invoice_ref": None,
     "truth_zero_qty": False,
     "truth_uom_alt": False,
     "truth_dup_type": "",
     "truth_outlier_type": "",
 }
+_DEFAULT_INT_COLUMNS = ["restock_fee_cents", "rtn_frt_billed_cents", "truth_rtn_frt_exp_cents"]
 
 
 def _ensure_columns(lines: pl.DataFrame) -> pl.DataFrame:
@@ -52,7 +54,11 @@ def _ensure_columns(lines: pl.DataFrame) -> pl.DataFrame:
         for k, v in _DEFAULT_COLUMNS.items()
         if k not in lines.columns
     ]
-    return lines.with_columns(missing) if missing else lines
+    lines = lines.with_columns(missing) if missing else lines
+    int_missing = [
+        pl.lit(0, dtype=pl.Int64).alias(c) for c in _DEFAULT_INT_COLUMNS if c not in lines.columns
+    ]
+    return lines.with_columns(int_missing) if int_missing else lines
 
 
 def generate(cfg: GeneratorConfig, out_dir: Path) -> dict[str, Any]:

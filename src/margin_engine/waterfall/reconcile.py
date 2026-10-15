@@ -56,6 +56,7 @@ def reconcile(
     order_charges: pl.DataFrame | None = None,
     freight_log: pl.DataFrame | None = None,
     rebate_settlements: pl.DataFrame | None = None,
+    return_freight_log: pl.DataFrame | None = None,
 ) -> ReconciliationReport:
     rep = ReconciliationReport(residuals=dict(residuals))
     wf = waterfall_lines
@@ -100,6 +101,19 @@ def reconcile(
             int(freight_log["amount_cents"].sum()),
             int(wf["freight_expense_alloc_cents"].fill_null(0).sum())
             + residuals.get("freight_expense_unallocated_cents", 0),
+        )
+    # 5b. Return freight expense: actual allocations + residual == log total.
+    if return_freight_log is not None:
+        actual_alloc = int(
+            wf.filter(
+                (pl.col("transaction_type") == "return")
+                & (pl.col("return_freight_exp_status") == "actual")
+            )["return_freight_exp_cents"].sum()
+        )
+        rep.add(
+            "return_freight_allocation",
+            int(return_freight_log["amount_cents"].sum()),
+            actual_alloc + residuals.get("return_freight_unallocated_cents", 0),
         )
     # 6. Stage identity on sale lines: pocket = invoice - deductions + credits.
     sale = wf.filter(pl.col("transaction_type") == "sale")

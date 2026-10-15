@@ -110,6 +110,16 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
         money_raw.append(
             ("freight_concession", lm.freight_concession.column, "freight_concession_cents")
         )
+    if lm.restocking_fee is not None:
+        money_raw.append(("restocking_fee", lm.restocking_fee.column, "restocking_fee_cents"))
+    if lm.return_freight_billed is not None:
+        money_raw.append(
+            (
+                "return_freight_billed",
+                lm.return_freight_billed.column,
+                "return_freight_billed_cents",
+            )
+        )
 
     scaled_cols = {}
     for _canon, src, cents in money_raw:
@@ -219,6 +229,26 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
     if mapping.credit_reason_map and "credit_reason" in out.columns:
         out = out.with_columns(
             pl.col("credit_reason").replace(mapping.credit_reason_map).alias("credit_reason")
+        )
+    # Canonical return reason on return lines, from the declared map.
+    if "credit_reason" in out.columns:
+        canonical_return = (
+            pl.col("credit_reason").replace_strict(mapping.return_reason_map, default="unspecified")
+            if mapping.return_reason_map
+            else pl.lit("unspecified")
+        )
+        out = out.with_columns(
+            pl.when(pl.col("transaction_type") == "return")
+            .then(canonical_return)
+            .otherwise(None)
+            .alias("return_reason")
+        )
+    else:
+        out = out.with_columns(
+            pl.when(pl.col("transaction_type") == "return")
+            .then(pl.lit("unspecified"))
+            .otherwise(pl.lit(None, dtype=pl.String))
+            .alias("return_reason")
         )
     return out
 

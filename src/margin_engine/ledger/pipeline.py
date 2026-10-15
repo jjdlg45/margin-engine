@@ -47,6 +47,7 @@ REFERENCE_TABLES = [
     "landed_cost_components",
     "supplier_cost_index",
     "tariff_schedule",
+    "return_freight_log",
 ]
 
 
@@ -59,6 +60,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
     wf: WaterfallResult = build_waterfall(
         classified.ledger,
         mapping,
+        rules=rules,
         price_list=ref["price_list"],
         uom_conversions=ref["uom_conversions"],
         items=ref["items"],
@@ -68,6 +70,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         rebate_programs=ref["rebate_programs"],
         vendor_rebate_programs=ref["vendor_rebate_programs"],
         landed_cost_components=ref["landed_cost_components"],
+        return_freight_log=ref["return_freight_log"],
     )
     report = reconcile(
         wf.lines,
@@ -77,6 +80,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         order_charges=ref["order_charges"],
         freight_log=ref["freight_log"],
         rebate_settlements=ref["rebate_settlements"],
+        return_freight_log=ref["return_freight_log"],
     )
     obs = sales_observations(wf.lines)
     skipped = [name for name in REFERENCE_TABLES if ref[name] is None]

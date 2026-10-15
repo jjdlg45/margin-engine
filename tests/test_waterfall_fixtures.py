@@ -463,3 +463,105 @@ def test_billed_freight_in_invoice_revenue(tmp_path: Path) -> None:
     row = line(led, "L1")
     assert row["billed_charge_alloc_cents"] == 1_200
     assert row["invoice_revenue_cents"] == 51_200
+
+
+def test_customer_error_return_with_fee(tmp_path: Path) -> None:
+    """Customer-error return: 15% restocking fee and return freight billed to
+    the customer are recovery revenue (actual, from the export); handling and
+    return freight expense are cost-to-serve. All to the cent.
+
+    Sale 10 @ $80 = $800. Return 4 @ $80 = -$320; fee $48.00; freight billed
+    $10.00; freight expense $10.00 (log); handling $15.00 + 4 x $0.50 = $17.00.
+    Return pocket = -320 + 48 + 10 = -262.00; return CTS = 10 + 17 = 27.00.
+    """
+    w = FixtureWorld(tmp_path)
+    w.add_item("X1")
+    w.add_list_price("X1", "01/01/2024", "80.00")
+    w.add_line(
+        INV_NO="INV1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=10,
+        UNIT_PRC="80.00",
+        EXT_NET="800.00",
+        LIST_PRC="80.00",
+        UNIT_CST="40.0000",
+    )
+    w.add_line(
+        INV_NO="RET1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=-4,
+        UNIT_PRC="80.00",
+        EXT_NET="-320.00",
+        LIST_PRC="80.00",
+        UNIT_CST="40.0000",
+        TXN_CD="R",
+        ORIG_INV="INV1",
+        INV_DT="04/10/2024",
+        REASON_CD="CUST_ERR",
+        RESTOCK_FEE="48.00",
+        RTN_FRT_BILLED="10.00",
+    )
+    w.return_freight_log.append({"RET_INV_NO": "RET1", "RTN_FRT_EXP": "10.00"})
+    data = w.write()
+    res = run_pipeline(data, MAPPING, Rules())
+    assert res.reconciliation.all_pass
+    ret = line(res.ledger, "L2")
+    assert ret["return_reason"] == "customer_error"
+    assert ret["return_recovery_cents"] == 4_800 + 1_000
+    assert ret["return_recovery_status"] == "actual"
+    assert ret["pocket_revenue_cents"] == -32_000 + 5_800
+    assert ret["return_freight_exp_cents"] == 1_000
+    assert ret["return_freight_exp_status"] == "actual"
+    assert ret["return_handling_cents"] == 1_500 + 4 * 50
+    assert ret["cost_to_serve_cents"] == 1_000 + 1_700
+    # Contribution identity: pocket GP (negative cost reversal) minus CTS.
+    assert ret["contribution_cents"] == ret["pocket_gp_cents"] - 2_700
+    # Sale line untouched by return economics.
+    sale_row = line(res.ledger, "L1")
+    assert sale_row["return_recovery_cents"] == 0
+    assert sale_row["cost_to_serve_cents"] == 0
+
+
+def test_defective_return_no_recovery(tmp_path: Path) -> None:
+    """Defective return: no restocking fee, distributor pays return freight.
+    Pocket = net give-back only; CTS = handling + freight expense."""
+    w = FixtureWorld(tmp_path)
+    w.add_item("X1")
+    w.add_list_price("X1", "01/01/2024", "50.00")
+    w.add_line(
+        INV_NO="INV1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=6,
+        UNIT_PRC="50.00",
+        EXT_NET="300.00",
+        LIST_PRC="50.00",
+        UNIT_CST="30.0000",
+    )
+    w.add_line(
+        INV_NO="RET1",
+        CUST_NO="C1",
+        ITEM_NO="X1",
+        QTY_SHP=-6,
+        UNIT_PRC="50.00",
+        EXT_NET="-300.00",
+        LIST_PRC="50.00",
+        UNIT_CST="30.0000",
+        TXN_CD="R",
+        ORIG_INV="INV1",
+        INV_DT="05/10/2024",
+        REASON_CD="DEFECT",
+    )
+    w.return_freight_log.append({"RET_INV_NO": "RET1", "RTN_FRT_EXP": "8.50"})
+    data = w.write()
+    res = run_pipeline(data, MAPPING, Rules())
+    assert res.reconciliation.all_pass
+    ret = line(res.ledger, "L2")
+    assert ret["return_reason"] == "defective"
+    assert ret["return_recovery_cents"] == 0
+    assert ret["pocket_revenue_cents"] == -30_000
+    assert ret["return_freight_exp_cents"] == 850
+    assert ret["return_handling_cents"] == 1_500 + 6 * 50
+    assert ret["cost_to_serve_cents"] == 850 + 1_800

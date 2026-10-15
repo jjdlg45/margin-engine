@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 import polars as pl
 
+from margin_engine.config import Rules
 from margin_engine.ingest.mapping import MappingError, SourceMapping
 from margin_engine.money import div_half_even_expr
 from margin_engine.waterfall.allocate import allocate_exact
@@ -119,10 +120,142 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
     ).drop("_eff_list_scaled", "effective_date")
 
 
+def _return_economics(
+    lines: pl.DataFrame,
+    mapping: SourceMapping,
+    rules: Rules,
+    return_freight_log: pl.DataFrame | None,
+    notes: list[str],
+    residuals: dict[str, int],
+) -> pl.DataFrame:
+    """Return recovery revenue and return costs (phase-8.2).
+
+    Recovery (restocking fee + return freight billed to the customer) is
+    ACTUAL when the export maps the columns, otherwise ESTIMATED from the
+    reason policy. Return handling (per line + per unit) is always a config
+    estimate. Return freight expense is actual from the return freight log
+    (allocated within the return invoice, largest-remainder), else the config
+    default per return invoice, labeled estimated. Handling and freight
+    expense go to cost-to-serve; recovery adds to pocket revenue.
+    """
+    rc = rules.returns
+    is_ret = pl.col("transaction_type") == "return"
+    for col in ("restocking_fee_cents", "return_freight_billed_cents"):
+        if col not in lines.columns:
+            lines = lines.with_columns(pl.lit(None, dtype=pl.Int64).alias(col))
+    if "return_reason" not in lines.columns:
+        lines = lines.with_columns(
+            pl.when(is_ret).then(pl.lit("unspecified")).otherwise(None).alias("return_reason")
+        )
+    zero_cols = [
+        pl.lit(0, dtype=pl.Int64).alias("return_recovery_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("return_handling_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("return_freight_exp_cents"),
+        pl.lit(None, dtype=pl.String).alias("return_recovery_status"),
+        pl.lit(None, dtype=pl.String).alias("return_freight_exp_status"),
+    ]
+    rets = lines.filter(is_ret)
+    if rets.height == 0:
+        return lines.with_columns(zero_cols)
+    other = lines.filter(~is_ret).with_columns(zero_cols)
+
+    fee_bp_map = {
+        reason: int(policy.restocking_fee_pct * 10_000)
+        for reason, policy in rc.reason_policies.items()
+    }
+    customer_pays_map = {
+        reason: policy.return_freight_paid_by == "customer"
+        for reason, policy in rc.reason_policies.items()
+    }
+    fee_bp = pl.col("return_reason").replace_strict(fee_bp_map, default=0, return_dtype=pl.Int64)
+    customer_pays = pl.col("return_reason").replace_strict(
+        customer_pays_map, default=False, return_dtype=pl.Boolean
+    )
+
+    # --- return freight expense ------------------------------------------
+    if return_freight_log is not None:
+        log = return_freight_log.group_by("invoice_id").agg(pl.col("amount_cents").sum())
+        rets = allocate_exact(
+            rets,
+            log,
+            "invoice_id",
+            "amount_cents",
+            "net_amount_cents",
+            "return_freight_exp_cents",
+        )
+        covered = pl.col("invoice_id").is_in(log["invoice_id"].implode())
+        rets = rets.with_columns(
+            pl.when(covered)
+            .then(pl.lit("actual"))
+            .otherwise(pl.lit("estimated"))
+            .alias("return_freight_exp_status")
+        )
+        log_total = int(log["amount_cents"].sum())
+        allocated = int(rets["return_freight_exp_cents"].sum())
+        residuals["return_freight_unallocated_cents"] = log_total - allocated
+    else:
+        rets = rets.with_columns(
+            pl.lit(0, dtype=pl.Int64).alias("return_freight_exp_cents"),
+            pl.lit("estimated").alias("return_freight_exp_status"),
+        )
+        notes.append(
+            "no return_freight_log reference: return freight expense estimated from config defaults"
+        )
+    # Lines whose invoice is absent from the log get the config default,
+    # split equally across the return invoice's lines.
+    rets = rets.with_columns(
+        pl.when(pl.col("return_freight_exp_status") == "estimated")
+        .then(
+            div_half_even_expr(
+                pl.lit(rc.default_return_freight_per_return_cents, dtype=pl.Int64),
+                pl.len().over("invoice_id").cast(pl.Int64),
+            )
+        )
+        .otherwise(pl.col("return_freight_exp_cents"))
+        .alias("return_freight_exp_cents")
+    )
+
+    # --- handling (always a config estimate) ------------------------------
+    rets = rets.with_columns(
+        (
+            pl.lit(rc.default_handling_cost_per_return_cents, dtype=pl.Int64)
+            + pl.lit(rc.default_handling_cost_per_unit_cents, dtype=pl.Int64)
+            * pl.col("quantity").abs().round(0).cast(pl.Int64)
+        ).alias("return_handling_cents")
+    )
+
+    # --- recovery revenue --------------------------------------------------
+    fee_mapped = mapping.lines.restocking_fee is not None
+    billed_mapped = mapping.lines.return_freight_billed is not None
+    fee = (
+        pl.col("restocking_fee_cents").fill_null(0)
+        if fee_mapped
+        else div_half_even_expr((-pl.col("net_amount_cents")) * fee_bp, 10_000)
+    )
+    billed = (
+        pl.col("return_freight_billed_cents").fill_null(0)
+        if billed_mapped
+        else pl.when(customer_pays).then(pl.col("return_freight_exp_cents")).otherwise(0)
+    )
+    rets = rets.with_columns(
+        (fee + billed).alias("return_recovery_cents"),
+        pl.lit("actual" if fee_mapped and billed_mapped else "estimated").alias(
+            "return_recovery_status"
+        ),
+    )
+    if not (fee_mapped and billed_mapped):
+        notes.append(
+            "restocking fee / return freight billed not in the export: return "
+            "recovery estimated from the reason policy (labeled estimated)"
+        )
+    return pl.concat([other, rets], how="diagonal_relaxed")
+
+
 def build_waterfall(
     ledger: pl.DataFrame,
     mapping: SourceMapping,
     *,
+    rules: Rules,
     price_list: pl.DataFrame | None,
     uom_conversions: pl.DataFrame | None,
     items: pl.DataFrame | None,
@@ -132,6 +265,7 @@ def build_waterfall(
     rebate_programs: pl.DataFrame | None,
     vendor_rebate_programs: pl.DataFrame | None,
     landed_cost_components: pl.DataFrame | None,
+    return_freight_log: pl.DataFrame | None = None,
 ) -> WaterfallResult:
     notes: list[str] = []
     residuals: dict[str, int] = {}
@@ -141,6 +275,7 @@ def build_waterfall(
         notes.append("no price_list reference: gross list stage labeled incomplete")
 
     sale = pl.col("transaction_type") == "sale"
+    lines = _return_economics(lines, mapping, rules, return_freight_log, notes, residuals)
 
     # --- stage 2: invoice revenue = net + allocated billed charges ----------
     if order_charges is not None and "order_id" in lines.columns:
@@ -316,6 +451,9 @@ def build_waterfall(
             - pl.col("rebate_settlement_alloc_cents")
             - pl.col("freight_concession_cents")
             + pl.when(sale).then(pl.col("price_credit_alloc_cents")).otherwise(0)
+            # Return recovery (restocking fee + return freight billed to the
+            # customer) is revenue; zero on non-return lines.
+            + pl.col("return_recovery_cents")
         )
         .alias("pocket_revenue_cents")
     )
@@ -458,6 +596,9 @@ def build_waterfall(
         (
             pl.col("freight_expense_alloc_cents").fill_null(0)
             + pl.col("claims_cost_alloc_cents").fill_null(0)
+            # Return handling and return freight expense are cost-to-serve.
+            + pl.col("return_handling_cents").fill_null(0)
+            + pl.col("return_freight_exp_cents").fill_null(0)
         ).alias("cost_to_serve_cents")
     )
 

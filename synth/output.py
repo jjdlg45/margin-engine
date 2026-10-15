@@ -58,11 +58,15 @@ def export_erp_lines(lines: pl.DataFrame, out: Path) -> None:
         _dollars(pl.col("discount_cents")).alias("DISC_AMT"),
         pl.Series("UNIT_CST", cost_str),
         pl.col("txn_type").replace_strict(TXN_CODE).alias("TXN_CD"),
-        pl.col("credit_reason").fill_null("").alias("REASON_CD"),
+        pl.coalesce(pl.col("credit_reason"), pl.col("return_reason_code"), pl.lit("")).alias(
+            "REASON_CD"
+        ),
         pl.col("original_invoice_ref").fill_null("").alias("ORIG_INV"),
         pl.col("sales_rep_id").alias("REP_ID"),
         pl.col("channel").alias("CHNL"),
         _dollars(pl.col("freight_concession_cents")).alias("FRT_CONC"),
+        _dollars(pl.col("restock_fee_cents").fill_null(0)).alias("RESTOCK_FEE"),
+        _dollars(pl.col("rtn_frt_billed_cents").fill_null(0)).alias("RTN_FRT_BILLED"),
         _dollars(pl.col("rebate_line_cents")).alias("REB_AMT"),
         pl.col("rebate_program_id").fill_null("").alias("REB_PGM"),
         pl.col("contract_id").fill_null("").alias("CONTRACT_NO"),
@@ -184,6 +188,18 @@ def export_reference_tables(
         _dollars(pl.col("exp")).alias("FRT_EXP_AMT"),
     ).write_csv(out / "freight_log.csv")
 
+    # Return freight expense log: one row per return invoice.
+    rtn = (
+        lines.filter(pl.col("txn_type") == "return")
+        .group_by("invoice_id")
+        .agg(pl.col("truth_rtn_frt_exp_cents").sum().alias("exp"))
+        .sort("invoice_id")
+    )
+    rtn.select(
+        pl.col("invoice_id").alias("RET_INV_NO"),
+        _dollars(pl.col("exp")).alias("RTN_FRT_EXP"),
+    ).write_csv(out / "return_freight_log.csv")
+
     # Vendor rebate programs (supplier-level rate).
     vr = (
         lines.group_by("supplier_id")
@@ -262,6 +278,10 @@ def export_ground_truth(
         pl.col("truth_unit_cost_cents"),
         pl.col("cost_missing"),
         pl.col("truth_outlier_type"),
+        pl.col("return_reason_code").alias("truth_return_reason_code"),
+        pl.col("restock_fee_cents").alias("truth_restock_fee_cents"),
+        pl.col("rtn_frt_billed_cents").alias("truth_rtn_frt_billed_cents"),
+        pl.col("truth_rtn_frt_exp_cents"),
         pl.col("truth_dup_type"),
         pl.col("truth_zero_qty"),
         pl.col("truth_uom_alt"),

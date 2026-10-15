@@ -43,17 +43,27 @@ and attributed price credits), product cost (declared basis built up to landed
 cost, vendor rebates netted against base purchase cost), pocket gross profit,
 cost to serve (allocated freight expense + non-price claims), contribution.
 
-Allocations are exact: proportional integer shares with the rounding residual
-deterministically assigned to the largest line of the group, so allocated
-amounts always sum to the source amount. Settlement rebates allocate over
+Allocations are exact by the largest-remainder (Hamilton) method: each line's
+exact share is floored to the cent and the remaining cents go one at a time to
+the largest fractional remainders (ties: larger absolute weight, then source
+line key), so allocated amounts always sum to the source amount and no line is
+ever a full cent away from its exact share. Settlement rebates allocate over
 sales and returns with signed weights (returns carry negative rebate shares).
 A credit dollar is counted exactly once: credits attributed to their original
 invoice contribute zero on the credit row. When an amount cannot be
 attributed, it remains a visible residual in the reconciliation report.
 
+Return economics: returns are classified by reason (customer_error,
+distributor_error, defective — mapped from the source reason code; unmapped
+codes become `unspecified`). Restocking fees and return freight billed to the
+customer are recovery revenue in pocket; return handling (per line + per unit)
+and return freight expense are cost-to-serve. Amounts present in the export are
+`actual`; otherwise the reason-policy table and config defaults produce
+`estimated` values, always labeled.
+
 Reconciliation checks (row conservation, net-amount conservation, allocation
-conservation for charges / settlements / freight, stage identities) are exact
-to the cent and raise on failure.
+conservation for charges / settlements / freight incl. the return freight log,
+stage identities) are exact to the cent and raise on failure.
 
 ## 4. Dispersion and outliers
 

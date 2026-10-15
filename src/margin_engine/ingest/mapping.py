@@ -117,6 +117,10 @@ class LinesMapping(StrictModel):
     customer_rebate_amount: AmountField | None = None
     rebate_program_id: KeyField | None = None
     freight_concession: AmountField | None = None
+    # Return economics (phase-8.2): actual restocking fee charged back to the
+    # customer and return freight billed to the customer, both recovery revenue.
+    restocking_fee: AmountField | None = None
+    return_freight_billed: AmountField | None = None
     credit_reason: KeyField | None = None
     original_invoice_ref: KeyField | None = None
     sales_rep_id: KeyField | None = None
@@ -162,6 +166,10 @@ class SourceMapping(StrictModel):
     reference_tables: dict[str, ReferenceTable] = Field(default_factory=dict)
     # Credit-memo reason normalization: source code -> canonical reason.
     credit_reason_map: dict[str, str] = Field(default_factory=dict)
+    # Return reason normalization: source code -> canonical return reason
+    # (customer_error, distributor_error, defective). Unmapped codes become
+    # "unspecified" and receive only estimated default handling costs.
+    return_reason_map: dict[str, str] = Field(default_factory=dict)
 
     def require(self, field: str, needed_for: str) -> None:
         """Fail actionably if an optional field needed by a calculation is absent."""
@@ -188,6 +196,7 @@ KNOWN_REFERENCE_TABLES = {
     "landed_cost_components",
     "supplier_cost_index",
     "tariff_schedule",
+    "return_freight_log",
     "fx_rates",
 }
 

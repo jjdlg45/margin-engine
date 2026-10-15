@@ -27,38 +27,44 @@ from margin_engine.segment.trees import fit_commercial_segments, prepare_segment
 MAPPING = Path(__file__).resolve().parents[1] / "config" / "mappings" / "synth_erp.yaml"
 
 
-def _floor(cost_cents: int, margin_bp: int) -> int:
+def _floor(cost_cents: int, margin_bp: int, rounding: str = "ceiling") -> int:
     df = pl.DataFrame({"c": [cost_cents]})
-    return df.select(pocket_floor_cents(pl.col("c"), margin_bp).alias("f"))["f"][0]
+    return df.select(pocket_floor_cents(pl.col("c"), margin_bp, rounding).alias("f"))["f"][0]
 
 
-def _inv_floor(cost_cents: int, margin_bp: int, fixed: int, ded_bp: int) -> int:
+def _inv_floor(
+    cost_cents: int, margin_bp: int, fixed: int, ded_bp: int, rounding: str = "ceiling"
+) -> int:
     df = pl.DataFrame({"c": [cost_cents], "f": [fixed], "d": [ded_bp]})
     return df.select(
-        invoice_floor_cents(pl.col("c"), margin_bp, pl.col("f"), pl.col("d")).alias("x")
+        invoice_floor_cents(pl.col("c"), margin_bp, pl.col("f"), pl.col("d"), rounding).alias("x")
     )["x"][0]
 
 
 def test_pocket_floor_spec_example() -> None:
-    # Spec: cost $100, m = 5% -> $105.26 pocket floor (100/0.95 = 105.263...).
-    assert _floor(10_000, 500) == 10_526
+    # Cost $100, m = 5%: 100/0.95 = 105.2631... A floor exists to guarantee
+    # the margin, so the default policy rounds UP: $105.27. (The spec's
+    # half-even illustration, $105.26, remains available as a config option.)
+    assert _floor(10_000, 500) == 10_527
+    assert _floor(10_000, 500, "half_even") == 10_526
 
 
 def test_pocket_floor_more_cases() -> None:
-    # cost $60, m = 5% -> 60/0.95 = 63.157... -> 63.16
+    # cost $60, m = 5% -> 63.157... -> ceil 63.16 (half-even agrees here)
     assert _floor(6_000, 500) == 6_316
-    # m = 20% -> 60/0.80 = 75.00 exactly
+    # m = 20% -> 75.00 exactly: ceiling of an exact value changes nothing
     assert _floor(6_000, 2_000) == 7_500
     # zero cost -> zero floor
     assert _floor(0, 500) == 0
 
 
-def test_invoice_floor_formula() -> None:
-    # C=$100, m=5%, F=$2.00, d=3% -> (105.26 + 2.00)/0.97 = 110.58
-    # exact: (10526.3157 + 200)/0.97 ... integer path: (10526+200)/0.97 = 11057.7 -> 11058
-    assert _inv_floor(10_000, 500, 200, 300) == 11_058
+def test_invoice_floor_formula_full_precision_single_rounding() -> None:
+    # C=$100, m=5%, F=$2.00, d=3%: full precision (105.2631... + 2)/0.97
+    # = 110.58057... -> ceiling 110.59. The old two-step rounding gave 110.58.
+    assert _inv_floor(10_000, 500, 200, 300) == 11_059
+    assert _inv_floor(10_000, 500, 200, 300, "half_even") == 11_058
     # No deductions: invoice floor == pocket floor.
-    assert _inv_floor(10_000, 500, 0, 0) == 10_526
+    assert _inv_floor(10_000, 500, 0, 0) == 10_527
 
 
 @pytest.fixture(scope="module")
@@ -193,7 +199,7 @@ def test_data_quality_lines_excluded_from_bands() -> None:
 def test_floor_includes_freight_concessions() -> None:
     """Phase 5: d includes the customer's realized concession rate. Cost $100,
     m = 5%, rebate 0, concessions 2% of net -> invoice floor = 105.26/0.98
-    = $107.41; a customer without concessions keeps $105.26."""
+    = $107.42 (ceiling); a customer without concessions keeps $105.27."""
     rules = Rules.model_validate({"price_guidance": {"min_band_observations": 1}})
     n = 10
     rows = []
@@ -218,6 +224,31 @@ def test_floor_includes_freight_concessions() -> None:
     )
     result = build_guidance(df, rules, None)
     by_cust = {r["customer_id"]: r for r in result.guidance.to_dicts()}
-    assert by_cust["C0"]["invoice_floor_cents"] == 10_526
+    assert by_cust["C0"]["invoice_floor_cents"] == 10_527
     assert by_cust["CC"]["deduction_bp"] == 200
-    assert by_cust["CC"]["invoice_floor_cents"] == 10_741
+    # Full precision: (10000/0.95)/0.98 = 10741.13... -> ceiling 10742.
+    assert by_cust["CC"]["invoice_floor_cents"] == 10_742
+
+
+from fractions import Fraction  # noqa: E402
+
+from hypothesis import given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+
+@given(
+    cost_cents=st.integers(min_value=1, max_value=50_000_000),
+    margin_bp=st.integers(min_value=0, max_value=5_000),
+    fixed_cents=st.integers(min_value=0, max_value=100_000),
+    deduction_bp=st.integers(min_value=0, max_value=5_000),
+)
+@settings(max_examples=300, deadline=None)
+def test_property_ceiling_floor_guarantees_margin(
+    cost_cents: int, margin_bp: int, fixed_cents: int, deduction_bp: int
+) -> None:
+    """At a ceiling-rounded invoice floor, the realized pocket margin is >= m
+    for ANY cost and deductions (computed in exact rational arithmetic)."""
+    p = _inv_floor(cost_cents, margin_bp, fixed_cents, deduction_bp, "ceiling")
+    pocket = Fraction(p) * Fraction(10_000 - deduction_bp, 10_000) - fixed_cents
+    margin = (pocket - cost_cents) / pocket
+    assert margin >= Fraction(margin_bp, 10_000), (p, float(margin))

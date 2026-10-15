@@ -49,10 +49,23 @@ def corrupt_prices(
     )
 
 
+RETURN_REASON_CODES = ["CUST_ERR", "DIST_ERR", "DEFECT"]
+RETURN_REASON_P = [0.5, 0.2, 0.3]
+RESTOCK_FEE_BP = 1500  # planted policy: 15% restocking fee on customer-error returns
+RETURN_FREIGHT_FIXED_CENTS = 1000
+RETURN_FREIGHT_CENTS_PER_LB = 10
+
+
 def add_returns(
     cfg: GeneratorConfig, lines: pl.DataFrame, months: int, rng: np.random.Generator
 ) -> pl.DataFrame:
-    """Linked partial returns 1-2 months after the sale, within horizon."""
+    """Linked partial returns 1-2 months after the sale, within horizon.
+
+    Return economics planted per reason: customer_error returns carry a 15%
+    restocking fee and the customer pays return freight (billed = expense);
+    distributor_error and defective returns have no recovery and the
+    distributor eats the return freight.
+    """
     n = lines.height
     pick = rng.random(n) < cfg.mess.return_rate
     cand = lines.filter(pl.Series(pick) & (pl.col("month") <= months - 2))
@@ -69,6 +82,15 @@ def add_returns(
     rate = cand["rate_bp"].fill_null(0).to_numpy()
     kind = cand["program_kind"].fill_null("none").to_numpy()
     reb = apply_bp(net, rate)
+
+    reason = rng.choice(RETURN_REASON_CODES, k, p=RETURN_REASON_P)
+    restock_fee = np.where(reason == "CUST_ERR", apply_bp(-net, RESTOCK_FEE_BP), 0)
+    weight = cand["weight_lb"].to_numpy()
+    rtn_frt_exp = RETURN_FREIGHT_FIXED_CENTS + np.round(
+        -ret_qty * weight * RETURN_FREIGHT_CENTS_PER_LB
+    ).astype(np.int64)
+    rtn_frt_billed = np.where(reason == "CUST_ERR", rtn_frt_exp, 0)
+
     returns = cand.with_columns(
         pl.Series("quantity", ret_qty),
         pl.Series("month", ret_month),
@@ -83,6 +105,10 @@ def add_returns(
         pl.lit(0, dtype=pl.Int64).alias("truth_vendor_rebate_cents"),
         pl.lit(0, dtype=pl.Int64).alias("truth_order_billed_cents"),
         pl.lit("").alias("truth_outlier_type"),
+        pl.Series("return_reason_code", reason),
+        pl.Series("restock_fee_cents", restock_fee.astype(np.int64)),
+        pl.Series("rtn_frt_billed_cents", rtn_frt_billed.astype(np.int64)),
+        pl.Series("truth_rtn_frt_exp_cents", rtn_frt_exp),
     ).with_columns(
         (pl.col("list_value_cents") - pl.col("net_cents")).alias("discount_cents"),
         (pl.lit("RET") + pl.col("invoice_id").str.slice(3)).alias("invoice_id"),

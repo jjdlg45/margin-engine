@@ -132,16 +132,16 @@ If a semantic needed by a calculation is missing or ambiguous (e.g. a column cal
 `source_line_key, invoice_id, invoice_date, customer_id, item_id, quantity, uom, unit_price or net_amount, unit_cost (with declared cost_basis)`, plus `transaction_type` or a configured rule to derive it.
 
 **Optional (each unlocks features; report what was skipped and why)**
-`order_id, list_price, on_invoice_discount, customer_rebate_amount, rebate_program_id, freight_billed, freight_concession, freight_expense, vendor_rebate, inbound_freight, duty, credit_reason, original_invoice_ref, sales_rep_id, channel, ship_to_id, bill_to_id, parent_account_id, contract_id, currency, item_category, item_family, supplier_id, weight, cube, handling_units, kit_parent_id, item_role`
+`order_id, list_price, on_invoice_discount, customer_rebate_amount, rebate_program_id, freight_billed, freight_concession, freight_expense, vendor_rebate, inbound_freight, duty, credit_reason, original_invoice_ref, restocking_fee, return_freight_billed, sales_rep_id, channel, ship_to_id, bill_to_id, parent_account_id, contract_id, currency, item_category, item_family, supplier_id, weight, cube, handling_units, kit_parent_id, item_role`
 
 **Optional reference tables**
-Price list history (effective-dated), UOM conversions, FX rates, rebate program definitions, contracts and price-protection periods, quotes with outcomes, substitution groups, inventory receipts, cost-to-serve activity rates.
+Price list history (effective-dated), UOM conversions, FX rates, rebate program definitions, contracts and price-protection periods, quotes with outcomes, substitution groups, inventory receipts, cost-to-serve activity rates, return freight expense log.
 
 ### 5.3 Transaction classification
 | Case | Treatment |
 |---|---|
 | Ordinary sale | Included in sales observations and the financial ledger |
-| Return | Excluded from sales observations; financial effect kept in the ledger and linked to the original sale when possible |
+| Return | Excluded from sales observations; financial effect kept in the ledger and linked to the original sale when possible. Classified by return reason (customer_error / distributor_error / defective, mapped from the source reason code). Restocking fees and return freight billed to the customer are recovery revenue; return handling and return freight expense are cost-to-serve. Actual amounts from the export when mapped, otherwise policy/config estimates labeled `estimated` |
 | Credit memo | Classified by reason. Price corrections and customer rebates reduce realized revenue; non-price claims go to the appropriate cost category |
 | Exact duplicate | Deduplicated only on a stable source key or verified duplicate identity; uncertain identical rows are flagged, not removed |
 | Missing cost | Revenue and price kept; excluded from cost-dependent metrics; missing-cost revenue share reported |
@@ -238,9 +238,10 @@ Seeded, parameterized generator producing a fake ERP export (column names delibe
   Pocket floor  = C / (1 − m)
   Invoice floor = (C / (1 − m) + F) / (1 − d)
   ```
+  Floors are computed at full precision and rounded once at the end; default rounding is ceiling (policy: a floor exists to guarantee the margin), with half-even as a config option. d includes the customer's rebate rate and realized freight-concession rate.
 - Target and start are **provisional** (labeled `provisional_historical`) until Phase 7 can support optimization.
 - Line statuses: `in_band`, `below_reference`, `below_floor`, `above_reference`, `insufficient_pricing_headroom` (corridor infeasible against the floor), `insufficient_data`.
-- **Verify:** floor math fixtures (e.g. cost $100, m = 5% → $105.26 pocket floor); infeasible corridors flagged, never relabeled.
+- **Verify:** floor math fixtures (e.g. cost $100, m = 5% → $105.27 pocket floor at ceiling rounding); infeasible corridors flagged, never relabeled.
 
 #### Phase 6 — Price sensitivity
 - **Panel:** customer × item × month, with zero-quantity rows only where the pair is in active assortment and the item is available (rule in section 8).
@@ -359,7 +360,7 @@ As in section 5.3. Duplicates removed only on verified identity.
 |---|---|
 | Monetary type | Decimal |
 | Rounding | Half-even to reporting currency precision (cents) |
-| Allocation residual | Assigned deterministically to the largest line in the group |
+| Allocation method | Largest-remainder (Hamilton): floor each share to the cent, distribute remaining cents to the largest fractional remainders; ties broken by larger absolute weight, then source_line_key; signed weights supported |
 
 ### 8.3 Outliers and dispersion
 | Item | Default |
@@ -384,6 +385,7 @@ ABC splits (revenue, unit and frequency versions): A = top 80%, B = next 15%, C 
 | Reference bands | P25 / P50 / P75 of normalized price index within commercial segment |
 | Observation unit | Median price per customer × item × month |
 | Minimum margin | 5% pocket gross margin, floor per Phase 5 formula |
+| Floor rounding | Floors computed at full precision, rounded once at the end. `ceiling` (default: a floor must guarantee the margin) or `half_even` |
 | Target / start | Provisional (P50 / P75, never below floor) until optimization is supported |
 
 ### 8.6 Sensitivity
@@ -427,4 +429,4 @@ ABC splits (revenue, unit and frequency versions): A = top 80%, B = next 15%, C 
 The overidentification test only detects an invalid instrument when the two instruments disagree. Exclusion restrictions remain economic assumptions that no test fully proves; the README must say so.
 
 ### 8.10 Config sections (`rules.yaml`)
-`schema, mapping, units_and_currency, transactions, costing, waterfall, outliers, segmentation, price_guidance, sensitivity, opportunity, tariff_scenarios, reporting`
+`schema, mapping, units_and_currency, transactions, returns, costing, waterfall, outliers, segmentation, price_guidance, sensitivity, opportunity, tariff_scenarios, reporting`

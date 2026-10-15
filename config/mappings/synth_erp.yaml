@@ -59,6 +59,19 @@ lines:
     sign_convention: positive_reduces_revenue
   contract_id: {column: CONTRACT_NO}
   currency: {column: CURR}
+  restocking_fee:
+    column: RESTOCK_FEE
+    currency: USD
+    sign_convention: natural
+  return_freight_billed:
+    column: RTN_FRT_BILLED
+    currency: USD
+    sign_convention: natural
+
+return_reason_map:
+  CUST_ERR: customer_error
+  DIST_ERR: distributor_error
+  DEFECT: defective
 
 credit_reason_map:
   price_correction: price_correction
@@ -144,3 +157,6 @@ reference_tables:
   tariff_schedule:
     file: tariff_schedule.csv
     columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}
+  return_freight_log:
+    file: return_freight_log.csv
+    columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}

@@ -465,3 +465,45 @@ errors now list up to 10 offending source line keys. Tests added.
 
 **5. scikit-learn pin scoped to Windows** via environment markers
 (`<1.6; sys_platform == 'win32'`, unpinned elsewhere); lockfile regenerated.
+
+---
+## Phase 8.2 — Allocation, floor rounding, return economics (2026-10-14)
+
+**1. Largest-remainder (Hamilton) allocation.** `allocate_exact` rewritten:
+every line's exact share (amount x w / W) is floored to the cent; the leftover
+cents go one at a time to the largest fractional remainders, ties broken by
+larger absolute weight then source_line_key. Flooring toward -inf keeps
+remainders in [0, 1) for signed weights, so settlements over sales AND returns
+use the same path. Properties verified by fixtures plus 400 hypothesis cases
+(unsigned and signed): allocations always sum exactly to the source amount and
+no line deviates from its exact share by a cent or more. CLAUDE.md 8.2 and
+methodology updated; `waterfall.residual_assignment` config key replaced by
+`allocation_method: largest_remainder`.
+
+**2. Floor rounding policy.** Floors are now computed at FULL precision (the
+invoice floor no longer rounds the pocket floor first) and rounded exactly once.
+New `price_guidance.floor_rounding`: `ceiling` (default) or `half_even`.
+Policy rationale: a floor exists to guarantee the minimum margin; rounding it
+down breaks that guarantee by a fraction of a cent. Property test (300 cases,
+exact rational arithmetic): at a ceiling-rounded floor, realized pocket margin
+>= m for any cost, fixed and percentage deductions. Fixtures updated
+($105.26 -> $105.27, $107.41 -> $107.42, invoice-floor example $110.58 ->
+$110.59 at full precision + ceiling; half-even variants asserted alongside).
+
+**3. Return economics.** Returns are classified by reason (`customer_error`,
+`distributor_error`, `defective`) via a new mapping `return_reason_map`
+(unmapped -> `unspecified`). New `returns` config section: per-reason policy
+(restocking fee %, who pays return freight) plus default handling cost per
+return line and per unit and a default return freight estimate. Ledger
+treatment: restocking fees and return freight billed to the customer are
+recovery revenue in pocket; return handling and return freight expense are
+cost-to-serve. New optional mapping fields RESTOCK_FEE / RTN_FRT_BILLED and a
+return_freight_log reference table give actuals; absent, policy estimates are
+applied and labeled `estimated`. The generator plants reasons (50/20/30),
+15% customer-error restocking fees, and return freight (billed = expense when
+the customer pays) with per-line ground truth. New reconciliation check:
+return freight log total == actual allocations + residual. Fixtures: customer-
+error return with fee and billed freight (pocket -262.00, CTS 27.00 on the
+planted numbers) and defective return with no recovery, both exact; planted
+recovery test asserts fees/freight/reasons recover exactly on a generated
+world. CLAUDE.md 5.2/5.3/8.10 updated.

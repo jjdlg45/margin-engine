@@ -77,6 +77,46 @@ class TransactionsConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# returns
+# ---------------------------------------------------------------------------
+
+
+class ReturnReasonPolicy(StrictModel):
+    """Commercial policy for one return reason."""
+
+    restocking_fee_pct: Decimal = Decimal("0")
+    return_freight_paid_by: Literal["customer", "distributor"] = "distributor"
+
+
+class ReturnsConfig(StrictModel):
+    """Return economics policy (phase-8.2).
+
+    When the export carries actual restocking fees / billed return freight,
+    those are used (status `actual`). When absent, the reason policy and the
+    default handling costs produce estimates labeled `estimated`.
+    """
+
+    reason_policies: dict[str, ReturnReasonPolicy] = Field(
+        default_factory=lambda: {
+            "customer_error": ReturnReasonPolicy(
+                restocking_fee_pct=Decimal("0.15"), return_freight_paid_by="customer"
+            ),
+            "distributor_error": ReturnReasonPolicy(
+                restocking_fee_pct=Decimal("0"), return_freight_paid_by="distributor"
+            ),
+            "defective": ReturnReasonPolicy(
+                restocking_fee_pct=Decimal("0"), return_freight_paid_by="distributor"
+            ),
+        }
+    )
+    # Handling cost estimates applied to every return line (labeled estimated).
+    default_handling_cost_per_return_cents: int = Field(default=1500, ge=0)
+    default_handling_cost_per_unit_cents: int = Field(default=50, ge=0)
+    # Return freight expense estimate when no return freight log exists.
+    default_return_freight_per_return_cents: int = Field(default=1200, ge=0)
+
+
+# ---------------------------------------------------------------------------
 # costing
 # ---------------------------------------------------------------------------
 
@@ -124,8 +164,10 @@ class WaterfallConfig(StrictModel):
         AllocationBasis.EXTENDED_PRICE,
     )
     rounding: Literal["half_even"] = "half_even"
-    # Rounding residual goes deterministically to the largest line in the group.
-    residual_assignment: Literal["largest_line"] = "largest_line"
+    # Allocation method: largest-remainder (Hamilton) — floor each share to
+    # the cent, hand remaining cents to the largest fractional remainders;
+    # ties broken by larger absolute weight, then source_line_key.
+    allocation_method: Literal["largest_remainder"] = "largest_remainder"
     # Freight: concessions reduce pocket revenue; actual outbound freight
     # expense is cost-to-serve. Fixed by accounting policy, surfaced here so
     # the report can state it.
@@ -205,6 +247,11 @@ class PriceGuidanceConfig(StrictModel):
     # Observation unit: one representative (median) price per customer x item x month.
     observation_unit: Literal["customer_item_month_median", "line"] = "customer_item_month_median"
     min_pocket_margin: Decimal = Decimal("0.05")
+    # Floor rounding policy: floors are computed at full precision and rounded
+    # ONCE at the end. "ceiling" (default) guarantees that a price at the floor
+    # realizes at least the minimum margin; "half_even" can round a floor down
+    # below the margin by a fraction of a cent.
+    floor_rounding: Literal["ceiling", "half_even"] = "ceiling"
     min_band_observations: int = Field(default=10, ge=1)
     # Provisional target/start until optimization is supported (Phase 7).
     provisional_target_percentile: float = 0.50
@@ -298,6 +345,7 @@ class Rules(StrictModel):
     mapping: MappingConfig = MappingConfig()
     units_and_currency: UnitsCurrencyConfig = UnitsCurrencyConfig()
     transactions: TransactionsConfig = TransactionsConfig()
+    returns: ReturnsConfig = ReturnsConfig()
     costing: CostingConfig = CostingConfig()
     waterfall: WaterfallConfig = WaterfallConfig()
     outliers: OutlierConfig = OutlierConfig()

@@ -179,3 +179,43 @@ def test_duckdb_store_roundtrip(world: tuple[Path, PipelineResult], tmp_path: Pa
         assert nk == 0
     finally:
         con.close()
+
+
+def test_return_economics_recovered(world: tuple[Path, PipelineResult]) -> None:
+    """Planted return reasons, restocking fees and return freight recover
+    exactly (they are exported, so the engine must treat them as actuals)."""
+    out, res = world
+    truth = _truth(out)
+    rets = res.ledger.filter(pl.col("transaction_type") == "return")
+    j = rets.join(truth, left_on="source_line_key", right_on="line_key", how="inner")
+    assert j.height > 0
+    # Reasons mapped to canonical values.
+    mapped = {
+        "CUST_ERR": "customer_error",
+        "DIST_ERR": "distributor_error",
+        "DEFECT": "defective",
+    }
+    mismatch = j.filter(
+        pl.col("return_reason")
+        != pl.col("truth_return_reason_code").replace_strict(mapped, default="unspecified")
+    )
+    assert mismatch.height == 0
+    # Recovery = planted fee + planted billed freight, exact.
+    diff = j.select(
+        (
+            pl.col("return_recovery_cents")
+            - pl.col("truth_restock_fee_cents")
+            - pl.col("truth_rtn_frt_billed_cents")
+        )
+        .abs()
+        .sum()
+    ).item()
+    assert diff == 0
+    assert (j["return_recovery_status"] == "actual").all()
+    # Return freight expense from the log, exact per line (single-line returns)
+    # and conserved per invoice in general.
+    per_inv = j.group_by("invoice_id").agg(
+        pl.col("return_freight_exp_cents").sum().alias("alloc"),
+        pl.col("truth_rtn_frt_exp_cents").sum().alias("truth"),
+    )
+    assert per_inv.filter(pl.col("alloc") != pl.col("truth")).height == 0

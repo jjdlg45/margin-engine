@@ -21,6 +21,15 @@ transactions:
   price_credit_reasons: [price_correction, customer_rebate]
   cost_credit_reasons: [damage, shortage, quality, warranty]
 
+returns:
+  reason_policies:
+    customer_error: {restocking_fee_pct: "0.15", return_freight_paid_by: customer}
+    distributor_error: {restocking_fee_pct: "0", return_freight_paid_by: distributor}
+    defective: {restocking_fee_pct: "0", return_freight_paid_by: distributor}
+  default_handling_cost_per_return_cents: 1500
+  default_handling_cost_per_unit_cents: 50
+  default_return_freight_per_return_cents: 1200
+
 costing:
   missing_cost_policy: exclude_from_cost_metrics
   zero_cost_policy: flag_for_review
@@ -29,7 +38,7 @@ costing:
 waterfall:
   allocation_basis_priority: [actual, weight, cube, handling_units, lines, extended_price]
   rounding: half_even
-  residual_assignment: largest_line
+  allocation_method: largest_remainder
 
 outliers:
   method: modified_robust_zscore
@@ -61,6 +70,7 @@ price_guidance:
   min_band_observations: 10
   provisional_target_percentile: 0.50
   provisional_start_percentile: 0.75
+  floor_rounding: ceiling
 
 sensitivity:
   panel_period: month
