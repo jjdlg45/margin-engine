@@ -115,6 +115,56 @@ def run_full(
     opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
     timings["opportunity"] = time.perf_counter() - t
 
+    # --- optional Run-2 modules: each runs when its input exists, otherwise
+    # switches off with a stated reason -------------------------------------
+    t = time.perf_counter()
+    inventory_cogs: pl.DataFrame | None = None
+    inventory_identity: pl.DataFrame | None = None
+    if res.reference["inventory_receipts"] is not None:
+        from margin_engine.extended.inventory import cost_sales
+
+        res.pipeline_cost_basis if hasattr(res, "pipeline_cost_basis") else None
+        method = {"standard": "standard", "average": "average", "fifo": "fifo"}.get(
+            res.mapping.lines.unit_cost.cost_basis.value if res.mapping.lines.unit_cost else "",
+            "average",
+        )
+        inv_sales = res.observations.filter(pl.col("quantity_norm") > 0).select(
+            "source_line_key", "item_id", "invoice_date", "quantity"
+        )
+        inv = cost_sales(res.reference["inventory_receipts"], inv_sales, method)
+        inventory_cogs = inv.per_sale
+        inventory_identity = inv.identity
+        res.notes.append(f"inventory costing ran with method '{method}' (declared cost basis)")
+    else:
+        res.notes.append("inventory costing OFF: no inventory_receipts table in the mapping/data")
+
+    win_curves: pl.DataFrame | None = None
+    if res.reference["quotes"] is not None and res.reference["price_list"] is not None:
+        from margin_engine.extended.quotes import fit_win_curves, quote_price_index
+
+        seg_of_pair = (
+            df.filter(pl.col("segment_leaf").is_not_null())
+            .select("customer_id", "item_id", "segment_leaf")
+            .unique(subset=["customer_id", "item_id"])
+        )
+        qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
+        win_curves = fit_win_curves(
+            qi, seg_of_pair, min_quotes=rules.sensitivity.min_quotes_per_segment
+        )
+        res.notes.append("win/loss modeling ran on the quotes table")
+    else:
+        res.notes.append("win/loss modeling OFF: no quotes table (or no price list) available")
+
+    cross_estimates: pl.DataFrame | None = None
+    if res.reference["substitution_groups"] is not None:
+        from margin_engine.extended.substitution import estimate_cross_effects
+
+        cross_estimates = estimate_cross_effects(panel, res.reference["substitution_groups"], rules)
+        res.notes.append("cross-price estimation ran within declared substitution groups")
+    else:
+        res.notes.append("cross-price estimation OFF: no substitution_groups table available")
+    timings["optional_modules"] = time.perf_counter() - t
+
     # ---- outputs -----------------------------------------------------------
     t = time.perf_counter()
     exports: dict[str, pl.DataFrame] = {
@@ -129,12 +179,26 @@ def run_full(
         "opportunities": opps,
         "leakage": leak,
         "order_economics": cts.order_economics,
+        **({"inventory_cogs": inventory_cogs} if inventory_cogs is not None else {}),
+        **({"inventory_identity": inventory_identity} if inventory_identity is not None else {}),
+        **({"win_curves": win_curves} if win_curves is not None else {}),
+        **({"cross_price_estimates": cross_estimates} if cross_estimates is not None else {}),
         "customer_economics": cts.customer_economics,
         "service_policy_flags": cts.service_flags,
         "reconciliation": res.reconciliation.to_frame(),
     }
-    if res.unallocated_settlements is not None and res.unallocated_settlements.height:
-        exports["unallocated_settlements"] = res.unallocated_settlements
+    exports["unallocated_settlements"] = (
+        res.unallocated_settlements
+        if res.unallocated_settlements is not None
+        else pl.DataFrame(
+            schema={
+                "customer_id": pl.String,
+                "period": pl.String,
+                "rebate_program_id": pl.String,
+                "amount_cents": pl.Int64,
+            }
+        )
+    )
     for fmt in rules.reporting.output_formats:
         if fmt == "parquet":
             for name, frame in exports.items():
@@ -260,6 +324,20 @@ def run_full(
             for r in guidance_summary.to_dicts()
         ],
         "guidance_label": PROVISIONAL_LABEL,
+        "inventory": (
+            {
+                "method": res.mapping.lines.unit_cost.cost_basis.value
+                if res.mapping.lines.unit_cost
+                else "-",
+                "n_sales_costed": inventory_cogs.height,
+                "n_flagged": inventory_cogs.filter(pl.col("cogs_flag") != "").height,
+                "cogs_total": _fmt_dollars(int(inventory_cogs["cogs_cents"].sum())),
+            }
+            if inventory_cogs is not None
+            else None
+        ),
+        "win_curves": win_curves.to_dicts() if win_curves is not None else None,
+        "cross_estimates": cross_estimates.to_dicts() if cross_estimates is not None else None,
         "opportunity": {
             "leakage_total": _fmt_dollars(int(leak["total_leakage_cents"].sum())),
             "gross_total": _fmt_dollars(

@@ -159,12 +159,22 @@ Models per segment (contract pairs excluded; flagged outlier lines excluded):
 - FE-2SLS with two instruments: supplier cost index and category tariff rate,
   both observed in reference tables.
 
+Time fixed effects run at item-role x month when roles are known: key value
+items are broadly co-carried and co-move within a month, and absorbing that
+common component keeps clustered inference honest. Flagged one-off commercial
+outliers are excluded from estimation only when the pair has enough history
+(>= 6 observations) for the one-off judgment to be reliable — on sparse pairs
+a genuine shock-driven price move is indistinguishable from a one-off, and
+excluding those points provably biases sparse-segment elasticities.
+
 Diagnostics: cluster-robust first-stage F; identifying-variation coverage;
 Sargan-style overidentification J with two instruments; robustness spread
 across IV-with-each-instrument-alone and the joint estimate; Anderson-Rubin
-confidence set by grid test inversion (weak-IV robust). The primary 95% CI is
-the cluster-robust Wald interval with t(G-1) critical values, whose coverage
-is verified by simulation; the AR set is reported alongside and takes over
+confidence set by grid test inversion (weak-IV robust). The primary 95%
+interval is a full leave-one-cluster-out jackknife (first stage re-estimated
+per left-out cluster) with t(G-1) critical values — calibrated at small
+cluster counts where plug-in sandwiches under-cover — verified by a
+50-simulation coverage study; the AR set is reported alongside and takes over
 under weak identification. Clustering level is configurable; the default
 configuration clusters by month, inside which both the instruments' variation
 and the customer-month demand-shock correlation live.

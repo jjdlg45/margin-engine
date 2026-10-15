@@ -72,7 +72,11 @@ def plant_quotes(
             "gap": gap,
         }
     ).join(lists, on=["customer_id", "item_id", "month"], how="left")
-    qdf = qdf.filter(pl.col("list_cents").is_not_null())
+    # Deterministic row order BEFORE any positional RNG draw: join output order
+    # is not guaranteed, and qty/date draws below align to rows by position.
+    qdf = qdf.filter(pl.col("list_cents").is_not_null()).sort(
+        "customer_id", "item_id", "month", "idx_q"
+    )
     lc = qdf["list_cents"].to_numpy()
     quote_cents = div_round_half_even(
         np.round(lc * qdf["idx_q"].to_numpy() * 10_000).astype(np.int64), 10_000

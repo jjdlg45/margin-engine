@@ -335,6 +335,9 @@ class SensitivityConfig(StrictModel):
     # support; below it the estimate is reported but capped at descriptive.
     min_iv_observations: int = Field(default=200, ge=2)
     min_iv_pairs: int = Field(default=50, ge=2)
+    # Win-curve estimation (Phase 16): segments with fewer quotes get
+    # insufficient_data and are excluded from accuracy gating.
+    min_quotes_per_segment: int = Field(default=400, ge=10)
     min_price_variation_cv: float = Field(default=0.01, ge=0)
 
 

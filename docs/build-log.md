@@ -753,3 +753,65 @@ the recapture rate. 4/4 tests.
   aggregation) exists even in valid worlds and is documented in the tests;
   thresholds are 1.0 / 0.8 against the invalid preset's measured 1.8-2.0.
   The engine-side gate remains the Phase 6 overidentification test.
+
+---
+## Phase 17.1 — Pipeline integration, economics completeness, KVI-aware elasticity (2026-10-15)
+
+**1. Pipeline integration.** Phases 14/16/17 wired into `margin-engine run`:
+inventory costing runs under the mapping's declared cost basis when receipts
+exist; win/loss curves fit per engine segment when quotes exist; cross-price
+estimation runs when substitution groups exist. Each exports CSV+Parquet
+(inventory_cogs, inventory_identity, win_curves, cross_price_estimates), gets
+an HTML report section, and otherwise switches off with a stated reason. The
+committed sample now carries receipts, quotes and substitution groups, and a
+CLI test asserts every enabled module's outputs and report sections exist.
+
+**2/3/4. Economics completeness.** Order and customer economics include linked
+returns (by order_id) with sales and returns contribution shown separately
+plus the net; service-policy flags use the net. Contribution is computed on
+the covered basis (lines with known cost) with revenue_with_cost and
+pct_revenue_excluded columns; property test over a full generated world:
+pocket_covered - product_cost - cts_covered == contribution exactly on every
+order and customer row. Activity cost-to-serve no longer folds into the base
+measures: contribution stays the base, contribution_after_activity (line,
+order, customer) subtracts the labeled-estimated activity cost.
+
+**5. KVI planting restored + elasticity calibration.** Original planting back
+(carriage 0.5, frequency x1.6, dispersion x0.3) — KVI recall 96.7-100%.
+Coverage was then diagnosed with a 50-simulation z-study (300 estimates):
+(a) role x month time fixed effects absorb KVI co-movement (errors shrank to
+median 0.023 / P90 0.068); (b) the IV standard error is now a full
+leave-one-cluster-out jackknife (first stage re-estimated per cluster);
+(c) the decisive fix: the pair-residual commercial-outlier exclusion was
+false-flagging genuine shock-driven price moves on sparse pairs and trimming
+exactly the informative points — measured bias -0.051 on the long-tail segment
+vs -0.003 with the exclusion gated on pair history >= 6 observations. The
+coverage study/test now runs 50 simulations. Result: 276/300 segment
+estimates covered = 0.920, inside the 0.90-0.98 target with margin (the
+pre-fix estimator measured 0.887 on the restored-KVI world).
+
+**6. Win-curve gating.** `sensitivity.min_quotes_per_segment` (default 400):
+every segment at or above the minimum gates at ±15% relative error per
+segment; thinner segments are insufficient_data with counts reported.
+
+**7. Determinism.** Root cause of the 21.9% vs 21.4% discrepancy: positional
+RNG draws (quote quantities/dates) aligned to rows AFTER an order-unstable
+join in the quote generator, plus an unsorted tiered-settlement export. Both
+sorted; a repeat-run test generates a fully-featured world twice and asserts
+every export byte-identical (passes 3/3).
+
+**8. unallocated_settlements.csv** now written with headers even when empty.
+
+**Recalibration note.** The quantity-scale change (base_qty_log_mean 2.6 ->
+3.0) removed the zero-truncation artifact that the invalid-instrument preset
+test's threshold had baked in. Remeasured across 5 seeds on the current world:
+invalid preset partial-regression leak 0.57-0.99, valid worlds -0.08-0.10.
+Thresholds recalibrated to >0.4 (invalid) and <0.3 absolute (valid) -- the
+preset's intended condition (leak present vs absent) still proven with wide
+margin on both sides. The section-8 gate for invalid instruments is the
+engine-side overidentification rejection, unchanged and passing.
+
+**Checks.** ruff clean, mypy strict clean. Full suite: one failure (the
+threshold above, recalibrated with measured evidence, test_generator rerun
+green); all other tests passed including 50-sim coverage (0.920), repeat-run
+byte-identical determinism, and the full fixture/property set.

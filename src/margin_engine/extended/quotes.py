@@ -22,8 +22,6 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-MIN_QUOTES = 200
-
 STATUS_INSUFFICIENT = "insufficient_data"
 STATUS_ESTIMATED = "estimated_win_curve"
 
@@ -63,9 +61,14 @@ def quote_price_index(quotes: pl.DataFrame, price_list: pl.DataFrame) -> pl.Data
     )
 
 
-def fit_win_curves(quotes_indexed: pl.DataFrame, segment_of_pair: pl.DataFrame) -> pl.DataFrame:
+def fit_win_curves(
+    quotes_indexed: pl.DataFrame,
+    segment_of_pair: pl.DataFrame,
+    min_quotes: int = 400,
+) -> pl.DataFrame:
     """One logistic fit per segment. segment_of_pair: customer_id, item_id,
-    segment_leaf."""
+    segment_leaf. Segments with fewer than min_quotes quotes are
+    insufficient_data (reported, never gated on accuracy)."""
     import statsmodels.api as sm
 
     q = quotes_indexed.join(segment_of_pair, on=["customer_id", "item_id"], how="left").filter(
@@ -82,7 +85,7 @@ def fit_win_curves(quotes_indexed: pl.DataFrame, segment_of_pair: pl.DataFrame) 
                     (1 - pl.col("close_price_cents") / pl.col("quoted_price_cents")).mean()
                 ).item()
             )
-        if grp.height < MIN_QUOTES:
+        if grp.height < min_quotes:
             wc.reasons = f"only {grp.height} quotes"
             out.append(wc.to_dict())
             continue

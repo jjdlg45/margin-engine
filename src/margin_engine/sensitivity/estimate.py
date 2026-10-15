@@ -214,6 +214,10 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         return est
 
     cluster_col = "cluster_month" if sc.cluster_level == "month" else "cluster_supplier_month"
+    # Time fixed effects at item-role x month when roles are known: key value
+    # items are broadly co-carried and co-move within a month, and absorbing
+    # that common component keeps cluster-robust standard errors honest.
+    time_fe = "role_month" if "role_month" in pos.columns else "month_idx"
     pdf = _to_pandas(
         pos.select(
             "log_qty",
@@ -224,6 +228,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
             "month_idx",
             cluster_col,
             "qty",
+            *([time_fe] if time_fe != "month_idx" else []),
         ).drop_nulls(subset=["log_qty", "log_price"])
     )
     if len(pdf) < sc.min_observations:
@@ -231,7 +236,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         return est
 
     # --- naive FE-OLS ------------------------------------------------------
-    dm = _two_way_demean(pdf, ["log_qty", "log_price"], "pair", "month_idx")
+    dm = _two_way_demean(pdf, ["log_qty", "log_price"], "pair", time_fe)
     y = dm["log_qty"].to_numpy()
     p = dm[["log_price"]].to_numpy()
     clusters = pdf[cluster_col].to_numpy()
@@ -259,7 +264,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         est.status_reasons.append("instruments unavailable in the data")
         return est
 
-    dmz = _two_way_demean(pdf, ["log_qty", "log_price", *z_cols], "pair", "month_idx")
+    dmz = _two_way_demean(pdf, ["log_qty", "log_price", *z_cols], "pair", time_fe)
     yz = dmz["log_qty"].to_numpy()
     pz = dmz["log_price"].to_numpy()
     z = dmz[z_cols].to_numpy()
@@ -292,14 +297,38 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         return est
     beta_iv = float((p_hat @ yz) / denom)
     est.iv = beta_iv
-    # Cluster-robust IV se via sandwich on moment p_hat*(u).
-    u = yz - beta_iv * pz
+    # Full cluster-jackknife IV standard error: leave-one-cluster-out betas
+    # with the FIRST STAGE re-estimated each time. Fixed-projection sandwiches
+    # (CRV1 and partial jackknives) ignore first-stage sampling noise, which is
+    # non-negligible in thinner segments and was the source of under-coverage
+    # in simulation; G = 24 month clusters keep this exact and cheap.
     codes, n_g = _cluster_codes(clusters)
-    score_sum = np.zeros(n_g)
-    np.add.at(score_sum, codes, p_hat * u)
-    meat = float((score_sum**2).sum()) * n_g / max(n_g - 1, 1)
-    bread = denom
-    est.iv_se = float(np.sqrt(meat) / abs(bread)) if bread else None
+    k_z = z.shape[1]
+    zz_g = np.zeros((n_g, k_z, k_z))
+    zp_g = np.zeros((n_g, k_z))
+    zy_g = np.zeros((n_g, k_z))
+    for g in range(n_g):
+        m = codes == g
+        zg = z[m]
+        zz_g[g] = zg.T @ zg
+        zp_g[g] = zg.T @ pz[m]
+        zy_g[g] = zg.T @ yz[m]
+    zz_tot = zz_g.sum(axis=0)
+    zp_tot = zp_g.sum(axis=0)
+    zy_tot = zy_g.sum(axis=0)
+    loco_list = []
+    for g in range(n_g):
+        a = np.linalg.pinv(zz_tot - zz_g[g])
+        bz = zp_tot - zp_g[g]
+        by = zy_tot - zy_g[g]
+        d = float(bz @ a @ bz)
+        if abs(d) > 1e-12:
+            loco_list.append(float(bz @ a @ by) / d)
+    loco = np.array(loco_list if loco_list else [beta_iv])
+    n_l = len(loco)
+    est.iv_se = (
+        float(np.sqrt((n_l - 1) / n_l * ((loco - loco.mean()) ** 2).sum())) if n_l > 1 else None
+    ) or None
     if est.iv_se:
         from scipy import stats as _st
 

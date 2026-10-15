@@ -111,6 +111,37 @@
 </div>
 <p class="muted">{{ opportunity.n_records }} opportunity records; volume treatment: {{ opportunity.treatment_counts }}</p>
 
+{% if inventory %}
+<h2>Inventory costing</h2>
+<p class="muted">Method: {{ inventory.method }} (declared cost basis) &middot; {{ inventory.n_sales_costed }} sales costed &middot; COGS ${{ inventory.cogs_total }} &middot; {{ inventory.n_flagged }} line(s) flagged (insufficient receipts / no standard).</p>
+{% endif %}
+{% if win_curves %}
+<h2>Quote win/loss curves</h2>
+<table>
+  <tr><th>Segment</th><th>Quotes</th><th>Win rate</th><th>Price coefficient</th><th>95% CI</th><th>Negotiation gap</th><th>Status</th></tr>
+  {% for w in win_curves %}
+  <tr><td>{{ w.segment }}</td><td>{{ w.n_quotes }}</td><td>{{ "%.1f%%"|format(w.win_rate * 100) }}</td>
+      <td>{{ "%.2f"|format(w.price_coef) if w.price_coef is not none else "-" }}</td>
+      <td>{{ "[%.2f, %.2f]"|format(w.ci_low, w.ci_high) if w.ci_low is not none else "-" }}</td>
+      <td>{{ "%.1f%%"|format(w.negotiation_gap * 100) if w.negotiation_gap is not none else "-" }}</td>
+      <td><span class="status {{ 'ok' if w.status == 'estimated_win_curve' else 'bad' }}">{{ w.status }}</span></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if cross_estimates %}
+<h2>Cross-price effects (substitution groups)</h2>
+<table>
+  <tr><th>Group</th><th>Item</th><th>Substitute</th><th>Cross elasticity</th><th>Min first-stage F</th><th>Status</th></tr>
+  {% for c in cross_estimates %}
+  <tr><td>{{ c.group_id }}</td><td>{{ c.item_a }}</td><td>{{ c.item_b }}</td>
+      <td>{{ "%.2f"|format(c.cross_elasticity) if c.cross_elasticity is not none else "-" }}</td>
+      <td>{{ "%.0f"|format(c.min_first_stage_f) if c.min_first_stage_f is not none else "-" }}</td>
+      <td><span class="status {{ 'ok' if 'causal' in c.status else ('warn' if 'iv_' in c.status else 'bad') }}">{{ c.status }}</span></td></tr>
+  {% endfor %}
+</table>
+<p class="muted">Cross-price estimates exist only within declared substitution groups and only where identified; unsupported cases are labeled with a reason, never estimated.</p>
+{% endif %}
+
 <h2>Run manifest</h2>
 <p class="muted">Software: {% for k, v in manifest.software_versions.items() %}{{ k }} {{ v }}{{ ", " if not loop.last }}{% endfor %}</p>
 <p class="muted">Stage timings (s): {% for k, v in manifest.stage_timings_s.items() %}{{ k }}={{ v }}{{ ", " if not loop.last }}{% endfor %}</p>

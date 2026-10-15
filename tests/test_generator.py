@@ -175,9 +175,11 @@ def test_preset_invalid_instrument(tmp_path: Path) -> None:
     x = d.select("p_dm", "zt_dm").to_numpy()
     y = d["q_dm"].to_numpy()
     coef = la.lstsq(x, y, rcond=None)[0]
-    # Planted leak 1.5 plus a positive measurement-attenuation artifact
-    # (~0.3-0.5, present even in valid worlds) puts this at ~1.8-2.0.
-    assert coef[1] > 1.0, f"tariff should enter demand directly, got {coef[1]}"
+    # Planted leak 1.5; the partial regression's endogenous price coefficient
+    # absorbs part of it, so the measured leak is attenuated. Calibrated on the
+    # current world (base_qty_log_mean=3.0): 0.57-0.99 across 5 seeds, vs
+    # -0.08-0.10 in valid worlds -- unambiguous separation.
+    assert coef[1] > 0.4, f"tariff should enter demand directly, got {coef[1]}"
 
 
 def test_preset_invalid_instrument_valid_in_baseline(world: tuple[Path, dict[str, Any]]) -> None:
@@ -201,11 +203,11 @@ def test_preset_invalid_instrument_valid_in_baseline(world: tuple[Path, dict[str
     x = d.select("p_dm", "u_dm", "zt_dm").to_numpy()
     y = d["q_dm"].to_numpy()
     coef = la.lstsq(x, y, rcond=None)[0]
-    # No planted leak; the residual ~0.3-0.5 is a measurement-attenuation
-    # artifact (unit prices are monthly aggregates), far below the invalid
-    # preset's ~1.8-2.0. The engine-side statistical gate is the Phase 6
-    # overidentification test, verified separately.
-    assert abs(coef[2]) < 0.8, f"tariff should not enter demand directly, got {coef[2]}"
+    # No planted leak: calibrated at -0.08-0.10 across 5 seeds on the current
+    # world, far below the invalid preset's 0.57-0.99. The engine-side
+    # statistical gate is the Phase 6 overidentification test, verified
+    # separately.
+    assert abs(coef[2]) < 0.3, f"tariff should not enter demand directly, got {coef[2]}"
 
 
 def test_preset_sparse(tmp_path: Path) -> None:
@@ -259,3 +261,30 @@ def test_settlements_match_line_truth(world: tuple[Path, dict[str, Any]]) -> Non
     total_table = round(settles["AMT"].sum() * 100)
     total_truth = int(truth["truth_settlement_rebate_cents"].sum())
     assert total_table == total_truth
+
+
+def test_run2_worlds_byte_identical_across_runs(tmp_path: Path) -> None:
+    """Determinism across repeated runs with every Run-2 feature enabled
+    (currencies, substitution groups, quotes, receipts, tiers): all exports and
+    the truth summary byte-identical."""
+    outs = []
+    for run in ("a", "b"):
+        cfg = GeneratorConfig.for_preset(
+            Preset.WELL_IDENTIFIED,
+            seed=19,
+            n_customers=60,
+            n_items=150,
+            currency_shares={"USD": 0.7, "EUR": 0.3},
+            n_substitution_groups=5,
+        )
+        out = tmp_path / run
+        generate(cfg, out)
+        outs.append(out)
+    a, b = outs
+    files = sorted(p.name for p in (a / "erp").glob("*.csv"))
+    assert "quotes.csv" in files and "substitution_groups.csv" in files
+    for name in files:
+        assert _file_hash(a / "erp" / name) == _file_hash(b / "erp" / name), name
+    assert _file_hash(a / "ground_truth" / "truth_summary.json") == _file_hash(
+        b / "ground_truth" / "truth_summary.json"
+    )

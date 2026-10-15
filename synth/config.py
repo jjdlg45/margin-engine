@@ -75,7 +75,7 @@ class DemandParams(BaseModel):
     # Pair-level price heterogeneity within segment (log sd).
     pair_price_sd: float = 0.05
     # Log mean / sd of pair base monthly quantity.
-    base_qty_log_mean: float = 2.6
+    base_qty_log_mean: float = 3.0
     base_qty_log_sd: float = 0.7
     # Multiplicative quantity noise (log sd). Quantity is exactly log-linear:
     # Q = max(1, round(exp(log mu + eps))), so the planted elasticity IS the
@@ -88,7 +88,7 @@ class DemandParams(BaseModel):
     # Monthly purchase incidence probability for an active, available pair.
     purchase_prob: float = 0.60
     # Probability a customer also carries any given KVI item (Phase 15).
-    kvi_carriage_prob: float = 0.35
+    kvi_carriage_prob: float = 0.5
 
 
 class GeneratorConfig(BaseModel):

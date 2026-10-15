@@ -93,14 +93,18 @@ def plant_tiered_rebates(
         .agg(pl.col("net_cents").sum().alias("cy_net"))
         .with_columns(rate_for(pl.col("cy_net")).alias("final_rate_bp"))
     )
-    settle = settle.with_columns(
-        pl.Series(
-            "amount_cents",
-            apply_bp(settle["cy_net"].to_numpy(), settle["final_rate_bp"].to_numpy()),
-        ),
-        (pl.col("_year").cast(pl.String) + "-FY").alias("period"),
-        pl.lit("TIER01").alias("rebate_program_id"),
-    ).select("customer_id", "period", "rebate_program_id", "amount_cents")
+    settle = (
+        settle.with_columns(
+            pl.Series(
+                "amount_cents",
+                apply_bp(settle["cy_net"].to_numpy(), settle["final_rate_bp"].to_numpy()),
+            ),
+            (pl.col("_year").cast(pl.String) + "-FY").alias("period"),
+            pl.lit("TIER01").alias("rebate_program_id"),
+        )
+        .select("customer_id", "period", "rebate_program_id", "amount_cents")
+        .sort("customer_id", "period")
+    )
 
     lines = (
         lines.drop("truth_tiered_accrual_cents", "truth_tiered_rate_bp")

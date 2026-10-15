@@ -231,11 +231,12 @@ def test_diagnostics_reported(study: list[dict[str, Any]]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_ci_coverage_20_simulations(tmp_path: Path) -> None:
-    # Default generator scale: the coverage target applies at default settings.
+def test_ci_coverage_50_simulations(tmp_path: Path) -> None:
+    # Default generator scale; 50 simulations (300 segment estimates) per the
+    # phase-17.1 review: enough resolution that passing means margin, not luck.
     rules = rules_full()
     covered, total = 0, 0
-    for seed in range(100, 120):
+    for seed in range(100, 150):
         panel, truth, _ = build_world_panel(
             tmp_path, Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
         )
@@ -247,7 +248,7 @@ def test_ci_coverage_20_simulations(tmp_path: Path) -> None:
             total += 1
             covered += int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
     rate = covered / total
-    print(f"\n95% CI (cluster-robust Wald) coverage over 20 sims: {covered}/{total} = {rate:.3f}")
+    print(f"\n95% CI (cluster-jackknife) coverage over 50 sims: {covered}/{total} = {rate:.3f}")
     assert 0.90 <= rate <= 0.98, f"coverage {rate:.3f} outside [0.90, 0.98]"
 
 

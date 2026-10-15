@@ -148,11 +148,11 @@ def build_pairs(
     pair_eff = rng.normal(0, d.pair_price_sd, n_pairs)
     # KVIs have well-known street prices: much tighter pair-level dispersion
     # (this is what makes them comparable, the third candidate-score signal).
-    pair_eff = np.where(item_role[i] == "kvi", pair_eff * 0.5, pair_eff)
+    pair_eff = np.where(item_role[i] == "kvi", pair_eff * 0.3, pair_eff)
     base_q = rng.normal(d.base_qty_log_mean, d.base_qty_log_sd, n_pairs)
     # Long-tail pairs buy much less often; KVI pairs much more often.
     buy_prob = np.where(long_tail[i], d.purchase_prob * 0.25, d.purchase_prob)
-    buy_prob = np.where(item_role[i] == "kvi", np.minimum(0.9, buy_prob * 1.3), buy_prob)
+    buy_prob = np.where(item_role[i] == "kvi", np.minimum(0.92, buy_prob * 1.6), buy_prob)
     # Active window: 80% active from month 0 to end; rest enter late or exit early.
     start_m = np.zeros(n_pairs, dtype=np.int64)
     end_m = np.full(n_pairs, cfg.months - 1, dtype=np.int64)

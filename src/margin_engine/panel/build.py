@@ -48,7 +48,13 @@ def build_panel(
         # One-off anomalous prices (clearance, strategic concessions) are real
         # dollars but not demand-curve observations; standard robust practice
         # excludes them from behavioral estimation. They remain in the ledger.
-        sales = sales.filter(~pl.col("flag_commercial_pricing_outlier"))
+        # On SPARSE pairs the one-off judgment is unreliable (a genuine
+        # shock-driven price move looks like a one-off against 3-4 points of
+        # history) and excluding those points provably biases sparse-segment
+        # elasticities away from zero, so the exclusion requires enough pair
+        # history to mean something.
+        reliable = pl.col("_pair_n") >= 6 if "_pair_n" in sales.columns else pl.lit(True)
+        sales = sales.filter(~(pl.col("flag_commercial_pricing_outlier") & reliable))
 
     monthly = (
         sales.group_by("customer_id", "item_id", "month_idx")
@@ -124,9 +130,10 @@ def build_panel(
 
     # Attributes and instruments.
     if items is not None:
-        panel = panel.join(
-            items.select("item_id", "supplier_id", "item_category"), on="item_id", how="left"
-        )
+        cols = ["item_id", "supplier_id", "item_category"]
+        if "item_role" in items.columns:
+            cols.append("item_role")
+        panel = panel.join(items.select(cols), on="item_id", how="left")
     year = (pl.col("month_idx") - 1) // 12
     mon = (pl.col("month_idx") - 1) % 12 + 1
     panel = panel.with_columns(
@@ -160,6 +167,11 @@ def build_panel(
         or supplier_cost_index is not None
         else pl.lit("all").alias("cluster_supplier_month"),
         pl.col("period").alias("cluster_month"),
+        (
+            (pl.col("item_role").fill_null("unknown") + "@" + pl.col("period"))
+            if items is not None and "item_role" in items.columns
+            else pl.lit("all@") + pl.col("period")
+        ).alias("role_month"),
         pl.col("segment_leaf_pair").alias("segment_leaf"),
         pl.col("contract_id_pair").alias("contract_id"),
     )
