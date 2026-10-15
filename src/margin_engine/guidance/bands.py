@@ -148,6 +148,11 @@ def build_guidance(
             .alias("unit_cost_f"),
             pl.col("eff_list_cents").drop_nulls().last().alias("eff_list_cents"),
             pl.col("contract_id").drop_nulls().last().alias("contract_id"),
+            (
+                pl.col("item_role").drop_nulls().first()
+                if "item_role" in base.columns
+                else pl.lit(None, dtype=pl.String)
+            ).alias("item_role"),
         )
         .with_columns(pl.col("unit_cost_f").round(0).cast(pl.Int64).alias("unit_cost_cents"))
         .drop("unit_cost_f")
@@ -209,6 +214,28 @@ def build_guidance(
     )
 
     g = pair.join(bands, on="segment_leaf", how="left")
+
+    # Role-specific corridor policy (Phase 15): KVI corridors are pulled toward
+    # the segment median — key-value items get less pricing latitude.
+    shrink = float(pg.kvi_corridor_shrink)
+    is_kvi = pl.col("item_role") == "kvi"
+    if shrink < 1.0:
+        g = g.with_columns(
+            pl.when(is_kvi)
+            .then(pl.col("band_p50") - (pl.col("band_p50") - pl.col("band_p25")) * shrink)
+            .otherwise(pl.col("band_p25"))
+            .alias("band_p25"),
+            pl.when(is_kvi)
+            .then(pl.col("band_p50") + (pl.col("band_p75") - pl.col("band_p50")) * shrink)
+            .otherwise(pl.col("band_p75"))
+            .alias("band_p75"),
+            pl.when(is_kvi)
+            .then(pl.lit("kvi_tightened_corridor"))
+            .otherwise(pl.lit(None, dtype=pl.String))
+            .alias("corridor_policy"),
+        )
+    else:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("corridor_policy"))
 
     insufficient = (
         pl.col("n_observations").is_null()
