@@ -28,3 +28,8 @@ output/
 Thumbs.db
 .vscode/
 .idea/
+
+# Secrets / local settings
+.env
+*.env
+.claude/settings.local.json
