@@ -70,6 +70,7 @@ def build_pairs(
     contracts: pl.DataFrame,
     segments: list[SegmentDef],
     rng: np.random.Generator,
+    substitution_partner: dict[str, str] | None = None,
 ) -> pl.DataFrame:
     """Assortment: which items each customer can buy, with pair-level parameters."""
     d = cfg.demand
@@ -80,11 +81,31 @@ def build_pairs(
 
     cust_idx: list[np.ndarray] = []
     item_idx: list[np.ndarray] = []
+    # KVI behavior (Phase 15): key-value items are bought by many customers.
+    # Extra inclusions ride a separate RNG stream so non-KVI draws (and any
+    # world generated before this phase) keep their main-stream draws.
+    kvi_rng = np.random.default_rng(cfg.seed + 222)
+    kvi_items = np.flatnonzero(item_role == "kvi")
+    # Substitution partners are usually co-carried (customers stock competing
+    # brands); separate stream so other worlds keep their draws.
+    sub_rng = np.random.default_rng(cfg.seed + 112)
+    item_ids_list = items["item_id"].to_list()
+    item_pos_of = {iid: k for k, iid in enumerate(item_ids_list)}
     for ci in range(len(cust_rows)):
         k = int(rng.integers(cfg.assortment_min, cfg.assortment_max + 1))
         k = min(k, n_items)
         picks = rng.choice(n_items, k, replace=False)
-        cust_idx.append(np.full(k, ci))
+        extra = kvi_items[kvi_rng.random(len(kvi_items)) < d.kvi_carriage_prob]
+        picks = np.unique(np.concatenate([picks, extra]))
+        if substitution_partner:
+            partners = [
+                item_pos_of[substitution_partner[item_ids_list[p]]]
+                for p in picks
+                if item_ids_list[p] in substitution_partner and sub_rng.random() < 0.8
+            ]
+            if partners:
+                picks = np.unique(np.concatenate([picks, np.array(partners)]))
+        cust_idx.append(np.full(len(picks), ci))
         item_idx.append(picks)
     c = np.concatenate(cust_idx)
     i = np.concatenate(item_idx)
@@ -125,9 +146,13 @@ def build_pairs(
     n_pairs = pair_df.height
     mean_beta = float(np.mean([s.elasticity for s in segments]))
     pair_eff = rng.normal(0, d.pair_price_sd, n_pairs)
+    # KVIs have well-known street prices: much tighter pair-level dispersion
+    # (this is what makes them comparable, the third candidate-score signal).
+    pair_eff = np.where(item_role[i] == "kvi", pair_eff * 0.5, pair_eff)
     base_q = rng.normal(d.base_qty_log_mean, d.base_qty_log_sd, n_pairs)
-    # Long-tail pairs buy much less often.
+    # Long-tail pairs buy much less often; KVI pairs much more often.
     buy_prob = np.where(long_tail[i], d.purchase_prob * 0.25, d.purchase_prob)
+    buy_prob = np.where(item_role[i] == "kvi", np.minimum(0.9, buy_prob * 1.3), buy_prob)
     # Active window: 80% active from month 0 to end; rest enter late or exit early.
     start_m = np.zeros(n_pairs, dtype=np.int64)
     end_m = np.full(n_pairs, cfg.months - 1, dtype=np.int64)
@@ -153,6 +178,7 @@ def simulate_panel(
     customers: pl.DataFrame,
     list_history: pl.DataFrame,
     rng: np.random.Generator,
+    substitution: tuple[pl.DataFrame, dict[str, float]] | None = None,
 ) -> DemandWorld:
     d = cfg.demand
     months = cfg.months
@@ -239,6 +265,44 @@ def simulate_panel(
     log_p_rel = np.log(np.maximum(unit_price_cents, 1) / base_list)
     season = SEASON_AMPLITUDE * np.sin(2 * np.pi * (t_tile % 12) / 12)
     log_mu = log_bq + beta * log_p_rel + ut + d.tariff_demand_leak * zt + season
+
+    # Cross-price effects (Phase 17): for substitution-group partners, demand
+    # for A rises with B's relative price when the same customer carries both.
+    if substitution is not None and substitution[0].height:
+        groups_df, gammas = substitution
+        item_ids_all = items["item_id"].to_list()
+        obs = pl.DataFrame(
+            {
+                "row": np.arange(n_obs),
+                "cust": cu,
+                "item_id": [item_ids_all[k] for k in it],
+                "t": t_tile,
+                "logp_rel": log_p_rel,
+            }
+        )
+        g2 = groups_df.join(groups_df, on="group_id", suffix="_partner").filter(
+            pl.col("item_id") != pl.col("item_id_partner")
+        )
+        partner_prices = obs.select(
+            pl.col("cust"),
+            pl.col("item_id").alias("item_id_partner"),
+            pl.col("t"),
+            pl.col("logp_rel").alias("partner_logp_rel"),
+        )
+        cross = (
+            obs.join(g2, on="item_id", how="inner")
+            .join(partner_prices, on=["cust", "item_id_partner", "t"], how="inner")
+            .with_columns(
+                pl.col("group_id")
+                .replace_strict(gammas, default=0.0, return_dtype=pl.Float64)
+                .alias("gamma")
+            )
+            .group_by("row")
+            .agg((pl.col("gamma") * pl.col("partner_logp_rel")).sum().alias("adj"))
+        )
+        adj = np.zeros(n_obs)
+        adj[cross["row"].to_numpy()] = cross["adj"].to_numpy()
+        log_mu = log_mu + adj
     mu = np.exp(np.clip(log_mu, -10, 8))
     bought = available & (rng.random(n_obs) < buy_p)
     qty = np.zeros(n_obs, dtype=np.int64)

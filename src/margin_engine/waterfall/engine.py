@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.extended.tiered import apply_tiered_rebates
 from margin_engine.ingest.mapping import MappingError, SourceMapping
 from margin_engine.money import div_half_even_expr
 from margin_engine.waterfall.allocate import allocate_exact
@@ -258,6 +259,71 @@ def _return_economics(
     return pl.concat([other, rets], how="diagonal_relaxed")
 
 
+def _kit_allocation(
+    lines: pl.DataFrame, notes: list[str], residuals: dict[str, int]
+) -> pl.DataFrame:
+    """Kit revenue allocation (Phase 12): within each (invoice, kit id) group,
+    the priced parent line's revenue is reallocated to the zero-priced
+    component lines by relative standalone price (effective list x normalized
+    quantity), largest-remainder. The reallocation sums to zero per kit, so
+    nothing is created or lost; kit_role labels parent vs component."""
+    if "kit_parent_id" not in lines.columns:
+        return lines.with_columns(
+            pl.lit(0, dtype=pl.Int64).alias("kit_revenue_realloc_cents"),
+            pl.lit(None, dtype=pl.String).alias("kit_role"),
+        )
+    in_kit = pl.col("kit_parent_id").is_not_null() & (pl.col("transaction_type") == "sale")
+    kits = lines.filter(in_kit)
+    other = lines.filter(~in_kit).with_columns(
+        pl.lit(0, dtype=pl.Int64).alias("kit_revenue_realloc_cents"),
+        pl.lit(None, dtype=pl.String).alias("kit_role"),
+    )
+    if kits.height == 0:
+        return other
+    kits = kits.with_columns(
+        (pl.col("invoice_id") + "|" + pl.col("kit_parent_id")).alias("_kit_key"),
+        (pl.col("net_amount_cents") > 0).alias("_is_parent"),
+    )
+    # Standalone value driver for components; parents excluded from allocation.
+    comp = kits.filter(~pl.col("_is_parent")).with_columns(
+        (
+            pl.col("eff_list_cents").fill_null(0)
+            * (pl.col("quantity_norm") * 10_000).round(0).cast(pl.Int64)
+        )
+        .floordiv(10_000)
+        .alias("_standalone")
+    )
+    parent = kits.filter(pl.col("_is_parent"))
+    kit_revenue = parent.group_by("_kit_key").agg(pl.col("net_amount_cents").sum().alias("kit_rev"))
+    comp = allocate_exact(
+        comp, kit_revenue, "_kit_key", "kit_rev", "_standalone", "kit_revenue_realloc_cents"
+    ).drop("_standalone")
+    parent = parent.with_columns(
+        (-pl.col("net_amount_cents")).alias("kit_revenue_realloc_cents"),
+        pl.lit("kit_parent").alias("kit_role"),
+    )
+    comp = comp.with_columns(pl.lit("kit_component").alias("kit_role"))
+    # Conservation: reallocation nets to zero per kit (parents with no
+    # components keep their revenue; their reallocation is reversed).
+    comp_sum = dict(
+        comp.group_by("_kit_key").agg(pl.col("kit_revenue_realloc_cents").sum()).iter_rows()
+    )
+    parent = parent.with_columns(
+        pl.when(pl.col("_kit_key").replace_strict(comp_sum, default=0, return_dtype=pl.Int64) == 0)
+        .then(0)
+        .otherwise(pl.col("kit_revenue_realloc_cents"))
+        .alias("kit_revenue_realloc_cents")
+    )
+    out = pl.concat(
+        [other, parent.drop("_is_parent", "_kit_key"), comp.drop("_is_parent", "_kit_key")],
+        how="diagonal_relaxed",
+    )
+    residuals["kit_realloc_net_cents"] = int(out["kit_revenue_realloc_cents"].sum())
+    if residuals["kit_realloc_net_cents"] != 0:
+        notes.append("kit reallocation did not net to zero — investigate")
+    return out
+
+
 def build_waterfall(
     ledger: pl.DataFrame,
     mapping: SourceMapping,
@@ -273,6 +339,8 @@ def build_waterfall(
     vendor_rebate_programs: pl.DataFrame | None,
     landed_cost_components: pl.DataFrame | None,
     return_freight_log: pl.DataFrame | None = None,
+    rebate_program_tiers: pl.DataFrame | None = None,
+    tiered_settlements: pl.DataFrame | None = None,
 ) -> WaterfallResult:
     notes: list[str] = []
     residuals: dict[str, int] = {}
@@ -283,6 +351,7 @@ def build_waterfall(
 
     sale = pl.col("transaction_type") == "sale"
     lines = _return_economics(lines, mapping, rules, return_freight_log, notes, residuals)
+    lines = _kit_allocation(lines, notes, residuals)
 
     # --- stage 2: invoice revenue = net + allocated billed charges ----------
     if order_charges is not None and "order_id" in lines.columns:
@@ -319,9 +388,11 @@ def build_waterfall(
             pl.lit(None, dtype=pl.String).alias("billed_charge_status"),
         )
     lines = lines.with_columns(
-        (pl.col("net_amount_cents") + pl.col("billed_charge_alloc_cents")).alias(
-            "invoice_revenue_cents"
-        )
+        (
+            pl.col("net_amount_cents")
+            + pl.col("billed_charge_alloc_cents")
+            + pl.col("kit_revenue_realloc_cents")
+        ).alias("invoice_revenue_cents")
     )
 
     # --- stage 3: pocket revenue -------------------------------------------
@@ -422,6 +493,13 @@ def build_waterfall(
             pl.lit(None, dtype=pl.String).alias("rebate_settlement_status"),
         )
 
+    # Tiered retrospective rebates: accruals during the period (estimated),
+    # settled customer-years trued up to actual; the waterfall uses whichever
+    # is labeled in tiered_rebate_status.
+    lines = apply_tiered_rebates(
+        lines, rebate_programs, rebate_program_tiers, tiered_settlements, notes, residuals
+    )
+
     # Price credits: allocate each credit's amount over its original invoice's
     # sale lines by net share. A credit dollar counts exactly once: attributed
     # credits zero out on the credit row; unattributable credits keep their own
@@ -480,6 +558,7 @@ def build_waterfall(
             - pl.col("rebate_actual_cents")
             - pl.col("rebate_settlement_alloc_cents")
             - pl.col("freight_concession_cents")
+            - pl.col("tiered_rebate_used_cents")
             + pl.when(sale).then(pl.col("price_credit_alloc_cents")).otherwise(0)
             # Return recovery (restocking fee + return freight billed to the
             # customer) is revenue; zero on non-return lines.
@@ -564,9 +643,21 @@ def build_waterfall(
     # --- stage 6: cost to serve (freight expense + non-price claims) ---------
     if freight_log is not None and "order_id" in lines.columns:
         fl = freight_log.group_by("order_id").agg(pl.col("amount_cents").sum())
+        # Weight driver preferred (spec allocation priority); fall back to net.
+        if items is not None and "weight" in items.columns and "line_weight" not in lines.columns:
+            lines = (
+                lines.join(
+                    items.select("item_id", pl.col("weight").alias("_wt")), on="item_id", how="left"
+                )
+                .with_columns(
+                    (pl.col("_wt").fill_null(0) * pl.col("quantity_norm").abs()).alias(
+                        "line_weight"
+                    )
+                )
+                .drop("_wt")
+            )
         sale_lines = lines.filter(sale)
         other = lines.filter(~sale)
-        # Weight driver preferred (spec allocation priority); fall back to net.
         driver = "line_weight" if "line_weight" in sale_lines.columns else "net_amount_cents"
         sale_lines = allocate_exact(
             sale_lines, fl, "order_id", "amount_cents", driver, "freight_expense_alloc_cents"

@@ -269,3 +269,114 @@ def add_duplicates(
         pl.lit("lookalike_copy").alias("truth_dup_type"),
     )
     return pl.concat([lines, ver_rows, look_rows], how="vertical")
+
+
+def add_kits(
+    cfg: GeneratorConfig, lines: pl.DataFrame, items: pl.DataFrame, rng: np.random.Generator
+) -> pl.DataFrame:
+    """Kits (Phase 12): ~1.5% of sale lines become kit parents; 2-3 component
+    lines ride along at zero price on the same invoice, sharing a KIT id. The
+    parent's net is the kit's revenue; components carry quantity and cost."""
+    sales_mask = (lines["txn_type"] == "sale").to_numpy() & (lines["quantity"].to_numpy() > 0)
+    pick = (rng.random(lines.height) < 0.015) & sales_mask
+    parents = lines.filter(pl.Series(pick))
+    if parents.height == 0:
+        return lines.with_columns(pl.lit(None, dtype=pl.String).alias("kit_id"))
+    k = parents.height
+    kit_ids = [f"KIT{50000 + i}" for i in range(k)]
+    parents = parents.with_columns(pl.Series("kit_id", kit_ids))
+    lines = lines.with_columns(pl.lit(None, dtype=pl.String).alias("kit_id"))
+    # Mark the sampled originals as parents.
+    lines = (
+        lines.join(
+            parents.select("line_seq", pl.col("kit_id").alias("_kid")),
+            on="line_seq",
+            how="left",
+        )
+        .with_columns(pl.coalesce(pl.col("_kid"), pl.col("kit_id")).alias("kit_id"))
+        .drop("_kid")
+    )
+    item_pool = items.filter(~pl.col("is_service"))
+    n_comp = rng.integers(2, 4, k)
+    rep_idx = np.repeat(np.arange(k), n_comp)
+    total = len(rep_idx)
+    comp_base = parents[rep_idx.tolist()]
+    comp_items = item_pool[rng.integers(0, item_pool.height, total).tolist()]
+    qty = rng.integers(1, 4, total)
+    list_val = qty * comp_items["base_list_cents"].to_numpy()
+    # Components are real purchases: vendor rebates accrue on their cost at the
+    # component supplier's planted rate (looked up from existing lines).
+    vr_by_supplier = dict(
+        lines.filter(pl.col("vendor_rebate_bp").is_not_null())
+        .group_by("supplier_id")
+        .agg(pl.col("vendor_rebate_bp").max())
+        .iter_rows()
+    )
+    comp_vr_bp = np.array(
+        [int(vr_by_supplier.get(s_, 0) or 0) for s_ in comp_items["supplier_id"].to_list()],
+        dtype=np.int64,
+    )
+    comp_cost_ext = qty.astype(np.int64) * comp_items["base_cost_cents"].to_numpy()
+    comp_vendor_truth = apply_bp(comp_cost_ext, comp_vr_bp)
+    comps = comp_base.with_columns(
+        pl.Series("item_id", comp_items["item_id"]),
+        pl.Series("quantity", qty.astype(np.int64)),
+        pl.Series("uom", comp_items["base_uom"]),
+        pl.lit(0, dtype=pl.Int64).alias("unit_price_cents"),
+        pl.Series("unit_cost_cents", comp_items["base_cost_cents"]),
+        pl.Series("unit_list_cents", comp_items["base_list_cents"]),
+        pl.lit(0, dtype=pl.Int64).alias("net_cents"),
+        pl.Series("list_value_cents", list_val.astype(np.int64)),
+        pl.Series("discount_cents", list_val.astype(np.int64)),
+        pl.lit(0, dtype=pl.Int64).alias("rebate_line_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_settlement_rebate_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("freight_concession_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_freight_expense_cents"),
+        pl.Series("truth_vendor_rebate_cents", comp_vendor_truth),
+        pl.Series("vendor_rebate_bp", comp_vr_bp),
+        pl.lit(0, dtype=pl.Int64).alias("truth_order_billed_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_tiered_accrual_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_tiered_rate_bp"),
+        pl.Series("supplier_id", comp_items["supplier_id"]),
+        pl.Series("item_category", comp_items["item_category"]),
+        pl.Series("weight_lb", comp_items["weight_lb"]),
+        pl.lit(False).alias("is_service"),
+        pl.lit(False).alias("cost_missing"),
+        pl.Series("truth_unit_cost_cents", comp_items["base_cost_cents"]),
+    )
+    out = pl.concat([lines, comps], how="diagonal_relaxed")
+    # Re-sequence so every row keeps a stable, unique line_seq.
+    return out.drop("line_seq").with_row_index("line_seq")
+
+
+def add_free_goods(
+    cfg: GeneratorConfig, lines: pl.DataFrame, rng: np.random.Generator
+) -> pl.DataFrame:
+    """Free goods (Phase 12): ~0.4% of sale lines spawn a zero-price promo line
+    of the same item on the same invoice, transaction type F."""
+    sales_mask = (lines["txn_type"] == "sale").to_numpy() & (lines["quantity"].to_numpy() > 0)
+    pick = (rng.random(lines.height) < 0.004) & sales_mask
+    base = lines.filter(pl.Series(pick))
+    if base.height == 0:
+        return lines
+    qty = np.maximum(1, (base["quantity"].to_numpy() * 0.1).astype(np.int64))
+    free = base.with_columns(
+        pl.Series("quantity", qty),
+        pl.lit(False).alias("cost_missing"),
+        pl.coalesce(pl.col("truth_unit_cost_cents"), pl.col("unit_cost_cents")).alias(
+            "unit_cost_cents"
+        ),
+        pl.lit(0, dtype=pl.Int64).alias("unit_price_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("net_cents"),
+        (pl.Series("_q", qty) * pl.col("unit_list_cents")).alias("list_value_cents"),
+        (pl.Series("_q2", qty) * pl.col("unit_list_cents")).alias("discount_cents"),
+        pl.lit("free_good").alias("txn_type"),
+        pl.lit(0, dtype=pl.Int64).alias("rebate_line_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_settlement_rebate_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("freight_concession_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_freight_expense_cents"),
+        pl.lit(0, dtype=pl.Int64).alias("truth_vendor_rebate_cents"),
+        pl.lit(None, dtype=pl.String).alias("kit_id"),
+    )
+    out = pl.concat([lines, free], how="diagonal_relaxed")
+    return out.drop("line_seq").with_row_index("line_seq")

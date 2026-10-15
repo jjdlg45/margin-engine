@@ -21,6 +21,9 @@ transactions:
   price_credit_reasons: [price_correction, customer_rebate]
   cost_credit_reasons: [damage, shortage, quality, warranty]
 
+hierarchy:
+  analysis_level: ship_to
+
 returns:
   reason_policies:
     customer_error: {restocking_fee_pct: "0.15", return_freight_paid_by: customer}
@@ -34,6 +37,14 @@ costing:
   missing_cost_policy: exclude_from_cost_metrics
   zero_cost_policy: flag_for_review
   vendor_rebate_treatment: adjust_acquisition_cost
+
+cost_to_serve:
+  per_order_cents: 1800
+  per_line_cents: 150
+  per_delivery_cents: 900
+  special_handling_per_unit_cents: 0
+  min_order_value_cents: 50000
+  max_orders_per_month: 6.0
 
 waterfall:
   allocation_basis_priority: [actual, weight, cube, handling_units, lines, extended_price]

@@ -17,19 +17,19 @@ lines:
   uom: {column: SELL_UOM}
   net_amount:
     column: EXT_NET
-    currency: USD
+    currency: line_currency
     sign_convention: natural
     discounts_embedded: true
   unit_price:
     column: UNIT_PRC
-    currency: USD
+    currency: line_currency
     authoritative: false   # EXT_NET is authoritative; UNIT_PRC is informational
   list_price:
     column: LIST_PRC
-    currency: USD
+    currency: line_currency
   on_invoice_discount:
     column: DISC_AMT
-    currency: USD
+    currency: line_currency
     sign_convention: positive_reduces_revenue
   unit_cost:
     column: UNIT_CST
@@ -42,7 +42,7 @@ lines:
     missing_as: blank
   transaction_type:
     column: TXN_CD
-    code_map: {S: sale, R: return, C: credit}
+    code_map: {S: sale, R: return, C: credit, F: free_good}
     reversal_handling: own_code
   credit_reason: {column: REASON_CD}
   original_invoice_ref: {column: ORIG_INV}
@@ -50,22 +50,23 @@ lines:
   channel: {column: CHNL}
   customer_rebate_amount:
     column: REB_AMT
-    currency: USD
+    currency: line_currency
     sign_convention: positive_reduces_revenue
   rebate_program_id: {column: REB_PGM}
   freight_concession:
     column: FRT_CONC
-    currency: USD
+    currency: line_currency
     sign_convention: positive_reduces_revenue
   contract_id: {column: CONTRACT_NO}
+  kit_parent_id: {column: KIT_ID}
   currency: {column: CURR}
   restocking_fee:
     column: RESTOCK_FEE
-    currency: USD
+    currency: line_currency
     sign_convention: natural
   return_freight_billed:
     column: RTN_FRT_BILLED
-    currency: USD
+    currency: line_currency
     sign_convention: natural
 
 return_reason_map:
@@ -96,6 +97,7 @@ reference_tables:
       size_band: SIZE_BAND
       channel: CHNL
       contract_type: CONTRACT_TYPE
+      bill_to_id: BILL_TO
       parent_account_id: PARENT_ACCT
       sales_rep_id: REP_ID
   items:
@@ -160,3 +162,30 @@ reference_tables:
   return_freight_log:
     file: return_freight_log.csv
     columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}
+  fx_rates:
+    file: fx_rates.csv
+    columns: {currency: CURR, period: PERIOD, rate: USD_PER_UNIT}
+  rebate_program_tiers:
+    file: rebate_program_tiers.csv
+    columns: {rebate_program_id: PGM_ID, min_amount: MIN_AMT, rate_pct: RATE_PCT}
+  tiered_settlements:
+    file: tiered_settlements.csv
+    columns: {customer_id: CUST_NO, period: PERIOD, rebate_program_id: PGM_ID, amount: AMT}
+  inventory_receipts:
+    file: receipts.csv
+    date_format: "%Y-%m-%d"
+    columns: {item_id: ITEM_NO, receipt_date: RCPT_DT, quantity: RCPT_QTY, unit_cost: UNIT_CST}
+  quotes:
+    file: quotes.csv
+    date_format: "%m/%d/%Y"
+    columns:
+      quote_date: QUOTE_DT
+      customer_id: CUST_NO
+      item_id: ITEM_NO
+      quantity: QTY
+      quoted_price: QUOTE_PRC
+      close_price: CLOSE_PRC
+      outcome: OUTCOME
+  substitution_groups:
+    file: substitution_groups.csv
+    columns: {group_id: GROUP_ID, item_id: ITEM_NO}

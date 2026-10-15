@@ -69,6 +69,8 @@ def reconcile(
     freight_log: pl.DataFrame | None = None,
     rebate_settlements: pl.DataFrame | None = None,
     return_freight_log: pl.DataFrame | None = None,
+    tiered_settlements: pl.DataFrame | None = None,
+    source_totals_by_currency: dict[str, int] | None = None,
 ) -> ReconciliationReport:
     rep = ReconciliationReport(residuals=dict(residuals))
     wf = waterfall_lines
@@ -90,6 +92,24 @@ def reconcile(
             else 0
         ),
     )
+    # 2b. Per-currency source conservation: in multi-currency runs, each
+    # currency's original (pre-conversion) net total is conserved exactly.
+    if source_totals_by_currency and "net_amount_cents_src" in wf.columns:
+        for cur, total in sorted(source_totals_by_currency.items()):
+            ledger_src = int(
+                wf.filter(pl.col("currency") == cur)["net_amount_cents_src"].fill_null(0).sum()
+            )
+            removed_src = (
+                int(
+                    removed_duplicates.filter(pl.col("currency") == cur)["net_amount_cents_src"]
+                    .fill_null(0)
+                    .sum()
+                )
+                if removed_duplicates.height and "currency" in removed_duplicates.columns
+                else 0
+            )
+            rep.add(f"net_amount_conservation_{cur}", total, ledger_src + removed_src)
+
     # 3. Billed charges: allocated + residual == source table total.
     if order_charges is not None:
         alloc = int(wf["billed_charge_alloc_cents"].fill_null(0).sum())
@@ -129,6 +149,29 @@ def reconcile(
             residual_cents=resid,
             source_total_cents=total,
         )
+    # 3b. Kit reallocation conserves revenue exactly (nets to zero).
+    if "kit_revenue_realloc_cents" in wf.columns:
+        rep.add(
+            "kit_reallocation_zero_sum",
+            0,
+            int(wf["kit_revenue_realloc_cents"].fill_null(0).sum()),
+        )
+    # 4b. Tiered settlements: actual allocations on settled years + residual
+    # == settlement table total.
+    if tiered_settlements is not None and "tiered_rebate_status" in wf.columns:
+        alloc = int(
+            wf.filter(pl.col("tiered_rebate_status") == "actual")["tiered_actual_alloc_cents"].sum()
+        )
+        resid = residuals.get("tiered_settlements_unallocated_cents", 0)
+        total = int(tiered_settlements["amount_cents"].sum())
+        rep.add(
+            "tiered_settlement_allocation",
+            total,
+            alloc + resid,
+            allocated_cents=alloc,
+            residual_cents=resid,
+            source_total_cents=total,
+        )
     # 5b. Return freight expense: actual allocations + residual == log total.
     if return_freight_log is not None:
         actual_alloc = int(
@@ -150,6 +193,11 @@ def reconcile(
     # 6. Stage identity on sale lines: pocket = invoice - deductions + credits.
     sale = wf.filter(pl.col("transaction_type") == "sale")
     lhs = int(sale["pocket_revenue_cents"].sum())
+    tiered = (
+        pl.col("tiered_rebate_used_cents")
+        if "tiered_rebate_used_cents" in wf.columns
+        else pl.lit(0)
+    )
     rhs = int(
         sale.select(
             (
@@ -157,6 +205,7 @@ def reconcile(
                 - pl.col("rebate_actual_cents")
                 - pl.col("rebate_settlement_alloc_cents")
                 - pl.col("freight_concession_cents")
+                - tiered
                 + pl.col("price_credit_alloc_cents")
             ).sum()
         ).item()

@@ -34,6 +34,7 @@ LINE_COLUMNS = [
     "REB_AMT",
     "REB_PGM",
     "CONTRACT_NO",
+    "KIT_ID",
     "CURR",
 ]
 
@@ -50,6 +51,7 @@ LINE_DEFAULTS: dict[str, str] = {
     "REB_AMT": "0.00",
     "REB_PGM": "",
     "CONTRACT_NO": "",
+    "KIT_ID": "",
     "CURR": "USD",
     "DISC_AMT": "0.00",
     "LIST_PRC": "",
@@ -70,7 +72,11 @@ class FixtureWorld:
     order_charges: list[dict[str, str]] = field(default_factory=list)
     freight_log: list[dict[str, str]] = field(default_factory=list)
     rebate_settlements: list[dict[str, str]] = field(default_factory=list)
+    rebate_programs: list[dict[str, str]] = field(default_factory=list)
+    rebate_program_tiers: list[dict[str, str]] = field(default_factory=list)
+    tiered_settlements: list[dict[str, str]] = field(default_factory=list)
     return_freight_log: list[dict[str, str]] = field(default_factory=list)
+    fx_rates: list[dict[str, str]] = field(default_factory=list)
     vendor_rebate_programs: list[dict[str, str]] = field(default_factory=list)
     landed_cost_components: list[dict[str, str]] = field(default_factory=list)
 
@@ -122,7 +128,11 @@ class FixtureWorld:
         dump("order_charges.csv", self.order_charges)
         dump("freight_log.csv", self.freight_log)
         dump("rebate_settlements.csv", self.rebate_settlements)
+        dump("rebate_programs.csv", self.rebate_programs)
+        dump("rebate_program_tiers.csv", self.rebate_program_tiers)
+        dump("tiered_settlements.csv", self.tiered_settlements)
         dump("return_freight_log.csv", self.return_freight_log)
+        dump("fx_rates.csv", self.fx_rates)
         dump("vendor_rebate_programs.csv", self.vendor_rebate_programs)
         dump("landed_cost_components.csv", self.landed_cost_components)
         return self.tmp

@@ -88,6 +88,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
         "rebate_program_id",
         "contract_id",
         "currency",
+        "kit_parent_id",
     ):
         spec = getattr(lm, key_field)
         if spec is not None:
@@ -268,6 +269,10 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
     money_cols = {
         "list_price": "list_price_scaled",
         "amount": "amount_cents",
+        "min_amount": "min_amount_cents",
+        "unit_cost": "unit_cost_cents",
+        "quoted_price": "quoted_price_cents",
+        "close_price": "close_price_cents",
         "inbound_freight_per_unit": "inbound_freight_pu_scaled",
         "duty_per_unit": "duty_pu_scaled",
     }
@@ -279,7 +284,9 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
             exprs.append(
                 scaled_to_cents(e).alias(target) if target.endswith("_cents") else e.alias(target)
             )
-        elif canon in ("effective_date", "start_date", "end_date"):
+        elif canon == "quantity":
+            exprs.append(pl.col(canon).cast(pl.Int64).alias(canon))
+        elif canon in ("effective_date", "start_date", "end_date", "receipt_date", "quote_date"):
             fmt = spec.date_format
             if fmt is None:
                 msg = (
@@ -296,6 +303,7 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
             "cube",
             "cost_idx",
             "duty_pct",
+            "rate",
         ):
             exprs.append(pl.col(canon).cast(pl.Float64).alias(canon))
         elif canon in ("is_service", "price_protected"):

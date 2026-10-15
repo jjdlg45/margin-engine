@@ -25,9 +25,81 @@ from synth.config import GeneratorConfig
 from synth.demand import DemandWorld
 from synth.entities import SegmentDef, month_starts
 from synth.lines import BASE_DUTY_BP
+from synth.money import div_round_half_even
 
 DATE_FMT = "%m/%d/%Y"
-TXN_CODE = {"sale": "S", "return": "R", "credit": "C"}
+TXN_CODE = {"sale": "S", "return": "R", "credit": "C", "free_good": "F"}
+
+# Revenue-side money columns expressed in the line's currency on export.
+LINE_CURRENCY_MONEY_COLS = [
+    "net_cents",
+    "unit_list_cents",
+    "list_value_cents",
+    "discount_cents",
+    "rebate_line_cents",
+    "freight_concession_cents",
+    "restock_fee_cents",
+    "rtn_frt_billed_cents",
+    "truth_settlement_rebate_cents",
+    "truth_order_billed_cents",
+]
+
+
+def build_fx_rates(cfg: GeneratorConfig) -> pl.DataFrame:
+    """Planted monthly fx path per non-USD currency: USD per local unit, as
+    parts-per-million ints. Uses its own RNG stream (seed + 777) so enabling
+    currencies never perturbs the main world stream."""
+    rng = np.random.default_rng(cfg.seed + 777)
+    starts = month_starts(cfg)
+    # Returns lag up to two months past the sales horizon; cover those periods.
+    tail = starts[-1]
+    for _ in range(2):
+        y, m = (tail.year, tail.month + 1) if tail.month < 12 else (tail.year + 1, 1)
+        tail = tail.replace(year=y, month=m)
+        starts = [*starts, tail]
+    rows = []
+    for cur in cfg.currency_shares:
+        if cur == "USD":
+            continue
+        rate = cfg.fx_base.get(cur, 1.0)
+        for d in starts:
+            rate = rate * float(np.exp(rng.normal(0, cfg.fx_walk_sd)))
+            rows.append(
+                {
+                    "currency": cur,
+                    "period": d.strftime("%Y-%m"),
+                    "rate_ppm": round(rate * 1_000_000),
+                }
+            )
+    if not rows:
+        return pl.DataFrame(
+            schema={"currency": pl.String, "period": pl.String, "rate_ppm": pl.Int64}
+        )
+    return pl.DataFrame(rows)
+
+
+def convert_lines_to_local(
+    lines: pl.DataFrame, customers: pl.DataFrame, fx: pl.DataFrame
+) -> pl.DataFrame:
+    """Express revenue-side money of foreign customers in their currency:
+    local_cents = half_even(usd_cents x 1e6 / rate_ppm). Costs stay USD."""
+    lines = lines.join(customers.select("customer_id", "currency"), on="customer_id", how="left")
+    if fx.height == 0:
+        return lines
+    lines = lines.with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("_period")).join(
+        fx, left_on=["currency", "_period"], right_on=["currency", "period"], how="left"
+    )
+    rate = lines["rate_ppm"].fill_null(1_000_000).to_numpy()
+    exprs = []
+    for col in LINE_CURRENCY_MONEY_COLS:
+        if col not in lines.columns:
+            continue
+        usd = lines[col].fill_null(0).to_numpy()
+        # Keep the internal USD value for ground-truth totals; the exported
+        # value is the local-currency amount.
+        exprs.append(pl.Series(f"usd_{col}", usd))
+        exprs.append(pl.Series(col, div_round_half_even(usd * 1_000_000, rate)))
+    return lines.with_columns(exprs).drop("_period", "rate_ppm")
 
 
 def _dollars(expr: pl.Expr, decimals: int = 2) -> pl.Expr:
@@ -70,7 +142,8 @@ def export_erp_lines(lines: pl.DataFrame, out: Path) -> None:
         _dollars(pl.col("rebate_line_cents")).alias("REB_AMT"),
         pl.col("rebate_program_id").fill_null("").alias("REB_PGM"),
         pl.col("contract_id").fill_null("").alias("CONTRACT_NO"),
-        pl.lit("USD").alias("CURR"),
+        pl.col("kit_id").fill_null("").alias("KIT_ID"),
+        pl.col("currency").fill_null("USD").alias("CURR"),
     )
     erp.write_csv(out / "invoice_lines.csv")
 
@@ -100,6 +173,7 @@ def export_reference_tables(
         pl.col("size_band").alias("SIZE_BAND"),
         pl.col("channel").alias("CHNL"),
         pl.col("contract_type").alias("CONTRACT_TYPE"),
+        pl.col("bill_to_id").alias("BILL_TO"),
         pl.col("parent_account_id").alias("PARENT_ACCT"),
         pl.col("sales_rep_id").alias("REP_ID"),
     ).write_csv(out / "customers.csv")
@@ -236,6 +310,29 @@ def export_reference_tables(
     ]
     pl.DataFrame(tar_rows).write_csv(out / "tariff_schedule.csv")
 
+    # Inventory receipts (Phase 14): monthly receipts covering ~115% of sold
+    # units at the month's planted unit cost, plus an opening stock receipt.
+    sold = (
+        lines.filter(pl.col("txn_type") == "sale")
+        .with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("_pm"))
+        .group_by("item_id", "_pm")
+        .agg(
+            pl.col("quantity").sum().alias("q"),
+            pl.col("unit_cost_cents").max().alias("c"),
+        )
+        .sort("item_id", "_pm")
+    )
+    receipts = sold.with_columns(
+        ((pl.col("q") * 115).floordiv(100) + 1).alias("RCPT_QTY"),
+        (pl.col("_pm") + "-01").alias("RCPT_DT"),
+    )
+    receipts.select(
+        pl.col("item_id").alias("ITEM_NO"),
+        pl.col("RCPT_DT"),
+        pl.col("RCPT_QTY"),
+        _dollars(pl.col("c"), 4).alias("UNIT_CST"),
+    ).write_csv(out / "receipts.csv")
+
     # Landed-cost components per item-month present in the data.
     landed = (
         lines.filter(pl.col("txn_type") == "sale")
@@ -282,6 +379,8 @@ def export_ground_truth(
         pl.col("restock_fee_cents").alias("truth_restock_fee_cents"),
         pl.col("rtn_frt_billed_cents").alias("truth_rtn_frt_billed_cents"),
         pl.col("truth_rtn_frt_exp_cents"),
+        pl.col("truth_tiered_accrual_cents"),
+        pl.col("truth_tiered_rate_bp"),
         pl.col("truth_dup_type"),
         pl.col("truth_zero_qty"),
         pl.col("truth_uom_alt"),
@@ -332,11 +431,15 @@ def export_ground_truth(
             pl.col("is_service") & ~pl.col("cost_missing")
         ).height,
     }
+
+    def _usd(col: str) -> str:
+        return f"usd_{col}" if f"usd_{col}" in deduped.columns else col
+
     totals = {
-        "net_cents": int(deduped["net_cents"].sum()),
-        "line_rebate_cents": int(deduped["rebate_line_cents"].sum()),
-        "settlement_rebate_cents": int(deduped["truth_settlement_rebate_cents"].sum()),
-        "freight_concession_cents": int(deduped["freight_concession_cents"].sum()),
+        "net_cents": int(deduped[_usd("net_cents")].sum()),
+        "line_rebate_cents": int(deduped[_usd("rebate_line_cents")].sum()),
+        "settlement_rebate_cents": int(deduped[_usd("truth_settlement_rebate_cents")].sum()),
+        "freight_concession_cents": int(deduped[_usd("freight_concession_cents")].sum()),
         "freight_expense_cents": int(sales["truth_freight_expense_cents"].sum()),
         "billed_freight_cents": int(
             sales.group_by("order_id")
@@ -369,6 +472,15 @@ def export_ground_truth(
         "planted_totals_cents": totals,
         "n_lines_exported": lines.height,
         "n_customers": customers.height,
+        "planted_small_order_customers": sorted(
+            deduped.filter(
+                pl.col("truth_small_order_customer")
+                if "truth_small_order_customer" in deduped.columns
+                else pl.lit(False)
+            )["customer_id"]
+            .unique()
+            .to_list()
+        ),
     }
     (gt_dir / "truth_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary

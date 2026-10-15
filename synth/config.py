@@ -87,6 +87,8 @@ class DemandParams(BaseModel):
     qty_process: str = "loglinear"
     # Monthly purchase incidence probability for an active, available pair.
     purchase_prob: float = 0.60
+    # Probability a customer also carries any given KVI item (Phase 15).
+    kvi_carriage_prob: float = 0.35
 
 
 class GeneratorConfig(BaseModel):
@@ -141,6 +143,26 @@ class GeneratorConfig(BaseModel):
     # Contracts: share of customers with contract pricing on part of assortment.
     contract_customer_share: float = 0.25
 
+    # Multi-currency (Phase 9): share of customers invoiced per currency.
+    # Default is single-currency so Run-1 worlds are unchanged. Foreign lines
+    # express revenue amounts in the customer's currency, converted from the
+    # internal USD world at the planted monthly rate; list prices and costs
+    # stay in the reporting currency (USD), as for a US distributor invoicing
+    # abroad at the month's rate.
+    currency_shares: dict[str, float] = {"USD": 1.0}
+    # Planted base rates, USD per unit of local currency.
+    fx_base: dict[str, float] = {"EUR": 1.08, "GBP": 1.26, "CAD": 0.73}
+    # Monthly random-walk sd of the planted fx rate (relative).
+    fx_walk_sd: float = 0.01
+
+    # Substitution groups (Phase 17): pairs of same-family items with planted
+    # positive cross-price elasticity. Default off: cross effects between items
+    # sharing suppliers/categories would contaminate the own-price IV worlds
+    # of Run 1; Phase 17 worlds enable them explicitly.
+    n_substitution_groups: int = 0
+    cross_elasticity_min: float = 0.3
+    cross_elasticity_max: float = 0.8
+
     mess: MessRates = MessRates()
     demand: DemandParams = DemandParams()
 
@@ -182,7 +204,7 @@ class GeneratorConfig(BaseModel):
             base["n_customers"] = 40
             base["assortment_min"] = 4
             base["assortment_max"] = 8
-            demand = demand.model_copy(update={"purchase_prob": 0.10})
+            demand = demand.model_copy(update={"purchase_prob": 0.07, "kvi_carriage_prob": 0.0})
             base["demand"] = demand
         base.update(overrides)
         return cls.model_validate(base)

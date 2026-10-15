@@ -104,16 +104,43 @@ def build_customers(cfg: GeneratorConfig, rng: np.random.Generator) -> pl.DataFr
     n_parents = max(1, n // 20)
     parent = np.array([f"P{1000 + i}" for i in rng.integers(0, n_parents, n)])
     has_parent = rng.random(n) < 0.15
+    # Bill-to grouping (Phase 10): ~30% of ship-tos share a bill-to in groups
+    # of 2-3; separate RNG stream keeps existing worlds byte-identical.
+    h_rng = np.random.default_rng(cfg.seed + 555)
+    bill_to = np.array([f"B{20000 + i}" for i in range(n)], dtype=object)
+    grouped = h_rng.random(n) < 0.30
+    grouped_idx = np.flatnonzero(grouped)
+    h_rng.shuffle(grouped_idx)
+    gi = 0
+    group_no = 0
+    while gi < len(grouped_idx):
+        size = int(h_rng.integers(2, 4))
+        members = grouped_idx[gi : gi + size]
+        for m in members:
+            bill_to[m] = f"B{30000 + group_no}"
+        group_no += 1
+        gi += size
     seg = assign_customer_segment(industry, size_band, channel)
     rep = np.array([f"REP{100 + i}" for i in rng.integers(0, cfg.n_reps, n)])
+    currencies = list(cfg.currency_shares.keys())
+    if len(currencies) == 1:
+        # No draw: keeps the RNG stream (and thus every existing seeded world)
+        # byte-identical for single-currency configurations.
+        currency = np.array([currencies[0]] * n)
+    else:
+        cur_p = np.array(list(cfg.currency_shares.values()), dtype=float)
+        cur_p = cur_p / cur_p.sum()
+        currency = rng.choice(currencies, n, p=cur_p)
     return pl.DataFrame(
         {
             "customer_id": [f"C{10000 + i}" for i in range(n)],
+            "currency": currency,
             "industry": industry,
             "region": region,
             "size_band": size_band,
             "channel": channel,
             "contract_type": contract_type,
+            "bill_to_id": bill_to.astype(str),
             "parent_account_id": np.where(has_parent, parent, ""),
             "sales_rep_id": rep,
             "segment_id": seg,
@@ -256,10 +283,17 @@ def build_rebate_programs(
     """
     n = customers.height
     r = rng.random(n)
+    # Thresholds reuse the single draw so the RNG stream (and existing worlds'
+    # draws) are unchanged; tiered takes a 20% slice after the other kinds.
+    tiered_cut = cfg.line_rebate_share + cfg.settlement_rebate_share + 0.20
     kind = np.where(
         r < cfg.line_rebate_share,
         "line_accrual",
-        np.where(r < cfg.line_rebate_share + cfg.settlement_rebate_share, "settlement", "none"),
+        np.where(
+            r < cfg.line_rebate_share + cfg.settlement_rebate_share,
+            "settlement",
+            np.where(r < tiered_cut, "tiered", "none"),
+        ),
     )
     rate_bp = np.round(rng.uniform(cfg.rebate_rate_min, cfg.rebate_rate_max, n) * 10000).astype(
         np.int64
@@ -271,10 +305,24 @@ def build_rebate_programs(
             "rate_bp": rate_bp,  # basis points, exact integer math downstream
         }
     ).filter(pl.col("program_kind") != "none")
-    return df.with_columns(
+    # Tiered programs: the rate comes from the tier table, not a flat bp.
+    df = df.with_columns(
+        pl.when(pl.col("program_kind") == "tiered")
+        .then(0)
+        .otherwise(pl.col("rate_bp"))
+        .alias("rate_bp")
+    )
+    df = df.with_columns(
         (pl.lit("RP") + pl.arange(1, df.height + 1).cast(pl.String).str.zfill(3)).alias(
             "rebate_program_id"
         )
+    )
+    # Tiered customers share one program whose tiers live in the tier table.
+    return df.with_columns(
+        pl.when(pl.col("program_kind") == "tiered")
+        .then(pl.lit("TIER01"))
+        .otherwise(pl.col("rebate_program_id"))
+        .alias("rebate_program_id")
     )
 
 
@@ -293,3 +341,52 @@ def build_uom_conversions(items: pl.DataFrame, rng: np.random.Generator) -> pl.D
         if r["base_uom"] in packs
     ]
     return pl.DataFrame(rows)
+
+
+def build_substitution_groups(
+    cfg: GeneratorConfig, items: pl.DataFrame
+) -> tuple[pl.DataFrame, dict[str, float]]:
+    """Pairs of same-family items as substitution groups, with planted positive
+    cross-price elasticities. Own RNG stream (seed + 111): enabling groups
+    never perturbs the main world stream."""
+    if cfg.n_substitution_groups <= 0:
+        return (
+            pl.DataFrame(schema={"group_id": pl.String, "item_id": pl.String}),
+            {},
+        )
+    rng = np.random.default_rng(cfg.seed + 111)
+    # Substitutes: same category (same product type), DIFFERENT supplier
+    # (competing brands) — this also keeps the two prices separable by the
+    # supplier-cost instruments.
+    cats = (
+        items.filter(~pl.col("is_service"))
+        .group_by("item_category")
+        .agg(pl.col("item_id").alias("ids"), pl.col("supplier_id").alias("sups"))
+        .sort("item_category")
+    )
+    rows: list[dict[str, str]] = []
+    gammas: dict[str, float] = {}
+    gid = 0
+    used: set[str] = set()
+    for cat_row in cats.to_dicts():
+        if gid >= cfg.n_substitution_groups:
+            break
+        pool = [
+            (i, s_) for i, s_ in zip(cat_row["ids"], cat_row["sups"], strict=True) if i not in used
+        ]
+        rng.shuffle(pool)
+        for ai in range(len(pool)):
+            if gid >= cfg.n_substitution_groups:
+                break
+            for bi in range(ai + 1, len(pool)):
+                a, sa = pool[ai]
+                b, sb = pool[bi]
+                if a in used or b in used or sa == sb:
+                    continue
+                g = f"SUB{gid:03d}"
+                rows.extend([{"group_id": g, "item_id": a}, {"group_id": g, "item_id": b}])
+                gammas[g] = float(rng.uniform(cfg.cross_elasticity_min, cfg.cross_elasticity_max))
+                used.update([a, b])
+                gid += 1
+                break
+    return pl.DataFrame(rows), gammas

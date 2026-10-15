@@ -36,10 +36,29 @@ def build_lines(
         "customer_id", "month", "item_id"
     )
 
+    # Planted unprofitable small-order customers (Phase 13): ~6% of customers
+    # place every line as its own tiny order. Separate RNG stream keeps other
+    # worlds' draws unchanged.
+    so_rng = np.random.default_rng(cfg.seed + 444)
+    cust_ids = sorted(sold["customer_id"].unique().to_list())
+    small_order_customers = sorted(c for c in cust_ids if so_rng.random() < 0.06)
+    is_small = pl.col("customer_id").is_in(small_order_customers)
+    sold = sold.with_columns(
+        pl.when(is_small)
+        .then((pl.col("qty") * 0.15).ceil().clip(lower_bound=1).cast(pl.Int64))
+        .otherwise(pl.col("qty"))
+        .alias("qty")
+    )
+
     # --- invoice grouping: chunks of <= LINES_PER_INVOICE per customer-month ---
     sold = sold.with_columns(
         (pl.col("item_id").cum_count().over("customer_id", "month") - 1).alias("_ln")
-    ).with_columns((pl.col("_ln") // LINES_PER_INVOICE).alias("_chunk"))
+    ).with_columns(
+        pl.when(is_small)
+        .then(pl.col("_ln"))  # one line per order
+        .otherwise(pl.col("_ln") // LINES_PER_INVOICE)
+        .alias("_chunk")
+    )
     inv_keys = (
         sold.select("customer_id", "month", "_chunk")
         .unique(maintain_order=True)
@@ -94,6 +113,8 @@ def build_lines(
     # --- customer attributes (rep, channel) ------------------------------
     base = base.join(
         customers.select("customer_id", "sales_rep_id", "channel"), on="customer_id", how="left"
+    ).with_columns(
+        pl.col("customer_id").is_in(small_order_customers).alias("truth_small_order_customer")
     )
     # --- item attributes --------------------------------------------------
     base = base.join(

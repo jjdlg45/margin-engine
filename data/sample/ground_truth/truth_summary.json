@@ -26,6 +26,18 @@
     "vendor_rebate_supplier_share": 0.4,
     "vendor_rebate_rate": 0.02,
     "contract_customer_share": 0.25,
+    "currency_shares": {
+      "USD": 1.0
+    },
+    "fx_base": {
+      "EUR": 1.08,
+      "GBP": 1.26,
+      "CAD": 0.73
+    },
+    "fx_walk_sd": 0.01,
+    "n_substitution_groups": 0,
+    "cross_elasticity_min": 0.3,
+    "cross_elasticity_max": 0.8,
     "mess": {
       "return_rate": 0.04,
       "credit_memo_rate": 0.02,
@@ -106,26 +118,65 @@
   "naive_bias_direction": "toward_zero",
   "naive_bias_explanation": "Reps discount when the demand shock is negative (endogeneity_gamma > 0), so realized price covaries positively with unobserved demand. OLS on realized prices is therefore biased upward, i.e. toward zero / less negative than the true elasticity.",
   "mess_counts": {
-    "returns": 251,
-    "credits": 14,
-    "missing_cost": 80,
-    "uom_alt": 150,
-    "verified_dup_keys": 29,
-    "lookalike_dups": 20,
-    "data_quality_outliers": 15,
-    "commercial_outliers": 18,
-    "zero_qty_rows": 7,
-    "zero_cost_service_lines": 83
+    "returns": 363,
+    "credits": 38,
+    "missing_cost": 70,
+    "uom_alt": 183,
+    "verified_dup_keys": 56,
+    "lookalike_dups": 27,
+    "data_quality_outliers": 21,
+    "commercial_outliers": 20,
+    "zero_qty_rows": 9,
+    "zero_cost_service_lines": 82
   },
   "planted_totals_cents": {
-    "net_cents": 721216833,
-    "line_rebate_cents": 5767256,
-    "settlement_rebate_cents": 9144003,
-    "freight_concession_cents": 4085951,
-    "freight_expense_cents": 10056703,
-    "billed_freight_cents": 3634211,
-    "vendor_rebate_cents": 2790530
+    "net_cents": 1022255450,
+    "line_rebate_cents": 8743825,
+    "settlement_rebate_cents": 11305056,
+    "freight_concession_cents": 4790004,
+    "freight_expense_cents": 14498193,
+    "billed_freight_cents": 5071589,
+    "vendor_rebate_cents": 7581086
   },
-  "n_lines_exported": 7334,
-  "n_customers": 30
+  "n_lines_exported": 10335,
+  "n_customers": 30,
+  "planted_small_order_customers": [
+    "C10013",
+    "C10017",
+    "C10023"
+  ],
+  "quotes": {
+    "win_curve": {
+      "0": {
+        "a": 4.378036141374709,
+        "b": -5.50659899643565
+      },
+      "1": {
+        "a": 5.449220633397877,
+        "b": -6.416794404516988
+      },
+      "2": {
+        "a": 4.3804670363082,
+        "b": -4.894536842678918
+      },
+      "3": {
+        "a": 4.788870949775897,
+        "b": -5.107151983441077
+      },
+      "4": {
+        "a": 7.165820021308609,
+        "b": -7.296943734042594
+      },
+      "5": {
+        "a": 5.116380390360327,
+        "b": -4.978068461245179
+      }
+    },
+    "negotiation_gap_mean": 0.03,
+    "n_quotes": 919
+  },
+  "substitution": {
+    "groups": {},
+    "members": []
+  }
 }

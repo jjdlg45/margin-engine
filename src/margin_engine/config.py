@@ -77,6 +77,19 @@ class TransactionsConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# hierarchy
+# ---------------------------------------------------------------------------
+
+
+class HierarchyConfig(StrictModel):
+    """Customer analysis level (Phase 10): ship-to (line grain), bill-to, or
+    parent account. Analytics group by the chosen level; the ledger always
+    stays at ship-to grain with the original ids kept for audit."""
+
+    analysis_level: Literal["ship_to", "bill_to", "parent"] = "ship_to"
+
+
+# ---------------------------------------------------------------------------
 # returns
 # ---------------------------------------------------------------------------
 
@@ -139,6 +152,28 @@ class CostingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# cost_to_serve
+# ---------------------------------------------------------------------------
+
+
+class CostToServeConfig(StrictModel):
+    """Activity-based cost-to-serve rates (Phase 13), all in cents.
+
+    Deliveries are proxied by orders when no delivery table exists (labeled).
+    Return handling lives in the returns section; these rates cover ordinary
+    order service activity.
+    """
+
+    per_order_cents: int = Field(default=1800, ge=0)
+    per_line_cents: int = Field(default=150, ge=0)
+    per_delivery_cents: int = Field(default=900, ge=0)
+    special_handling_per_unit_cents: int = Field(default=0, ge=0)
+    # Service-policy flag thresholds (separate from pricing opportunities).
+    min_order_value_cents: int = Field(default=50_000, ge=0)
+    max_orders_per_month: float = Field(default=6.0, gt=0)
+
+
+# ---------------------------------------------------------------------------
 # waterfall
 # ---------------------------------------------------------------------------
 
@@ -173,6 +208,8 @@ class WaterfallConfig(StrictModel):
     # the report can state it.
     freight_concession_stage: Literal["pocket_revenue"] = "pocket_revenue"
     freight_expense_stage: Literal["cost_to_serve"] = "cost_to_serve"
+    # Kit revenue allocation to components (Phase 12).
+    kit_allocation_method: Literal["relative_standalone_price"] = "relative_standalone_price"
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +293,11 @@ class PriceGuidanceConfig(StrictModel):
     # Provisional target/start until optimization is supported (Phase 7).
     provisional_target_percentile: float = 0.50
     provisional_start_percentile: float = 0.75
+    # Role-specific corridor policy (Phase 15): KVI corridors are pulled toward
+    # the segment median by this factor (1.0 = no tightening).
+    kvi_corridor_shrink: float = Field(default=0.5, gt=0, le=1.0)
+    # Share of items labeled KVI *candidates* by the data-driven score.
+    kvi_candidate_share: float = Field(default=0.15, gt=0, le=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +388,8 @@ class Rules(StrictModel):
     units_and_currency: UnitsCurrencyConfig = UnitsCurrencyConfig()
     transactions: TransactionsConfig = TransactionsConfig()
     returns: ReturnsConfig = ReturnsConfig()
+    hierarchy: HierarchyConfig = HierarchyConfig()
+    cost_to_serve: CostToServeConfig = CostToServeConfig()
     costing: CostingConfig = CostingConfig()
     waterfall: WaterfallConfig = WaterfallConfig()
     outliers: OutlierConfig = OutlierConfig()

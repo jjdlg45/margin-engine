@@ -22,21 +22,34 @@ from synth.entities import (
     build_list_price_history,
     build_rebate_programs,
     build_segments,
+    build_substitution_groups,
     build_uom_conversions,
 )
 from synth.lines import add_deductions, build_lines
 from synth.mess import (
     add_credit_memos,
     add_duplicates,
+    add_free_goods,
+    add_kits,
     add_returns,
     add_zero_qty_rows,
     blank_costs,
     corrupt_prices,
     reexpress_uom,
 )
-from synth.output import export_erp_lines, export_ground_truth, export_reference_tables
+from synth.output import (
+    build_fx_rates,
+    convert_lines_to_local,
+    export_erp_lines,
+    export_ground_truth,
+    export_reference_tables,
+)
+from synth.quotes import plant_quotes
+from synth.tiered import plant_tiered_rebates
 
 _DEFAULT_COLUMNS: dict[str, Any] = {
+    "kit_id": None,
+    "truth_small_order_customer": False,
     "credit_reason": None,
     "return_reason_code": None,
     "original_invoice_ref": None,
@@ -75,8 +88,30 @@ def generate(cfg: GeneratorConfig, out_dir: Path) -> dict[str, Any]:
     rebate_programs = build_rebate_programs(cfg, customers, rng)
     uom_conversions = build_uom_conversions(items, rng)
 
-    pairs = build_pairs(cfg, customers, items, contracts, segments, rng)
-    world = simulate_panel(cfg, pairs, items, customers, list_history, rng)
+    sub_groups, sub_gammas = build_substitution_groups(cfg, items)
+    partner: dict[str, str] = {}
+    if sub_groups.height:
+        for (_,), grp in sub_groups.group_by(["group_id"]):
+            ids = grp["item_id"].to_list()
+            partner[ids[0]], partner[ids[1]] = ids[1], ids[0]
+    pairs = build_pairs(
+        cfg,
+        customers,
+        items,
+        contracts,
+        segments,
+        rng,
+        substitution_partner=partner or None,
+    )
+    world = simulate_panel(
+        cfg,
+        pairs,
+        items,
+        customers,
+        list_history,
+        rng,
+        substitution=(sub_groups, sub_gammas) if sub_groups.height else None,
+    )
 
     lines = build_lines(cfg, world, customers, items, rng)
     lines = corrupt_prices(cfg, lines, rng)
@@ -87,14 +122,45 @@ def generate(cfg: GeneratorConfig, out_dir: Path) -> dict[str, Any]:
     lines = blank_costs(cfg, lines, rng)
     lines = reexpress_uom(cfg, lines, uom_conversions, rng)
     lines = _ensure_columns(lines)
+    lines = lines.with_row_index("line_seq")
+    lines, tier_table, tiered_settlements = plant_tiered_rebates(lines, rebate_programs)
+    lines = add_kits(cfg, lines, items, rng)
+    lines = add_free_goods(cfg, lines, rng)
+    fx = build_fx_rates(cfg)
+    lines = convert_lines_to_local(lines, customers, fx)
 
     # Stable line keys, then duplicates (verified dups share the key).
-    lines = lines.with_row_index("_seq").with_columns(
-        (pl.lit("L") + (pl.col("_seq") + 1000001).cast(pl.String)).alias("line_key")
+    lines = lines.with_columns(
+        (pl.lit("L") + (pl.col("line_seq") + 1000001).cast(pl.String)).alias("line_key")
     )
-    lines = add_duplicates(cfg, lines, rng).drop("_seq")
+    lines = add_duplicates(cfg, lines, rng).drop("line_seq")
 
+    if sub_groups.height:
+        sub_groups.select(
+            pl.col("group_id").alias("GROUP_ID"), pl.col("item_id").alias("ITEM_NO")
+        ).write_csv(erp_dir / "substitution_groups.csv")
+    quotes, quote_truth = plant_quotes(cfg, world, segments)
+    if quotes.height:
+        quotes.write_csv(erp_dir / "quotes.csv")
     export_erp_lines(lines, erp_dir)
+    if tier_table.height:
+        tier_table.select(
+            pl.col("rebate_program_id").alias("PGM_ID"),
+            (pl.col("min_cents") / 100).alias("MIN_AMT"),
+            (pl.col("rate_bp") / 100.0).alias("RATE_PCT"),
+        ).write_csv(erp_dir / "rebate_program_tiers.csv")
+        tiered_settlements.select(
+            pl.col("customer_id").alias("CUST_NO"),
+            pl.col("period").alias("PERIOD"),
+            pl.col("rebate_program_id").alias("PGM_ID"),
+            (pl.col("amount_cents") / 100).round(2).alias("AMT"),
+        ).write_csv(erp_dir / "tiered_settlements.csv")
+    if fx.height:
+        fx.select(
+            pl.col("currency").alias("CURR"),
+            pl.col("period").alias("PERIOD"),
+            (pl.col("rate_ppm") / 1_000_000).alias("USD_PER_UNIT"),
+        ).write_csv(erp_dir / "fx_rates.csv")
     export_reference_tables(
         cfg,
         erp_dir,
@@ -108,6 +174,16 @@ def generate(cfg: GeneratorConfig, out_dir: Path) -> dict[str, Any]:
         world,
     )
     summary = export_ground_truth(cfg, out_dir, segments, lines, world, customers)
+    summary["quotes"] = quote_truth
+    summary["substitution"] = {
+        "groups": dict(sub_gammas.items()),
+        "members": sub_groups.to_dicts() if sub_groups.height else [],
+    }
+    import json as _json
+
+    (out_dir / "ground_truth" / "truth_summary.json").write_text(
+        _json.dumps(summary, indent=2), encoding="utf-8"
+    )
     return summary
 
 

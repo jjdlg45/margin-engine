@@ -15,8 +15,9 @@ import duckdb
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.ingest.fx import convert_lines, convert_reference_amounts, quarter_end_rates
 from margin_engine.ingest.loader import load_lines, load_reference_table
-from margin_engine.ingest.mapping import SourceMapping, load_mapping
+from margin_engine.ingest.mapping import MappingError, SourceMapping, load_mapping
 from margin_engine.transactions.classify import ClassifiedData, classify, sales_observations
 from margin_engine.waterfall.engine import WaterfallResult, build_waterfall
 from margin_engine.waterfall.reconcile import ReconciliationReport, reconcile
@@ -49,6 +50,12 @@ REFERENCE_TABLES = [
     "supplier_cost_index",
     "tariff_schedule",
     "return_freight_log",
+    "fx_rates",
+    "rebate_program_tiers",
+    "tiered_settlements",
+    "inventory_receipts",
+    "quotes",
+    "substitution_groups",
 ]
 
 
@@ -56,6 +63,50 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
     mapping = load_mapping(mapping_path)
     lines = load_lines(data_dir, mapping)
     ref = {name: load_reference_table(data_dir, mapping, name) for name in REFERENCE_TABLES}
+
+    # Multi-currency: convert line-currency amounts to the reporting currency
+    # (invoice-month rate); settlements at the quarter's last-month rate and
+    # order charges at the order month's rate follow the customer / order
+    # currency derived from the lines.
+    fx_res = convert_lines(lines, mapping, ref["fx_rates"], rules)
+    lines = fx_res.lines
+    if fx_res.converted and ref["fx_rates"] is not None:
+        reporting = rules.units_and_currency.reporting_currency
+        cust_cur = lines.group_by("customer_id").agg(pl.col("currency").first().alias("currency"))
+        multi = lines.group_by("customer_id").agg(pl.col("currency").n_unique().alias("n"))
+        if multi.filter(pl.col("n") > 1).height:
+            bad = multi.filter(pl.col("n") > 1)["customer_id"].head(10).to_list()
+            msg = (
+                f"customers invoiced in multiple currencies: {bad}; settlement "
+                f"conversion needs one currency per customer"
+            )
+            raise MappingError(msg)
+        if ref["rebate_settlements"] is not None:
+            ref["rebate_settlements"] = convert_reference_amounts(
+                ref["rebate_settlements"],
+                cust_cur,
+                "customer_id",
+                ref["fx_rates"],
+                reporting,
+                period_col="period",
+                period_rate=quarter_end_rates(ref["fx_rates"]),
+            ).drop("currency", strict=False)
+        if ref["order_charges"] is not None and "order_id" in lines.columns:
+            order_cur = lines.group_by("order_id").agg(
+                pl.col("currency").first().alias("currency"),
+                pl.col("invoice_date").dt.strftime("%Y-%m").first().alias("period"),
+            )
+            charges = ref["order_charges"].join(
+                order_cur.select("order_id", "period"), on="order_id", how="left"
+            )
+            ref["order_charges"] = convert_reference_amounts(
+                charges,
+                order_cur.select("order_id", "currency"),
+                "order_id",
+                ref["fx_rates"],
+                reporting,
+                period_col="period",
+            ).drop("currency", "period", strict=False)
 
     classified: ClassifiedData = classify(lines, rules)
     wf: WaterfallResult = build_waterfall(
@@ -72,20 +123,24 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         vendor_rebate_programs=ref["vendor_rebate_programs"],
         landed_cost_components=ref["landed_cost_components"],
         return_freight_log=ref["return_freight_log"],
+        rebate_program_tiers=ref["rebate_program_tiers"],
+        tiered_settlements=ref["tiered_settlements"],
     )
     report = reconcile(
         wf.lines,
         classified.removed_duplicates,
         classified.source_totals,
         wf.residuals,
+        source_totals_by_currency=fx_res.source_totals_by_currency if fx_res.converted else None,
         order_charges=ref["order_charges"],
         freight_log=ref["freight_log"],
         rebate_settlements=ref["rebate_settlements"],
         return_freight_log=ref["return_freight_log"],
+        tiered_settlements=ref["tiered_settlements"],
     )
     obs = sales_observations(wf.lines)
     skipped = [name for name in REFERENCE_TABLES if ref[name] is None]
-    notes = list(wf.notes)
+    notes = list(wf.notes) + fx_res.notes
     if skipped:
         notes.append(f"reference tables absent (features skipped): {skipped}")
     return PipelineResult(

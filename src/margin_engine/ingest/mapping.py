@@ -91,7 +91,7 @@ class CostField(StrictModel):
 class TransactionTypeField(StrictModel):
     column: str
     # Source code -> canonical type (sale, return, credit).
-    code_map: dict[str, Literal["sale", "return", "credit"]]
+    code_map: dict[str, Literal["sale", "return", "credit", "free_good"]]
     # How reversals are represented: own transaction code vs. negative amounts.
     reversal_handling: Literal["own_code", "negative_amounts"] = "own_code"
 
@@ -127,6 +127,7 @@ class LinesMapping(StrictModel):
     channel: KeyField | None = None
     contract_id: KeyField | None = None
     currency: KeyField | None = None
+    kit_parent_id: KeyField | None = None
 
     @model_validator(mode="after")
     def _price_or_net(self) -> LinesMapping:
@@ -198,6 +199,11 @@ KNOWN_REFERENCE_TABLES = {
     "tariff_schedule",
     "return_freight_log",
     "fx_rates",
+    "rebate_program_tiers",
+    "tiered_settlements",
+    "inventory_receipts",
+    "quotes",
+    "substitution_groups",
 }
 
 
