@@ -58,6 +58,14 @@ def test_report_renders(full_run: tuple[Path, FullRunResult]) -> None:
         "never summed",
     ):
         assert needle in html, needle
+    # Money renders as dollars with cents in every table; no raw-cents headers.
+    assert "(cents)" not in html
+    import re as _re
+
+    assert _re.search(r"\$\d{1,3}(,\d{3})*\.\d{2}", html), "no $x,xxx.xx amounts found"
+    # Residuals, when present, carry plain-English explanations.
+    if "Visible residuals" in html:
+        assert "Why it is not allocated to lines" in html
 
 
 def test_manifest_complete(full_run: tuple[Path, FullRunResult]) -> None:
@@ -68,6 +76,10 @@ def test_manifest_complete(full_run: tuple[Path, FullRunResult]) -> None:
     assert manifest["software_versions"]["polars"] != "absent"
     assert "verified_duplicates_removed" in manifest["cleaning_decisions"]
     assert manifest["stage_timings_s"]
+    # Library warnings are captured into the manifest, not printed (17.4).
+    assert "library_warnings" in manifest["parameters"]
+    for w in manifest["parameters"]["library_warnings"]:
+        assert w["category"] and w["message"] and w["n_occurrences"] >= 1
 
 
 def test_outputs_written_both_formats(full_run: tuple[Path, FullRunResult]) -> None:

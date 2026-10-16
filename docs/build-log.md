@@ -880,3 +880,25 @@ committed sample.
 
 **3. README.** Windows dev commands documented as python -m pytest and
 python -m mypy (Smart App Control blocks the unsigned shim executables).
+
+---
+## Phase 17.4 — Report polish (2026-10-16)
+
+**1. Dollars everywhere in the report.** Every money figure in the HTML report
+now renders as dollars with cents ($11,423,284.03 style): the reconciliation
+table (previously raw cents), unallocated settlements, residuals, waterfall,
+economics and opportunity figures. Exports stay in integer cents (CSV copies
+keep their _usd conversion as before).
+
+**2. Residuals explained.** Each visible residual renders with its plain-
+English explanation: what it is, why the dollars are not forced onto lines,
+and where the amount is listed (e.g. the tiered true-up is a period-boundary
+timing difference between accrued estimates and settled actuals, not a
+property of any line). Also wired the unallocated-settlements table into the
+report context -- the template block existed but was never fed.
+
+**3. Library warnings captured.** run_full now records library warnings
+(e.g. pyfixest singleton-fixed-effect notices) instead of printing them:
+grouped by category and digit-normalized message with occurrence counts, in
+the run manifest (parameters.library_warnings) and the report's data coverage
+section. Tests assert the manifest field and the dollar formatting.

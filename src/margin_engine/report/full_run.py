@@ -7,7 +7,9 @@ HTML report, run manifest, DuckDB store. Stage timings recorded.
 
 from __future__ import annotations
 
+import re
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -54,7 +56,76 @@ class FullRunResult:
 def _fmt_dollars(cents: int | float | None) -> str:
     if cents is None:
         return "-"
-    return f"{cents / 100:,.0f}"
+    return f"{cents / 100:,.2f}"
+
+
+# Plain-English explanation of every visible residual: what it is, why the
+# dollars are not forced onto lines, and where the amount is listed.
+_RESIDUAL_EXPLANATIONS: dict[str, dict[str, str]] = {
+    "settlement_rebates_unallocated_cents": {
+        "what": "Rebate settlement dollars whose customer-period group has no invoice lines.",
+        "why": "Spreading them over unrelated SKUs would fabricate line-level margins.",
+        "where": "Per customer, period and program in unallocated_settlements.csv.",
+    },
+    "tiered_settlements_unallocated_cents": {
+        "what": "Tiered-program settlements with no matching lines in the measurement period.",
+        "why": "No eligible lines exist to carry them; forcing them would distort other items.",
+        "where": "Per customer, period and program in unallocated_settlements.csv.",
+    },
+    "tiered_true_up_cents": {
+        "what": "Timing difference between rebates accrued during the period (estimated) "
+        "and the amount settled at true-up (actual).",
+        "why": "It is a period-boundary effect, not a property of any line; restating "
+        "historical lines would break their audit trail.",
+        "where": "reconciliation.csv; the waterfall labels which basis each line uses.",
+    },
+    "return_freight_unallocated_cents": {
+        "what": "Return freight expense from the log that matched no return lines.",
+        "why": "Charging it to unrelated returns would misstate their recovery economics.",
+        "where": "reconciliation.csv, as a visible pool-level cost.",
+    },
+    "billed_charges_unallocated_cents": {
+        "what": "Order-level billed charges whose order has no sale lines to carry them.",
+        "why": "There is no defensible allocation basis without lines.",
+        "where": "reconciliation.csv.",
+    },
+    "price_credits_unattributed_cents": {
+        "what": "Price-correction credit memos whose original invoice could not be identified.",
+        "why": "Attributing them to guessed lines would silently rewrite realized prices.",
+        "where": "reconciliation.csv; the credits remain in the financial ledger.",
+    },
+    "freight_expense_unallocated_cents": {
+        "what": "Outbound freight expense with no allocation basis (no weight, cube or "
+        "lines in its group).",
+        "why": "Allocation without a driver would be arbitrary; the policy keeps a "
+        "visible residual instead.",
+        "where": "reconciliation.csv, as a cost-to-serve pool.",
+    },
+    "claims_unallocated_cents": {
+        "what": "Non-price claim credits with no matching lines.",
+        "why": "They belong to a cost category, not to specific unrelated SKUs.",
+        "where": "reconciliation.csv.",
+    },
+    "kit_realloc_net_cents": {
+        "what": "Net rounding of kit revenue reallocation across components.",
+        "why": "A nonzero value flags a kit allocation problem to investigate, "
+        "never silently absorbed into component lines.",
+        "where": "reconciliation.csv.",
+    },
+}
+
+
+def _aggregate_warnings(caught: list[warnings.WarningMessage]) -> list[dict[str, object]]:
+    """Group captured library warnings by category and digit-normalized message
+    so '17 singletons dropped' and '11 singletons dropped' collapse to one row."""
+    groups: dict[tuple[str, str], int] = {}
+    for w in caught:
+        key = (w.category.__name__, re.sub(r"\d+", "N", str(w.message)))
+        groups[key] = groups.get(key, 0) + 1
+    return [
+        {"category": cat, "message": msg, "n_occurrences": n}
+        for (cat, msg), n in sorted(groups.items())
+    ]
 
 
 # Natural sort key per export, applied just before writing so every file is
@@ -112,6 +183,13 @@ def run_full(
     rules = load_rules(rules_path)
     timings: dict[str, float] = {}
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Capture library warnings (e.g. pyfixest singleton fixed effects) for the
+    # manifest and report instead of printing them to the console. Entered and
+    # exited manually so the whole pipeline body needs no re-indentation.
+    _w_catcher = warnings.catch_warnings(record=True)
+    _caught = _w_catcher.__enter__()
+    warnings.simplefilter("always")
 
     t = time.perf_counter()
     res = run_pipeline(data_dir, mapping_path, rules)
@@ -274,6 +352,8 @@ def run_full(
     timings["exports"] = time.perf_counter() - t
 
     # ---- manifest -----------------------------------------------------------
+    _w_catcher.__exit__(None, None, None)
+    lib_warnings = _aggregate_warnings(list(_caught or []))
     manifest = build_manifest(
         data_dir=data_dir,
         mapping_path=mapping_path,
@@ -283,6 +363,7 @@ def run_full(
             "n_segments": seg.leaf_assignments["segment_leaf"].n_unique(),
             "bootstrap_median_ari": seg.bootstrap_median_ari,
             "notes": res.notes + seg.notes + guidance_res.notes,
+            "library_warnings": lib_warnings,
         },
         stage_timings_s=timings,
     )
@@ -383,10 +464,44 @@ def run_full(
             "n_observations": f"{res.observations.height:,}",
             "net_revenue": _fmt_dollars(net_rev),
             "missing_cost_revenue_share": f"{missing_cost_rev / max(net_rev, 1):.2%}",
+            "library_warnings": lib_warnings,
         },
-        "reconciliation": res.reconciliation.checks,
+        "reconciliation": [
+            {
+                "check": c["check"],
+                "expected": _fmt_dollars(c.get("expected_cents")),
+                "actual": _fmt_dollars(c.get("actual_cents")),
+                "allocated": _fmt_dollars(c.get("allocated_cents")),
+                "residual": _fmt_dollars(c.get("residual_cents")),
+                "source_total": _fmt_dollars(c.get("source_total_cents")),
+                "pass": c["pass"],
+            }
+            for c in res.reconciliation.checks
+        ],
         "residuals": [
-            {"residual": k, "amount_cents": v} for k, v in res.reconciliation.residuals.items() if v
+            {
+                "residual": k,
+                "amount": _fmt_dollars(v),
+                **_RESIDUAL_EXPLANATIONS.get(
+                    k,
+                    {
+                        "what": "Residual recorded by the pipeline.",
+                        "why": "Kept visible rather than forced onto lines.",
+                        "where": "reconciliation.csv.",
+                    },
+                ),
+            }
+            for k, v in res.reconciliation.residuals.items()
+            if v
+        ],
+        "unallocated_settlements": [
+            {
+                "customer_id": r["customer_id"],
+                "period": r["period"],
+                "rebate_program_id": r["rebate_program_id"],
+                "amount": _fmt_dollars(r["amount_cents"]),
+            }
+            for r in exports["unallocated_settlements"].to_dicts()
         ],
         "notes": res.notes + seg.notes + guidance_res.notes,
         "waterfall": waterfall_rows,

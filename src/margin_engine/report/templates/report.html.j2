@@ -32,28 +32,45 @@
   <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net revenue</span>
   <span class="kpi"><span class="v">{{ coverage.missing_cost_revenue_share }}</span>revenue with missing cost</span>
 </div>
+{% if coverage.library_warnings %}
+<p class="muted">Library warnings captured during the run (recorded here and in the manifest, not printed):</p>
 <table>
-  <tr><th>Reconciliation check</th><th>Expected (cents)</th><th>Actual (cents)</th><th>Allocated</th><th>Residual</th><th>Source total</th><th>Status</th></tr>
+  <tr><th>Category</th><th>Message (counts normalized)</th><th>Occurrences</th></tr>
+  {% for w in coverage.library_warnings %}
+  <tr><td>{{ w.category }}</td><td style="text-align:left">{{ w.message }}</td><td>{{ w.n_occurrences }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+<table>
+  <tr><th>Reconciliation check</th><th>Expected ($)</th><th>Actual ($)</th><th>Allocated ($)</th><th>Residual ($)</th><th>Source total ($)</th><th>Status</th></tr>
   {% for c in reconciliation %}
-  <tr><td>{{ c.check }}</td><td>{{ c.expected_cents }}</td><td>{{ c.actual_cents }}</td>
-      <td>{{ c.allocated_cents if c.allocated_cents is not none else "-" }}</td>
-      <td>{{ c.residual_cents if c.residual_cents is not none else "-" }}</td>
-      <td>{{ c.source_total_cents if c.source_total_cents is not none else "-" }}</td>
+  <tr><td>{{ c.check }}</td><td>{{ c.expected }}</td><td>{{ c.actual }}</td>
+      <td>{{ c.allocated }}</td>
+      <td>{{ c.residual }}</td>
+      <td>{{ c.source_total }}</td>
       <td><span class="status {{ 'ok' if c.pass else 'bad' }}">{{ 'PASS' if c.pass else 'FAIL' }}</span></td></tr>
   {% endfor %}
 </table>
 {% if unallocated_settlements %}
 <p class="muted">Unallocated settlements (no matching lines in the customer-period group):</p>
 <table>
-  <tr><th>Customer</th><th>Period</th><th>Program</th><th>Amount (cents)</th></tr>
+  <tr><th>Customer</th><th>Period</th><th>Program</th><th>Amount ($)</th></tr>
   {% for u in unallocated_settlements %}
-  <tr><td>{{ u.customer_id }}</td><td>{{ u.period }}</td><td>{{ u.rebate_program_id }}</td><td>{{ u.amount_cents }}</td></tr>
+  <tr><td>{{ u.customer_id }}</td><td>{{ u.period }}</td><td>{{ u.rebate_program_id }}</td><td>{{ u.amount }}</td></tr>
   {% endfor %}
 </table>
 {% endif %}
 {% if residuals %}
-<p class="muted">Visible residuals (dollars kept, not forced onto lines):
-  {% for r in residuals %}{{ r.residual }} = {{ r.amount_cents }}c{{ ", " if not loop.last }}{% endfor %}</p>
+<p class="muted">Visible residuals. Dollars the pipeline keeps at pool level instead of forcing onto lines:</p>
+<table>
+  <tr><th>Residual</th><th>Amount ($)</th><th>What it is</th><th>Why it is not allocated to lines</th><th>Where it is listed</th></tr>
+  {% for r in residuals %}
+  <tr><td>{{ r.residual }}</td><td>{{ r.amount }}</td>
+      <td style="text-align:left">{{ r.what }}</td>
+      <td style="text-align:left">{{ r.why }}</td>
+      <td style="text-align:left">{{ r.where }}</td></tr>
+  {% endfor %}
+</table>
 {% endif %}
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 
