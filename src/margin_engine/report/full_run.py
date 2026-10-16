@@ -86,6 +86,23 @@ def _natural_sort(name: str, frame: pl.DataFrame) -> pl.DataFrame:
     return frame.sort(keys) if keys else frame
 
 
+# Exports carrying iterative-solver estimates (PPML/IRLS, logistic Newton,
+# fixed-effects OLS): BLAS threading and solver iteration order can move the
+# last few ulps between otherwise identical runs, so these frames are rounded
+# to 10 significant digits at export time only. In-memory results are
+# untouched; 10 digits is far beyond any decision-relevant precision.
+_SOLVER_EXPORTS = frozenset({"sensitivity", "win_curves", "cross_price_estimates"})
+
+
+def _round_solver_outputs(name: str, frame: pl.DataFrame) -> pl.DataFrame:
+    if name not in _SOLVER_EXPORTS:
+        return frame
+    cols = [c for c, dt in frame.schema.items() if dt in (pl.Float64, pl.Float32)]
+    if not cols:
+        return frame
+    return frame.with_columns(pl.col(c).round_sig_figs(10).alias(c) for c in cols)
+
+
 def run_full(
     data_dir: Path,
     mapping_path: Path,
@@ -231,7 +248,10 @@ def run_full(
             }
         )
     )
-    exports = {name: _natural_sort(name, frame) for name, frame in exports.items()}
+    exports = {
+        name: _round_solver_outputs(name, _natural_sort(name, frame))
+        for name, frame in exports.items()
+    }
     for fmt in rules.reporting.output_formats:
         if fmt == "parquet":
             for name, frame in exports.items():

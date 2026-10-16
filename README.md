@@ -101,9 +101,10 @@ uv run python -m margin_engine.cli run \
 # open output/report.html; tables are also in output/*.parquet and *.csv
 ```
 
-Quality checks: `uv run ruff check . && uv run mypy src && uv run python -m pytest`
-(on Windows machines with Smart App Control, use `python -m pytest`, not the
-`pytest` shim).
+Quality checks: `uv run ruff check . && uv run python -m mypy src && uv run python -m pytest`.
+On Windows, run the dev tools as modules — `python -m pytest` and
+`python -m mypy` — not the `pytest` / `mypy` shim executables (Smart App
+Control blocks unsigned entry-point shims).
 
 ## Running on real data
 

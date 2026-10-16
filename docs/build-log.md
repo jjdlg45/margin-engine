@@ -858,3 +858,25 @@ covered-basis contribution, after-activity contribution), sales vs linked
 returns contribution split, share of net revenue excluded for unknown cost,
 service-policy flag count, and top/bottom-5 customer contributor tables on the
 after-activity measure.
+
+---
+## Phase 17.3 — Solver determinism (2026-10-16)
+
+**1. Iterative-solver exports rounded to 10 significant digits.** PPML/IRLS,
+logistic Newton and fixed-effects OLS estimates can move in the last few ulps
+between runs through BLAS threading and solver iteration order. The three
+exports carrying such estimates (sensitivity, win_curves,
+cross_price_estimates) are now rounded to 10 significant digits at export time
+only -- in-memory results are untouched and 10 digits is far beyond any
+decision-relevant precision. Chosen over forcing single-threaded solvers,
+which would cost real wall-clock time on the 500k-line target and still leave
+library-version variance.
+
+**2. Determinism test at full scale.** The CLI-twice byte-identical test is
+refactored into a shared helper and now also runs on a default-size generated
+world (seed 42, 400 customers x 600 items x 24 months), where solver iteration
+counts, group cardinalities and float magnitudes all differ from the small
+committed sample.
+
+**3. README.** Windows dev commands documented as python -m pytest and
+python -m mypy (Smart App Control blocks the unsigned shim executables).

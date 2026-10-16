@@ -178,17 +178,16 @@ def test_report_has_economics_section(full_run: tuple[Path, FullRunResult]) -> N
         assert needle in html, needle
 
 
-def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
-    """Engine determinism: two CLI runs on the same input produce byte-identical
-    exports (every CSV and Parquet). The manifest carries a timestamp and the
-    report embeds it, so those and the DuckDB store are excluded."""
+def _assert_cli_twice_identical(data_dir: Path, tmp_path: Path) -> None:
+    """Run the full CLI twice on data_dir and assert every CSV and Parquet
+    export is byte-identical. The manifest carries a timestamp and the report
+    embeds it, so those and the DuckDB store are excluded."""
     import hashlib
 
     from typer.testing import CliRunner
 
     from margin_engine.cli import app
 
-    sample = REPO / "data" / "sample" / "erp"
     rules = yaml.safe_load((REPO / "config" / "rules.yaml").read_text(encoding="utf-8"))
     rules["segmentation"]["bootstrap_resamples"] = 2
     rules_path = tmp_path / "rules.yaml"
@@ -200,7 +199,7 @@ def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
             [
                 "run",
                 "--data",
-                str(sample),
+                str(data_dir),
                 "--mapping",
                 str(MAPPING),
                 "--rules",
@@ -222,3 +221,17 @@ def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
     assert len(h1) >= 15
     diff = [name for name in h1 if h1[name] != h2[name]]
     assert not diff, f"exports differ across identical runs: {diff}"
+
+
+def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
+    """Engine determinism on the committed sample dataset."""
+    _assert_cli_twice_identical(REPO / "data" / "sample" / "erp", tmp_path)
+
+
+def test_cli_twice_byte_identical_full_size_world(tmp_path: Path) -> None:
+    """Engine determinism at full scale: a default-size generated world
+    (seed 42), where solver iteration counts, group cardinalities and float
+    magnitudes all differ from the small committed sample."""
+    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=42)
+    generate(cfg, tmp_path / "world")
+    _assert_cli_twice_identical(tmp_path / "world" / "erp", tmp_path)
