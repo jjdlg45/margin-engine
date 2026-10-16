@@ -56,6 +56,7 @@ It ingests ERP invoice exports (plus optional reference tables), reconciles ever
 - **Money is exact.** Monetary amounts use Decimal (or integer cents), never floats, for any value that must reconcile.
 - **Never push to GitHub.** Commit locally only.
 - **Never touch files outside this project folder.**
+- **At the start of every run, and after any owner commit, re-read CLAUDE.md from disk. Never work from a cached copy.**
 - **Resuming:** if interrupted, read `docs/build-log.md` and continue from the last completed phase.
 - **Professional tone** in code, docs and UI. No emojis.
 
