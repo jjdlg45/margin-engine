@@ -203,6 +203,9 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     cv = (
         pos.group_by("pair")
         .agg((pl.col("log_price").std()).alias("sd"))
+        # group_by output order is not deterministic; sort before the float
+        # mean so the summation order (and the last ulp) is reproducible.
+        .sort("pair")
         .select(pl.col("sd").mean())
         .item()
     )

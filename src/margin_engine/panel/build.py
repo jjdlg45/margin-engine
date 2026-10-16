@@ -56,6 +56,10 @@ def build_panel(
         reliable = pl.col("_pair_n") >= 6 if "_pair_n" in sales.columns else pl.lit(True)
         sales = sales.filter(~(pl.col("flag_commercial_pricing_outlier") & reliable))
 
+    # Stable row order before aggregation: the float qty sum and the first()
+    # picks below must not depend on upstream join order.
+    sales = sales.sort("source_line_key")
+
     monthly = (
         sales.group_by("customer_id", "item_id", "month_idx")
         .agg(

@@ -57,6 +57,35 @@ def _fmt_dollars(cents: int | float | None) -> str:
     return f"{cents / 100:,.0f}"
 
 
+# Natural sort key per export, applied just before writing so every file is
+# byte-identical across runs on the same input. First matching column set in
+# the priority list wins; frames with their own meaningful order (peer stats,
+# win curves, reconciliation checks) are already deterministic upstream.
+_EXPORT_KEYS: dict[str, list[str]] = {
+    "financial_ledger": ["source_line_key"],
+    "sales_observations_flagged": ["source_line_key"],
+    "segment_assignments": ["source_line_key"],
+    "segment_rules": ["leaf_id"],
+    "margin_driver_rules": ["leaf_id"],
+    "guidance": ["customer_id", "item_id"],
+    "sensitivity": ["segment"],
+    "opportunities": ["customer_id", "item_id"],
+    "order_economics": ["order_id"],
+    "customer_economics": ["customer_id"],
+    "service_policy_flags": ["customer_id"],
+    "inventory_cogs": ["source_line_key"],
+    "inventory_identity": ["item_id"],
+    "win_curves": ["segment"],
+    "cross_price_estimates": ["group_id", "item_a", "item_b"],
+    "unallocated_settlements": ["customer_id", "period", "rebate_program_id"],
+}
+
+
+def _natural_sort(name: str, frame: pl.DataFrame) -> pl.DataFrame:
+    keys = [k for k in _EXPORT_KEYS.get(name, []) if k in frame.columns]
+    return frame.sort(keys) if keys else frame
+
+
 def run_full(
     data_dir: Path,
     mapping_path: Path,
@@ -149,7 +178,10 @@ def run_full(
         )
         qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
         win_curves = fit_win_curves(
-            qi, seg_of_pair, min_quotes=rules.sensitivity.min_quotes_per_segment
+            qi,
+            seg_of_pair,
+            min_quotes=rules.sensitivity.min_quotes_per_segment,
+            max_rel_se=rules.sensitivity.win_curve_max_rel_se,
         )
         res.notes.append("win/loss modeling ran on the quotes table")
     else:
@@ -199,6 +231,7 @@ def run_full(
             }
         )
     )
+    exports = {name: _natural_sort(name, frame) for name, frame in exports.items()}
     for fmt in rules.reporting.output_formats:
         if fmt == "parquet":
             for name, frame in exports.items():
@@ -290,6 +323,39 @@ def run_full(
     treatment_counts = (
         dict(opps.group_by("volume_treatment").len().iter_rows()) if opps.height else {}
     )
+    ce = cts.customer_economics
+
+    def _cust_rows(frame: pl.DataFrame) -> list[dict[str, str]]:
+        return [
+            {
+                "customer_id": r["customer_id"],
+                "net_revenue": _fmt_dollars(r["net_cents"]),
+                "sales_contribution": _fmt_dollars(r["sales_contribution_cents"]),
+                "returns_contribution": _fmt_dollars(r["returns_contribution_cents"]),
+                "contribution": _fmt_dollars(r["contribution_cents"]),
+                "activity_cost": _fmt_dollars(r["activity_cts_cents"]),
+                "after_activity": _fmt_dollars(r["contribution_after_activity_cents"]),
+                "pct_revenue_excluded": f"{r['pct_revenue_excluded']:.1%}",
+            }
+            for r in frame.to_dicts()
+        ]
+
+    ce_ranked = ce.sort(["contribution_after_activity_cents", "customer_id"])
+    total_net = int(ce["net_cents"].sum())
+    total_covered = int(ce["revenue_with_cost_cents"].sum())
+    economics = {
+        "n_orders": f"{cts.order_economics.height:,}",
+        "n_customers": f"{ce.height:,}",
+        "sales_contribution": _fmt_dollars(int(ce["sales_contribution_cents"].sum())),
+        "returns_contribution": _fmt_dollars(int(ce["returns_contribution_cents"].sum())),
+        "net_contribution": _fmt_dollars(int(ce["contribution_cents"].sum())),
+        "activity_cost": _fmt_dollars(int(ce["activity_cts_cents"].sum())),
+        "after_activity": _fmt_dollars(int(ce["contribution_after_activity_cents"].sum())),
+        "pct_revenue_excluded": f"{1 - total_covered / total_net:.1%}" if total_net else "-",
+        "top_customers": _cust_rows(ce_ranked.tail(5).reverse()),
+        "bottom_customers": _cust_rows(ce_ranked.head(5)),
+        "n_service_flags": cts.service_flags.height,
+    }
     context: dict[str, Any] = {
         "manifest": manifest,
         "coverage": {
@@ -336,6 +402,7 @@ def run_full(
             if inventory_cogs is not None
             else None
         ),
+        "economics": economics,
         "win_curves": win_curves.to_dicts() if win_curves is not None else None,
         "cross_estimates": cross_estimates.to_dicts() if cross_estimates is not None else None,
         "opportunity": {

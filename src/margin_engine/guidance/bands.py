@@ -133,8 +133,11 @@ def build_guidance(
     # Pair position: median index over the pair's history; unit economics from
     # the most recent sale line with known cost and list.
     base = flagged.filter(pl.col("price_index").is_not_null() & pl.col("price_index").is_finite())
+    # source_line_key tie-break (when present): last()/first() picks and the
+    # float qty sum below must not depend on upstream join order on tied dates.
+    tie = ["source_line_key"] if "source_line_key" in base.columns else []
     pair = (
-        base.sort("invoice_date")
+        base.sort("invoice_date", *tie)
         .group_by("customer_id", "item_id")
         .agg(
             pl.col("segment_leaf").drop_nulls().last().alias("segment_leaf"),

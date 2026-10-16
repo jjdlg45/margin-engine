@@ -164,3 +164,61 @@ def test_cli_sample_produces_optional_module_outputs(tmp_path: Path) -> None:
     # unallocated_settlements has headers even when empty.
     first_line = (out / "unallocated_settlements.csv").read_text(encoding="utf-8").splitlines()[0]
     assert "customer_id" in first_line
+
+
+def test_report_has_economics_section(full_run: tuple[Path, FullRunResult]) -> None:
+    out, _ = full_run
+    html = (out / "report.html").read_text(encoding="utf-8")
+    for needle in (
+        "Order and customer economics",
+        "Top contributors (after activity cost)",
+        "Bottom contributors (after activity cost)",
+        "excluded from contribution because cost is unknown",
+    ):
+        assert needle in html, needle
+
+
+def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
+    """Engine determinism: two CLI runs on the same input produce byte-identical
+    exports (every CSV and Parquet). The manifest carries a timestamp and the
+    report embeds it, so those and the DuckDB store are excluded."""
+    import hashlib
+
+    from typer.testing import CliRunner
+
+    from margin_engine.cli import app
+
+    sample = REPO / "data" / "sample" / "erp"
+    rules = yaml.safe_load((REPO / "config" / "rules.yaml").read_text(encoding="utf-8"))
+    rules["segmentation"]["bootstrap_resamples"] = 2
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text(yaml.safe_dump(rules), encoding="utf-8")
+
+    def run(out: Path) -> dict[str, str]:
+        result = CliRunner().invoke(
+            app,
+            [
+                "run",
+                "--data",
+                str(sample),
+                "--mapping",
+                str(MAPPING),
+                "--rules",
+                str(rules_path),
+                "--out",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return {
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(out.iterdir())
+            if p.suffix in (".csv", ".parquet")
+        }
+
+    h1 = run(tmp_path / "out1")
+    h2 = run(tmp_path / "out2")
+    assert set(h1) == set(h2)
+    assert len(h1) >= 15
+    diff = [name for name in h1 if h1[name] != h2[name]]
+    assert not diff, f"exports differ across identical runs: {diff}"

@@ -38,7 +38,14 @@ def world(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, PipelineResul
     return out, res, seg_map
 
 
-def test_win_curve_coefficient_recovered(world: tuple[Path, PipelineResult, pl.DataFrame]) -> None:
+def test_win_curve_every_estimated_segment_within_15pct(
+    world: tuple[Path, PipelineResult, pl.DataFrame],
+) -> None:
+    """EVERY segment carrying estimated_win_curve status recovers the planted
+    coefficient within +/-15% relative -- not just the median. Segments whose
+    fit cannot support that accuracy must carry a lower status (fail closed):
+    insufficient_data (too few quotes) or insufficient_precision (relative SE
+    above the configured maximum)."""
     out, res, seg_map = world
     quotes = res.reference["quotes"]
     assert quotes is not None and quotes.height > 3_000
@@ -47,17 +54,50 @@ def test_win_curve_coefficient_recovered(world: tuple[Path, PipelineResult, pl.D
     truth = json.loads((out / "ground_truth" / "truth_summary.json").read_text())["quotes"][
         "win_curve"
     ]
+    counts: dict[str, int] = {}
+    failures = []
     rel_errs = []
     for r in curves.to_dicts():
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
         if r["status"] != STATUS_ESTIMATED:
             continue
         b_true = truth[str(r["segment"])]["b"]
-        rel_errs.append(abs(r["price_coef"] - b_true) / abs(b_true))
-    assert len(rel_errs) >= 4
-    med = float(np.median(rel_errs))
-    worst = max(rel_errs)
-    print(f"\nwin-curve relative errors: median={med:.3f} worst={worst:.3f}")
-    assert med <= 0.15, f"median relative error {med:.2%} > 15%"
+        rel = abs(r["price_coef"] - b_true) / abs(b_true)
+        rel_errs.append(rel)
+        print(
+            f"seg {r['segment']}: n={r['n_quotes']} coef={r['price_coef']:.2f} "
+            f"true={b_true:.2f} rel_err={rel:.3f}"
+        )
+        if rel > 0.15:
+            failures.append((r["segment"], rel))
+    print(f"status counts: {counts}")
+    assert counts.get(STATUS_ESTIMATED, 0) >= 2, f"too few estimated segments: {counts}"
+    assert not failures, f"estimated segments over +/-15% relative error: {failures}"
+    print(
+        f"win-curve relative errors: median={float(np.median(rel_errs)):.3f} worst={max(rel_errs):.3f}"
+    )
+
+
+def test_win_curve_precision_gate_fails_closed(
+    world: tuple[Path, PipelineResult, pl.DataFrame],
+) -> None:
+    """A fit whose relative SE exceeds the maximum is insufficient_precision:
+    coefficient, SE and CI stay reported (honest), status keeps it out of
+    gating and optimization. The gate binds on this world."""
+    from margin_engine.extended.quotes import STATUS_LOW_PRECISION
+
+    _, res, seg_map = world
+    qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
+    curves = fit_win_curves(qi, seg_map)
+    low = curves.filter(pl.col("status") == STATUS_LOW_PRECISION)
+    assert low.height >= 1
+    for r in low.to_dicts():
+        assert r["price_coef"] is not None and r["price_coef_se"] is not None
+        assert r["price_coef_se"] / abs(r["price_coef"]) > 0.10
+        assert "relative SE" in r["reasons"]
+    # Estimated segments all satisfy the gate.
+    for r in curves.filter(pl.col("status") == STATUS_ESTIMATED).to_dicts():
+        assert r["price_coef_se"] / abs(r["price_coef"]) <= 0.10
 
 
 def test_negotiation_gap_recovered(world: tuple[Path, PipelineResult, pl.DataFrame]) -> None:

@@ -396,7 +396,7 @@ ABC splits (revenue, unit and frequency versions): A = top 80%, B = next 15%, C 
 | First-stage strength | Effective F ≥ 10 (rule-of-thumb threshold, configurable) |
 | Clustering | Level where the instrument varies (supplier or category × month) |
 | Shrinkage | Toward parent commercial segment |
-| Win-curve gating | Segments with >= `min_quotes_per_segment` (default 400) quotes gate at ±15% relative; thinner segments are `insufficient_data`, reported not gated |
+| Win-curve gating | Segments with >= `min_quotes_per_segment` (default 400) quotes and relative SE <= `win_curve_max_rel_se` (default 0.10) carry `estimated_win_curve` and gate at ±15% relative per segment; thinner segments are `insufficient_data`, imprecise fits `insufficient_precision` (CI reported, not gated) |
 | `causal_elasticity_supported` requires | First-stage threshold met; overidentification test not rejected (when 2 instruments); robustness spread within 0.20 across specifications; 95% CI width under 1.0; exclusion rationale documented in config |
 
 ### 8.7 Opportunity and scenarios

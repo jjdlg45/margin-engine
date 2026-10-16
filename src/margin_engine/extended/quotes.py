@@ -6,7 +6,13 @@ uncertainty and an evidence status:
 
 - insufficient_data: too few quotes, no price variation, or outcomes separable
   (a degenerate fit would be meaningless confidence).
-- estimated_win_curve: fitted with finite standard errors.
+- insufficient_precision: the fit converged but its own relative standard
+  error (se / |coefficient|) exceeds the configured maximum, so the data does
+  not support the accuracy an estimated curve claims. Coefficient, SE and CI
+  are still reported; the status keeps them out of accuracy gating and
+  win-aware optimization (fail closed).
+- estimated_win_curve: fitted with finite standard errors at or under the
+  relative-SE maximum.
 
 The negotiation gap (quote -> close on won deals) informs the start price:
 quoting start = target / (1 - gap) lands at the target after typical
@@ -23,6 +29,7 @@ import numpy as np
 import polars as pl
 
 STATUS_INSUFFICIENT = "insufficient_data"
+STATUS_LOW_PRECISION = "insufficient_precision"
 STATUS_ESTIMATED = "estimated_win_curve"
 
 
@@ -65,10 +72,12 @@ def fit_win_curves(
     quotes_indexed: pl.DataFrame,
     segment_of_pair: pl.DataFrame,
     min_quotes: int = 400,
+    max_rel_se: float = 0.10,
 ) -> pl.DataFrame:
     """One logistic fit per segment. segment_of_pair: customer_id, item_id,
     segment_leaf. Segments with fewer than min_quotes quotes are
-    insufficient_data (reported, never gated on accuracy)."""
+    insufficient_data; fits whose relative standard error exceeds max_rel_se
+    are insufficient_precision (both reported, never gated on accuracy)."""
     import statsmodels.api as sm
 
     q = quotes_indexed.join(segment_of_pair, on=["customer_id", "item_id"], how="left").filter(
@@ -107,7 +116,15 @@ def fit_win_curves(
             wc.price_coef_se = se
             wc.ci_low = wc.price_coef - 1.96 * se
             wc.ci_high = wc.price_coef + 1.96 * se
-            wc.status = STATUS_ESTIMATED
+            rel_se = se / abs(wc.price_coef) if wc.price_coef else float("inf")
+            if rel_se > max_rel_se:
+                wc.status = STATUS_LOW_PRECISION
+                wc.reasons = (
+                    f"relative SE {rel_se:.3f} > {max_rel_se}: the fit does not "
+                    "support estimated-curve accuracy; CI reported, not gated"
+                )
+            else:
+                wc.status = STATUS_ESTIMATED
         except Exception as exc:  # fit failure is a status, not a crash
             wc.reasons = f"fit failed: {exc}"
         out.append(wc.to_dict())

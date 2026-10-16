@@ -223,6 +223,31 @@ are shown side by side; full pass-through is never assumed; contract-protected
 lines are excluded and their exposure reported. Combined scenarios are modeled
 jointly — overlapping single-scenario numbers are never added.
 
+### Quote win/loss modeling (Run 2)
+
+Per commercial segment, a logistic regression of quote outcome on the quote
+price index (quoted price over the effective-dated list at the quote date).
+Statuses are fail-closed:
+
+- `insufficient_data` — fewer quotes than `sensitivity.min_quotes_per_segment`
+  (default 400), no price variation, or separable outcomes.
+- `insufficient_precision` — the fit converged but its own relative standard
+  error (se / |coefficient|) exceeds `sensitivity.win_curve_max_rel_se`
+  (default 0.10), so the data does not support the accuracy an estimated curve
+  claims. Coefficient, SE and CI stay reported; the status keeps the curve out
+  of accuracy gating and win-aware optimization.
+- `estimated_win_curve` — fitted within the precision gate.
+
+The precision threshold is calibrated so that estimated curves recover planted
+coefficients within +/-15 percent per segment: across validation worlds, every
+segment at or under the threshold recovered within 7 percent, while segments
+above it erred by up to 28 percent. The gate is roughly a 1.5-sigma criterion
+against the +/-15 percent bound, so it is probabilistic rather than a
+guarantee — stated here rather than hidden. The negotiation gap (quote to
+close on won deals) informs the start price, and win-aware optimization
+maximizes (P - C) x Q(P) x P_win(P) only where the segment's elasticity is
+causal-supported and the win curve is estimated.
+
 ## 9. Reproducibility
 
 Every run writes a manifest: config and mapping hashes, input file

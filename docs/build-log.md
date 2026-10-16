@@ -815,3 +815,46 @@ engine-side overidentification rejection, unchanged and passing.
 threshold above, recalibrated with measured evidence, test_generator rerun
 green); all other tests passed including 50-sim coverage (0.920), repeat-run
 byte-identical determinism, and the full fixture/property set.
+
+---
+## Phase 17.2 — Win-curve gating, engine determinism (2026-10-15)
+
+**1. Per-segment win-curve gating.** The recovery test now asserts EVERY
+segment carrying `estimated_win_curve` status is within +/-15 percent relative
+of the planted coefficient, not just the median. Measurement showed the +/-15
+target is statistically unattainable for noisy fits regardless of estimator:
+on the test world one 894-quote segment erred 16.3 percent (and 22-28 percent
+on other seeds at n~500-900), with the fit's own SE honestly signalling it
+(relative SE 0.12-0.35). Empirical-Bayes shrinkage was evaluated and rejected:
+it fixed the worst cases but overshrank an accurate segment to 18 percent
+error on one seed. The fix follows the fail-closed principle instead: a new
+`insufficient_precision` status for fits whose relative SE exceeds
+`sensitivity.win_curve_max_rel_se` (default 0.10) -- coefficient, SE and CI
+still reported, status keeps them out of gating and optimization. Calibration
+across three validation seeds: every segment at or under the threshold
+recovered within 7 percent; segments above it erred up to 28 percent. The
+target itself is unchanged. Documented limitation: the gate is a ~1.5-sigma
+criterion, so an estimated segment breaching 15 percent on some future seed
+has ~13 percent probability; the committed test world passes with margin
+(worst estimated-segment error 4.0 percent).
+
+**2. Engine determinism.** ABC ranking ties now break deterministically on
+item_id; observation frames are sorted on source_line_key before any float
+aggregation (ABC value sums, peer-group quantiles); customer economics and
+leakage rankings carry id tie-breakers; and every export is sorted by its
+natural key just before writing. The new CLI-twice test then caught two real
+last-ulp float-summation sites the sweep had missed: the panel's monthly
+aggregation summed quantities in upstream-join order (fixed: sort on
+source_line_key before aggregating -- this also pins the first() contract
+pick), and the within-pair price CV took a mean over polars' unordered
+group_by output (fixed: sort on pair before the mean). Guidance's
+date-sorted last() picks got a source_line_key tie-break for the same reason.
+The test runs the full CLI twice on the committed sample and asserts every
+CSV and Parquet export byte-identical (manifest timestamp, report and DuckDB
+store excluded); it passes.
+
+**3. Report: order and customer economics section.** KPIs (orders, customers,
+covered-basis contribution, after-activity contribution), sales vs linked
+returns contribution split, share of net revenue excluded for unknown cost,
+service-policy flag count, and top/bottom-5 customer contributor tables on the
+after-activity measure.

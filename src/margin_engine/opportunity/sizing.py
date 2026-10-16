@@ -62,7 +62,7 @@ def observed_leakage(ledger: pl.DataFrame, rules: Rules) -> pl.DataFrame:
                 + pl.col("price_credits_cents")
             ).alias("total_leakage_cents")
         )
-        .sort("total_leakage_cents", descending=True)
+        .sort(["total_leakage_cents", "customer_id"], descending=[True, False])
     )
 
 

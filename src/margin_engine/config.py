@@ -338,6 +338,10 @@ class SensitivityConfig(StrictModel):
     # Win-curve estimation (Phase 16): segments with fewer quotes get
     # insufficient_data and are excluded from accuracy gating.
     min_quotes_per_segment: int = Field(default=400, ge=10)
+    # A fitted win curve carries estimated status only when its own relative
+    # standard error (se / |coefficient|) is at or under this; noisier fits are
+    # insufficient_precision -- reported with their CI, never accuracy-gated.
+    win_curve_max_rel_se: float = Field(default=0.10, gt=0)
     min_price_variation_cv: float = Field(default=0.01, ge=0)
 
 

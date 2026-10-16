@@ -217,12 +217,15 @@ def abc_classification(observations: pl.DataFrame, rules: Rules) -> pl.DataFrame
     """Three separate ABC splits per item: revenue, units, order frequency."""
     a = rules.segmentation.abc_a_share
     b = rules.segmentation.abc_b_share
+    # Stable input order so float sums (quantity_norm) and the ranking are
+    # reproducible; ties on value break deterministically on item_id.
+    observations = observations.sort("source_line_key")
 
     def _abc(metric: pl.Expr, name: str) -> pl.DataFrame:
         per_item = (
             observations.group_by("item_id")
             .agg(metric.alias("value"))
-            .sort("value", descending=True)
+            .sort(["value", "item_id"], descending=[True, False])
             .with_columns((pl.col("value").cum_sum() / pl.col("value").sum()).alias("_cum"))
             .with_columns(
                 pl.when(pl.col("_cum") <= a)
@@ -245,7 +248,9 @@ def run_dispersion(
     observations: pl.DataFrame, items: pl.DataFrame | None, rules: Rules
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Full Phase 3: returns (flagged observations, peer stats, abc table)."""
-    df = observations
+    # Stable row order before any float aggregation (quantiles, means over
+    # price_index) so outputs are bit-identical across runs.
+    df = observations.sort("source_line_key")
     if items is not None and "item_family" not in df.columns:
         df = df.join(items.select("item_id", "item_family"), on="item_id", how="left")
     elif "item_family" not in df.columns:

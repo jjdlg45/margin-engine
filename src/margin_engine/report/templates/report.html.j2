@@ -111,6 +111,34 @@
 </div>
 <p class="muted">{{ opportunity.n_records }} opportunity records; volume treatment: {{ opportunity.treatment_counts }}</p>
 
+<h2>Order and customer economics</h2>
+<div>
+  <span class="kpi"><span class="v">{{ economics.n_orders }}</span>orders</span>
+  <span class="kpi"><span class="v">{{ economics.n_customers }}</span>customers</span>
+  <span class="kpi"><span class="v">${{ economics.net_contribution }}</span>contribution (covered basis)</span>
+  <span class="kpi"><span class="v">${{ economics.after_activity }}</span>after activity cost (estimated)</span>
+</div>
+<p class="muted">Sales contribution ${{ economics.sales_contribution }}; linked returns {{ economics.returns_contribution }} (included, shown separately);
+activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled estimated; the base contribution is kept).
+{{ economics.pct_revenue_excluded }} of net revenue is excluded from contribution because cost is unknown.
+{{ economics.n_service_flags }} customer(s) carry service-policy flags (separate from pricing).</p>
+<h3>Top contributors (after activity cost)</h3>
+<table>
+  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  {% for r in economics.top_customers %}
+  <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
+      <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>
+  {% endfor %}
+</table>
+<h3>Bottom contributors (after activity cost)</h3>
+<table>
+  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  {% for r in economics.bottom_customers %}
+  <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
+      <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>
+  {% endfor %}
+</table>
+
 {% if inventory %}
 <h2>Inventory costing</h2>
 <p class="muted">Method: {{ inventory.method }} (declared cost basis) &middot; {{ inventory.n_sales_costed }} sales costed &middot; COGS ${{ inventory.cogs_total }} &middot; {{ inventory.n_flagged }} line(s) flagged (insufficient receipts / no standard).</p>
@@ -124,7 +152,7 @@
       <td>{{ "%.2f"|format(w.price_coef) if w.price_coef is not none else "-" }}</td>
       <td>{{ "[%.2f, %.2f]"|format(w.ci_low, w.ci_high) if w.ci_low is not none else "-" }}</td>
       <td>{{ "%.1f%%"|format(w.negotiation_gap * 100) if w.negotiation_gap is not none else "-" }}</td>
-      <td><span class="status {{ 'ok' if w.status == 'estimated_win_curve' else 'bad' }}">{{ w.status }}</span></td></tr>
+      <td><span class="status {{ 'ok' if w.status == 'estimated_win_curve' else ('warn' if w.status == 'insufficient_precision' else 'bad') }}">{{ w.status }}</span></td></tr>
   {% endfor %}
 </table>
 {% endif %}

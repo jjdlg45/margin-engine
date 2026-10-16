@@ -197,7 +197,7 @@ def customer_economics(lines: pl.DataFrame) -> pl.DataFrame:
         )
         .with_columns((pl.col("n_orders") / months).alias("orders_per_month"))
     )
-    return _with_coverage(out).sort("contribution_after_activity_cents")
+    return _with_coverage(out).sort(["contribution_after_activity_cents", "customer_id"])
 
 
 def service_policy_flags(customers_econ: pl.DataFrame, rules: Rules) -> pl.DataFrame:
