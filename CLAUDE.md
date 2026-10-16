@@ -36,7 +36,7 @@ It ingests ERP invoice exports (plus optional reference tables), reconciles ever
 
 - **Run 1 (core engine):** Phases 0–8 continuously → **HARD STOP** for owner review.
 - **Run 2 (extended modules):** Phases 9–17 continuously, only after owner types "proceed" → **HARD STOP**.
-- **Run 3 (API, UI, agent):** Phases 18–20, only after owner types "proceed".
+- **Run 3 (hosted demo UI):** only after owner types "proceed". Phases 18–19 continuously → **HARD STOP for visual review**; after owner approval, Phases 20–23 continuously → **HARD STOP**. See the Run 3 section in 6 for details.
 
 **After every phase**
 1. Run the phase's verification plus all quality checks (ruff, mypy, pytest).
@@ -79,9 +79,7 @@ It ingests ERP invoice exports (plus optional reference tables), reconciles ever
 | Econometrics | pyfixest (fixed effects OLS, IV, Poisson/PPML), linearmodels (IV diagnostics, overidentification tests), statsmodels |
 | CLI | Typer |
 | Static report | Jinja2 HTML |
-| Run 3: API | FastAPI |
-| Run 3: UI | React + TypeScript + Vite |
-| Run 3, optional | Claude API (explanations only) |
+| Run 3: web app | React 18 + TypeScript + Vite, static, hosted on GitHub Pages (full stack in the Run 3 section) |
 
 ---
 
@@ -327,23 +325,108 @@ Each phase extends the generator with planted truth for its feature, then implem
 - **Verify:** planted cross-price direction recovered on `well_identified`; unsupported cases labeled, not estimated.
 - **HARD STOP.**
 
-### RUN 3 — API, UI, agent
+### RUN 3 — Hosted demo UI
 
-#### Phase 18 — API (FastAPI)
-- Endpoints to upload data and mapping, run pipeline, fetch results and manifest. Pydantic response models. Tests.
+**Goal:** a static, hosted web app (GitHub Pages) that presents the engine's results on the committed sample data. Anyone with the link can explore it: no install, no backend, no API keys. It must look polished and intentional; it is the first thing LinkedIn viewers see.
 
-#### Phase 19 — UI (React + TypeScript + Vite)
-- Views: data quality and coverage, waterfall, dispersion, segments, price guidance lookup, opportunity, scenario builder.
-- Evidence status and data coverage visible on every model output.
+**Architecture**
+- The Python engine exports a versioned JSON data bundle; the React app reads only that bundle. No server, no runtime computation of business numbers in the browser.
+- Every number shown must come from the engine's exports. The UI formats and filters; it never recalculates financials.
+- Interactive "what-if" features use precomputed grids from the engine (e.g. pass-through at 0–100% in 10% steps), so the browser never re-implements engine logic.
 
-#### Phase 20 — Explanation agent (optional, Claude API)
-- Explains a recommendation in plain English using **only computed outputs and their evidence status**. Never invents numbers. Engine runs fully without it.
+**Run mode:** Phases 18–19 continuously → **HARD STOP for visual review** → Phases 20–23 continuously → **HARD STOP**. After every Run 3 phase, run the Python checks (ruff, mypy, pytest) **and** the web checks (TypeScript build, Vitest, Playwright where present).
+
+**Stack**
+| Layer | Choice |
+|---|---|
+| App | React 18 + TypeScript (strict) + Vite |
+| Styling | Tailwind CSS with project design tokens (CSS variables) |
+| Components | Radix UI primitives (accessible dialogs, tabs, tooltips, popovers) |
+| Charts | Recharts, with custom-styled waterfall, band, and interval charts |
+| Tables | TanStack Table (sorting, filtering, pagination; virtualized where large) |
+| Routing | React Router, hash routing (GitHub Pages compatible) |
+| Types | TypeScript types generated from the bundle's JSON Schema |
+| Tests | Vitest (units), Playwright (end-to-end, visual snapshots), axe-core (accessibility) |
+| Deploy | GitHub Actions → GitHub Pages on push to `main` |
+
+#### Phase 18 — Web data bundle
+- New CLI command `margin-engine export-web --data <dir> --mapping <yaml> --out web/public/data` producing a versioned JSON bundle: summary KPIs, reconciliation and residuals, waterfall (overall, by segment, by customer), dispersion and outliers (top N), segments and rules, guidance (all pairs), sensitivity with diagnostics and evidence status, opportunities (three levels), order and customer economics, scenario grids, optional modules (win curves, cross-price, inventory costing), validation results, and run manifest.
+- Aggregated, not raw: no full ledger in the bundle. Target total size under 5 MB.
+- Money as integer cents in the bundle; the UI formats.
+- Publish a JSON Schema for the bundle; generate TypeScript types from it.
+- **Explanations:** generate plain-English "why" text for each guidance recommendation and opportunity at export time from computed values, using deterministic templates (no LLM, no API key). Every number in an explanation comes from the outputs.
+- **Verify:** schema validation passes; parity tests prove every bundle figure equals the corresponding engine export (cents-exact); deterministic (byte-identical across runs); size target met.
+
+#### Phase 19 — Design system, app shell, Overview page
+1. **Design plan first.** Write `docs/ui/design-plan.md`: subject, audience, primary job, 4–6 named palette colors (hex), typefaces and roles, type scale, spacing scale, layout concept with ASCII wireframes, chart style rules, and the evidence-status visual language (below). Review it against the brief and the anti-patterns list; revise any part that reads as a generic default, and record what changed and why.
+2. **Implement tokens** as CSS variables with light and dark themes. Tabular (monospaced-width) numerals for all figures.
+3. **App shell:** top navigation, persistent "Synthetic demo data" notice, link to the GitHub repo, responsive layout down to 375 px wide.
+4. **Overview page** built to final quality: headline outcome, reconciliation status, the price waterfall as the signature visual, three to five key findings each linking to its detail page, data coverage summary.
+5. Save desktop and mobile screenshots of the Overview in light and dark mode to `docs/ui/review/`.
+- **Verify:** Playwright loads the page with no console errors; axe reports no serious or critical violations; screenshots saved.
+- **HARD STOP for owner visual review.** Do not build further pages until the owner approves the design direction.
+
+#### Phase 20 — Detail pages
+| Page | Must show |
+|---|---|
+| Price waterfall | Interactive waterfall; switch overall / segment / customer; leakage by component in dollars and % |
+| Customers & orders | Sortable, filterable customer table (contribution, returns impact, % revenue excluded, contribution after activity cost); customer drill-down with its waterfall, top items, guidance statuses, service flags |
+| Segments | Readable segment rules, size, price-index distribution per segment |
+| Price guidance | Customer × item lookup; band chart with floor, reference band and current price; status badge; plain-English explanation |
+| Price sensitivity | Per-segment elasticity with confidence intervals and evidence status; expandable diagnostics (first stage, overidentification, robustness); naive vs. corrected comparison |
+| Opportunity | The three levels side by side, visually separated and never summed; top opportunities with explanation and evidence status |
+| Scenarios | Cost/tariff pass-through using the precomputed grid (slider snaps to grid points); margin, volume, recovered and residual exposure |
+| Data & methodology | Reconciliation table, residual explanations, coverage, captured warnings, validation results table, link to `methodology.md` |
+| Optional modules | Win curves, cross-price, inventory costing, each shown only when present in the bundle, with stated reason when absent |
+
+- Empty and edge states designed (no data, insufficient evidence, module absent): each explains what happened in plain language.
+- **Verify:** every route loads without console errors; spot-check parity (Playwright reads displayed values on each page and compares to the bundle).
+
+#### Phase 21 — Interaction and polish
+- Global customer / segment filters where meaningful; URL reflects state (shareable links).
+- Keyboard navigation and visible focus everywhere; reduced-motion respected.
+- One deliberate page-load moment (e.g. the waterfall building on the Overview); otherwise motion only in response to user actions.
+- Copy pass: sentence case, plain language, labels named for what users understand, consistent action names.
+- **Verify:** Playwright interaction tests for filters, drill-downs, lookup and slider.
+
+#### Phase 22 — Quality gates
+- Playwright end-to-end suite across all pages at desktop (1440 px) and mobile (375 px) widths.
+- Visual snapshot tests for every page in light and dark mode.
+- axe: no serious or critical violations on any page.
+- Lighthouse (desktop): performance ≥ 90, accessibility ≥ 95, best practices ≥ 95.
+- Production bundle size reported; initial JavaScript under 500 KB gzipped.
+- **Verify:** all gates pass in CI.
+
+#### Phase 23 — Deploy
+- GitHub Actions workflow: on push to `main`, run engine export on the committed sample, build the app, run Playwright, deploy to GitHub Pages.
+- README gains the live demo link and a screenshot of the Overview.
+- **Verify:** workflow file valid and documented; local production build served and smoke-tested.
+- **HARD STOP.** The owner enables GitHub Pages in repository settings and pushes.
+
+#### Evidence-status visual language (applies everywhere)
+Status must never be conveyed by color alone. Each status has a distinct fill treatment, label, and tooltip explaining what it means and why it was assigned:
+
+| Status | Treatment |
+|---|---|
+| `causal_elasticity_supported` / `estimated_win_curve` | Solid fill, full-strength color |
+| `iv_estimated_elasticity` | Partial / hatched fill |
+| `descriptive_elasticity` | Outline only |
+| `insufficient_data` / `insufficient_precision` | Muted, dashed outline, with reason |
+| `allocated` / `estimated` amounts | Small marker plus tooltip naming the method |
+
+#### Design anti-patterns to avoid
+Generic card grids with identical radius and shadow on everything; gradient washes as decoration; all-caps eyebrow labels above every heading; meta strings joined with middle dots; monospace for small labels; arrows appended to button text; numbered markers on content that isn't a sequence; fade-in animations on every section; cream background with terracotta accent; near-black with a single neon accent.
+
+#### Run 3 out of scope
+- Uploading user data in the hosted demo (static site; documented as a local-CLI feature)
+- Server, database, authentication
+- LLM-generated text at runtime
 
 ---
 
 ## 7. Out of scope
 - Real-time ERP integration
-- Multi-user auth, hosting, billing
+- Multi-user auth, server hosting, billing (the static GitHub Pages demo in Run 3 is the one hosted piece)
 - Claims of real-world accuracy beyond what tests demonstrate
 
 ---
