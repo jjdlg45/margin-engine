@@ -13,6 +13,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 export function SortableTable<T>({
   data,
@@ -20,21 +21,39 @@ export function SortableTable<T>({
   filterPlaceholder,
   pageSize = 25,
   initialSort,
+  filterUrlParam,
 }: {
   data: T[];
   columns: ColumnDef<T, unknown>[];
   filterPlaceholder?: string;
   pageSize?: number;
   initialSort?: SortingState;
+  /** When set, the filter text lives in this URL query param (shareable). */
+  filterUrlParam?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>(initialSort ?? []);
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [params, setParams] = useSearchParams();
+  const [localFilter, setLocalFilter] = useState("");
+  const globalFilter = filterUrlParam ? (params.get(filterUrlParam) ?? "") : localFilter;
+  const setGlobalFilter = (v: string) => {
+    if (filterUrlParam) {
+      setParams(
+        (p) => {
+          if (v) p.set(filterUrlParam, v);
+          else p.delete(filterUrlParam);
+          return p;
+        },
+        { replace: true },
+      );
+    } else {
+      setLocalFilter(v);
+    }
+  };
   const table = useReactTable({
     data,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

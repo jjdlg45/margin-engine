@@ -1099,3 +1099,26 @@ grid points, validation rows, module presence/absence). The obsolete
 pending-placeholder test was replaced by the real-page assertion. tsc strict +
 vite build clean; vitest 5/5; ruff, mypy strict, and the full Python suite
 pass (no Python changes this phase).
+
+---
+## Phase 21 — Interaction and polish (2026-10-17)
+
+**Built.** URL state everywhere it is meaningful, so links are shareable:
+customer and opportunity table filters (?filter=), waterfall scope and group
+(?view=, ?key=), guidance lookup (?customer=, ?item=), scenario selection
+(?scenario=), customer drill-down (?customer=). Keyboard: skip link, visible
+focus ring on every interactive element (:focus-visible token outline), real
+buttons for row actions and sorting, Radix primitives for tabs, collapsible,
+slider and tooltips. Motion stays at exactly one page-load moment (the
+Overview waterfall build), everything else responds to user action, and
+reduced-motion kills all of it. Copy pass: a title-case / jargon sweep found
+the labels already sentence-case and consistent; action names are Previous /
+Next / Diagnostics / Back to all customers throughout.
+
+**Verification.** Playwright 48/48 across desktop and mobile: new interaction
+specs cover filter-to-URL round trips (fill, assert URL, reload the deep link,
+assert the restored table), tab + group picker to URL with deep-link
+restoration, select-driven guidance lookup rendering the band chart, and a
+keyboard pass asserting the skip link and a visible focus outline. tsc + vite
+build clean; vitest 5/5; ruff, mypy strict and the full Python suite pass (no
+Python changes this phase).

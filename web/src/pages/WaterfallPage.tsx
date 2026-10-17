@@ -2,7 +2,7 @@
  * by component in dollars and share. */
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
 import { EmptyState, PageHeader, Section } from "../components/Page";
@@ -18,7 +18,16 @@ export function WaterfallPage() {
   const compact = useCompact();
   const [params, setParams] = useSearchParams();
   const view = params.get("view") ?? "overall";
-  const [groupKey, setGroupKey] = useState<string>("");
+  const groupKey = params.get("key") ?? "";
+  const setGroupKey = (v: string) =>
+    setParams(
+      (p) => {
+        if (v) p.set("key", v);
+        else p.delete("key");
+        return p;
+      },
+      { replace: true },
+    );
   const groups = view === "segment" ? b.waterfall_by_segment : b.waterfall_by_customer;
   const active = useMemo(
     () => groups.find((g) => g.key === groupKey) ?? groups[0],
@@ -42,9 +51,9 @@ export function WaterfallPage() {
         onValueChange={(v) => {
           setParams((p) => {
             p.set("view", v);
+            p.delete("key");
             return p;
           });
-          setGroupKey("");
         }}
       >
         <Tabs.List aria-label="Waterfall scope" className="row">

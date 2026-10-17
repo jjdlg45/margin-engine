@@ -113,6 +113,7 @@ export function Customers() {
           data={b.economics.customers}
           columns={columns}
           filterPlaceholder="Filter customers"
+          filterUrlParam="filter"
           initialSort={[{ id: "contribution_after_activity_cents", desc: false }]}
         />
       )}

@@ -99,6 +99,7 @@ export function OpportunityPage() {
             data={o.top_opportunities}
             columns={columns}
             filterPlaceholder="Filter by customer or item"
+            filterUrlParam="filter"
             initialSort={[{ id: "gross_price_opportunity_cents", desc: true }]}
           />
         ) : (
