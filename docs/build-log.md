@@ -1151,3 +1151,26 @@ Python changes this phase).
   Lighthouse) on push.
 
 ruff, mypy strict and the full Python suite pass (no Python changes).
+
+---
+## Phase 23 — Deploy (2026-10-17)
+
+**Built.** .github/workflows/pages.yml: on push to main (or manual dispatch),
+the workflow syncs the Python env, exports the fixed-seed demo bundle
+(margin-engine export-web --demo), verifies the generated TypeScript types
+are in sync with the schema, builds the app, runs vitest, Playwright (axe,
+routes, parity, interactions; SKIP_SNAPSHOTS=1 because baselines are
+platform-specific - documented in the spec file), runs the Lighthouse gate
+script against a compression-enabled server, uploads web/dist and deploys to
+GitHub Pages via actions/deploy-pages (pages + id-token permissions,
+concurrency-guarded). README gains the live demo link and the Overview
+screenshot.
+
+**Verification.** Workflow YAML parsed and structure-checked (13 build steps,
+deploy depends on build). Local production build served with compression and
+smoke-tested: 200 on /, bundle.json served, all 88 Playwright tests green on
+the production build, Lighthouse 100/100/96. ruff, mypy strict and the full
+Python suite pass (no Python changes).
+
+**Run 3 complete.** HARD STOP: the owner enables GitHub Pages (source:
+GitHub Actions) in repository settings and pushes.

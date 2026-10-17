@@ -1,5 +1,13 @@
 # Margin Engine
 
+**[Live demo](https://jjdlg45.github.io/margin-engine/)** - a static site on
+GitHub Pages presenting the engine's results on a fixed-seed synthetic world:
+the reconciled price waterfall, guidance with economic floors, elasticity
+evidence, opportunity sizing and pass-through scenarios, with evidence status
+on every number.
+
+![Overview page](docs/ui/review/overview-light-desktop.png)
+
 An auditable pricing and margin decision engine for B2B distributors
 (industrial, electrical, HVAC, plumbing, foodservice — any business with
 negotiated prices). It ingests ERP invoice exports, reconciles every dollar,
