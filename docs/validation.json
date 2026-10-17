@@ -1,0 +1,122 @@
+{
+ "generated_utc": "2026-10-17T00:51:26+00:00",
+ "script": "scripts/measure_validation.py",
+ "runtime_s": 699.7,
+ "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
+ "results": [
+  {
+   "check": "Accounting fixtures",
+   "target": "Exact to the cent",
+   "achieved": "All hand-calculated fixture tests pass",
+   "passed": true
+  },
+  {
+   "check": "Ledger reconciliation",
+   "target": "Exact to source totals after rounding",
+   "achieved": "Property suite passes (hypothesis-varied inputs)",
+   "passed": true
+  },
+  {
+   "check": "Rebate / freight recovery",
+   "target": "Actual amounts exact; allocated within \u00b15% of planted",
+   "achieved": "Recovery suite passes (exact + \u00b15% allocated)",
+   "passed": true
+  },
+  {
+   "check": "Planted outlier detection",
+   "target": "\u2265 90% recall, \u2264 5% false-flag rate",
+   "achieved": "Recall 98.7%, false-flag rate 1.02%",
+   "passed": true
+  },
+  {
+   "check": "Commercial segments vs planted (out-of-sample ARI)",
+   "target": "\u2265 0.70 on well_identified",
+   "achieved": "ARI 1.000 (seed 3, default scale)",
+   "passed": true
+  },
+  {
+   "check": "Segment stability (bootstrap median ARI)",
+   "target": "\u2265 0.80",
+   "achieved": "Median ARI 1.000 over 8 resamples",
+   "passed": true
+  },
+  {
+   "check": "Elasticity recovery, planted grain, 5 seeds",
+   "target": "Median abs error \u2264 0.10; P90 \u2264 0.15 (worst reported)",
+   "achieved": "Median 0.019, P90 0.051, worst 0.110",
+   "passed": true
+  },
+  {
+   "check": "Elasticity recovery, end-to-end (engine segments), 5 seeds",
+   "target": "Median abs error \u2264 0.10; P90 \u2264 0.15 (worst reported)",
+   "achieved": "Median 0.019, P90 0.072, worst 0.110",
+   "passed": true
+  },
+  {
+   "check": "Naive estimator bias",
+   "target": "Biased in the planted direction (toward zero) on every seed",
+   "achieved": "Toward zero on 5/5 seeds, every segment",
+   "passed": true
+  },
+  {
+   "check": "causal_elasticity_supported reachable",
+   "target": "Reached on well_identified with all criteria enforced",
+   "achieved": "Reached",
+   "passed": true
+  },
+  {
+   "check": "95% CI coverage, 50 simulations",
+   "target": "Covers truth 90-98% of the time",
+   "achieved": "276/300 = 92.0%",
+   "passed": true
+  },
+  {
+   "check": "weak_instrument preset",
+   "target": "Never causal_elasticity_supported; weak-IV-robust CI reported",
+   "achieved": "No segment reached causal support; AR set reported",
+   "passed": true
+  },
+  {
+   "check": "invalid_instrument preset",
+   "target": "Overidentification rejects on \u2265 80% of seeds; status downgraded",
+   "achieved": "Rejected on 5/5 seeds; downgraded on 5/5",
+   "passed": true
+  },
+  {
+   "check": "price_constant preset",
+   "target": "insufficient_data or descriptive_elasticity only",
+   "achieved": "Held for every segment",
+   "passed": true
+  },
+  {
+   "check": "sparse preset",
+   "target": "insufficient_data or descriptive_elasticity only",
+   "achieved": "Held for every segment",
+   "passed": true
+  },
+  {
+   "check": "KVI candidates",
+   "target": "\u2265 80% of planted KVIs in top-ranked candidates",
+   "achieved": "Recall 96.7% (30 planted)",
+   "passed": true
+  },
+  {
+   "check": "Win-curve price coefficient",
+   "target": "Within \u00b115% relative of planted, per estimated segment",
+   "achieved": "Worst estimated segment 4.0% (2 estimated, precision-gated)",
+   "passed": true
+  },
+  {
+   "check": "Engine determinism",
+   "target": "Byte-identical bundle across runs on the same input",
+   "achieved": "Byte-identical",
+   "passed": true
+  },
+  {
+   "check": "Performance (full Run-1 pipeline)",
+   "target": "500k+ lines under 2 minutes",
+   "achieved": "811,253 lines in 32.2s on AMD64 (Windows)",
+   "passed": true
+  }
+ ]
+}

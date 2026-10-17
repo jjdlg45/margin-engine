@@ -70,7 +70,7 @@ function Shell() {
           <Link to="/" className="text-ink no-underline">
             <span className="text-section font-semibold tracking-tight">Margin engine</span>
           </Link>
-          <nav aria-label="Primary" className="order-last -mx-1 flex w-full gap-1 overflow-x-auto pb-2 sm:order-none sm:w-auto sm:pb-0">
+          <nav aria-label="Primary" className="order-last -mx-1 flex w-full flex-wrap gap-1 pb-2 sm:order-none sm:w-auto sm:pb-0">
             <NavLink
               to="/"
               end

@@ -2,26 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens (docs/ui/design-plan.md). RGB triplets so Tailwind can apply
-   alpha; neutral grays derive from ink at fixed opacities. */
+/* Design tokens (docs/ui/design-plan.md, revised in phase 19.1).
+   RGB triplets so Tailwind can apply alpha. Three surface layers:
+   paper (page) -> card (panels) -> inset (strips, table heads). */
 :root {
-  --ink: 28 43 51; /* #1C2B33 */
-  --paper: 247 248 247; /* #F7F8F7 */
+  --ink: 34 49 58; /* #22313A, slightly warm dark slate */
+  --paper: 247 246 243; /* #F7F6F3, warm off-white */
   --card: 255 255 255;
+  --inset: 240 237 231; /* #F0EDE7 */
   --petrol: 11 85 99; /* #0B5563 */
   --verdigris: 46 125 91; /* #2E7D5B */
   --amber: 154 106 0; /* #9A6A00 */
   --garnet: 142 47 60; /* #8E2F3C */
+  --shadow: 0 1px 2px rgb(34 49 58 / 0.06), 0 2px 8px rgb(34 49 58 / 0.05);
   color-scheme: light;
 }
 [data-theme="dark"] {
-  --ink: 232 237 239; /* #E8EDEF */
-  --paper: 21 25 28; /* #15191C */
-  --card: 29 35 40; /* #1D2328 */
-  --petrol: 79 163 181; /* #4FA3B5 */
-  --verdigris: 92 183 143; /* #5CB78F */
-  --amber: 215 164 60; /* #D7A43C */
-  --garnet: 208 106 119; /* #D06A77 */
+  --ink: 244 247 248; /* #F4F7F8 - primary text lands >= 7:1 on card */
+  --paper: 16 20 24; /* #101418, page ground */
+  --card: 26 32 38; /* #1A2026, clearly separated panel tone */
+  --inset: 35 43 51; /* #232B33, raised strips */
+  --petrol: 123 208 226; /* #7BD0E2, bright enough for text and bars */
+  --verdigris: 127 220 171; /* #7FDCAB */
+  --amber: 240 188 85; /* #F0BC55 */
+  --garnet: 240 141 153; /* #F08D99 */
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 10px rgb(0 0 0 / 0.35);
   color-scheme: dark;
 }
 
@@ -34,12 +39,29 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Hairlines, secondary text */
 .hairline {
   @apply border-ink/[0.12];
 }
 .secondary {
   @apply text-ink/70;
+}
+
+/* Major panels only: 8px radius, soft border + elevation. Tables, chips and
+   full-bleed bands stay square so not everything reads as a card. */
+.panel {
+  @apply rounded-[8px] border hairline bg-card;
+  box-shadow: var(--shadow);
+}
+
+/* Short accent rule under the page title and section headings. */
+.heading-rule::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 3px;
+  margin-top: 0.5rem;
+  border-radius: 2px;
+  background: rgb(var(--petrol));
 }
 
 /* Evidence-status chips: never color alone - fill treatment + label (+ tooltip

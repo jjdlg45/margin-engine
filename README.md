@@ -106,6 +106,22 @@ On Windows, run the dev tools as modules — `python -m pytest` and
 `python -m mypy` — not the `pytest` / `mypy` shim executables (Smart App
 Control blocks unsigned entry-point shims).
 
+## Hosted demo data
+
+The static demo site reads a JSON bundle exported by the engine:
+
+```bash
+uv run margin-engine export-web --demo --out web/public/data
+```
+
+`--demo` generates a fixed world (seed 42, 40 customers x 100 items, ~17k
+lines) at export time - the smallest scale at which at least one segment
+reaches causal-supported elasticity - so the hosted site shows both the
+fail-closed and the supported path. The bundle is rebuilt in CI at deploy
+time and never committed. docs/validation.json (shown on the site) is
+produced by `uv run python scripts/measure_validation.py`, which runs the
+actual measurements; no validation number is hand-typed.
+
 ## Running on real data
 
 1. Copy `config/mappings/synth_erp.yaml` and edit it for your export: column

@@ -53,6 +53,10 @@ export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
 export type HonestLabels = string[];
 export type ContributionCents1 = number;
+/**
+ * Sale lines only, before returns
+ */
+export type GrossSalesCents = number;
 export type ListPriceCoverageShare = number;
 export type MissingCostRevenueShare = number;
 export type MonthsCovered = number;
@@ -60,6 +64,9 @@ export type NCustomers = number;
 export type NItems = number;
 export type NLedgerLines = number;
 export type NSalesObservations = number;
+/**
+ * Gross sales plus returns - matches economics
+ */
 export type NetRevenueCents1 = number;
 export type PocketGrossProfitCents = number;
 /**
@@ -68,6 +75,14 @@ export type PocketGrossProfitCents = number;
 export type PocketMarginPct = number | null;
 export type PocketRevenueCents = number;
 export type ReconciliationPass = boolean;
+/**
+ * Linked return lines (negative)
+ */
+export type ReturnsCents = number;
+/**
+ * Time window every KPI covers, e.g. '24 months'
+ */
+export type WindowLabel = string;
 export type AmountCents = number;
 export type Component = string;
 export type ShareOfLeakage = number | null;
@@ -103,6 +118,10 @@ export type ItemId1 = string;
 export type Segment1 = number | null;
 export type VolumeTreatment = string;
 export type TopOpportunities = OpportunityRecord[];
+/**
+ * Baseline window for every figure in this section
+ */
+export type WindowLabel1 = string;
 export type CrossPrice = CrossPriceEstimate[] | null;
 export type CrossElasticity = number | null;
 export type CrossSe = number | null;
@@ -319,6 +338,7 @@ export interface GuidancePair {
 }
 export interface SummaryKpis {
   contribution_cents: ContributionCents1;
+  gross_sales_cents: GrossSalesCents;
   list_price_coverage_share: ListPriceCoverageShare;
   missing_cost_revenue_share: MissingCostRevenueShare;
   months_covered: MonthsCovered;
@@ -331,6 +351,8 @@ export interface SummaryKpis {
   pocket_margin_pct?: PocketMarginPct;
   pocket_revenue_cents: PocketRevenueCents;
   reconciliation_pass: ReconciliationPass;
+  returns_cents: ReturnsCents;
+  window_label: WindowLabel;
 }
 export interface LeakageComponent {
   amount_cents: AmountCents;
@@ -366,6 +388,7 @@ export interface OpportunitySection {
   n_records: NRecords;
   never_summed_note: NeverSummedNote;
   top_opportunities: TopOpportunities;
+  window_label: WindowLabel1;
 }
 export interface CustomerLeakage {
   components: Components;

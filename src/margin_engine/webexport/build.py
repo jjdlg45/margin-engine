@@ -165,7 +165,12 @@ def _leakage_components(leak: pl.DataFrame) -> list[LeakageComponent]:
     ]
 
 
-def build_bundle(res: FullRunResult, rules: Rules, repo_root: Path) -> WebBundle:
+def build_bundle(
+    res: FullRunResult,
+    rules: Rules,
+    repo_root: Path,
+    data_label: str | None = None,
+) -> WebBundle:
     ledger = res.pipeline.ledger
     sale = ledger.filter(pl.col("transaction_type") == "sale")
     seg_of_line = res.segments.leaf_assignments
@@ -177,13 +182,19 @@ def build_bundle(res: FullRunResult, rules: Rules, repo_root: Path) -> WebBundle
     pocket_rev = _i(sale["pocket_revenue_cents"].sum())
     pocket_rev_cost_known = _i(cost_known["pocket_revenue_cents"].sum())
     pocket_gp = _i(cost_known["pocket_gp_cents"].sum())
+    returns = ledger.filter(pl.col("transaction_type") == "return")
+    returns_cents = _i(returns["net_amount_cents"].sum())
+    months = int(sale.select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique()).item())
     kpis = SummaryKpis(
         n_ledger_lines=ledger.height,
         n_sales_observations=res.pipeline.observations.height,
         n_customers=sale["customer_id"].n_unique(),
         n_items=sale["item_id"].n_unique(),
-        months_covered=sale.select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique()).item(),
-        net_revenue_cents=net_rev,
+        months_covered=months,
+        window_label=f"{months} months",
+        gross_sales_cents=net_rev,
+        returns_cents=returns_cents,
+        net_revenue_cents=net_rev + returns_cents,
         pocket_revenue_cents=pocket_rev,
         pocket_gross_profit_cents=pocket_gp,
         contribution_cents=_i(cost_known["contribution_cents"].sum()),
@@ -446,6 +457,7 @@ def build_bundle(res: FullRunResult, rules: Rules, repo_root: Path) -> WebBundle
     ]
     opportunity = OpportunitySection(
         never_summed_note=NEVER_SUMMED,
+        window_label=f"last {rules.opportunity.baseline_window_months} months",
         leakage_total_cents=_i(leak["total_leakage_cents"].sum()),
         leakage_by_customer=leak_by_customer,
         gross_total_cents=_i(res.opportunities["gross_price_opportunity_cents"].sum())
@@ -525,9 +537,10 @@ def build_bundle(res: FullRunResult, rules: Rules, repo_root: Path) -> WebBundle
     optional = _optional_modules(res)
 
     # --- validation results + manifest ----------------------------------------------
-    vr_path = repo_root / "docs" / "validation_results.json"
+    vr_path = repo_root / "docs" / "validation.json"
     validation = [
-        ValidationResult(**row) for row in json.loads(vr_path.read_text(encoding="utf-8"))
+        ValidationResult(**row)
+        for row in json.loads(vr_path.read_text(encoding="utf-8"))["results"]
     ]
     m = res.manifest
     manifest = ManifestInfo(
@@ -556,7 +569,7 @@ def build_bundle(res: FullRunResult, rules: Rules, repo_root: Path) -> WebBundle
     return WebBundle(
         bundle_version=BUNDLE_VERSION,
         engine_version=__version__,
-        data_label="Synthetic demo data (committed sample, planted ground truth)",
+        data_label=data_label or "Synthetic demo data (committed sample, planted ground truth)",
         honest_labels=HONEST_LABELS,
         kpis=kpis,
         reconciliation=recon,

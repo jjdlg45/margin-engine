@@ -28,7 +28,7 @@ interface Row {
   name: string;
   base: number;
   size: number;
-  kind: "stage" | "drop";
+  kind: "stage" | "drop-leak" | "drop-cost";
   coverage: string;
   pctOfList: number | null;
 }
@@ -50,7 +50,7 @@ export function buildRows(stages: WaterfallStage[]): Row[] {
         name: DROP_NAMES[i] ?? "Change",
         base: next.amount_cents,
         size: s.amount_cents - next.amount_cents,
-        kind: "drop",
+        kind: i < 2 ? "drop-leak" : "drop-cost",
         coverage: next.coverage,
         pctOfList:
           s.pct_of_list !== null && next.pct_of_list !== null && s.pct_of_list !== undefined
@@ -78,10 +78,10 @@ function WaterfallTooltip({
   return (
     <div className="rounded-card border hairline bg-card px-3 py-2 text-caption shadow-lg">
       <p className="m-0 font-medium">{r.name}</p>
-      <p className="m-0">{dollars(r.kind === "drop" ? -r.size : r.size)}</p>
+      <p className="m-0">{dollars(r.kind === "stage" ? r.size : -r.size)}</p>
       {r.pctOfList !== null && (
         <p className="m-0 secondary">
-          {r.kind === "drop" ? `${pct(r.pctOfList)} of list value` : `${pct(r.pctOfList)} of list`}
+          {r.kind === "stage" ? `${pct(r.pctOfList)} of list` : `${pct(r.pctOfList)} of list value`}
         </p>
       )}
       <p className="m-0 secondary">{r.coverage}</p>
@@ -100,9 +100,15 @@ export function Waterfall({ stages, compact }: { stages: WaterfallStage[]; compa
       barCategoryGap="22%"
     >
       <defs>
+        {/* Leakage drops: garnet hatch. Cost drops: ink dots - costs are not
+            leakage, so they get their own treatment. */}
         <pattern id="drop-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(135)">
-          <rect width="6" height="6" fill="rgb(var(--garnet) / 0.14)" />
-          <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(var(--garnet) / 0.55)" strokeWidth="1.5" />
+          <rect width="6" height="6" fill="rgb(var(--garnet) / 0.16)" />
+          <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(var(--garnet) / 0.6)" strokeWidth="1.5" />
+        </pattern>
+        <pattern id="cost-dots" patternUnits="userSpaceOnUse" width="7" height="7">
+          <rect width="7" height="7" fill="rgb(var(--ink) / 0.07)" />
+          <circle cx="2" cy="2" r="1.2" fill="rgb(var(--ink) / 0.5)" />
         </pattern>
       </defs>
       {compact ? (
@@ -139,7 +145,16 @@ export function Waterfall({ stages, compact }: { stages: WaterfallStage[]; compa
         animationBegin={100}
       >
         {rows.map((r) => (
-          <Cell key={r.name} fill={r.kind === "stage" ? ink : "url(#drop-hatch)"} />
+          <Cell
+            key={r.name}
+            fill={
+              r.kind === "stage"
+                ? ink
+                : r.kind === "drop-leak"
+                  ? "url(#drop-hatch)"
+                  : "url(#cost-dots)"
+            }
+          />
         ))}
         <LabelList
           dataKey="size"

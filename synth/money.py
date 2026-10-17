@@ -25,7 +25,8 @@ def div_round_half_even(numer: np.ndarray, denom: int | np.ndarray) -> np.ndarra
     r = numer % d
     twice = 2 * r
     round_up = (twice > d) | ((twice == d) & (q % 2 != 0))
-    return (q + round_up.astype(np.int64)).astype(np.int64)
+    out: np.ndarray = (q + round_up.astype(np.int64)).astype(np.int64)
+    return out
 
 
 def apply_bp(amount_cents: np.ndarray, rate_bp: np.ndarray | int) -> np.ndarray:

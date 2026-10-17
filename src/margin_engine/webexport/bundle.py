@@ -20,7 +20,10 @@ class SummaryKpis(BaseModel):
     n_customers: int
     n_items: int
     months_covered: int
-    net_revenue_cents: int
+    window_label: str = Field(description="Time window every KPI covers, e.g. '24 months'")
+    gross_sales_cents: int = Field(description="Sale lines only, before returns")
+    returns_cents: int = Field(description="Linked return lines (negative)")
+    net_revenue_cents: int = Field(description="Gross sales plus returns - matches economics")
     pocket_revenue_cents: int
     pocket_gross_profit_cents: int
     contribution_cents: int
@@ -193,6 +196,7 @@ class CustomerLeakage(BaseModel):
 
 class OpportunitySection(BaseModel):
     never_summed_note: str
+    window_label: str = Field(description="Baseline window for every figure in this section")
     leakage_total_cents: int
     leakage_by_customer: list[CustomerLeakage]
     gross_total_cents: int

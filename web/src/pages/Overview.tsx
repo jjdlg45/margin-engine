@@ -37,7 +37,7 @@ function findings(b: ReturnType<typeof useBundle>): Finding[] {
   )[0];
   out.push({
     figure: dollarsShort(b.opportunity.leakage_total_cents),
-    text: `left between list and pocket over the last 12 months${
+    text: `of pricing leakage between list and pocket over the ${b.opportunity.window_label}${
       topLeak ? `, led by ${topLeak.component.toLowerCase()} at ${pct(topLeak.share_of_leakage)}` : ""
     }.`,
     to: "/waterfall",
@@ -45,7 +45,7 @@ function findings(b: ReturnType<typeof useBundle>): Finding[] {
   });
   out.push({
     figure: dollarsShort(b.opportunity.gross_total_cents),
-    text: "gross price opportunity at unchanged volume, before any volume response - a different question from leakage, never added to it.",
+    text: `gross price opportunity over the ${b.opportunity.window_label} at unchanged volume - a different question from leakage, never added to it.`,
     to: "/opportunity",
     linkLabel: "Opportunity",
   });
@@ -68,7 +68,7 @@ function findings(b: ReturnType<typeof useBundle>): Finding[] {
   if (b.economics.orders.negative_contribution_orders > 0) {
     out.push({
       figure: count(b.economics.orders.negative_contribution_orders),
-      text: "orders destroy contribution after activity cost-to-serve - a service-policy question kept separate from pricing.",
+      text: "orders lose money after cost-to-serve - a service-policy question kept separate from pricing.",
       to: "/customers",
       linkLabel: "Customers & orders",
     });
@@ -83,8 +83,8 @@ export function Overview() {
   return (
     <div>
       {/* Headline band */}
-      <section aria-labelledby="headline" className="pb-12 pt-10">
-        <h1 id="headline" className="m-0 max-w-2xl text-display">
+      <section aria-labelledby="headline" className="pb-14 pt-12">
+        <h1 id="headline" className="heading-rule m-0 max-w-2xl text-display">
           Every dollar accounted for.
         </h1>
         <p className="mb-8 mt-3 max-w-2xl secondary">
@@ -92,18 +92,18 @@ export function Overview() {
           path from list price to pocket margin to the cent, and labels how
           much evidence stands behind every number it reports.
         </p>
-        <div className="flex flex-wrap items-baseline gap-x-10 gap-y-4">
+        <div className="flex flex-wrap items-baseline gap-x-12 gap-y-5">
           <div>
-            <span className="block text-display text-petrol">{dollarsShort(k.net_revenue_cents)}</span>
-            <span className="text-caption secondary">net invoiced revenue, 24 months</span>
+            <span className="block text-display font-bold tracking-tight text-petrol">{dollarsShort(k.net_revenue_cents)}</span>
+            <span className="text-caption secondary">net revenue after returns, {k.window_label}</span>
           </div>
           <div>
-            <span className="block text-display">{dollarsShort(k.pocket_revenue_cents)}</span>
-            <span className="text-caption secondary">pocket revenue after rebates & concessions</span>
+            <span className="block text-display font-bold tracking-tight">{dollarsShort(k.pocket_revenue_cents)}</span>
+            <span className="text-caption secondary">pocket revenue after rebates & concessions, {k.window_label}</span>
           </div>
           <div>
-            <span className="block text-display">{pct(k.pocket_margin_pct)}</span>
-            <span className="text-caption secondary">pocket gross margin (cost-known lines)</span>
+            <span className="block text-display font-bold tracking-tight">{pct(k.pocket_margin_pct)}</span>
+            <span className="text-caption secondary">pocket gross margin, cost-known sale lines, {k.window_label}</span>
           </div>
           <div className="self-center">
             {k.reconciliation_pass ? (
@@ -117,40 +117,37 @@ export function Overview() {
       </section>
 
       {/* Waterfall band */}
-      <section aria-labelledby="wf" className="border-y hairline bg-card py-8">
-        <h2 id="wf" className="mb-1 mt-0 text-section">
+      <section aria-labelledby="wf" className="panel px-5 py-8 sm:px-8">
+        <h2 id="wf" className="heading-rule mb-2 mt-0 text-section">
           The price waterfall
         </h2>
         <p className="mb-6 mt-0 max-w-2xl text-caption secondary">
-          List value to contribution. Hatched segments are the dollars given
-          away at each step; hover any bar for exact amounts and the share of
-          lines covered at that stage.
+          List value to contribution. Hatched bars are pricing leakage (discounts, rebates, concessions); dotted bars are costs. Hover any bar for exact amounts and the share of lines covered at that stage.
         </p>
         <Waterfall stages={b.waterfall_overall} compact={compact} />
       </section>
 
       {/* Key findings */}
-      <section aria-labelledby="findings" className="py-10">
-        <h2 id="findings" className="mb-4 mt-0 text-section">
+      <section aria-labelledby="findings" className="py-14">
+        <h2 id="findings" className="heading-rule mb-5 mt-0 text-section">
           What the engine found
         </h2>
-        <ol className="m-0 list-none p-0">
-          {findings(b).map((f, i) => (
-            <li key={f.to} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t hairline py-4 sm:flex-nowrap">
-              <span className="w-6 shrink-0 text-caption secondary">{i + 1}</span>
-              <span className="w-28 shrink-0 text-title text-petrol">{f.figure}</span>
+        <ul className="m-0 list-none p-0">
+          {findings(b).map((f) => (
+            <li key={f.to} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t hairline py-5 sm:flex-nowrap">
+              <span className="w-28 shrink-0 text-title font-semibold text-petrol">{f.figure}</span>
               <span className="min-w-0 grow">{f.text}</span>
               <Link to={f.to} className="shrink-0 font-medium text-petrol underline-offset-4 hover:underline">
                 {f.linkLabel}
               </Link>
             </li>
           ))}
-        </ol>
+        </ul>
       </section>
 
       {/* Coverage band */}
-      <section aria-labelledby="coverage" className="border-t hairline py-8">
-        <h2 id="coverage" className="mb-4 mt-0 text-section">
+      <section aria-labelledby="coverage" className="mt-2 rounded-[8px] bg-inset/60 px-5 py-8 sm:px-8">
+        <h2 id="coverage" className="heading-rule mb-5 mt-0 text-section">
           Data coverage
         </h2>
         <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -187,7 +184,8 @@ export function Overview() {
         </dl>
         <p className="mb-0 mt-5 text-caption secondary">
           {dollars(b.kpis.contribution_cents)} of contribution on cost-known
-          lines. Lines without cost stay in revenue figures and are excluded
+          sale lines over {k.window_label}; returns of {dollars(k.returns_cents)} are
+          included in net revenue and customer economics. Lines without cost stay in revenue figures and are excluded
           from margin figures - the exclusion is reported, never hidden.
         </p>
       </section>

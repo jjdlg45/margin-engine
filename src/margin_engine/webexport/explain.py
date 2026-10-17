@@ -29,42 +29,42 @@ def guidance_explanation(row: dict[str, Any]) -> str:
     p25, p50, p75 = row.get("band_p25"), row.get("band_p50"), row.get("band_p75")
     floor_idx = row.get("floor_index")
     base = (
-        f"This customer's realized price sits at {_idx(cur)} of effective list; "
-        f"the segment's historical reference band is {_idx(p25)} to {_idx(p75)} "
-        f"with a midpoint of {_idx(p50)}."
+        f"This customer's realized price sits at {_idx(cur)} of the effective list "
+        f"price. Comparable customers in the segment have historically paid between "
+        f"{_idx(p25)} and {_idx(p75)}, with a midpoint of {_idx(p50)}."
     )
     if status == "below_floor":
         return (
-            base + f" It is below the economic floor (index {_idx(floor_idx)}), the price "
-            "at which the configured minimum pocket margin is still earned, so the "
-            "line loses margin policy requires. Floors are computed from cost and "
-            "this customer's deduction rates, not from history."
+            base + f" The price is below the economic floor (an index of {_idx(floor_idx)}), "
+            "which is the lowest price that still earns the configured minimum pocket "
+            "margin. This line earns less margin than policy requires. The floor is "
+            "computed from cost and this customer's deduction rates, not from history."
         )
     if status == "below_reference":
         return (
-            base + " It is below the segment's reference band: most comparable "
-            "customers pay more for the same items. The band is a historical "
-            "position, not an optimal price; it shows where this price is "
-            "unusual, not what it should be."
+            base + " The price is below that reference band: most comparable customers "
+            "pay more for the same items. A band is a historical position, not an "
+            "optimal price - it shows where this price is unusual, not what it "
+            "should be."
         )
     if status == "above_reference":
         return (
-            base + " It is above the segment's reference band: most comparable "
-            "customers pay less. Historical bands are not optimal prices; a "
-            "position above the band is information, not automatically a problem."
+            base + " The price is above that reference band: most comparable customers "
+            "pay less. A position above the band is information, not automatically "
+            "a problem - historical bands are not optimal prices."
         )
     if status == "in_band":
-        return base + " It sits inside the reference band for its segment."
+        return base + " The price sits inside the segment's reference band."
     if status == "insufficient_pricing_headroom":
         return (
-            base + f" The economic floor (index {_idx(floor_idx)}) sits at or above the "
-            "reference band, so the corridor between floor and band is infeasible. "
-            "The engine flags this rather than relabeling the line."
+            base + f" The economic floor (an index of {_idx(floor_idx)}) sits at or above "
+            "the reference band, so no price can satisfy both the floor and the "
+            "band. The engine flags the conflict instead of relabeling the line."
         )
     return (
-        "Not enough comparable observations exist in this pair's segment to place "
-        "it against a reference band, so the engine reports insufficient data "
-        "instead of a confident-looking position."
+        "Too few comparable observations exist in this pair's segment to place it "
+        "against a reference band, so the engine reports insufficient data rather "
+        "than a confident-looking position."
     )
 
 
@@ -76,22 +76,23 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
     status = row.get("evidence_status") or "insufficient_data"
     base = (
         f"Closing the gap to the proposed pocket price is worth {_dollars(gross)} "
-        "over the baseline window at unchanged volume."
+        "over the baseline window, assuming volume does not change."
     )
     if treatment == "causal" and expected is not None:
         return (
-            base + f" Because this segment's elasticity is causal-supported, the "
-            f"expected contribution change after the volume response is "
-            f"{_dollars(expected)}. The two figures answer different questions "
-            "and are never added together."
+            base + f" This segment's elasticity is causal-supported, so the engine also "
+            f"models the volume response: the expected contribution change is "
+            f"{_dollars(expected)}. The two figures answer different questions and "
+            "are never added together."
         )
     if treatment == "iv_range":
         return (
-            base + f" The segment elasticity is {status}, so the volume response is "
-            "shown only as a labeled sensitivity range, not a point estimate."
+            base + f" The segment's elasticity evidence is {status}, so the volume "
+            "response is shown only as a labeled sensitivity range, not as a point "
+            "estimate."
         )
     return (
-        base + f" The segment elasticity evidence is {status}, so no volume "
-        "response is modeled: the figure assumes unchanged volume and is an "
-        "upper-bound style gross number, not a forecast."
+        base + f" The segment's elasticity evidence is {status}, so no volume response "
+        "is modeled. Treat the figure as a ceiling at unchanged volume, not as a "
+        "forecast."
     )

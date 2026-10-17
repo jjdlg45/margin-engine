@@ -979,3 +979,59 @@ the tree finds 2 segments and neither reaches causal support, so the Overview
 honestly reports "0 of 2" - accurate fail-closed behavior, but worth a
 decision on whether the committed sample should be regenerated larger so the
 demo also shows the supported path.
+
+---
+## Phase 19.1 — Review fixes (2026-10-17)
+
+**1. Ruff.** Outstanding RUF007 fixed (itertools.pairwise); ruff and mypy
+strict clean (the demo flag's synth import pulled synth/money.py into strict
+checking; its return typing was tightened rather than excluded).
+
+**2. Validation from one source.** docs/validation_results.json (hand-typed)
+is deleted. scripts/measure_validation.py runs the actual measurements -
+reusing the test suite's own helpers (tests.test_sensitivity.build_world_panel,
+the same seeds and scales as the gated tests) for the numeric studies, and
+running the fixture-exactness test files for exact-to-the-cent claims - and
+writes docs/validation.json. The bundle reads that file verbatim. Measured
+run: 19/19 checks pass. Highlights: outlier recall 98.7% / false-flag 1.02%;
+out-of-sample ARI 1.000, bootstrap 1.000; elasticity recovery median 0.019,
+P90 0.051 (planted grain) and 0.019/0.072 (end-to-end), worst 0.110; 50-sim
+CI coverage 276/300 = 92.0%; invalid-instrument overid rejected 5/5 and
+downgraded 5/5; KVI recall 96.7%; win-curve worst estimated segment 4.0%;
+bundle byte-identical; performance 811,253 lines in 32.2s (the first perf
+measurement used an overshot 2.57M-line world and missed the 2-minute bound
+at 123.2s - the script now measures at the documented 500k+ scale via
+--only-perf, which replaces the row with a fresh measurement).
+
+**3. KPIs consistent with economics.** The bundle now carries gross_sales,
+returns, and net_revenue = gross sales + returns (matching customer
+economics), plus a window_label; the Overview labels every figure's time
+window and notes the returns amount in the coverage band.
+
+**4. Explanation copy pass.** All templates rewritten for grammar (the broken
+below-floor clause fixed), consistent phrasing, and plainer sentences; the
+numbers-only property test still passes on every explanation.
+
+**5. Demo data.** `margin-engine export-web --demo` generates the demo world
+at export time (never committed; CI builds it at deploy). Size experiment at
+seed 42: 30x80 (committed sample) has 0 causal segments; 40x100 -> 17,219
+lines, 2 segments, 1 causal, bundle 1,173 KB; 50x120 -> 2 of 4 causal,
+1,463 KB; 60x150 -> 3 of 4 causal, 1,735 KB. Chosen: 40x100, the smallest
+with at least one causal-supported segment, well under the 5 MB cap. The
+Overview now shows the supported path ("1 of 2 segments").
+
+**6-9. Design changes.** Dark theme reworked for contrast (primary text >= 7:1,
+secondary >= 4.5:1, separated surface layers, brighter data colors); short
+petrol accent rules under the page title and section headings; three layered
+surface tones with warmer neutrals, 8px radius and soft elevation on major
+panels only; product cost and cost-to-serve drops get an ink dot pattern
+distinct from the garnet leakage hatch; findings numbering removed; mobile
+nav wraps instead of clipping; "orders lose money after cost-to-serve"
+wording; KPI figures bolded against caption labels. Full token table with
+reasons in docs/ui/design-plan.md (item 10).
+
+**Checks.** vitest 5/5; tsc + vite build clean; Playwright 6/6 (desktop/mobile
+x light/dark) with zero console errors and no serious or critical axe
+violations; new screenshots in docs/ui/review/ including the dark-theme
+before/after pair. Demo bundle: 1,176 KB with 1,211 guidance pairs and 8
+scenario grids. ruff, mypy strict, and the full Python suite pass.

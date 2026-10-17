@@ -67,15 +67,26 @@ def run(
     typer.echo(f"Manifest: {out / 'run_manifest.json'}")
 
 
+# Demo world for the hosted site: generated in CI at deploy time, never
+# committed. Scale chosen in Phase 19.1 as the smallest where at least one
+# segment reaches causal-supported elasticity with the bundle under 5 MB.
+DEMO_SEED = 42
+DEMO_CUSTOMERS = 40  # smallest size with >=1 causal-supported segment (Phase 19.1 experiment)
+DEMO_ITEMS = 100
+
+
 @app.command()
 def export_web(
-    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
-    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    data: Path | None = typer.Option(None, "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path | None = typer.Option(None, "--mapping", help="Mapping YAML for the source"),  # noqa: B008
     rules: Path = typer.Option(  # noqa: B008
         Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
     ),
     out: Path = typer.Option(  # noqa: B008
         Path("web/public/data"), "--out", help="Bundle output directory"
+    ),
+    demo: bool = typer.Option(
+        False, "--demo", help="Generate the fixed-seed demo world and export it"
     ),
 ) -> None:
     """Run the pipeline and export the versioned JSON bundle for the hosted demo."""
@@ -85,10 +96,43 @@ def export_web(
     from margin_engine.report.full_run import run_full
     from margin_engine.webexport.build import build_bundle, write_bundle
 
+    label: str | None = None
     try:
         with tempfile.TemporaryDirectory() as td:
+            if demo:
+                # synth/ lives at the repo root (dev/CI feature, editable install).
+                import sys as _sys
+
+                _repo = str(Path(__file__).resolve().parents[2])
+                if _repo not in _sys.path:
+                    _sys.path.insert(0, _repo)
+                from synth.config import GeneratorConfig, Preset
+                from synth.generate import generate as _generate
+
+                cfg = GeneratorConfig.for_preset(
+                    Preset.WELL_IDENTIFIED,
+                    seed=DEMO_SEED,
+                    n_customers=DEMO_CUSTOMERS,
+                    n_items=DEMO_ITEMS,
+                )
+                world = Path(td) / "world"
+                _generate(cfg, world)
+                data = world / "erp"
+                mapping = Path(__file__).resolve().parents[2] / "config/mappings/synth_erp.yaml"
+                label = (
+                    f"Synthetic demo data (generated world, seed {DEMO_SEED}, "
+                    f"{DEMO_CUSTOMERS} customers x {DEMO_ITEMS} items, planted ground truth)"
+                )
+            if data is None or mapping is None:
+                typer.echo("ERROR: --data and --mapping are required without --demo", err=True)
+                raise typer.Exit(code=2)
             result = run_full(data, mapping, rules, Path(td) / "engine_out")
-            bundle = build_bundle(result, _load_rules(rules), Path(__file__).resolve().parents[2])
+            bundle = build_bundle(
+                result,
+                _load_rules(rules),
+                Path(__file__).resolve().parents[2],
+                data_label=label,
+            )
     except MappingError as exc:
         _fail("mapping", exc)
     except MoneyParseError as exc:

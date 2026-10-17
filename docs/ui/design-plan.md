@@ -153,3 +153,43 @@ outline = descriptive, dashed = insufficient.
 - First draft used Space Grotesk headings over Inter body; dropped to a single
   Plex family — two display personalities read as template, and Plex's tabular
   figures are the better fit for a numbers product. Recorded change.
+
+
+## Phase 19.1 revisions (owner review)
+
+Every token change, with the reason:
+
+| Token | Was (light / dark) | Now (light / dark) | Why |
+|---|---|---|---|
+| `paper` | `#F7F8F7` / `#15191C` | `#F7F6F3` / `#101418` | Warmer, less clinical off-white; dark page dropped darker so panels separate clearly |
+| `card` | `#FFFFFF` / `#1D2328` | `#FFFFFF` / `#1A2026` | Dark card re-tuned against the darker paper for visible layering |
+| `inset` (new) | - | `#F0EDE7` / `#232B33` | Third surface tone for strips and table heads - "2-3 layered surfaces" instead of one flat ground |
+| `ink` | `#1C2B33` / `#E8EDEF` | `#22313A` / `#F4F7F8` | Light ink warmed slightly; dark ink brightened so primary text (87%) sits at or above 7:1 on card and paper, secondary (70%) above 4.5:1 |
+| `petrol` | `#0B5563` / `#4FA3B5` | `#0B5563` / `#7BD0E2` | Dark variant was muddy as text and bars; brightened for chart and link legibility |
+| `verdigris` | `#2E7D5B` / `#5CB78F` | `#2E7D5B` / `#7FDCAB` | Brighter dark status color so solid chips read at small sizes |
+| `amber` | `#9A6A00` / `#D7A43C` | `#9A6A00` / `#F0BC55` | Same |
+| `garnet` | `#8E2F3C` / `#D06A77` | `#8E2F3C` / `#F08D99` | Same; also drives the leakage hatch, which needed to read on dark |
+| `--shadow` (new) | - | soft 2-layer shadow per theme | Gentle elevation on major panels only |
+
+Structure and treatment changes:
+
+- **Accent rules.** A 36x3px petrol rule under the page title and each section
+  heading (`.heading-rule`), replacing full-width hairlines as the primary
+  section marker. Deliberate, short, consistent across pages.
+- **Panels.** `.panel` = 8px radius + hairline border + soft shadow, applied
+  to major panels only (the waterfall). The coverage band uses the inset tone
+  at 60% with the same radius but no border or shadow - layered, not a card
+  grid. Tables, chips and findings stay square.
+- **Cost vs leakage in the waterfall.** Product cost and cost-to-serve drops
+  now use an ink dot pattern; the garnet hatch is reserved for pricing
+  leakage (discounts, rebates, concessions). Costs are not leakage, and the
+  two now cannot be read as the same thing. The chart caption names both.
+- **Findings.** Numbered markers removed (the list reads as ranked without
+  them); figure column bolded. "Orders destroy contribution" reworded to
+  "orders lose money after cost-to-serve."
+- **KPI type.** Headline figures at weight 700 with tight tracking against
+  caption-size labels; every figure's label now carries its time window.
+- **Mobile nav.** The scrollable strip (which clipped its last item) wraps
+  instead - no cut-off destinations at 375px.
+- **Spacing.** Section rhythm opened from 40/48 to 48/56px equivalents
+  (py-12/14), gap between KPI blocks widened.

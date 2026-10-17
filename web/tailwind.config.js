@@ -9,6 +9,7 @@ export default {
       ink: "rgb(var(--ink) / <alpha-value>)",
       paper: "rgb(var(--paper) / <alpha-value>)",
       card: "rgb(var(--card) / <alpha-value>)",
+      inset: "rgb(var(--inset) / <alpha-value>)",
       petrol: "rgb(var(--petrol) / <alpha-value>)",
       verdigris: "rgb(var(--verdigris) / <alpha-value>)",
       amber: "rgb(var(--amber) / <alpha-value>)",
