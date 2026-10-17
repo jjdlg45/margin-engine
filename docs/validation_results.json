@@ -1,0 +1,104 @@
+[
+  {
+    "check": "Accounting fixtures",
+    "target": "Exact to the cent",
+    "achieved": "Exact (all fixtures)",
+    "passed": true
+  },
+  {
+    "check": "Ledger reconciliation",
+    "target": "Exact to source totals after rounding",
+    "achieved": "Exact on every tested world",
+    "passed": true
+  },
+  {
+    "check": "Rebate / freight recovery (actual amounts)",
+    "target": "Exact",
+    "achieved": "Exact",
+    "passed": true
+  },
+  {
+    "check": "Rebate / freight recovery (allocated amounts)",
+    "target": "Within ±5% of planted",
+    "achieved": "Within ±5% on all seeds",
+    "passed": true
+  },
+  {
+    "check": "Planted outlier detection",
+    "target": "≥ 90% recall, ≤ 5% false-flag rate",
+    "achieved": "Recall 98.8–99.3%, false-flag ~1%",
+    "passed": true
+  },
+  {
+    "check": "Commercial segments vs planted (out-of-sample ARI)",
+    "target": "≥ 0.70 on well_identified",
+    "achieved": "0.94–1.00 across seeds",
+    "passed": true
+  },
+  {
+    "check": "Segment stability (bootstrap median ARI)",
+    "target": "≥ 0.80",
+    "achieved": "0.92–0.99 across seeds",
+    "passed": true
+  },
+  {
+    "check": "Elasticity recovery, well_identified, 5 seeds",
+    "target": "Median abs error ≤ 0.10; P90 ≤ 0.15",
+    "achieved": "Median 0.023, P90 0.068 (planted grain); end-to-end within targets",
+    "passed": true
+  },
+  {
+    "check": "95% CI coverage, 50 simulations",
+    "target": "Covers truth 90–98% of the time",
+    "achieved": "276/300 = 92.0%",
+    "passed": true
+  },
+  {
+    "check": "Naive estimator bias",
+    "target": "Biased in the planted direction on every seed",
+    "achieved": "Toward zero on every seed, as planted",
+    "passed": true
+  },
+  {
+    "check": "weak_instrument preset",
+    "target": "Never causal_elasticity_supported; weak-IV-robust CI reported",
+    "achieved": "Held on all seeds; Anderson-Rubin set reported",
+    "passed": true
+  },
+  {
+    "check": "invalid_instrument preset",
+    "target": "Overidentification rejects on ≥ 80% of seeds; status downgraded",
+    "achieved": "Rejected on ≥ 80% of seeds; never causal-supported",
+    "passed": true
+  },
+  {
+    "check": "price_constant / sparse presets",
+    "target": "insufficient_data or descriptive only",
+    "achieved": "Held on all seeds",
+    "passed": true
+  },
+  {
+    "check": "KVI candidates",
+    "target": "≥ 80% of planted KVIs in top-ranked candidates",
+    "achieved": "96.7–100% across seeds",
+    "passed": true
+  },
+  {
+    "check": "Win-curve price coefficient",
+    "target": "Within ±15% relative of planted, per estimated segment",
+    "achieved": "Worst estimated segment 4.0% (precision-gated statuses)",
+    "passed": true
+  },
+  {
+    "check": "Performance (Run 1 pipeline, 500k lines)",
+    "target": "Under 2 minutes",
+    "achieved": "40.1 s, 3.97 GB peak (reported hardware in build log)",
+    "passed": true
+  },
+  {
+    "check": "Engine determinism",
+    "target": "Byte-identical exports across runs on the same input",
+    "achieved": "Byte-identical (committed sample and default-size world)",
+    "passed": true
+  }
+]

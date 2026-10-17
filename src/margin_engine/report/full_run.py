@@ -51,6 +51,21 @@ class FullRunResult:
     leakage: pl.DataFrame
     timings: dict[str, float] = field(default_factory=dict)
     out_dir: Path | None = None
+    # Everything below exists so downstream consumers (the web-bundle export)
+    # can reuse this run's frames without recomputation. All additive.
+    panel: pl.DataFrame | None = None
+    margin_tree: TreeResult | None = None
+    peer_stats: pl.DataFrame | None = None
+    order_economics: pl.DataFrame | None = None
+    customer_economics: pl.DataFrame | None = None
+    service_flags: pl.DataFrame | None = None
+    win_curves: pl.DataFrame | None = None
+    cross_estimates: pl.DataFrame | None = None
+    inventory_cogs: pl.DataFrame | None = None
+    inventory_identity: pl.DataFrame | None = None
+    unallocated_settlements: pl.DataFrame | None = None
+    library_warnings: list[dict[str, Any]] = field(default_factory=list)
+    manifest: dict[str, Any] = field(default_factory=dict)
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -565,4 +580,17 @@ def run_full(
         leakage=leak,
         timings=timings,
         out_dir=out_dir,
+        panel=panel,
+        margin_tree=margin_tree,
+        peer_stats=peer_stats,
+        order_economics=cts.order_economics,
+        customer_economics=cts.customer_economics,
+        service_flags=cts.service_flags,
+        win_curves=win_curves,
+        cross_estimates=cross_estimates,
+        inventory_cogs=inventory_cogs,
+        inventory_identity=inventory_identity,
+        unallocated_settlements=exports["unallocated_settlements"],
+        library_warnings=lib_warnings,
+        manifest=manifest,
     )

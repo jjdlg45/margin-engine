@@ -68,6 +68,45 @@ def run(
 
 
 @app.command()
+def export_web(
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
+    ),
+    out: Path = typer.Option(  # noqa: B008
+        Path("web/public/data"), "--out", help="Bundle output directory"
+    ),
+) -> None:
+    """Run the pipeline and export the versioned JSON bundle for the hosted demo."""
+    import tempfile
+
+    from margin_engine.config import load_rules as _load_rules
+    from margin_engine.report.full_run import run_full
+    from margin_engine.webexport.build import build_bundle, write_bundle
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = run_full(data, mapping, rules, Path(td) / "engine_out")
+            bundle = build_bundle(result, _load_rules(rules), Path(__file__).resolve().parents[2])
+    except MappingError as exc:
+        _fail("mapping", exc)
+    except MoneyParseError as exc:
+        _fail("money parsing", exc)
+    except ValidationError as exc:
+        _fail("configuration", exc)
+    except ReconciliationError as exc:
+        _fail("reconciliation", exc)
+    bundle_path, schema_path = write_bundle(bundle, out)
+    size_kb = bundle_path.stat().st_size / 1024
+    typer.echo(f"Bundle: {bundle_path} ({size_kb:,.0f} KB)")
+    typer.echo(f"Schema: {schema_path}")
+    typer.echo(
+        f"Guidance pairs: {len(bundle.guidance)}; scenario grids: {len(bundle.scenario_grids)}"
+    )
+
+
+@app.command()
 def validate_config(
     rules: Path = typer.Option(  # noqa: B008
         Path("config/rules.yaml"), "--rules", help="Path to rules.yaml"

@@ -902,3 +902,41 @@ report context -- the template block existed but was never fed.
 grouped by category and digit-normalized message with occurrence counts, in
 the run manifest (parameters.library_warnings) and the report's data coverage
 section. Tests assert the manifest field and the dollar formatting.
+
+---
+## Phase 18 — Web data bundle (2026-10-16)
+
+**Built.** `margin-engine export-web --data <dir> --mapping <yaml> --out
+web/public/data`: runs the pipeline and writes a versioned JSON bundle
+(bundle_version 1.0.0) plus its JSON Schema. Bundle sections: summary KPIs,
+reconciliation checks, residuals with plain-English what/why/where,
+unallocated settlements, captured library warnings, waterfall (overall, by
+segment, by customer), leakage components, dispersion (top-50 peer groups,
+flag counts, revenue-ABC counts), segments (rules for both trees, stability,
+per-segment price-index distribution), guidance (all pairs, with annual
+baseline revenue and a deterministic template explanation per pair),
+sensitivity (full diagnostics, statuses, a naive-vs-IV note), opportunity
+(three levels with the never-summed note, leakage by customer, top-200
+records with explanations), order and customer economics, scenario grids
+(+10% landed cost for the top-4 categories and suppliers, pass-through 0-100%
+in 10% steps via a new `pass_through_grid` that shares `_scenario_baseline`
+with `run_cost_scenario` - no duplicated math), optional modules with stated
+absent-reasons, curated validation results (docs/validation_results.json),
+and a manifest subset. Money is integer cents; floats pass 10-significant-
+digit rounding; `created_utc` and stage timings are excluded so the bundle is
+byte-identical across runs (documented in the bundle itself). The pydantic
+models are the single source of truth: schema.json comes from
+model_json_schema() and web/src/types/bundle.ts is generated from it
+(json-schema-to-typescript, `npm run gen-types`). FullRunResult gained
+additive fields (panel, economics frames, optional-module frames, warnings,
+manifest) so the exporter reuses the run's frames without recomputation.
+Explanations are deterministic templates - no LLM, no API key.
+
+**Verification (9 tests).** jsonschema + pydantic round-trip validation;
+cents-exact parity against the engine frames (KPIs, waterfall overall and by
+group, leakage, guidance rows, customer economics); scenario grid shape
+(11 points, zero recovery at 0%, monotone recovery, constant incremental
+cost); every numeric token in every explanation provably from its row;
+byte-identical across two full runs; total size 824 KB < 5 MB; CLI
+completes. ruff, mypy strict, and the full Python suite pass.
+

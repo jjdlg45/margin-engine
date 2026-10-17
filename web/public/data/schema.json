@@ -1,0 +1,1822 @@
+{
+ "$defs": {
+  "CrossPriceEstimate": {
+   "properties": {
+    "cross_elasticity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cross Elasticity"
+    },
+    "cross_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cross Se"
+    },
+    "group_id": {
+     "title": "Group Id",
+     "type": "string"
+    },
+    "item_a": {
+     "title": "Item A",
+     "type": "string"
+    },
+    "item_b": {
+     "title": "Item B",
+     "type": "string"
+    },
+    "n_obs": {
+     "title": "N Obs",
+     "type": "integer"
+    },
+    "reasons": {
+     "title": "Reasons",
+     "type": "string"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "group_id",
+    "item_a",
+    "item_b",
+    "n_obs",
+    "cross_elasticity",
+    "cross_se",
+    "status",
+    "reasons"
+   ],
+   "title": "CrossPriceEstimate",
+   "type": "object"
+  },
+  "CustomerEconomics": {
+   "properties": {
+    "activity_cts_cents": {
+     "title": "Activity Cts Cents",
+     "type": "integer"
+    },
+    "avg_order_value_cents": {
+     "title": "Avg Order Value Cents",
+     "type": "integer"
+    },
+    "contribution_after_activity_cents": {
+     "title": "Contribution After Activity Cents",
+     "type": "integer"
+    },
+    "contribution_cents": {
+     "title": "Contribution Cents",
+     "type": "integer"
+    },
+    "customer_id": {
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "n_orders": {
+     "title": "N Orders",
+     "type": "integer"
+    },
+    "net_revenue_cents": {
+     "title": "Net Revenue Cents",
+     "type": "integer"
+    },
+    "pct_revenue_excluded": {
+     "title": "Pct Revenue Excluded",
+     "type": "number"
+    },
+    "returns_contribution_cents": {
+     "title": "Returns Contribution Cents",
+     "type": "integer"
+    },
+    "sales_contribution_cents": {
+     "title": "Sales Contribution Cents",
+     "type": "integer"
+    },
+    "service_flags": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Service Flags",
+     "type": "array"
+    }
+   },
+   "required": [
+    "customer_id",
+    "n_orders",
+    "net_revenue_cents",
+    "sales_contribution_cents",
+    "returns_contribution_cents",
+    "contribution_cents",
+    "activity_cts_cents",
+    "contribution_after_activity_cents",
+    "pct_revenue_excluded",
+    "avg_order_value_cents",
+    "service_flags"
+   ],
+   "title": "CustomerEconomics",
+   "type": "object"
+  },
+  "CustomerLeakage": {
+   "properties": {
+    "components": {
+     "items": {
+      "$ref": "#/$defs/LeakageComponent"
+     },
+     "title": "Components",
+     "type": "array"
+    },
+    "customer_id": {
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "net_revenue_cents": {
+     "title": "Net Revenue Cents",
+     "type": "integer"
+    },
+    "total_leakage_cents": {
+     "title": "Total Leakage Cents",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "customer_id",
+    "net_revenue_cents",
+    "total_leakage_cents",
+    "components"
+   ],
+   "title": "CustomerLeakage",
+   "type": "object"
+  },
+  "DispersionSection": {
+   "properties": {
+    "abc_revenue_counts": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "Abc Revenue Counts",
+     "type": "object"
+    },
+    "flag_note": {
+     "title": "Flag Note",
+     "type": "string"
+    },
+    "n_commercial_outlier_flags": {
+     "title": "N Commercial Outlier Flags",
+     "type": "integer"
+    },
+    "n_data_quality_flags": {
+     "title": "N Data Quality Flags",
+     "type": "integer"
+    },
+    "n_peer_groups": {
+     "title": "N Peer Groups",
+     "type": "integer"
+    },
+    "top_groups": {
+     "items": {
+      "$ref": "#/$defs/PeerGroupStat"
+     },
+     "title": "Top Groups",
+     "type": "array"
+    }
+   },
+   "required": [
+    "n_peer_groups",
+    "n_data_quality_flags",
+    "n_commercial_outlier_flags",
+    "flag_note",
+    "top_groups",
+    "abc_revenue_counts"
+   ],
+   "title": "DispersionSection",
+   "type": "object"
+  },
+  "EconomicsSection": {
+   "properties": {
+    "customers": {
+     "items": {
+      "$ref": "#/$defs/CustomerEconomics"
+     },
+     "title": "Customers",
+     "type": "array"
+    },
+    "orders": {
+     "$ref": "#/$defs/OrderEconomicsSummary"
+    }
+   },
+   "required": [
+    "customers",
+    "orders"
+   ],
+   "title": "EconomicsSection",
+   "type": "object"
+  },
+  "GroupWaterfall": {
+   "properties": {
+    "key": {
+     "description": "Segment id or customer id",
+     "title": "Key",
+     "type": "string"
+    },
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "net_revenue_cents": {
+     "title": "Net Revenue Cents",
+     "type": "integer"
+    },
+    "stages": {
+     "items": {
+      "$ref": "#/$defs/WaterfallStage"
+     },
+     "title": "Stages",
+     "type": "array"
+    }
+   },
+   "required": [
+    "key",
+    "label",
+    "net_revenue_cents",
+    "stages"
+   ],
+   "title": "GroupWaterfall",
+   "type": "object"
+  },
+  "GuidancePair": {
+   "properties": {
+    "annual_net_revenue_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Annual Net Revenue Cents"
+    },
+    "band_p25": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Band P25"
+    },
+    "band_p50": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Band P50"
+    },
+    "band_p75": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Band P75"
+    },
+    "current_index": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Current Index"
+    },
+    "customer_id": {
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "explanation": {
+     "title": "Explanation",
+     "type": "string"
+    },
+    "floor_index": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Floor Index"
+    },
+    "invoice_floor_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Invoice Floor Cents"
+    },
+    "item_id": {
+     "title": "Item Id",
+     "type": "string"
+    },
+    "pocket_floor_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Pocket Floor Cents"
+    },
+    "segment": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Segment"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "target_index": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Index"
+    },
+    "target_label": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Label"
+    }
+   },
+   "required": [
+    "customer_id",
+    "item_id",
+    "segment",
+    "current_index",
+    "band_p25",
+    "band_p50",
+    "band_p75",
+    "floor_index",
+    "pocket_floor_cents",
+    "invoice_floor_cents",
+    "target_index",
+    "target_label",
+    "status",
+    "explanation"
+   ],
+   "title": "GuidancePair",
+   "type": "object"
+  },
+  "InventorySection": {
+   "properties": {
+    "cogs_total_cents": {
+     "title": "Cogs Total Cents",
+     "type": "integer"
+    },
+    "method": {
+     "title": "Method",
+     "type": "string"
+    },
+    "n_flagged": {
+     "title": "N Flagged",
+     "type": "integer"
+    },
+    "n_sales_costed": {
+     "title": "N Sales Costed",
+     "type": "integer"
+    },
+    "timing_statement": {
+     "title": "Timing Statement",
+     "type": "string"
+    }
+   },
+   "required": [
+    "method",
+    "n_sales_costed",
+    "n_flagged",
+    "cogs_total_cents",
+    "timing_statement"
+   ],
+   "title": "InventorySection",
+   "type": "object"
+  },
+  "LeakageComponent": {
+   "properties": {
+    "amount_cents": {
+     "title": "Amount Cents",
+     "type": "integer"
+    },
+    "component": {
+     "title": "Component",
+     "type": "string"
+    },
+    "share_of_leakage": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Share Of Leakage"
+    }
+   },
+   "required": [
+    "component",
+    "amount_cents"
+   ],
+   "title": "LeakageComponent",
+   "type": "object"
+  },
+  "LibraryWarning": {
+   "properties": {
+    "category": {
+     "title": "Category",
+     "type": "string"
+    },
+    "message": {
+     "title": "Message",
+     "type": "string"
+    },
+    "n_occurrences": {
+     "title": "N Occurrences",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "category",
+    "message",
+    "n_occurrences"
+   ],
+   "title": "LibraryWarning",
+   "type": "object"
+  },
+  "ManifestInfo": {
+   "properties": {
+    "cleaning_decisions": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "Cleaning Decisions",
+     "type": "object"
+    },
+    "input_files": {
+     "items": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object"
+     },
+     "title": "Input Files",
+     "type": "array"
+    },
+    "mapping_sha256": {
+     "title": "Mapping Sha256",
+     "type": "string"
+    },
+    "note_on_volatile_fields": {
+     "title": "Note On Volatile Fields",
+     "type": "string"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "rules_sha256": {
+     "title": "Rules Sha256",
+     "type": "string"
+    },
+    "software_versions": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "title": "Software Versions",
+     "type": "object"
+    }
+   },
+   "required": [
+    "rules_sha256",
+    "mapping_sha256",
+    "input_files",
+    "software_versions",
+    "cleaning_decisions",
+    "notes",
+    "note_on_volatile_fields"
+   ],
+   "title": "ManifestInfo",
+   "type": "object"
+  },
+  "OpportunityRecord": {
+   "properties": {
+    "customer_id": {
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "evidence_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Evidence Status"
+    },
+    "expected_contribution_change_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Expected Contribution Change Cents"
+    },
+    "explanation": {
+     "title": "Explanation",
+     "type": "string"
+    },
+    "gross_price_opportunity_cents": {
+     "title": "Gross Price Opportunity Cents",
+     "type": "integer"
+    },
+    "item_id": {
+     "title": "Item Id",
+     "type": "string"
+    },
+    "segment": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Segment"
+    },
+    "volume_treatment": {
+     "title": "Volume Treatment",
+     "type": "string"
+    }
+   },
+   "required": [
+    "customer_id",
+    "item_id",
+    "segment",
+    "gross_price_opportunity_cents",
+    "expected_contribution_change_cents",
+    "volume_treatment",
+    "evidence_status",
+    "explanation"
+   ],
+   "title": "OpportunityRecord",
+   "type": "object"
+  },
+  "OpportunitySection": {
+   "properties": {
+    "expected_total_cents": {
+     "title": "Expected Total Cents",
+     "type": "integer"
+    },
+    "expected_total_note": {
+     "title": "Expected Total Note",
+     "type": "string"
+    },
+    "gross_total_cents": {
+     "title": "Gross Total Cents",
+     "type": "integer"
+    },
+    "leakage_by_customer": {
+     "items": {
+      "$ref": "#/$defs/CustomerLeakage"
+     },
+     "title": "Leakage By Customer",
+     "type": "array"
+    },
+    "leakage_total_cents": {
+     "title": "Leakage Total Cents",
+     "type": "integer"
+    },
+    "n_records": {
+     "title": "N Records",
+     "type": "integer"
+    },
+    "never_summed_note": {
+     "title": "Never Summed Note",
+     "type": "string"
+    },
+    "top_opportunities": {
+     "items": {
+      "$ref": "#/$defs/OpportunityRecord"
+     },
+     "title": "Top Opportunities",
+     "type": "array"
+    }
+   },
+   "required": [
+    "never_summed_note",
+    "leakage_total_cents",
+    "leakage_by_customer",
+    "gross_total_cents",
+    "expected_total_cents",
+    "expected_total_note",
+    "top_opportunities",
+    "n_records"
+   ],
+   "title": "OpportunitySection",
+   "type": "object"
+  },
+  "OptionalModules": {
+   "properties": {
+    "cross_price": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/$defs/CrossPriceEstimate"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cross Price"
+    },
+    "cross_price_absent_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cross Price Absent Reason"
+    },
+    "inventory": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/InventorySection"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "inventory_absent_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Inventory Absent Reason"
+    },
+    "win_curves": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/$defs/WinCurve"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Win Curves"
+    },
+    "win_curves_absent_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Win Curves Absent Reason"
+    }
+   },
+   "required": [
+    "win_curves",
+    "win_curves_absent_reason",
+    "cross_price",
+    "cross_price_absent_reason",
+    "inventory",
+    "inventory_absent_reason"
+   ],
+   "title": "OptionalModules",
+   "type": "object"
+  },
+  "OrderEconomicsSummary": {
+   "properties": {
+    "activity_status_note": {
+     "title": "Activity Status Note",
+     "type": "string"
+    },
+    "median_order_value_cents": {
+     "title": "Median Order Value Cents",
+     "type": "integer"
+    },
+    "min_order_value_cents": {
+     "title": "Min Order Value Cents",
+     "type": "integer"
+    },
+    "n_orders": {
+     "title": "N Orders",
+     "type": "integer"
+    },
+    "negative_contribution_orders": {
+     "title": "Negative Contribution Orders",
+     "type": "integer"
+    },
+    "orders_below_min_value": {
+     "title": "Orders Below Min Value",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "n_orders",
+    "median_order_value_cents",
+    "orders_below_min_value",
+    "min_order_value_cents",
+    "negative_contribution_orders",
+    "activity_status_note"
+   ],
+   "title": "OrderEconomicsSummary",
+   "type": "object"
+  },
+  "PeerGroupStat": {
+   "properties": {
+    "iqr": {
+     "title": "Iqr",
+     "type": "number"
+    },
+    "mean_discount_to_list": {
+     "title": "Mean Discount To List",
+     "type": "number"
+    },
+    "median_index": {
+     "title": "Median Index",
+     "type": "number"
+    },
+    "n_commercial_outlier_flags": {
+     "title": "N Commercial Outlier Flags",
+     "type": "integer"
+    },
+    "n_data_quality_flags": {
+     "title": "N Data Quality Flags",
+     "type": "integer"
+    },
+    "n_observations": {
+     "title": "N Observations",
+     "type": "integer"
+    },
+    "p10": {
+     "title": "P10",
+     "type": "number"
+    },
+    "p90": {
+     "title": "P90",
+     "type": "number"
+    },
+    "peer_group": {
+     "title": "Peer Group",
+     "type": "string"
+    }
+   },
+   "required": [
+    "peer_group",
+    "n_observations",
+    "median_index",
+    "iqr",
+    "p10",
+    "p90",
+    "mean_discount_to_list",
+    "n_data_quality_flags",
+    "n_commercial_outlier_flags"
+   ],
+   "title": "PeerGroupStat",
+   "type": "object"
+  },
+  "ReconciliationCheck": {
+   "properties": {
+    "actual_cents": {
+     "title": "Actual Cents",
+     "type": "integer"
+    },
+    "allocated_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allocated Cents"
+    },
+    "check": {
+     "title": "Check",
+     "type": "string"
+    },
+    "expected_cents": {
+     "title": "Expected Cents",
+     "type": "integer"
+    },
+    "passed": {
+     "title": "Passed",
+     "type": "boolean"
+    },
+    "residual_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Residual Cents"
+    },
+    "source_total_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Source Total Cents"
+    }
+   },
+   "required": [
+    "check",
+    "expected_cents",
+    "actual_cents",
+    "passed"
+   ],
+   "title": "ReconciliationCheck",
+   "type": "object"
+  },
+  "Residual": {
+   "properties": {
+    "amount_cents": {
+     "title": "Amount Cents",
+     "type": "integer"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "what": {
+     "title": "What",
+     "type": "string"
+    },
+    "where_listed": {
+     "title": "Where Listed",
+     "type": "string"
+    },
+    "why_not_allocated": {
+     "title": "Why Not Allocated",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "amount_cents",
+    "what",
+    "why_not_allocated",
+    "where_listed"
+   ],
+   "title": "Residual",
+   "type": "object"
+  },
+  "ScenarioGrid": {
+   "properties": {
+    "cogs_timing": {
+     "title": "Cogs Timing",
+     "type": "string"
+    },
+    "n_pairs": {
+     "title": "N Pairs",
+     "type": "integer"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "pct_increase": {
+     "title": "Pct Increase",
+     "type": "number"
+    },
+    "points": {
+     "items": {
+      "$ref": "#/$defs/ScenarioGridPoint"
+     },
+     "title": "Points",
+     "type": "array"
+    },
+    "scope": {
+     "title": "Scope",
+     "type": "string"
+    },
+    "scope_value": {
+     "title": "Scope Value",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "scope",
+    "scope_value",
+    "pct_increase",
+    "n_pairs",
+    "cogs_timing",
+    "points"
+   ],
+   "title": "ScenarioGrid",
+   "type": "object"
+  },
+  "ScenarioGridPoint": {
+   "properties": {
+    "contribution_effect_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Contribution Effect Cents"
+    },
+    "contribution_effect_supported_everywhere": {
+     "title": "Contribution Effect Supported Everywhere",
+     "type": "boolean"
+    },
+    "incremental_cost_cents": {
+     "title": "Incremental Cost Cents",
+     "type": "integer"
+    },
+    "pass_through": {
+     "title": "Pass Through",
+     "type": "number"
+    },
+    "protected_exposure_cents": {
+     "title": "Protected Exposure Cents",
+     "type": "integer"
+    },
+    "recovered_cents": {
+     "title": "Recovered Cents",
+     "type": "integer"
+    },
+    "residual_exposure_cents": {
+     "title": "Residual Exposure Cents",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "pass_through",
+    "incremental_cost_cents",
+    "recovered_cents",
+    "residual_exposure_cents",
+    "protected_exposure_cents",
+    "contribution_effect_cents",
+    "contribution_effect_supported_everywhere"
+   ],
+   "title": "ScenarioGridPoint",
+   "type": "object"
+  },
+  "SegmentIndexStats": {
+   "properties": {
+    "n_pairs": {
+     "title": "N Pairs",
+     "type": "integer"
+    },
+    "p25": {
+     "title": "P25",
+     "type": "number"
+    },
+    "p50": {
+     "title": "P50",
+     "type": "number"
+    },
+    "p75": {
+     "title": "P75",
+     "type": "number"
+    },
+    "segment": {
+     "title": "Segment",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "segment",
+    "n_pairs",
+    "p25",
+    "p50",
+    "p75"
+   ],
+   "title": "SegmentIndexStats",
+   "type": "object"
+  },
+  "SegmentRule": {
+   "properties": {
+    "leaf_id": {
+     "title": "Leaf Id",
+     "type": "integer"
+    },
+    "mean_target": {
+     "title": "Mean Target",
+     "type": "number"
+    },
+    "n_customers": {
+     "title": "N Customers",
+     "type": "integer"
+    },
+    "n_items": {
+     "title": "N Items",
+     "type": "integer"
+    },
+    "n_lines": {
+     "title": "N Lines",
+     "type": "integer"
+    },
+    "rule": {
+     "title": "Rule",
+     "type": "string"
+    }
+   },
+   "required": [
+    "leaf_id",
+    "rule",
+    "n_lines",
+    "n_customers",
+    "n_items",
+    "mean_target"
+   ],
+   "title": "SegmentRule",
+   "type": "object"
+  },
+  "SegmentsSection": {
+   "properties": {
+    "bootstrap_median_ari": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Bootstrap Median Ari"
+    },
+    "index_distribution": {
+     "items": {
+      "$ref": "#/$defs/SegmentIndexStats"
+     },
+     "title": "Index Distribution",
+     "type": "array"
+    },
+    "margin_driver_note": {
+     "title": "Margin Driver Note",
+     "type": "string"
+    },
+    "margin_driver_rules": {
+     "items": {
+      "$ref": "#/$defs/SegmentRule"
+     },
+     "title": "Margin Driver Rules",
+     "type": "array"
+    },
+    "recommendation_change_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommendation Change Share"
+    },
+    "rules": {
+     "items": {
+      "$ref": "#/$defs/SegmentRule"
+     },
+     "title": "Rules",
+     "type": "array"
+    }
+   },
+   "required": [
+    "rules",
+    "margin_driver_rules",
+    "margin_driver_note",
+    "bootstrap_median_ari",
+    "recommendation_change_share",
+    "index_distribution"
+   ],
+   "title": "SegmentsSection",
+   "type": "object"
+  },
+  "SensitivitySegment": {
+   "properties": {
+    "ar_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ar Ci High"
+    },
+    "ar_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ar Ci Low"
+    },
+    "first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "First Stage F"
+    },
+    "identifying_coverage": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Identifying Coverage"
+    },
+    "iv": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Iv"
+    },
+    "iv_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Iv Ci High"
+    },
+    "iv_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Iv Ci Low"
+    },
+    "iv_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Iv Se"
+    },
+    "n_obs": {
+     "title": "N Obs",
+     "type": "integer"
+    },
+    "n_pairs": {
+     "title": "N Pairs",
+     "type": "integer"
+    },
+    "n_positive": {
+     "title": "N Positive",
+     "type": "integer"
+    },
+    "naive_fe_ols": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Naive Fe Ols"
+    },
+    "naive_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Naive Se"
+    },
+    "naive_vs_iv_note": {
+     "title": "Naive Vs Iv Note",
+     "type": "string"
+    },
+    "overid_j": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Overid J"
+    },
+    "overid_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Overid P"
+    },
+    "ppml": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ppml"
+    },
+    "price_cv_within": {
+     "title": "Price Cv Within",
+     "type": "number"
+    },
+    "robustness_spread": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Robustness Spread"
+    },
+    "segment": {
+     "title": "Segment",
+     "type": "integer"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "status_reasons": {
+     "title": "Status Reasons",
+     "type": "string"
+    }
+   },
+   "required": [
+    "segment",
+    "n_obs",
+    "n_pairs",
+    "n_positive",
+    "price_cv_within",
+    "naive_fe_ols",
+    "naive_se",
+    "ppml",
+    "iv",
+    "iv_se",
+    "iv_ci_low",
+    "iv_ci_high",
+    "first_stage_f",
+    "overid_j",
+    "overid_p",
+    "ar_ci_low",
+    "ar_ci_high",
+    "robustness_spread",
+    "identifying_coverage",
+    "status",
+    "status_reasons",
+    "naive_vs_iv_note"
+   ],
+   "title": "SensitivitySegment",
+   "type": "object"
+  },
+  "SummaryKpis": {
+   "properties": {
+    "contribution_cents": {
+     "title": "Contribution Cents",
+     "type": "integer"
+    },
+    "list_price_coverage_share": {
+     "title": "List Price Coverage Share",
+     "type": "number"
+    },
+    "missing_cost_revenue_share": {
+     "title": "Missing Cost Revenue Share",
+     "type": "number"
+    },
+    "months_covered": {
+     "title": "Months Covered",
+     "type": "integer"
+    },
+    "n_customers": {
+     "title": "N Customers",
+     "type": "integer"
+    },
+    "n_items": {
+     "title": "N Items",
+     "type": "integer"
+    },
+    "n_ledger_lines": {
+     "title": "N Ledger Lines",
+     "type": "integer"
+    },
+    "n_sales_observations": {
+     "title": "N Sales Observations",
+     "type": "integer"
+    },
+    "net_revenue_cents": {
+     "title": "Net Revenue Cents",
+     "type": "integer"
+    },
+    "pocket_gross_profit_cents": {
+     "title": "Pocket Gross Profit Cents",
+     "type": "integer"
+    },
+    "pocket_margin_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Pocket GP / pocket revenue on cost-known lines",
+     "title": "Pocket Margin Pct"
+    },
+    "pocket_revenue_cents": {
+     "title": "Pocket Revenue Cents",
+     "type": "integer"
+    },
+    "reconciliation_pass": {
+     "title": "Reconciliation Pass",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "n_ledger_lines",
+    "n_sales_observations",
+    "n_customers",
+    "n_items",
+    "months_covered",
+    "net_revenue_cents",
+    "pocket_revenue_cents",
+    "pocket_gross_profit_cents",
+    "contribution_cents",
+    "reconciliation_pass",
+    "missing_cost_revenue_share",
+    "list_price_coverage_share"
+   ],
+   "title": "SummaryKpis",
+   "type": "object"
+  },
+  "UnallocatedSettlement": {
+   "properties": {
+    "amount_cents": {
+     "title": "Amount Cents",
+     "type": "integer"
+    },
+    "customer_id": {
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "period": {
+     "title": "Period",
+     "type": "string"
+    },
+    "rebate_program_id": {
+     "title": "Rebate Program Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "customer_id",
+    "period",
+    "rebate_program_id",
+    "amount_cents"
+   ],
+   "title": "UnallocatedSettlement",
+   "type": "object"
+  },
+  "ValidationResult": {
+   "properties": {
+    "achieved": {
+     "title": "Achieved",
+     "type": "string"
+    },
+    "check": {
+     "title": "Check",
+     "type": "string"
+    },
+    "passed": {
+     "title": "Passed",
+     "type": "boolean"
+    },
+    "target": {
+     "title": "Target",
+     "type": "string"
+    }
+   },
+   "required": [
+    "check",
+    "target",
+    "achieved",
+    "passed"
+   ],
+   "title": "ValidationResult",
+   "type": "object"
+  },
+  "WaterfallStage": {
+   "properties": {
+    "amount_cents": {
+     "title": "Amount Cents",
+     "type": "integer"
+    },
+    "coverage": {
+     "title": "Coverage",
+     "type": "string"
+    },
+    "pct_of_list": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "None when no list coverage",
+     "title": "Pct Of List"
+    },
+    "stage": {
+     "title": "Stage",
+     "type": "string"
+    }
+   },
+   "required": [
+    "stage",
+    "amount_cents",
+    "coverage"
+   ],
+   "title": "WaterfallStage",
+   "type": "object"
+  },
+  "WinCurve": {
+   "properties": {
+    "ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci High"
+    },
+    "ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci Low"
+    },
+    "n_quotes": {
+     "title": "N Quotes",
+     "type": "integer"
+    },
+    "negotiation_gap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Negotiation Gap"
+    },
+    "price_coef": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price Coef"
+    },
+    "price_coef_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price Coef Se"
+    },
+    "reasons": {
+     "title": "Reasons",
+     "type": "string"
+    },
+    "segment": {
+     "title": "Segment",
+     "type": "integer"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "win_rate": {
+     "title": "Win Rate",
+     "type": "number"
+    }
+   },
+   "required": [
+    "segment",
+    "n_quotes",
+    "win_rate",
+    "price_coef",
+    "price_coef_se",
+    "ci_low",
+    "ci_high",
+    "negotiation_gap",
+    "status",
+    "reasons"
+   ],
+   "title": "WinCurve",
+   "type": "object"
+  }
+ },
+ "properties": {
+  "bundle_version": {
+   "title": "Bundle Version",
+   "type": "string"
+  },
+  "data_label": {
+   "title": "Data Label",
+   "type": "string"
+  },
+  "dispersion": {
+   "$ref": "#/$defs/DispersionSection"
+  },
+  "economics": {
+   "$ref": "#/$defs/EconomicsSection"
+  },
+  "engine_version": {
+   "title": "Engine Version",
+   "type": "string"
+  },
+  "guidance": {
+   "items": {
+    "$ref": "#/$defs/GuidancePair"
+   },
+   "title": "Guidance",
+   "type": "array"
+  },
+  "honest_labels": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Honest Labels",
+   "type": "array"
+  },
+  "kpis": {
+   "$ref": "#/$defs/SummaryKpis"
+  },
+  "leakage_components_overall": {
+   "items": {
+    "$ref": "#/$defs/LeakageComponent"
+   },
+   "title": "Leakage Components Overall",
+   "type": "array"
+  },
+  "library_warnings": {
+   "items": {
+    "$ref": "#/$defs/LibraryWarning"
+   },
+   "title": "Library Warnings",
+   "type": "array"
+  },
+  "manifest": {
+   "$ref": "#/$defs/ManifestInfo"
+  },
+  "opportunity": {
+   "$ref": "#/$defs/OpportunitySection"
+  },
+  "optional_modules": {
+   "$ref": "#/$defs/OptionalModules"
+  },
+  "reconciliation": {
+   "items": {
+    "$ref": "#/$defs/ReconciliationCheck"
+   },
+   "title": "Reconciliation",
+   "type": "array"
+  },
+  "residuals": {
+   "items": {
+    "$ref": "#/$defs/Residual"
+   },
+   "title": "Residuals",
+   "type": "array"
+  },
+  "scenario_grids": {
+   "items": {
+    "$ref": "#/$defs/ScenarioGrid"
+   },
+   "title": "Scenario Grids",
+   "type": "array"
+  },
+  "segments": {
+   "$ref": "#/$defs/SegmentsSection"
+  },
+  "sensitivity": {
+   "items": {
+    "$ref": "#/$defs/SensitivitySegment"
+   },
+   "title": "Sensitivity",
+   "type": "array"
+  },
+  "unallocated_settlements": {
+   "items": {
+    "$ref": "#/$defs/UnallocatedSettlement"
+   },
+   "title": "Unallocated Settlements",
+   "type": "array"
+  },
+  "validation_results": {
+   "items": {
+    "$ref": "#/$defs/ValidationResult"
+   },
+   "title": "Validation Results",
+   "type": "array"
+  },
+  "waterfall_by_customer": {
+   "items": {
+    "$ref": "#/$defs/GroupWaterfall"
+   },
+   "title": "Waterfall By Customer",
+   "type": "array"
+  },
+  "waterfall_by_segment": {
+   "items": {
+    "$ref": "#/$defs/GroupWaterfall"
+   },
+   "title": "Waterfall By Segment",
+   "type": "array"
+  },
+  "waterfall_overall": {
+   "items": {
+    "$ref": "#/$defs/WaterfallStage"
+   },
+   "title": "Waterfall Overall",
+   "type": "array"
+  }
+ },
+ "required": [
+  "bundle_version",
+  "engine_version",
+  "data_label",
+  "honest_labels",
+  "kpis",
+  "reconciliation",
+  "residuals",
+  "unallocated_settlements",
+  "library_warnings",
+  "waterfall_overall",
+  "waterfall_by_segment",
+  "waterfall_by_customer",
+  "leakage_components_overall",
+  "dispersion",
+  "segments",
+  "guidance",
+  "sensitivity",
+  "opportunity",
+  "economics",
+  "scenario_grids",
+  "optional_modules",
+  "validation_results",
+  "manifest"
+ ],
+ "title": "WebBundle",
+ "type": "object"
+}
