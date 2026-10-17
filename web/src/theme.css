@@ -108,3 +108,19 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Shared form controls and the table-pagination buttons. */
+.row {
+  @apply flex flex-wrap items-center gap-2;
+}
+input,
+select {
+  @apply rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/[0.87];
+}
+button:not([class]) ,
+.row button {
+  @apply rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/70;
+}
+.row button:disabled {
+  @apply opacity-50;
+}

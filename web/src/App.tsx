@@ -3,19 +3,29 @@
  * placeholders until the owner's design review (Run 3 hard stop). */
 
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { HashRouter, Link, NavLink, Route, Routes, useParams } from "react-router-dom";
+import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { BundleProvider, useBundleState } from "./lib/bundle";
+import { Customers } from "./pages/Customers";
+import { GuidancePage } from "./pages/GuidancePage";
+import { MethodologyPage } from "./pages/MethodologyPage";
+import { ModulesPage } from "./pages/ModulesPage";
+import { OpportunityPage } from "./pages/OpportunityPage";
 import { Overview } from "./pages/Overview";
+import { ScenariosPage } from "./pages/ScenariosPage";
+import { SegmentsPage } from "./pages/SegmentsPage";
+import { SensitivityPage } from "./pages/SensitivityPage";
+import { WaterfallPage } from "./pages/WaterfallPage";
 
 const PAGES = [
-  { path: "/waterfall", label: "Waterfall" },
-  { path: "/customers", label: "Customers" },
-  { path: "/segments", label: "Segments" },
-  { path: "/guidance", label: "Guidance" },
-  { path: "/sensitivity", label: "Sensitivity" },
-  { path: "/opportunity", label: "Opportunity" },
-  { path: "/scenarios", label: "Scenarios" },
-  { path: "/methodology", label: "Data & methodology" },
+  { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
+  { path: "/customers", label: "Customers", el: <Customers /> },
+  { path: "/segments", label: "Segments", el: <SegmentsPage /> },
+  { path: "/guidance", label: "Guidance", el: <GuidancePage /> },
+  { path: "/sensitivity", label: "Sensitivity", el: <SensitivityPage /> },
+  { path: "/opportunity", label: "Opportunity", el: <OpportunityPage /> },
+  { path: "/scenarios", label: "Scenarios", el: <ScenariosPage /> },
+  { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
+  { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
 ];
 
 function ThemeToggle() {
@@ -34,24 +44,6 @@ function ThemeToggle() {
     >
       Theme
     </button>
-  );
-}
-
-function Pending() {
-  const { page } = useParams();
-  const label = PAGES.find((p) => p.path === `/${page}`)?.label ?? "This page";
-  return (
-    <section className="py-16">
-      <h1 className="mt-0 text-title">{label}</h1>
-      <p className="max-w-xl secondary">
-        Built after the design review: the Overview page sets the visual
-        direction, and detail pages follow once it is approved. The underlying
-        numbers already exist in the data bundle this site is served from.
-      </p>
-      <Link to="/" className="font-medium text-petrol underline-offset-4 hover:underline">
-        Back to the overview
-      </Link>
-    </section>
   );
 }
 
@@ -122,7 +114,9 @@ function Shell() {
         {state.status === "ready" && (
           <Routes>
             <Route path="/" element={<Overview />} />
-            <Route path="/:page" element={<Pending />} />
+            {PAGES.map((p) => (
+              <Route key={p.path} path={p.path} element={p.el} />
+            ))}
           </Routes>
         )}
       </main>

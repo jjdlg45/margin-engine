@@ -44,7 +44,7 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("detail routes show the pending-review placeholder", async ({ page }) => {
+test("detail routes render real pages", async ({ page }) => {
   await page.goto("/#/guidance");
-  await expect(page.getByText("Built after the design review", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Price guidance" })).toBeVisible();
 });

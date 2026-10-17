@@ -1063,3 +1063,39 @@ screenshots: docs/ui/review/waterfall-{light,dark}-desktop-{before,after}.png.
 vite build clean; Playwright 6/6 (light/dark x desktop/mobile), no console
 errors, no serious or critical axe violations; demo bundle re-exported;
 ruff, mypy strict, and the full Python suite pass.
+
+---
+## Phase 20 — Detail pages (2026-10-17)
+
+**Built.** All nine detail routes, each to the design system's grammar:
+Price waterfall (Radix tabs for overall / by segment / by customer with a
+group picker, leakage by component in dollars and share); Customers & orders
+(TanStack sortable/filterable table - contribution, returns impact, % revenue
+excluded, after-activity with the estimated marker, service-flag chips;
+drill-down with the customer's waterfall, top items by baseline revenue,
+guidance statuses and links); Segments (both rule tables, stability figures,
+per-segment price-index distribution); Price guidance (customer x item lookup
+with URL state, bespoke SVG band chart with floor / band / current / target,
+status chips, the engine's explanation); Price sensitivity (bespoke interval
+chart following the evidence grammar, naive-vs-corrected comparison, Radix
+collapsible diagnostics with first stage, overid, robustness, AR set,
+identifying coverage); Opportunity (three levels as separated panels, never
+summed, top records table with explanations and evidence chips); Scenarios
+(Radix slider snapping to the eleven exported grid points - the browser
+interpolates nothing - with recovered, residual, protected exposure and the
+causal-only contribution effect, plus the COGS timing statement); Data &
+methodology (reconciliation, residual explanations, coverage, captured
+warnings, the measured validation table, methodology link); Optional modules
+(win curves, cross-price, inventory, absent-reasons stated). Every empty and
+edge state explains itself in plain language. New deps: @tanstack/react-table,
+Radix tabs/collapsible/slider.
+
+**Verification.** Playwright 40/40 across desktop 1440 and mobile 375: all
+ten routes load with zero console errors, and parity spot-checks read
+displayed values and compare them to the bundle (leakage component dollars,
+customer drill-down net revenue, guidance floors and explanation text,
+per-segment rows and causal chip count, slider values at the 0% / 50% / 100%
+grid points, validation rows, module presence/absence). The obsolete
+pending-placeholder test was replaced by the real-page assertion. tsc strict +
+vite build clean; vitest 5/5; ruff, mypy strict, and the full Python suite
+pass (no Python changes this phase).
