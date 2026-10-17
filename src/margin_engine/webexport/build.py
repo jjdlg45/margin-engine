@@ -176,10 +176,13 @@ def build_bundle(
     seg_of_line = res.segments.leaf_assignments
     sale_seg = sale.join(seg_of_line, on="source_line_key", how="left")
 
-    # --- KPIs ---------------------------------------------------------------
+    # --- KPIs: one basis - everything after returns, so pocket revenue can
+    # never exceed net revenue. The waterfall stays sale-lines and says so;
+    # returns detail lives in Customers & orders.
+    econ = ledger.filter(pl.col("transaction_type").is_in(["sale", "return"]))
     net_rev = _i(sale["net_amount_cents"].sum())
-    cost_known = sale.filter(pl.col("product_cost_cents").is_not_null())
-    pocket_rev = _i(sale["pocket_revenue_cents"].sum())
+    cost_known = econ.filter(pl.col("product_cost_cents").is_not_null())
+    pocket_rev = _i(econ["pocket_revenue_cents"].sum())
     pocket_rev_cost_known = _i(cost_known["pocket_revenue_cents"].sum())
     pocket_gp = _i(cost_known["pocket_gp_cents"].sum())
     returns = ledger.filter(pl.col("transaction_type") == "return")

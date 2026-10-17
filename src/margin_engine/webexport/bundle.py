@@ -24,9 +24,11 @@ class SummaryKpis(BaseModel):
     gross_sales_cents: int = Field(description="Sale lines only, before returns")
     returns_cents: int = Field(description="Linked return lines (negative)")
     net_revenue_cents: int = Field(description="Gross sales plus returns - matches economics")
-    pocket_revenue_cents: int
-    pocket_gross_profit_cents: int
-    contribution_cents: int
+    pocket_revenue_cents: int = Field(
+        description="After returns, like every headline KPI - never exceeds net revenue"
+    )
+    pocket_gross_profit_cents: int = Field(description="After returns, cost-known lines")
+    contribution_cents: int = Field(description="After returns, cost-known lines")
     pocket_margin_pct: float | None = Field(
         default=None, description="Pocket GP / pocket revenue on cost-known lines"
     )

@@ -1408,6 +1408,7 @@
   "SummaryKpis": {
    "properties": {
     "contribution_cents": {
+     "description": "After returns, cost-known lines",
      "title": "Contribution Cents",
      "type": "integer"
     },
@@ -1450,6 +1451,7 @@
      "type": "integer"
     },
     "pocket_gross_profit_cents": {
+     "description": "After returns, cost-known lines",
      "title": "Pocket Gross Profit Cents",
      "type": "integer"
     },
@@ -1467,6 +1469,7 @@
      "title": "Pocket Margin Pct"
     },
     "pocket_revenue_cents": {
+     "description": "After returns, like every headline KPI - never exceeds net revenue",
      "title": "Pocket Revenue Cents",
      "type": "integer"
     },

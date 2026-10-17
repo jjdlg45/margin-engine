@@ -1035,3 +1035,31 @@ x light/dark) with zero console errors and no serious or critical axe
 violations; new screenshots in docs/ui/review/ including the dark-theme
 before/after pair. Demo bundle: 1,176 KB with 1,211 guidance pairs and 8
 scenario grids. ruff, mypy strict, and the full Python suite pass.
+
+---
+## Phase 19.2 — KPI basis and waterfall readability (2026-10-17)
+
+**KPI basis.** All headline KPIs are on one basis - after returns: net
+revenue, pocket revenue, pocket margin, and the coverage band's gross profit
+and contribution all compute over sale + linked return lines, so pocket
+revenue can never exceed net revenue. Parity test updated to the new basis
+and a dedicated assertion added: pocket <= net on the KPI row. The waterfall
+is labeled "Sale lines only - returns appear in Customers & orders."
+
+**Waterfall readability.** (1) Thin dashed step connectors from each bar to
+the start of the next, drawn by a Customized layer reading the rendered bar
+rects (exact under any scale, both orientations; Recharts does not expose
+dataKey on formattedGraphicalItems, so the layer selects the last data-
+bearing bar series). (2) Faint ghost columns (ink/0.05) under every floating
+deduction bar, grounding them on the remaining amount. (3) Cost dots
+brightened to ink/0.7 on an ink/0.12 wash - a clear mid-tone in dark mode.
+(4) All meaning-bearing marks measured at or above 3:1 against the panel in
+both themes (table with ratios in docs/ui/design-plan.md); grammar unchanged
+(solid = totals, hatch = leakage, dots = costs). (5) Chart height 300 -> 264
+with zero bottom margin: the dead band under the axis is gone. Before/after
+screenshots: docs/ui/review/waterfall-{light,dark}-desktop-{before,after}.png.
+
+**Checks.** webexport parity suite 9/9 with the new basis; vitest 5/5; tsc +
+vite build clean; Playwright 6/6 (light/dark x desktop/mobile), no console
+errors, no serious or critical axe violations; demo bundle re-exported;
+ruff, mypy strict, and the full Python suite pass.

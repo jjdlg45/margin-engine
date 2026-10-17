@@ -3,25 +3,12 @@
  * coverage band. Every figure is taken from the bundle; filtering and counting
  * is the only client-side arithmetic. */
 
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
+import { useCompact } from "../lib/useCompact";
 import { count, dollars, dollarsShort, pct } from "../lib/format";
-
-function useCompact(): boolean {
-  const [compact, setCompact] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 640,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    const onChange = () => setCompact(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return compact;
-}
 
 interface Finding {
   figure: string;
@@ -117,12 +104,12 @@ export function Overview() {
       </section>
 
       {/* Waterfall band */}
-      <section aria-labelledby="wf" className="panel px-5 py-8 sm:px-8">
+      <section aria-labelledby="wf" className="panel px-5 pb-5 pt-8 sm:px-8">
         <h2 id="wf" className="heading-rule mb-2 mt-0 text-section">
           The price waterfall
         </h2>
         <p className="mb-6 mt-0 max-w-2xl text-caption secondary">
-          List value to contribution. Hatched bars are pricing leakage (discounts, rebates, concessions); dotted bars are costs. Hover any bar for exact amounts and the share of lines covered at that stage.
+          Sale lines only - returns appear in Customers & orders. Hatched bars are pricing leakage (discounts, rebates, concessions); dotted bars are costs. Hover any bar for exact amounts and the share of lines covered at that stage.
         </p>
         <Waterfall stages={b.waterfall_overall} compact={compact} />
       </section>

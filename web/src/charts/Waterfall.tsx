@@ -1,5 +1,10 @@
-/** The signature visual: a custom-styled Recharts waterfall. Stage bars in
- * ink; the drops between stages hatched garnet with dollar + % of list labels.
+/** The signature visual: a custom-styled Recharts waterfall.
+ *
+ * Visual grammar (docs/ui/design-plan.md): solid ink = totals, garnet hatch =
+ * pricing leakage, ink dots = costs. Floating deduction bars sit on a faint
+ * ghost column down to the axis so they read as resting on the remaining
+ * amount, and thin dashed connectors trace the step-down flow. Every bar and
+ * connector meets at least 3:1 contrast against the panel in both themes.
  * One deliberate build animation on mount, skipped under reduced motion.
  * Values are differences of exported stage amounts — presentation arithmetic
  * only; no financial logic lives here. */
@@ -8,6 +13,7 @@ import {
   Bar,
   BarChart,
   Cell,
+  Customized,
   LabelList,
   ResponsiveContainer,
   Tooltip,
@@ -66,6 +72,52 @@ const reduced =
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+interface BarRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Dashed step connectors drawn from each bar to the next, at the level where
+ * the next bar starts — the classic waterfall reading aid. Positions come
+ * from the rendered bar rects, so they stay exact under any scale. */
+function Connectors(props: Record<string, unknown> & { verticalLayout?: boolean }) {
+  const items = props.formattedGraphicalItems as
+    | { props: { dataKey?: string; data?: (BarRect | null)[] } }[]
+    | undefined;
+  const withData = (items ?? []).filter(
+    (it) => Array.isArray(it.props?.data) && (it.props.data?.length ?? 0) > 0,
+  );
+  const sizeBar =
+    withData.find((it) => it.props.dataKey === "size") ?? withData[withData.length - 1];
+  const rects = sizeBar?.props.data;
+  const vertical = props.verticalLayout === true;
+  if (!rects || rects.length < 2) return null;
+  const lines = [];
+  for (let i = 0; i < rects.length - 1; i++) {
+    const a = rects[i];
+    const b = rects[i + 1];
+    if (!a || !b) continue;
+    if (vertical) {
+      // Horizontal bars: the connector runs vertically at the value-end of
+      // the next bar, from the end of bar i down to bar i+1.
+      const x = b.x + b.width;
+      lines.push(<line key={i} x1={x} y1={a.y + a.height} x2={x} y2={b.y} />);
+    } else {
+      // Vertical bars: the connector runs horizontally at the top of the
+      // next bar, from the right edge of bar i to the left edge of bar i+1.
+      const y = b.y;
+      lines.push(<line key={i} x1={a.x + a.width} y1={y} x2={b.x} y2={y} />);
+    }
+  }
+  return (
+    <g stroke="rgb(var(--ink) / 0.55)" strokeWidth={1} strokeDasharray="3 3" aria-hidden="true">
+      {lines}
+    </g>
+  );
+}
+
 function WaterfallTooltip({
   active,
   payload,
@@ -96,19 +148,28 @@ export function Waterfall({ stages, compact }: { stages: WaterfallStage[]; compa
     <BarChart
       data={rows}
       layout={compact ? "vertical" : "horizontal"}
-      margin={compact ? { top: 8, right: 56, bottom: 4, left: 0 } : { top: 24, right: 8, bottom: 4, left: 8 }}
+      margin={
+        compact ? { top: 6, right: 56, bottom: 0, left: 0 } : { top: 22, right: 4, bottom: 0, left: 4 }
+      }
       barCategoryGap="22%"
     >
       <defs>
-        {/* Leakage drops: garnet hatch. Cost drops: ink dots - costs are not
-            leakage, so they get their own treatment. */}
-        <pattern id="drop-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(135)">
-          <rect width="6" height="6" fill="rgb(var(--garnet) / 0.16)" />
-          <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(var(--garnet) / 0.6)" strokeWidth="1.5" />
+        {/* Leakage: garnet hatch. Costs: ink dots on a light wash. Pattern
+            strokes are tuned to sit at or above 3:1 on the card in both
+            themes (the tokens are theme-mapped; ratios in the design plan). */}
+        <pattern
+          id="drop-hatch"
+          patternUnits="userSpaceOnUse"
+          width="6"
+          height="6"
+          patternTransform="rotate(135)"
+        >
+          <rect width="6" height="6" fill="rgb(var(--garnet) / 0.2)" />
+          <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(var(--garnet) / 0.8)" strokeWidth="1.6" />
         </pattern>
         <pattern id="cost-dots" patternUnits="userSpaceOnUse" width="7" height="7">
-          <rect width="7" height="7" fill="rgb(var(--ink) / 0.07)" />
-          <circle cx="2" cy="2" r="1.2" fill="rgb(var(--ink) / 0.5)" />
+          <rect width="7" height="7" fill="rgb(var(--ink) / 0.12)" />
+          <circle cx="2.2" cy="2.2" r="1.3" fill="rgb(var(--ink) / 0.7)" />
         </pattern>
       </defs>
       {compact ? (
@@ -136,7 +197,13 @@ export function Waterfall({ stages, compact }: { stages: WaterfallStage[]; compa
         </>
       )}
       <Tooltip content={<WaterfallTooltip />} cursor={{ fill: "rgb(var(--ink) / 0.04)" }} />
-      <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
+      {/* Base bar: invisible spacer under totals; a faint ghost column under
+          floating deduction bars so they read as sitting on the remainder. */}
+      <Bar dataKey="base" stackId="w" isAnimationActive={false}>
+        {rows.map((r) => (
+          <Cell key={r.name} fill={r.kind === "stage" ? "transparent" : "rgb(var(--ink) / 0.05)"} />
+        ))}
+      </Bar>
       <Bar
         dataKey="size"
         stackId="w"
@@ -164,10 +231,13 @@ export function Waterfall({ stages, compact }: { stages: WaterfallStage[]; compa
           style={{ fontSize: 11, fill: "rgb(var(--ink) / 0.87)" }}
         />
       </Bar>
+      <Customized
+        component={(p: Record<string, unknown>) => <Connectors {...p} verticalLayout={compact} />}
+      />
     </BarChart>
   );
   return (
-    <ResponsiveContainer width="100%" height={compact ? 380 : 300}>
+    <ResponsiveContainer width="100%" height={compact ? 360 : 264}>
       {chart}
     </ResponsiveContainer>
   );

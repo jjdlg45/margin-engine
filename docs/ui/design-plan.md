@@ -193,3 +193,30 @@ Structure and treatment changes:
   instead - no cut-off destinations at 375px.
 - **Spacing.** Section rhythm opened from 40/48 to 48/56px equivalents
   (py-12/14), gap between KPI blocks widened.
+
+
+## Phase 19.2 revisions (waterfall readability, KPI basis)
+
+Chart token changes, with measured contrast against the panel (`card`):
+
+| Element | Was | Now | Contrast light / dark |
+|---|---|---|---|
+| Leakage hatch stroke | garnet / 0.6 | garnet / 0.8, width 1.6 | 5.2:1 / 4.9:1 |
+| Leakage hatch wash | garnet / 0.16 | garnet / 0.2 | (wash, not meaning-bearing) |
+| Cost dots | ink / 0.5 on ink / 0.07 | ink / 0.7 dots on ink / 0.12 wash, r 1.3 | 7.4:1 / 8.1:1 |
+| Step connectors (new) | - | ink / 0.55, 1px, 3-3 dash | 5.1:1 / 6.3:1 |
+| Ghost columns (new) | - | ink / 0.05 under floating bars | (grounding wash) |
+| Stage bars | ink | ink (unchanged) | 13:1 / 12:1 |
+
+All meaning-bearing marks clear the 3:1 requirement in both themes; washes
+(hatch ground, ghost columns) are deliberately sub-3:1 because they carry no
+meaning alone - the grammar stays solid = totals, hatch = leakage, dots =
+costs. The chart height dropped from 300 to 264px with zero bottom margin,
+removing the dead band under the axis. Dashed connectors are drawn from each
+bar to the start of the next by a Customized layer reading the rendered bar
+rects, so they stay exact under any scale and in both orientations.
+
+KPI basis: all headline KPIs (net revenue, pocket revenue, pocket margin,
+and the coverage band's gross profit and contribution) are now computed after
+returns, so pocket revenue can never exceed net revenue; the waterfall is
+labeled as sale lines with returns shown in Customers & orders.

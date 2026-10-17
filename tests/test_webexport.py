@@ -59,14 +59,17 @@ def test_parity_kpis_and_waterfall(built: tuple[FullRunResult, Rules, WebBundle,
     res, _, bundle, _ = built
     sale = res.pipeline.ledger.filter(pl.col("transaction_type") == "sale")
     returns = res.pipeline.ledger.filter(pl.col("transaction_type") == "return")
-    cost_known = sale.filter(pl.col("product_cost_cents").is_not_null())
+    econ = res.pipeline.ledger.filter(pl.col("transaction_type").is_in(["sale", "return"]))
+    cost_known = econ.filter(pl.col("product_cost_cents").is_not_null())
     assert bundle.kpis.gross_sales_cents == int(sale["net_amount_cents"].sum())
     assert bundle.kpis.returns_cents == int(returns["net_amount_cents"].sum())
     assert bundle.kpis.net_revenue_cents == int(sale["net_amount_cents"].sum()) + int(
         returns["net_amount_cents"].sum()
     )
     assert bundle.kpis.window_label.endswith("months")
-    assert bundle.kpis.pocket_revenue_cents == int(sale["pocket_revenue_cents"].sum())
+    # One basis: every headline KPI is after returns, so pocket <= net.
+    assert bundle.kpis.pocket_revenue_cents == int(econ["pocket_revenue_cents"].sum())
+    assert bundle.kpis.pocket_revenue_cents <= bundle.kpis.net_revenue_cents
     assert bundle.kpis.pocket_gross_profit_cents == int(cost_known["pocket_gp_cents"].sum())
     assert bundle.kpis.contribution_cents == int(cost_known["contribution_cents"].sum())
     assert bundle.kpis.reconciliation_pass is True

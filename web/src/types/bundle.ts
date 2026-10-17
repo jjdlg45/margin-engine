@@ -52,6 +52,9 @@ export type TargetIndex = number | null;
 export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
 export type HonestLabels = string[];
+/**
+ * After returns, cost-known lines
+ */
 export type ContributionCents1 = number;
 /**
  * Sale lines only, before returns
@@ -68,11 +71,17 @@ export type NSalesObservations = number;
  * Gross sales plus returns - matches economics
  */
 export type NetRevenueCents1 = number;
+/**
+ * After returns, cost-known lines
+ */
 export type PocketGrossProfitCents = number;
 /**
  * Pocket GP / pocket revenue on cost-known lines
  */
 export type PocketMarginPct = number | null;
+/**
+ * After returns, like every headline KPI - never exceeds net revenue
+ */
 export type PocketRevenueCents = number;
 export type ReconciliationPass = boolean;
 /**
