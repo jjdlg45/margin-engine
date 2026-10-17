@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BandChart } from "../charts/Band";
-import { EmptyState, PageHeader } from "../components/Page";
+import { EmptyState, PageHeader, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
 import { count, dollars } from "../lib/format";
@@ -113,7 +113,8 @@ export function GuidancePage() {
       ) : customer || item ? (
         <div className="mt-5">
           {matches.length ? (
-            <div className="overflow-x-auto">
+            <>
+            <ScrollX label="Guidance matches table">
               <table className="max-w-2xl">
                 <thead>
                   <tr>
@@ -146,12 +147,13 @@ export function GuidancePage() {
                   ))}
                 </tbody>
               </table>
-              {matches.length > 40 && (
-                <p className="text-caption secondary">
-                  Showing 40 of {count(matches.length)} matches; narrow the lookup.
-                </p>
-              )}
-            </div>
+            </ScrollX>
+            {matches.length > 40 && (
+              <p className="text-caption secondary">
+                Showing 40 of {count(matches.length)} matches; narrow the lookup.
+              </p>
+            )}
+            </>
           ) : (
             <EmptyState title="No guidance for that selection">
               The pair has no sale history in this run, or too few comparable

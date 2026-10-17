@@ -2,7 +2,7 @@
  * captured warnings, the measured validation results table, and the link to
  * the full methodology document. */
 
-import { PageHeader, Section } from "../components/Page";
+import { PageHeader, Section, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
 import { count, dollars, pct } from "../lib/format";
@@ -21,7 +21,7 @@ export function MethodologyPage() {
             {b.data_label}. Every check below is measured by the engine's
             validation script - nothing is hand-typed. The full model detail
             lives in{" "}
-            <a className="text-petrol underline-offset-4 hover:underline" href={METHODOLOGY_URL}>
+            <a className="text-petrol underline underline-offset-4" href={METHODOLOGY_URL}>
               docs/methodology.md
             </a>
             .
@@ -29,7 +29,7 @@ export function MethodologyPage() {
         }
       />
       <Section title="Reconciliation">
-        <div className="overflow-x-auto">
+        <ScrollX label="Methodology table">
           <table>
             <thead>
               <tr>
@@ -56,14 +56,14 @@ export function MethodologyPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollX>
       </Section>
       {b.residuals.length > 0 && (
         <Section
           title="Visible residuals"
           lede="Dollars the pipeline keeps at pool level instead of forcing onto lines."
         >
-          <div className="overflow-x-auto">
+          <ScrollX label="Methodology table">
             <table>
               <thead>
                 <tr>
@@ -86,7 +86,7 @@ export function MethodologyPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </Section>
       )}
       <Section title="Coverage">
@@ -114,7 +114,7 @@ export function MethodologyPage() {
           title="Library warnings"
           lede="Captured during the run and recorded here and in the manifest - never printed and lost."
         >
-          <div className="overflow-x-auto">
+          <ScrollX label="Methodology table">
             <table className="max-w-3xl">
               <thead>
                 <tr>
@@ -133,14 +133,14 @@ export function MethodologyPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </Section>
       )}
       <Section
         title="Validation results"
         lede="Planted truth vs recovered, measured by scripts/measure_validation.py against the same seeds and scales the gated test suite uses."
       >
-        <div className="overflow-x-auto">
+        <ScrollX label="Methodology table">
           <table>
             <thead>
               <tr>
@@ -163,7 +163,7 @@ export function MethodologyPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollX>
       </Section>
     </div>
   );

@@ -7,7 +7,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
-import { EmptyState, PageHeader, Section } from "../components/Page";
+import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { SortableTable } from "../components/SortableTable";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
@@ -173,7 +173,7 @@ function CustomerDetail({
         lede="Guidance status per customer-item pair; the Price guidance page has the band chart and full explanation."
       >
         {topItems.length ? (
-          <div className="overflow-x-auto">
+          <ScrollX label="Customer items table">
             <table className="max-w-3xl">
               <thead>
                 <tr>
@@ -205,7 +205,7 @@ function CustomerDetail({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         ) : (
           <EmptyState title="No guidance pairs">
             This customer has no pairs with enough history for guidance.

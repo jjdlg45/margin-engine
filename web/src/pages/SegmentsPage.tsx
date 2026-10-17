@@ -1,7 +1,7 @@
 /** Segments: readable context-only rules with sizes, the per-segment price
  * index distribution, and the separately-labeled margin-driver tree. */
 
-import { PageHeader, Section } from "../components/Page";
+import { PageHeader, Section, ScrollX } from "../components/Page";
 import { useBundle } from "../lib/bundle";
 import { count, num, pct } from "../lib/format";
 
@@ -16,7 +16,7 @@ interface Rule {
 
 function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollX label="Segment table">
       <table>
         <thead>
           <tr>
@@ -41,7 +41,7 @@ function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   );
 }
 
@@ -71,7 +71,7 @@ export function SegmentsPage() {
         title="Price-index distribution per segment"
         lede="P25 / P50 / P75 of the realized price index across the segment's customer-item pairs."
       >
-        <div className="overflow-x-auto">
+        <ScrollX label="Segment table">
           <table className="max-w-2xl">
             <thead>
               <tr>
@@ -96,7 +96,7 @@ export function SegmentsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollX>
       </Section>
       <Section
         title="Margin drivers (explanatory, not segments)"

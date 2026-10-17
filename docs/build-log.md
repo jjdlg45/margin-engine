@@ -1122,3 +1122,32 @@ restoration, select-driven guidance lookup rendering the band chart, and a
 keyboard pass asserting the skip link and a visible focus outline. tsc + vite
 build clean; vitest 5/5; ruff, mypy strict and the full Python suite pass (no
 Python changes this phase).
+
+---
+## Phase 22 — Quality gates (2026-10-17)
+
+**Gates and results.**
+- Playwright end-to-end: 88/88 across desktop 1440 and mobile 375 (route
+  loads, parity, interactions, axe, snapshots).
+- Visual snapshots: all ten pages in light and dark at both widths (40
+  baselines, maxDiffPixelRatio 0.02), stable across repeated runs.
+- axe: no serious or critical violations on any page. The gate caught three
+  real issues, all fixed: the scenario slider thumb lacked an accessible
+  name; horizontally scrollable tables were not keyboard-focusable (new
+  ScrollX region wrapper - focusable, labeled - used everywhere); the inline
+  methodology link relied on color alone (now underlined).
+- Lighthouse desktop (node lighthouse.mjs against a compression-enabled
+  static server, mirroring GitHub Pages): performance 100, accessibility
+  100, best practices 96 - all at or above the 90/95/95 gates. Diagnosis
+  trail: the first run scored 76 purely from CLS 0.844 - the async bundle
+  swap grew <main> and pushed the footer through the viewport; a stable
+  85vh minimum on <main> took CLS to ~0 and performance to 100.
+- Production bundle: code-split (react-vendor / recharts / ui / per-route
+  lazy chunks). Initial JavaScript for the Overview ~199 KB gzipped
+  (index 7.4 + react-vendor 8.7 + ui 81.8 + recharts 101.5), under the
+  500 KB gate; detail pages load 2-8 KB chunks on demand. bundle.json is
+  preloaded from index.html so data fetch and JS parse overlap.
+- CI: the Phase 23 workflow runs every gate (build, vitest, Playwright,
+  Lighthouse) on push.
+
+ruff, mypy strict and the full Python suite pass (no Python changes).

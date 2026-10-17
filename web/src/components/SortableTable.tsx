@@ -14,6 +14,7 @@ import {
 } from "@tanstack/react-table";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ScrollX } from "./Page";
 
 export function SortableTable<T>({
   data,
@@ -73,7 +74,7 @@ export function SortableTable<T>({
           />
         </div>
       )}
-      <div className="overflow-x-auto">
+      <ScrollX label="Table">
         <table>
           <thead>
             {table.getHeaderGroups().map((hg) => (
@@ -110,7 +111,7 @@ export function SortableTable<T>({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
       {pageCount > 1 && (
         <div className="row mt-2 items-center">
           <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>

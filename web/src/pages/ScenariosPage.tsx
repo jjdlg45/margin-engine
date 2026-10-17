@@ -87,7 +87,7 @@ export function ScenariosPage() {
           <Slider.Track className="relative h-1 grow rounded-full bg-ink/[0.12]">
             <Slider.Range className="absolute h-full rounded-full bg-petrol" />
           </Slider.Track>
-          <Slider.Thumb className="block h-4 w-4 rounded-full border-2 border-petrol bg-card" />
+          <Slider.Thumb aria-label="Pass-through level" className="block h-4 w-4 rounded-full border-2 border-petrol bg-card" />
         </Slider.Root>
         <dl className="m-0 mt-5 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
           <div>

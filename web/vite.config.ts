@@ -6,5 +6,22 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   base: "./",
-  build: { sourcemap: false },
+  build: {
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          recharts: ["recharts"],
+          ui: [
+            "@radix-ui/react-tooltip",
+            "@radix-ui/react-tabs",
+            "@radix-ui/react-collapsible",
+            "@radix-ui/react-slider",
+            "@tanstack/react-table",
+          ],
+        },
+      },
+    },
+  },
 });

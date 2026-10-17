@@ -5,7 +5,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
-import { EmptyState, PageHeader, Section } from "../components/Page";
+import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { useBundle } from "../lib/bundle";
 import { useCompact } from "../lib/useCompact";
 import { dollars, dollarsShort, pct } from "../lib/format";
@@ -114,7 +114,7 @@ export function WaterfallPage() {
           </>
         }
       >
-        <div className="overflow-x-auto">
+        <ScrollX label="Leakage table">
           <table className="max-w-xl">
             <thead>
               <tr>
@@ -133,7 +133,7 @@ export function WaterfallPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollX>
       </Section>
     </div>
   );

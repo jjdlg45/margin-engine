@@ -37,3 +37,13 @@ export function EmptyState({ title, children }: { title: string; children: React
     </div>
   );
 }
+
+/** Horizontally scrollable region that stays keyboard-accessible: focusable
+ * with a name, so axe's scrollable-region-focusable passes honestly. */
+export function ScrollX({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={label}>
+      {children}
+    </div>
+  );
+}

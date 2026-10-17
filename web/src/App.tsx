@@ -4,17 +4,19 @@
 
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { BundleProvider, useBundleState } from "./lib/bundle";
-import { Customers } from "./pages/Customers";
-import { GuidancePage } from "./pages/GuidancePage";
-import { MethodologyPage } from "./pages/MethodologyPage";
-import { ModulesPage } from "./pages/ModulesPage";
-import { OpportunityPage } from "./pages/OpportunityPage";
 import { Overview } from "./pages/Overview";
-import { ScenariosPage } from "./pages/ScenariosPage";
-import { SegmentsPage } from "./pages/SegmentsPage";
-import { SensitivityPage } from "./pages/SensitivityPage";
-import { WaterfallPage } from "./pages/WaterfallPage";
+
+const Customers = lazy(() => import("./pages/Customers").then((m) => ({ default: m.Customers })));
+const GuidancePage = lazy(() => import("./pages/GuidancePage").then((m) => ({ default: m.GuidancePage })));
+const MethodologyPage = lazy(() => import("./pages/MethodologyPage").then((m) => ({ default: m.MethodologyPage })));
+const ModulesPage = lazy(() => import("./pages/ModulesPage").then((m) => ({ default: m.ModulesPage })));
+const OpportunityPage = lazy(() => import("./pages/OpportunityPage").then((m) => ({ default: m.OpportunityPage })));
+const ScenariosPage = lazy(() => import("./pages/ScenariosPage").then((m) => ({ default: m.ScenariosPage })));
+const SegmentsPage = lazy(() => import("./pages/SegmentsPage").then((m) => ({ default: m.SegmentsPage })));
+const SensitivityPage = lazy(() => import("./pages/SensitivityPage").then((m) => ({ default: m.SensitivityPage })));
+const WaterfallPage = lazy(() => import("./pages/WaterfallPage").then((m) => ({ default: m.WaterfallPage })));
 
 const PAGES = [
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
@@ -103,7 +105,7 @@ function Shell() {
           reconciles to source and carries its evidence status.
         </p>
       </header>
-      <main id="main">
+      <main id="main" className="min-h-[85vh]">
         {state.status === "loading" && <p className="py-16 secondary">Loading engine results…</p>}
         {state.status === "error" && (
           <p className="py-16 text-garnet">
@@ -112,12 +114,14 @@ function Shell() {
           </p>
         )}
         {state.status === "ready" && (
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            {PAGES.map((p) => (
-              <Route key={p.path} path={p.path} element={p.el} />
-            ))}
-          </Routes>
+          <Suspense fallback={<p className="py-16 secondary">Loading page…</p>}>
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              {PAGES.map((p) => (
+                <Route key={p.path} path={p.path} element={p.el} />
+              ))}
+            </Routes>
+          </Suspense>
         )}
       </main>
       <footer className="border-t hairline py-6 text-caption secondary">

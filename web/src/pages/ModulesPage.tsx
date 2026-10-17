@@ -2,7 +2,7 @@
  * only when present in the bundle; absence states its reason in plain
  * language rather than hiding the section. */
 
-import { EmptyState, PageHeader, Section } from "../components/Page";
+import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
 import { count, dollars, num, pct } from "../lib/format";
@@ -21,7 +21,7 @@ export function ModulesPage() {
         lede="Logistic win probability on the quote price index, per segment. Only precision-gated fits carry estimated status; the rest are reported with their reason and never gated."
       >
         {m.win_curves ? (
-          <div className="overflow-x-auto">
+          <ScrollX label="Module table">
             <table>
               <thead>
                 <tr>
@@ -54,7 +54,7 @@ export function ModulesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         ) : (
           <EmptyState title="Win/loss modeling is off">{m.win_curves_absent_reason}</EmptyState>
         )}
@@ -64,7 +64,7 @@ export function ModulesPage() {
         lede="Estimated only within declared substitution groups and only where identified; everything else is labeled, not estimated."
       >
         {m.cross_price ? (
-          <div className="overflow-x-auto">
+          <ScrollX label="Module table">
             <table>
               <thead>
                 <tr>
@@ -91,7 +91,7 @@ export function ModulesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         ) : (
           <EmptyState title="Cross-price estimation is off">{m.cross_price_absent_reason}</EmptyState>
         )}
