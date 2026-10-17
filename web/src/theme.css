@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (docs/ui/design-plan.md). RGB triplets so Tailwind can apply
+   alpha; neutral grays derive from ink at fixed opacities. */
+:root {
+  --ink: 28 43 51; /* #1C2B33 */
+  --paper: 247 248 247; /* #F7F8F7 */
+  --card: 255 255 255;
+  --petrol: 11 85 99; /* #0B5563 */
+  --verdigris: 46 125 91; /* #2E7D5B */
+  --amber: 154 106 0; /* #9A6A00 */
+  --garnet: 142 47 60; /* #8E2F3C */
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --ink: 232 237 239; /* #E8EDEF */
+  --paper: 21 25 28; /* #15191C */
+  --card: 29 35 40; /* #1D2328 */
+  --petrol: 79 163 181; /* #4FA3B5 */
+  --verdigris: 92 183 143; /* #5CB78F */
+  --amber: 215 164 60; /* #D7A43C */
+  --garnet: 208 106 119; /* #D06A77 */
+  color-scheme: dark;
+}
+
+html {
+  font-family: "IBM Plex Sans Variable", system-ui, sans-serif;
+}
+body {
+  @apply bg-paper text-ink/[0.87];
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hairlines, secondary text */
+.hairline {
+  @apply border-ink/[0.12];
+}
+.secondary {
+  @apply text-ink/70;
+}
+
+/* Evidence-status chips: never color alone - fill treatment + label (+ tooltip
+   with the assignment reason). The same grammar colors chart elements. */
+.chip {
+  @apply inline-flex items-center gap-1 rounded-badge px-1.5 py-0.5 text-caption font-medium;
+}
+.chip-solid {
+  @apply bg-verdigris text-paper;
+}
+.chip-hatched {
+  @apply border border-amber text-amber;
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 3px,
+    rgb(var(--amber) / 0.18) 3px 5px
+  );
+}
+.chip-outline {
+  @apply border border-ink/60 text-ink/70;
+}
+.chip-dashed {
+  @apply border border-dashed border-ink/[0.38] text-ink/70;
+}
+.chip-fail {
+  @apply bg-garnet text-paper;
+}
+
+/* The estimated/allocated amount marker: small square + tooltip names method */
+.est-marker {
+  @apply ml-0.5 inline-block h-1.5 w-1.5 translate-y-[-0.35em] bg-amber;
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--petrol));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

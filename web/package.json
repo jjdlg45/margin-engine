@@ -1,0 +1,37 @@
+{
+  "name": "margin-engine-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "gen-types": "json2ts -i public/data/schema.json -o src/types/bundle.ts --additionalProperties false --bannerComment \"/* Generated from schema.json (margin-engine export-web). Do not edit. */\""
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "5.2.8",
+    "@fontsource/ibm-plex-mono": "5.2.7",
+    "@radix-ui/react-tooltip": "1.1.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0",
+    "recharts": "2.13.3"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.1",
+    "@playwright/test": "1.49.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "10.4.20",
+    "json-schema-to-typescript": "15.0.3",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}

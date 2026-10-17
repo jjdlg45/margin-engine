@@ -940,3 +940,42 @@ cost); every numeric token in every explanation provably from its row;
 byte-identical across two full runs; total size 824 KB < 5 MB; CLI
 completes. ruff, mypy strict, and the full Python suite pass.
 
+---
+## Phase 19 — Design system, app shell, Overview (2026-10-16)
+
+**Design plan** (docs/ui/design-plan.md): subject/audience/primary job, a
+6-color token palette with per-color jobs (petrol continuity with the engine
+report; verdigris/amber/garnet as meaning colors), IBM Plex Sans + Plex Mono
+with roles, type and spacing scales, band-based layout with ASCII wireframes,
+chart style rules, and the evidence-status visual language (solid / hatched /
+outline / dashed, never color alone). Recorded self-review changes: KPI card
+grid replaced with a headline band; two-family type dropped to one; secondary
+text raised 60%->70% and on-fill text switched from white to the paper token
+after axe measured 3.95:1 and 2.9:1.
+
+**Built.** web/: Vite 5 + React 18 + TS strict + Tailwind (tokens as CSS
+variables, light/dark via [data-theme] falling back to prefers-color-scheme,
+tabular numerals globally) + Radix tooltip + Recharts + hash routing. Shell
+with top nav, persistent synthetic-data notice, GitHub link, skip link,
+responsive to 375px. Overview at final quality: headline band with
+reconciliation chip, the custom waterfall (ink stage bars, hatched garnet
+drops with dollar labels; one deliberate 600ms build animation, skipped under
+reduced motion; horizontal layout on mobile), five ranked findings linking to
+detail routes (placeholders until design review), and the data coverage band.
+Client-side arithmetic is limited to filtering/counting and waterfall drop
+differences of exported stage amounts.
+
+**Verification.** Vitest 5/5 (formatters); tsc strict + vite build clean
+(176 KB gzipped JS, Phase 22 budget is 500); Playwright 6/6 across desktop
+1440 and mobile 375 in light and dark: no console errors, no serious or
+critical axe violations; screenshots in docs/ui/review/ (4). Debug notes:
+fullPage capture re-laid-out the responsive chart and restarted its
+animation, so the e2e emulates reduced motion; vite preview binds IPv6-only
+on this machine, so Playwright's webServer pins --host 127.0.0.1; mobile
+right-edge labels needed a 56px chart margin.
+
+**Known observation for review:** on the committed sample with default rules
+the tree finds 2 segments and neither reaches causal support, so the Overview
+honestly reports "0 of 2" - accurate fail-closed behavior, but worth a
+decision on whether the committed sample should be regenerated larger so the
+demo also shows the supported path.
