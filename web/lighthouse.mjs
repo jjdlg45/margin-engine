@@ -1,7 +1,7 @@
 /** Phase 22 gate: Lighthouse desktop scores against the preview build.
  * Fails (exit 1) below performance 90, accessibility 95, best practices 95.
  * Run: node lighthouse.mjs (a compression-enabled static server on
- * 127.0.0.1:5050 - `npx serve -l 5050 dist` - mirrors GitHub Pages). */
+ * 127.0.0.1:5050 - `npx serve@14.2.4 -l 5050 dist` - mirrors GitHub Pages). */
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";

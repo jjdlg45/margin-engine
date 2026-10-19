@@ -30,19 +30,19 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
       - name: Sync dependencies
         run: uv sync --frozen
       - name: Export demo bundle (fixed-seed generated world)
         run: uv run margin-engine export-web --demo --out web/public/data
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install web dependencies
@@ -70,20 +70,20 @@ jobs:
       - name: Lighthouse gates (performance 90, accessibility 95, best practices 95)
         working-directory: web
         run: |
-          npx --yes serve -l 5050 dist &
+          npx --yes serve@14.2.4 -l 5050 dist &
           sleep 3
           node lighthouse.mjs
       - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

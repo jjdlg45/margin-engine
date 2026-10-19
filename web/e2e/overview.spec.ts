@@ -5,7 +5,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const REVIEW_DIR = "../docs/ui/review";
+// Test-run screenshots land in an ignored folder; the committed review set in
+// docs/ui/review/ is regenerated only by `npm run review-shots`.
+const SHOT_DIR = "screenshots";
 
 for (const theme of ["light", "dark"] as const) {
   test(`overview renders clean in ${theme} mode`, async ({ page }, testInfo) => {
@@ -38,7 +40,7 @@ for (const theme of ["light", "dark"] as const) {
     ).toHaveLength(0);
 
     await page.screenshot({
-      path: `${REVIEW_DIR}/overview-${theme}-${testInfo.project.name}.png`,
+      path: `${SHOT_DIR}/overview-${theme}-${testInfo.project.name}.png`,
       fullPage: true,
     });
   });

@@ -78,7 +78,11 @@ def fit_win_curves(
     segment_leaf. Segments with fewer than min_quotes quotes are
     insufficient_data; fits whose relative standard error exceeds max_rel_se
     are insufficient_precision (both reported, never gated on accuracy)."""
-    import statsmodels.api as sm
+    # Narrow import: statsmodels.api pulls the whole tsa package, whose
+    # compiled extensions a locked-down host (Smart App Control) can block.
+    # Logit is all this module needs.
+    from statsmodels.discrete.discrete_model import Logit
+    from statsmodels.tools import add_constant
 
     q = quotes_indexed.join(segment_of_pair, on=["customer_id", "item_id"], how="left").filter(
         pl.col("segment_leaf").is_not_null()
@@ -105,7 +109,7 @@ def fit_win_curves(
             out.append(wc.to_dict())
             continue
         try:
-            fit = sm.Logit(y, sm.add_constant(x)).fit(disp=0)
+            fit = Logit(y, add_constant(x)).fit(disp=0)
             se = float(fit.bse[1])
             if not np.isfinite(se) or se > 1e3:
                 wc.reasons = "separation: standard errors unbounded"

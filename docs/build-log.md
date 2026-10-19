@@ -1174,3 +1174,42 @@ Python suite pass (no Python changes).
 
 **Run 3 complete.** HARD STOP: the owner enables GitHub Pages (source:
 GitHub Actions) in repository settings and pushes.
+
+---
+## Phase 23.1 — CI fixes (2026-10-18)
+
+**Deploy failure cause.** The CI unit-test step ran Vitest with its default
+include pattern, which collects e2e/*.spec.ts - Playwright test files that
+cannot run under Vitest. Locally the mistake was masked; in CI it failed the
+step.
+
+**Fixes.**
+1. Vitest scope: vite.config.ts gains a test block - include
+   src/**/*.test.{ts,tsx}, exclude e2e/**, node_modules/**, dist/**.
+   Confirmed by exit code: npm test EXIT=0 with exactly 1 unit test file
+   (5 tests) collected and zero e2e files.
+2. Actions runtime: both workflows updated to the current majors on the
+   Node 24 runtime - checkout@v7, setup-node@v7, setup-uv@v10,
+   upload-pages-artifact@v5, deploy-pages@v5 (verified against each repo's
+   latest release via the GitHub API); runs-on pinned to ubuntu-24.04 in
+   ci.yml and pages.yml; the build's Node bumped 20 -> 24 (20 is EOL).
+3. serve pinned to 14.2.4 in the workflow's Lighthouse step and in
+   lighthouse.mjs's usage note.
+4. Playwright runs no longer touch docs/ui/review/: test screenshots write to
+   the ignored web/screenshots/; the committed review set is regenerated only
+   by the explicit `npm run review-shots` (web/capture-review.mjs), which is
+   now the folder's single writer. Verified: a full Playwright run leaves
+   docs/ui/review/ unmodified in git.
+
+**Additional fix surfaced by the check run.** Smart App Control began
+blocking statsmodels' compiled _ets_smooth extension mid-session (the same
+host policy that previously blocked the pytest and mypy shims), failing the
+suite at import time: `import statsmodels.api` pulls the whole tsa package.
+quotes.py now imports narrowly (statsmodels.discrete.discrete_model.Logit and
+statsmodels.tools.add_constant), avoiding the blocked module and shrinking the
+import surface. No behavior change; the fit call is identical.
+
+**Checks (exit codes).** npm test 0; npm run build 0; npx playwright test 0
+(88 passed); node capture-review.mjs 0; lighthouse.mjs 0
+(100/100/96); ruff 0; ruff format --check 0; mypy 0; workflow YAML parses;
+full pytest suite 0.

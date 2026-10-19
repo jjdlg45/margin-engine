@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
-    "gen-types": "json2ts -i public/data/schema.json -o src/types/bundle.ts --additionalProperties false --bannerComment \"/* Generated from schema.json (margin-engine export-web). Do not edit. */\""
+    "gen-types": "json2ts -i public/data/schema.json -o src/types/bundle.ts --additionalProperties false --bannerComment \"/* Generated from schema.json (margin-engine export-web). Do not edit. */\"",
+    "review-shots": "node capture-review.mjs"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "5.2.8",
