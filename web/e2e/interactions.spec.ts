@@ -31,12 +31,25 @@ test("waterfall scope and group live in the URL", async ({ page }) => {
   await page.getByRole("tab", { name: "By segment" }).click();
   await expect(page).toHaveURL(/view=segment/);
   const select = page.locator("#segment-pick");
-  const second = await select.locator("option").nth(1).getAttribute("value");
-  await select.selectOption(second!);
-  await expect(page).toHaveURL(new RegExp(`key=${second}`));
-  // Deep link restores the same view.
-  await page.goto(`/#/waterfall?view=segment&key=${second}`);
-  await expect(page.locator("#segment-pick")).toHaveValue(second!);
+  const options = select.locator("option");
+  const n = await options.count();
+  expect(n).toBeGreaterThan(0);
+  if (n >= 2) {
+    // Picking a different group writes it to the URL.
+    const second = await options.nth(1).getAttribute("value");
+    await select.selectOption(second!);
+    await expect(page).toHaveURL(new RegExp(`key=${second}`));
+    await page.goto(`/#/waterfall?view=segment&key=${second}`);
+    await expect(page.locator("#segment-pick")).toHaveValue(second!);
+  } else {
+    // Single-segment data: the lone option is active and its deep link
+    // restores the same view - no second option to select.
+    const only = await options.first().getAttribute("value");
+    await expect(select).toHaveValue(only!);
+    await page.goto(`/#/waterfall?view=segment&key=${only}`);
+    await expect(page.locator("#segment-pick")).toHaveValue(only!);
+    await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
+  }
 });
 
 test("guidance lookup drives the band chart through the selects", async ({ page }) => {

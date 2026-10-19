@@ -1213,3 +1213,26 @@ import surface. No behavior change; the fit call is identical.
 (88 passed); node capture-review.mjs 0; lighthouse.mjs 0
 (100/100/96); ruff 0; ruff format --check 0; mypy 0; workflow YAML parses;
 full pytest suite 0.
+
+---
+## Phase 23.2 — Action pin, data-agnostic test (2026-10-19)
+
+**1. setup-uv pin.** astral-sh/setup-uv publishes v10.x releases but no
+floating v10 major tag (major tags stop at v7), so @v10 did not resolve.
+Pinned to astral-sh/setup-uv@v10.3.0 in both workflows. Every uses: ref in
+ci.yml and pages.yml was then verified to exist as a git tag via the GitHub
+API (/repos/{owner}/{repo}/git/ref/tags/{ref}), not merely as a release:
+actions/checkout@v7, astral-sh/setup-uv@v10.3.0, actions/setup-node@v7,
+actions/upload-pages-artifact@v5, actions/deploy-pages@v5 - all HTTP 200.
+
+**2. Data-agnostic interactions test.** "waterfall scope and group live in
+the URL" assumed at least two segments and timed out on single-segment data.
+It now branches on the option count: with two or more it selects a second
+group and asserts the URL round trip; with exactly one it asserts the lone
+option is active, its deep link restores the view, and the chart renders.
+Verified against the reported repro (sparse preset, seed 11, 40x100 - a
+single-segment bundle): the test passes on both projects, and the demo bundle
+was restored afterward.
+
+**Checks (exit codes).** ruff 0; mypy 0; npm test 0; npm run build 0;
+npx playwright test 0 (88 passed); sparse-repro run of the reworked test 0.
