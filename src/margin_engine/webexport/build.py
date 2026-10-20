@@ -439,7 +439,11 @@ def build_bundle(
 
     # --- opportunity -----------------------------------------------------------
     leak = res.leakage
-    opp_df = res.opportunities.sort(
+    opp_df = res.opportunities.join(
+        res.guidance.select("customer_id", "item_id", "current_index", "target_index"),
+        on=["customer_id", "item_id"],
+        how="left",
+    ).sort(
         ["gross_price_opportunity_cents", "customer_id", "item_id"],
         descending=[True, False, False],
     )

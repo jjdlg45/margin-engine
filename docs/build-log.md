@@ -1400,3 +1400,30 @@ regenerated; the raw-code scanner stays green (20/20).
 **Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
 build 0; playwright 0 (108 passed; one known waterfall-dark snapshot flake
 passed on retry and in the full run).
+
+---
+## Phase 23.7 — Final polish (2026-10-20)
+
+**1. Unique margin-driver titles with segment phrasing.** One-hot rule
+conditions now group per feature with the same "except" phrasing as segment
+rules ("All item families except FAM14 and FAM19 - mid cost ratio"); an
+included value subsumes that feature's exclusions. Titles use the full
+grouped set, so sibling leaves differing only in a deep condition are
+distinct. Tests: no two rule titles on a page identical (commercial and
+margin tables), plus a unit case locking the previously-colliding pair and
+the "except" phrasing.
+
+**2. Opportunity summary states the driver.** The one-line "why" now gives
+the price position behind the gap ("Priced 12% below the proposed target
+(84.5% vs 96.0% of list); causal evidence models the volume response")
+instead of repeating the column dollars; the builder joins each record's
+guidance position for it. Test asserts the position wording, that the
+percentages come from the row's own guidance values, and that no dollar
+figures are repeated.
+
+**3. Filter placeholder** no longer truncates (fixed input width, shorter
+label). **4. The Expected contribution change card** carries its time window
+("last 12 months, causal-supported records only").
+
+**Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
+build 0; playwright 0 (108 passed; snapshots regenerated).

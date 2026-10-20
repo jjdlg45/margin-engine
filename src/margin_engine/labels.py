@@ -281,34 +281,62 @@ def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
     return out
 
 
-def _one_hot_words(cond: str) -> str:
-    """One-hot condition name to words: 'cost_ratio_band_low' -> 'low cost
-    ratio'; 'item_family_FAM19' -> 'item family FAM19'; NOT negates."""
+_ONE_HOT_FEATURES = (
+    "item_family",
+    "item_role",
+    "order_size_band",
+    "size_band",
+    "industry",
+    "region",
+    "channel",
+    "contract_type",
+    "revenue_abc",
+)
+
+
+def _split_one_hot(cond: str) -> tuple[str, str, bool]:
+    """'NOT cost_ratio_band_low' -> ('cost_ratio_band', 'low', True)."""
     neg = cond.startswith("NOT ")
     body = cond.removeprefix("NOT ")
-    words: str
     if "_band_" in body:
         feat, val = body.rsplit("_band_", 1)
-        words = f"{val} {feat.replace('_', ' ')}"
-    else:
-        for feat in (
-            "item_family",
-            "item_role",
-            "industry",
-            "region",
-            "channel",
-            "contract_type",
-            "size_band",
-            "order_size_band",
-            "revenue_abc",
-        ):
-            if body.startswith(feat + "_"):
-                val = body[len(feat) + 1 :]
-                words = f"{feat.replace('_', ' ')} {_nice_value(val)}"
-                break
-        else:
-            words = body.replace("_", " ")
-    return ("not " + words) if neg else words
+        return feat + "_band", val, neg
+    for feat in _ONE_HOT_FEATURES:
+        if body.startswith(feat + "_"):
+            return feat, body[len(feat) + 1 :], neg
+    return body, "", neg
+
+
+def _feature_words(feature: str) -> tuple[str, str]:
+    """(singular phrase stem, plural for 'all X except') for a feature."""
+    if feature.endswith("_band"):
+        stem = feature.removesuffix("_band").replace("_", " ")
+        return stem, stem + "s"
+    plural = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
+    return feature.replace("_", " "), plural
+
+
+def _one_hot_phrases(conds: list[str]) -> list[str]:
+    """Group one-hot conditions per feature, phrasing exclusions with
+    'except' exactly like the segment rules. An included value subsumes the
+    same feature's exclusions (one-hot categories are mutually exclusive)."""
+    included: dict[str, list[str]] = {}
+    excluded: dict[str, list[str]] = {}
+    order: list[str] = []
+    for cond in conds:
+        feat, val, neg = _split_one_hot(cond)
+        if feat not in order:
+            order.append(feat)
+        (excluded if neg else included).setdefault(feat, []).append(val)
+    phrases = []
+    for feat in order:
+        stem, plural = _feature_words(feat)
+        if feat in included:
+            vals = _natural_list(included[feat], "or")
+            phrases.append(f"{vals} {stem}" if feat.endswith("_band") else f"{stem} {vals}")
+        elif feat in excluded:
+            phrases.append(f"all {plural} except {_natural_list(sorted(excluded[feat]))}")
+    return phrases
 
 
 def _cap_first(text: str) -> str:
@@ -346,8 +374,8 @@ def plain_rule(rule: str) -> tuple[str, str, str]:
         conds = [
             c.strip() for c in core.replace("(", "").replace(")", "").split(" AND ") if c.strip()
         ]
-        words = [_one_hot_words(c) for c in conds]
-        name = _cap_first(" · ".join(words[:3]))
+        words = _one_hot_phrases(conds)
+        name = _cap_first(" · ".join(words))
         description = _cap_first(" and ".join(words) + ".")
         if merged_up:
             description += " A more specific leaf does not exist for these lines."

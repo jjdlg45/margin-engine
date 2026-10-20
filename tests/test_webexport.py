@@ -193,6 +193,61 @@ def test_opportunity_explanations_match_their_treatment(
     assert "assumes unchanged volume" not in text
 
 
+def test_rule_titles_unique_per_table(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """No two rule titles on a page may be identical (phase 23.7)."""
+    _, _, bundle, _ = built
+    for table in (bundle.segments.rules, bundle.segments.margin_driver_rules):
+        names = [r.name for r in table]
+        dupes = {n for n in names if names.count(n) > 1}
+        assert not dupes, f"duplicate rule titles: {dupes}"
+
+
+def test_margin_titles_use_except_phrasing() -> None:
+    """One-hot exclusions phrase as 'except', grouped per feature, and paths
+    differing only in a deep condition still get distinct titles."""
+    from margin_engine.labels import plain_rule
+
+    a = plain_rule(
+        "NOT item_family_FAM19 AND NOT cost_ratio_band_low AND NOT item_family_FAM14 "
+        "AND NOT cost_ratio_band_mid"
+    )
+    b = plain_rule(
+        "NOT item_family_FAM19 AND NOT cost_ratio_band_low AND NOT item_family_FAM14 "
+        "AND cost_ratio_band_mid"
+    )
+    assert "except FAM14 and FAM19" in a[0]
+    assert "not " not in a[0].lower().replace("not assigned", "")
+    assert a[0] != b[0]
+
+
+def test_opportunity_summary_states_driver(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """The summary states the price position driving the gap, not the dollar
+    figures already shown in the columns; its numbers come from the row's own
+    guidance position."""
+    res, _, bundle, _ = built
+    gmap = {
+        (g["customer_id"], g["item_id"]): g
+        for g in res.guidance.select(
+            "customer_id", "item_id", "current_index", "target_index"
+        ).to_dicts()
+    }
+    checked = 0
+    for op in bundle.opportunity.top_opportunities[:100]:
+        g = gmap.get((op.customer_id, op.item_id))
+        if g and g["current_index"] is not None and g["target_index"] is not None:
+            checked += 1
+            assert "below the proposed target" in op.summary, op.summary
+            cur = f"{g['current_index'] * 100:.1f}%"
+            assert cur in op.summary, (op.summary, cur)
+            # The column dollars are not repeated in the summary.
+            assert "$" not in op.summary
+    assert checked > 0
+
+
 def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
     rules_path = _fast_rules(tmp_path)
     hashes = []

@@ -67,6 +67,7 @@ export function SortableTable<T>({
       {filterPlaceholder && (
         <div className="row mb-2">
           <input
+            className="w-72 max-w-full"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder={filterPlaceholder}

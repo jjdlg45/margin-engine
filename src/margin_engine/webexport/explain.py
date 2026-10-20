@@ -71,21 +71,24 @@ def guidance_explanation(row: dict[str, Any]) -> str:
 
 
 def opportunity_summary(row: dict[str, Any]) -> str:
-    """One short, row-specific sentence: the numbers and what drives them."""
-    gross = row.get("gross_price_opportunity_cents")
-    expected = row.get("expected_contribution_change_cents")
+    """One short, row-specific sentence stating what DRIVES the gap - the
+    price position vs the proposed target - not the dollar figures already
+    shown in the table columns."""
+    cur = row.get("current_index")
+    target = row.get("target_index")
     treatment = row.get("volume_treatment") or "fixed_volume_only"
-    if treatment == "expected_change" and expected is not None:
+    tail = {
+        "expected_change": "causal evidence models the volume response.",
+        "sensitivity_range_only": "instrument-level evidence limits the volume "
+        "response to a labeled range.",
+    }.get(treatment, "no volume response is modeled.")
+    if cur is not None and target is not None and target > 0:
+        below = (float(target) - float(cur)) / float(target)
         return (
-            f"{_dollars(gross)} gap at unchanged volume; causal evidence puts the "
-            f"expected change at {_dollars(expected)} after the volume response."
+            f"Priced {below:.0%} below the proposed target "
+            f"({float(cur) * 100:.1f}% vs {float(target) * 100:.1f}% of list); {tail}"
         )
-    if treatment == "sensitivity_range_only":
-        return (
-            f"{_dollars(gross)} gap at unchanged volume; instrument-level evidence "
-            "limits the volume response to a labeled range."
-        )
-    return f"{_dollars(gross)} gap at unchanged volume; no volume response is modeled."
+    return f"Gap to the proposed pocket price at unchanged volume; {tail}"
 
 
 def opportunity_explanation(row: dict[str, Any]) -> str:

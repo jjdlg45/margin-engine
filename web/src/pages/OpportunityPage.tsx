@@ -97,6 +97,7 @@ export function OpportunityPage() {
           <p className="m-0 mt-1 text-title font-semibold text-petrol">
             {dollarsShort(o.expected_total_cents)}
           </p>
+          <p className="m-0 text-caption secondary">{o.window_label}, causal-supported records only</p>
           <p className="mb-0 mt-2 text-caption secondary">{o.expected_total_note}</p>
         </div>
       </div>
@@ -108,7 +109,7 @@ export function OpportunityPage() {
           <SortableTable
             data={o.top_opportunities}
             columns={columns}
-            filterPlaceholder="Filter by customer or item"
+            filterPlaceholder="Filter customer or item"
             filterUrlParam="filter"
             pageSize={10}
             initialSort={[{ id: "gross_price_opportunity_cents", desc: true }]}
