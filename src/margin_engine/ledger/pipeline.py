@@ -8,7 +8,7 @@ trail back to source line keys.
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
@@ -33,6 +33,8 @@ class PipelineResult:
     unallocated_settlements: pl.DataFrame | None
     reference: dict[str, pl.DataFrame | None]
     notes: list[str]
+    # Fully blank input rows dropped per source file (whitespace-only included).
+    blank_rows_dropped: dict[str, int] = field(default_factory=dict)
 
 
 REFERENCE_TABLES = [
@@ -61,8 +63,12 @@ REFERENCE_TABLES = [
 
 def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineResult:
     mapping = load_mapping(mapping_path)
-    lines = load_lines(data_dir, mapping)
-    ref = {name: load_reference_table(data_dir, mapping, name) for name in REFERENCE_TABLES}
+    blank_counts: dict[str, int] = {}
+    lines = load_lines(data_dir, mapping, blank_counts)
+    ref = {
+        name: load_reference_table(data_dir, mapping, name, blank_counts)
+        for name in REFERENCE_TABLES
+    }
 
     # Multi-currency: convert line-currency amounts to the reporting currency
     # (invoice-month rate); settlements at the quarter's last-month rate and
@@ -152,6 +158,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         unallocated_settlements=wf.unallocated_settlements,
         reference=ref,
         notes=notes,
+        blank_rows_dropped=blank_counts,
     )
 
 

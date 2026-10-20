@@ -83,12 +83,16 @@ def write_manifest(manifest: dict[str, Any], out_dir: Path) -> Path:
 
 
 def cleaning_decisions_from(
-    ledger: pl.DataFrame, removed_duplicates: pl.DataFrame
+    ledger: pl.DataFrame,
+    removed_duplicates: pl.DataFrame,
+    blank_rows_dropped: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     def count(col: str) -> int:
         return int(ledger[col].sum()) if col in ledger.columns else 0
 
     return {
+        "blank_rows_dropped": sum((blank_rows_dropped or {}).values()),
+        "blank_rows_dropped_by_file": dict(blank_rows_dropped or {}),
         "verified_duplicates_removed": removed_duplicates.height,
         "lookalike_duplicates_flagged_kept": count("flag_lookalike_duplicate"),
         "key_collisions_flagged_kept": count("flag_key_collision"),

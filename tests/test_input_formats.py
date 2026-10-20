@@ -234,3 +234,76 @@ def test_renamed_and_reordered_columns(tmp_path: Path, clean_totals: tuple[int, 
         if isinstance(spec, dict) and "column" in spec:
             spec["column"] = f"X_{spec['column']}"
     _assert_totals(erp, _write_mapping(tmp_path, m), clean_totals)
+
+
+def test_blank_rows_dropped_and_counted(tmp_path: Path, clean_totals: tuple[int, int]) -> None:
+    """Whitespace-only rows mid-file and trailing blank lines are not data:
+    dropped, counted per file, surfaced in the manifest's cleaning decisions."""
+    from margin_engine.manifest.run_manifest import cleaning_decisions_from
+
+    erp = _copy_sample(tmp_path)
+    path = erp / "invoice_lines.csv"
+    header, rows = _read_rows(path)
+    n_cols = len(header)
+    blank = [""] * n_cols
+    spacey = [" " for _ in range(n_cols)]
+    rows = [*rows[:10], blank, spacey, *rows[10:]]
+    _write_rows(path, header, rows)
+    # Trailing blank lines after the last record.
+    with open(path, "a", encoding="utf-8", newline="") as f:
+        f.write("\n" + " " * 4 + "\n\n")
+    res = run_pipeline(erp, _write_mapping(tmp_path, _mapping_dict()), Rules())
+    assert int(res.ledger["net_amount_cents"].sum()) == clean_totals[0]
+    assert int(res.ledger["pocket_revenue_cents"].sum()) == clean_totals[1]
+    assert res.blank_rows_dropped.get("invoice_lines.csv", 0) >= 2
+    decisions = cleaning_decisions_from(res.ledger, res.removed_duplicates, res.blank_rows_dropped)
+    assert decisions["blank_rows_dropped"] >= 2
+    assert decisions["blank_rows_dropped_by_file"]["invoice_lines.csv"] >= 2
+
+
+def test_blank_rows_in_xlsx(tmp_path: Path, clean_totals: tuple[int, int]) -> None:
+    from openpyxl import Workbook
+
+    erp = _copy_sample(tmp_path)
+    header, rows = _read_rows(erp / "invoice_lines.csv")
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(header)
+    for i, row in enumerate(rows):
+        ws.append(row)
+        if i == 5:
+            ws.append([None] * len(header))
+            ws.append([" "] * len(header))
+    ws.append([None] * len(header))
+    wb.save(erp / "invoice_lines.xlsx")
+    (erp / "invoice_lines.csv").unlink()
+    m = _mapping_dict()
+    m["lines_file"] = "invoice_lines.xlsx"
+    res = run_pipeline(erp, _write_mapping(tmp_path, m), Rules())
+    assert int(res.ledger["net_amount_cents"].sum()) == clean_totals[0]
+    assert res.blank_rows_dropped.get("invoice_lines.xlsx", 0) >= 2
+
+
+def test_per_table_delimiter_override(tmp_path: Path, clean_totals: tuple[int, int]) -> None:
+    """Mixed physical formats in one export: invoice lines ';' with decimal
+    commas, every reference table unchanged (',' and decimal points). The
+    lines-level override carries the difference; totals match to the cent."""
+    erp = _copy_sample(tmp_path)
+    path = erp / "invoice_lines.csv"
+    header, rows = _read_rows(path)
+    rows = [[_DECIMAL.sub(lambda mt: mt.group().replace(".", ","), v) for v in row] for row in rows]
+    _write_rows(path, header, rows, delimiter=";")
+    m = _mapping_dict()
+    m["lines_input"] = {"delimiter": ";", "decimal_separator": ","}
+    _assert_totals(erp, _write_mapping(tmp_path, m), clean_totals)
+    # And the mirror case: reference table overridden, lines global default.
+    erp2 = tmp_path / "erp2"
+    shutil.copytree(SAMPLE, erp2)
+    pl_path = erp2 / "price_list.csv"
+    h2, r2 = _read_rows(pl_path)
+    r2 = [[_DECIMAL.sub(lambda mt: mt.group().replace(".", ","), v) for v in row] for row in r2]
+    _write_rows(pl_path, h2, r2, delimiter="|")
+    m2 = _mapping_dict()
+    m2["reference_tables"]["price_list"]["input"] = {"delimiter": "|", "decimal_separator": ","}
+    _assert_totals(erp2, _write_mapping(tmp_path, m2), clean_totals)

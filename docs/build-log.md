@@ -1274,3 +1274,29 @@ input.encoding, sheet, date format). 9/9 pass.
 **Docs.** README "Supported input formats" (tabular CSV/.xlsx only; not PDF or
 scans; line-level required; full option table) and a matching methodology
 section.
+
+---
+## Phase 23.4 — Blank rows, per-table delimiter (2026-10-20)
+
+**Bug fixed.** Fully blank input rows - every cell empty after trimming,
+including whitespace-only rows mid-file and trailing blank lines - were read
+as data and failed validation with [None, None] line keys. read_table now
+drops them for both CSV and .xlsx (blankness is judged after trimming even
+when trim_whitespace is false) and returns the count; the pipeline records
+counts per file (PipelineResult.blank_rows_dropped), the manifest's cleaning
+decisions carry blank_rows_dropped and blank_rows_dropped_by_file, and the
+report's data-coverage band shows the total.
+
+**Gap closed.** Per-table physical-format overrides: a TableInput block
+(delimiter, encoding, decimal_separator - each optional) on every reference
+table (`input:`) and on the lines file (`lines_input:`), with the global
+input: values and root decimal_separator as defaults
+(SourceMapping.effective_input resolves per table). Money parsing, plain
+numeric casts and quantity parsing all honor the per-table separator.
+
+**Tests (12/12 in test_input_formats.py).** New: blank rows mid-file +
+trailing blank lines in CSV (totals cents-exact, counts >= 2, manifest
+decisions carry them); blank rows in .xlsx (None rows and whitespace rows);
+mixed delimiters both ways - lines ';' + decimal comma with references on
+global defaults, and the mirror (price_list '|' + decimal comma with lines on
+defaults) - each matching clean totals to the cent.

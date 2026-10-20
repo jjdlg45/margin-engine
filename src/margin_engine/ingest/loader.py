@@ -97,10 +97,15 @@ def _excel_to_frame(path: Path, sheet: str | int | None, opts: InputOptions) -> 
         wb.close()
 
 
-def read_table(path: Path, opts: InputOptions, sheet: str | int | None = None) -> pl.DataFrame:
+def read_table(
+    path: Path, opts: InputOptions, sheet: str | int | None = None
+) -> tuple[pl.DataFrame, int]:
     """Read a source table (CSV or .xlsx) into an all-string frame under the
-    mapping's declared input options. Any parse failure is reported with its
-    likely cause and the mapping option to set - never a raw library error."""
+    mapping's declared input options, returning (frame, n_blank_rows_dropped).
+    Fully blank rows - every cell empty after trimming, including
+    whitespace-only and trailing blank lines - are dropped and counted; they
+    are not data. Any parse failure is reported with its likely cause and the
+    mapping option to set - never a raw library error."""
     if path.suffix.lower() == ".xlsx":
         raw = _excel_to_frame(path, sheet, opts)
     else:
@@ -136,6 +141,12 @@ def read_table(path: Path, opts: InputOptions, sheet: str | int | None = None) -
     if opts.trim_whitespace:
         raw = raw.rename({c: c.strip() for c in raw.columns})
         raw = raw.with_columns(pl.col(pl.String).str.strip_chars())
+    # Fully blank rows are dropped regardless of trim_whitespace: blankness is
+    # judged after trimming even when values keep their padding.
+    blank = pl.all_horizontal(pl.all().cast(pl.String).str.strip_chars().fill_null("").eq(""))
+    n_before = raw.height
+    raw = raw.filter(~blank)
+    n_blank = n_before - raw.height
     # A single parsed column whose name contains another delimiter is the
     # classic wrong-delimiter signature: name the fix instead of failing later.
     if raw.width == 1:
@@ -150,7 +161,7 @@ def read_table(path: Path, opts: InputOptions, sheet: str | int | None = None) -
                     f"'{cand}' in the mapping."
                 )
                 raise MappingError(msg)
-    return raw
+    return raw, n_blank
 
 
 def _require_columns(df: pl.DataFrame, cols: list[str], file_label: str) -> None:
@@ -163,17 +174,24 @@ def _require_columns(df: pl.DataFrame, cols: list[str], file_label: str) -> None
         raise MappingError(msg)
 
 
-def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
-    """Load invoice lines into the canonical schema (money in Int64 cents)."""
+def load_lines(
+    data_dir: Path,
+    mapping: SourceMapping,
+    blank_counts: dict[str, int] | None = None,
+) -> pl.DataFrame:
+    """Load invoice lines into the canonical schema (money in Int64 cents).
+    Dropped blank-row counts are recorded per file into blank_counts."""
     path = data_dir / mapping.lines_file
     if not path.exists():
         msg = f"lines file not found: {path}"
         raise MappingError(msg)
-    raw = read_table(path, mapping.input, mapping.lines_sheet)
+    opts, sep = mapping.effective_input(mapping.lines_input)
+    raw, n_blank = read_table(path, opts, mapping.lines_sheet)
+    if blank_counts is not None and n_blank:
+        blank_counts[mapping.lines_file] = n_blank
     lm = mapping.lines
-    sep = mapping.decimal_separator
-    syms = mapping.input.currency_symbols
-    negf = mapping.input.negative_format
+    syms = opts.currency_symbols
+    negf = opts.negative_format
 
     declared: list[str] = []
     for f in type(lm).model_fields:
@@ -194,7 +212,7 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             pl.col(lm.quantity.column)
             .str.replace_all(".", "", literal=True)
             .str.replace_all(",", ".", literal=True)
-            if mapping.decimal_separator == ","
+            if sep == ","
             else pl.col(lm.quantity.column)
         )
         .cast(pl.Float64, strict=False)
@@ -415,7 +433,12 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
     return out
 
 
-def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> pl.DataFrame | None:
+def load_reference_table(
+    data_dir: Path,
+    mapping: SourceMapping,
+    name: str,
+    blank_counts: dict[str, int] | None = None,
+) -> pl.DataFrame | None:
     """Load one reference table into canonical column names, or None if absent."""
     spec = mapping.reference_tables.get(name)
     if spec is None:
@@ -423,7 +446,10 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
     path = data_dir / spec.file
     if not path.exists():
         return None
-    raw = read_table(path, mapping.input, spec.sheet)
+    opts, table_sep = mapping.effective_input(spec.input)
+    raw, n_blank = read_table(path, opts, spec.sheet)
+    if blank_counts is not None and n_blank:
+        blank_counts[spec.file] = n_blank
     _require_columns(raw, list(spec.columns.values()), str(path))
     df = raw.select([pl.col(src).alias(canon) for canon, src in spec.columns.items()])
     # Typed columns by canonical name convention.
@@ -443,9 +469,9 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
             target = money_cols[canon]
             e = parse_money_expr(
                 canon,
-                mapping.decimal_separator,
-                mapping.input.currency_symbols,
-                mapping.input.negative_format,
+                table_sep,
+                opts.currency_symbols,
+                opts.negative_format,
             )
             exprs.append(
                 scaled_to_cents(e).alias(target) if target.endswith("_cents") else e.alias(target)
@@ -473,7 +499,7 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
         ):
             # Plain numeric columns honor the declared decimal separator too.
             num = pl.col(canon)
-            if mapping.decimal_separator == ",":
+            if table_sep == ",":
                 num = num.str.replace_all(".", "", literal=True).str.replace_all(
                     ",", ".", literal=True
                 )

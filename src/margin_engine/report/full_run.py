@@ -373,7 +373,9 @@ def run_full(
         data_dir=data_dir,
         mapping_path=mapping_path,
         rules_path=rules_path,
-        cleaning_decisions=cleaning_decisions_from(res.ledger, res.removed_duplicates),
+        cleaning_decisions=cleaning_decisions_from(
+            res.ledger, res.removed_duplicates, res.blank_rows_dropped
+        ),
         parameters={
             "n_segments": seg.leaf_assignments["segment_leaf"].n_unique(),
             "bootstrap_median_ari": seg.bootstrap_median_ari,
@@ -479,6 +481,7 @@ def run_full(
             "n_observations": f"{res.observations.height:,}",
             "net_revenue": _fmt_dollars(net_rev),
             "missing_cost_revenue_share": f"{missing_cost_rev / max(net_rev, 1):.2%}",
+            "blank_rows_dropped": sum(res.blank_rows_dropped.values()),
             "library_warnings": lib_warnings,
         },
         "reconciliation": [

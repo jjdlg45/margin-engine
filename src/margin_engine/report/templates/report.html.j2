@@ -31,6 +31,7 @@
   <span class="kpi"><span class="v">{{ coverage.n_observations }}</span>sales observations</span>
   <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net revenue</span>
   <span class="kpi"><span class="v">{{ coverage.missing_cost_revenue_share }}</span>revenue with missing cost</span>
+  <span class="kpi"><span class="v">{{ coverage.blank_rows_dropped }}</span>blank input rows dropped</span>
 </div>
 {% if coverage.library_warnings %}
 <p class="muted">Library warnings captured during the run (recorded here and in the manifest, not printed):</p>

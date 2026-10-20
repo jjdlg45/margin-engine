@@ -165,8 +165,20 @@ class InputOptions(StrictModel):
     trim_whitespace: bool = True
 
 
+class TableInput(StrictModel):
+    """Per-table physical-format overrides; unset fields fall back to the
+    mapping's global input: block (and root decimal_separator)."""
+
+    delimiter: Literal[",", ";", "	", "|"] | None = None
+    encoding: str | None = None
+    decimal_separator: Literal[".", ","] | None = None
+
+
 class ReferenceTable(StrictModel):
     file: str
+    # Per-table physical-format overrides (delimiter, encoding,
+    # decimal_separator); global input: values are the defaults.
+    input: TableInput | None = None
     columns: dict[str, str]  # canonical name -> source column
     date_format: str | None = None
     # For .xlsx files: sheet name or zero-based index (default: first sheet).
@@ -180,6 +192,8 @@ class SourceMapping(StrictModel):
     lines_file: str
     # For .xlsx lines files: sheet name or zero-based index (default: first).
     lines_sheet: str | int | None = None
+    # Per-table overrides for the lines file itself.
+    lines_input: TableInput | None = None
     decimal_separator: Literal[".", ","] = "."
     input: InputOptions = Field(default_factory=InputOptions)
     lines: LinesMapping
@@ -191,6 +205,26 @@ class SourceMapping(StrictModel):
     # (customer_error, distributor_error, defective). Unmapped codes become
     # "unspecified" and receive only estimated default handling costs.
     return_reason_map: dict[str, str] = Field(default_factory=dict)
+
+    def effective_input(self, override: TableInput | None) -> tuple[InputOptions, str]:
+        """Resolve (InputOptions, decimal_separator) for one table: per-table
+        overrides where set, global values otherwise."""
+        opts = self.input
+        sep = self.decimal_separator
+        if override is not None:
+            opts = opts.model_copy(
+                update={
+                    k: v
+                    for k, v in (
+                        ("delimiter", override.delimiter),
+                        ("encoding", override.encoding),
+                    )
+                    if v is not None
+                }
+            )
+            if override.decimal_separator is not None:
+                sep = override.decimal_separator
+        return opts, sep
 
     def require(self, field: str, needed_for: str) -> None:
         """Fail actionably if an optional field needed by a calculation is absent."""
