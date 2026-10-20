@@ -28,7 +28,13 @@ export function WaterfallPage() {
       },
       { replace: true },
     );
-  const groups = view === "segment" ? b.waterfall_by_segment : b.waterfall_by_customer;
+  const segName = new Map(b.segments.rules.map((r) => [String(r.leaf_id), r.name]));
+  const groups = (view === "segment" ? b.waterfall_by_segment : b.waterfall_by_customer).map(
+    (g) =>
+      view === "segment" && segName.has(g.key)
+        ? { ...g, label: `${g.label} — ${segName.get(g.key)}` }
+        : g,
+  );
   const active = useMemo(
     () => groups.find((g) => g.key === groupKey) ?? groups[0],
     [groups, groupKey],

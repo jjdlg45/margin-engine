@@ -161,6 +161,38 @@ def test_explanations_use_only_computed_numbers(
             assert tok in allowed, f"{op.customer_id}/{op.item_id}: {tok!r} not from the row"
 
 
+def test_opportunity_explanations_match_their_treatment(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """The explanation's narrative must match the row's volume treatment -
+    a causal row explains the modeled volume response, never the fixed-volume
+    ceiling wording (regression: treatment codes once never matched)."""
+    from margin_engine.webexport.explain import opportunity_explanation
+
+    _, _, bundle, _ = built
+    for op in bundle.opportunity.top_opportunities:
+        if (
+            op.volume_treatment == "expected_change"
+            and op.expected_contribution_change_cents is not None
+        ):
+            assert "expected contribution change is" in op.explanation, op.explanation
+            assert "assumes unchanged volume" not in op.explanation
+        elif op.volume_treatment == "sensitivity_range_only":
+            assert "sensitivity range" in op.explanation, op.explanation
+    # The sample world reaches no causal rows, so the causal branch is locked
+    # directly against the template (non-vacuous regardless of world size).
+    text = opportunity_explanation(
+        {
+            "gross_price_opportunity_cents": 100_000,
+            "expected_contribution_change_cents": 60_000,
+            "volume_treatment": "expected_change",
+            "evidence_status": "causal_elasticity_supported",
+        }
+    )
+    assert "expected contribution change is" in text
+    assert "assumes unchanged volume" not in text
+
+
 def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
     rules_path = _fast_rules(tmp_path)
     hashes = []

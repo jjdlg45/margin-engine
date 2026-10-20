@@ -17,6 +17,7 @@ import polars as pl
 
 from margin_engine import __version__
 from margin_engine.config import Rules
+from margin_engine.labels import LABELS, plain_rule
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
@@ -51,6 +52,9 @@ from margin_engine.webexport.bundle import (
     ValidationResult,
     WaterfallStage,
     WebBundle,
+)
+from margin_engine.webexport.bundle import (
+    LabelEntry as LabelEntryModel,
 )
 
 HONEST_LABELS = [
@@ -311,6 +315,8 @@ def build_bundle(
         return [
             SegmentRule(
                 leaf_id=int(r["leaf_id"]),
+                name=plain_rule(str(r["rule"]))[0],
+                plain=plain_rule(str(r["rule"]))[1],
                 rule=str(r["rule"]),
                 n_lines=_i(r["n_lines"]),
                 n_customers=_i(r["n_customers"]),
@@ -574,6 +580,7 @@ def build_bundle(
         engine_version=__version__,
         data_label=data_label or "Synthetic demo data (committed sample, planted ground truth)",
         honest_labels=HONEST_LABELS,
+        labels={k: LabelEntryModel(**v) for k, v in LABELS.items()},
         kpis=kpis,
         reconciliation=recon,
         residuals=residuals,
@@ -714,7 +721,7 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
             for r in res.cross_estimates.sort(["group_id", "item_a", "item_b"]).to_dicts()
         ]
     else:
-        cross_reason = "No substitution_groups table in the mapped data."
+        cross_reason = "No substitution-groups reference table in the mapped data."
     inventory = None
     inv_reason = None
     if res.inventory_cogs is not None:
@@ -733,7 +740,7 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
             timing_statement=scenario_timing_statement(method, "existing_pool"),
         )
     else:
-        inv_reason = "No inventory_receipts table in the mapped data."
+        inv_reason = "No inventory-receipts reference table in the mapped data."
     return OptionalModules(
         win_curves=win,
         win_curves_absent_reason=win_reason,

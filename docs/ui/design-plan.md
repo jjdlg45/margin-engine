@@ -220,3 +220,27 @@ KPI basis: all headline KPIs (net revenue, pocket revenue, pocket margin,
 and the coverage band's gross profit and contribution) are now computed after
 returns, so pocket revenue can never exceed net revenue; the waterfall is
 labeled as sale lines with returns shown in Customers & orders.
+
+
+## Phase 23.5 revisions (readability polish)
+
+**Table standard** (defined once in the tokens, applied to every table -
+opportunities, residuals, customers, guidance, segments, validation,
+reconciliation):
+
+- Cell padding 10px vertical / 16px horizontal; relaxed line height.
+- A thin hairline divider between rows (no vertical cell grid); the header row
+  separated by a 2px rule at 25% ink.
+- Numbers right-aligned with tabular figures (global); text cells left-aligned
+  via the `.left` marker; first column always left.
+- Explanation ("why") cells render as their own block: prose max width,
+  relaxed leading, extra vertical padding (`.why`).
+
+**Label language.** A central code-to-label dictionary (engine-side
+`labels.py`, embedded in the bundle, consumed by every page and by the HTML
+report) replaces raw codes in all visible text: statuses, flags, residual
+keys, reconciliation check names, volume treatments. Raw codes survive only in
+tooltips (status chips show `[code]` in the tooltip) and "Technical
+rule/key" expanders. Segment names and descriptions are generated from the
+tree-rule structure at export time - never hand-written - with the raw rule in
+an expander.

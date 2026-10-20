@@ -21,6 +21,8 @@ from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
 from margin_engine.extended.hierarchy import apply_analysis_level
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
+from margin_engine.labels import label as label_of
+from margin_engine.labels import plain_rule
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.manifest.run_manifest import (
     build_manifest,
@@ -498,7 +500,8 @@ def run_full(
         ],
         "residuals": [
             {
-                "residual": k,
+                "residual": label_of(k),
+                "residual_code": k,
                 "amount": _fmt_dollars(v),
                 **_RESIDUAL_EXPLANATIONS.get(
                     k,
@@ -529,7 +532,10 @@ def run_full(
             "n_commercial": int(flagged["flag_commercial_pricing_outlier"].sum()),
         },
         "segments": {
-            "rules": seg.rules,
+            "rules": [
+                {**r, "name": plain_rule(str(r["rule"]))[0], "plain": plain_rule(str(r["rule"]))[1]}
+                for r in seg.rules
+            ],
             "bootstrap_ari": f"{seg.bootstrap_median_ari:.3f}"
             if seg.bootstrap_median_ari is not None
             else "-",
@@ -537,9 +543,14 @@ def run_full(
             if seg.recommendation_change_share is not None
             else "-",
         },
-        "sensitivity": sens.to_dicts(),
+        "sensitivity": [{**r, "status_label": label_of(str(r["status"]))} for r in sens.to_dicts()],
         "guidance_summary": [
-            {"status": r["guidance_status"], "n": r["len"], "share": f"{r['share']:.1%}"}
+            {
+                "status": label_of(r["guidance_status"]),
+                "status_code": r["guidance_status"],
+                "n": r["len"],
+                "share": f"{r['share']:.1%}",
+            }
             for r in guidance_summary.to_dicts()
         ],
         "guidance_label": PROVISIONAL_LABEL,

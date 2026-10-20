@@ -92,6 +92,8 @@ export type ReturnsCents = number;
  * Time window every KPI covers, e.g. '24 months'
  */
 export type WindowLabel = string;
+export type Description = string;
+export type Label = string;
 export type AmountCents = number;
 export type Component = string;
 export type ShareOfLeakage = number | null;
@@ -201,6 +203,17 @@ export type MeanTarget = number;
 export type NCustomers1 = number;
 export type NItems1 = number;
 export type NLines = number;
+/**
+ * Short plain-English name derived from the rule
+ */
+export type Name2 = string;
+/**
+ * One-sentence description derived from the rule
+ */
+export type Plain = string;
+/**
+ * Raw tree rule - technical detail, not primary display
+ */
 export type Rule = string;
 export type MarginDriverRules = SegmentRule[];
 export type RecommendationChangeShare = number | null;
@@ -242,7 +255,7 @@ export type ValidationResults = ValidationResult[];
  * Segment id or customer id
  */
 export type Key = string;
-export type Label = string;
+export type Label1 = string;
 export type NetRevenueCents3 = number;
 export type AmountCents3 = number;
 export type Coverage = string;
@@ -265,6 +278,7 @@ export interface WebBundle {
   guidance: Guidance;
   honest_labels: HonestLabels;
   kpis: SummaryKpis;
+  labels: Labels;
   leakage_components_overall: LeakageComponentsOverall;
   library_warnings: LibraryWarnings;
   manifest: ManifestInfo;
@@ -362,6 +376,16 @@ export interface SummaryKpis {
   reconciliation_pass: ReconciliationPass;
   returns_cents: ReturnsCents;
   window_label: WindowLabel;
+}
+/**
+ * Central code -> display label dictionary; the UI never shows raw codes
+ */
+export interface Labels {
+  [k: string]: LabelEntry;
+}
+export interface LabelEntry {
+  description: Description;
+  label: Label;
 }
 export interface LeakageComponent {
   amount_cents: AmountCents;
@@ -507,6 +531,8 @@ export interface SegmentRule {
   n_customers: NCustomers1;
   n_items: NItems1;
   n_lines: NLines;
+  name: Name2;
+  plain: Plain;
   rule: Rule;
 }
 export interface SensitivitySegment {
@@ -547,7 +573,7 @@ export interface ValidationResult {
 }
 export interface GroupWaterfall {
   key: Key;
-  label: Label;
+  label: Label1;
   net_revenue_cents: NetRevenueCents3;
   stages: Stages;
 }

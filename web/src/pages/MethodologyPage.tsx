@@ -5,12 +5,14 @@
 import { PageHeader, Section, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
+import { useLabels } from "../lib/labels";
 import { count, dollars, pct } from "../lib/format";
 
 const METHODOLOGY_URL = "https://github.com/jjdlg45/margin-engine/blob/main/docs/methodology.md";
 
 export function MethodologyPage() {
   const b = useBundle();
+  const labels = useLabels();
   const k = b.kpis;
   return (
     <div>
@@ -33,18 +35,20 @@ export function MethodologyPage() {
           <table>
             <thead>
               <tr>
-                <th>Check</th>
+                <th className="left">Check</th>
                 <th>Expected</th>
                 <th>Actual</th>
                 <th>Allocated</th>
-                <th>Residual</th>
+                <th className="left">Residual</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {b.reconciliation.map((c) => (
                 <tr key={c.check}>
-                  <td className="left">{c.check}</td>
+                  <td className="left" title={c.check}>
+                    {labels(c.check).label}
+                  </td>
                   <td>{dollars(c.expected_cents)}</td>
                   <td>{dollars(c.actual_cents)}</td>
                   <td>{c.allocated_cents !== null && c.allocated_cents !== undefined ? dollars(c.allocated_cents) : "—"}</td>
@@ -67,17 +71,23 @@ export function MethodologyPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Residual</th>
+                  <th className="left">Residual</th>
                   <th>Amount</th>
-                  <th>What it is</th>
-                  <th>Why not allocated</th>
-                  <th>Where listed</th>
+                  <th className="left">What it is</th>
+                  <th className="left">Why not allocated</th>
+                  <th className="left">Where listed</th>
                 </tr>
               </thead>
               <tbody>
                 {b.residuals.map((r) => (
                   <tr key={r.name}>
-                    <td className="left font-mono text-caption">{r.name}</td>
+                    <td className="left">
+                      {labels(r.name).label}
+                      <details className="text-caption secondary">
+                        <summary>Technical key</summary>
+                        <code>{r.name}</code>
+                      </details>
+                    </td>
                     <td>{dollars(r.amount_cents)}</td>
                     <td className="left">{r.what}</td>
                     <td className="left">{r.why_not_allocated}</td>
@@ -119,7 +129,7 @@ export function MethodologyPage() {
               <thead>
                 <tr>
                   <th>Category</th>
-                  <th>Message (counts normalized)</th>
+                  <th className="left">Message (counts normalized)</th>
                   <th>Occurrences</th>
                 </tr>
               </thead>
@@ -144,9 +154,9 @@ export function MethodologyPage() {
           <table>
             <thead>
               <tr>
-                <th>Check</th>
-                <th>Target</th>
-                <th>Achieved</th>
+                <th className="left">Check</th>
+                <th className="left">Target</th>
+                <th className="left">Achieved</th>
                 <th>Status</th>
               </tr>
             </thead>

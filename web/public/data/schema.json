@@ -448,6 +448,24 @@
    "title": "InventorySection",
    "type": "object"
   },
+  "LabelEntry": {
+   "properties": {
+    "description": {
+     "title": "Description",
+     "type": "string"
+    },
+    "label": {
+     "title": "Label",
+     "type": "string"
+    }
+   },
+   "required": [
+    "label",
+    "description"
+   ],
+   "title": "LabelEntry",
+   "type": "object"
+  },
   "LeakageComponent": {
    "properties": {
     "amount_cents": {
@@ -1112,13 +1130,26 @@
      "title": "N Lines",
      "type": "integer"
     },
+    "name": {
+     "description": "Short plain-English name derived from the rule",
+     "title": "Name",
+     "type": "string"
+    },
+    "plain": {
+     "description": "One-sentence description derived from the rule",
+     "title": "Plain",
+     "type": "string"
+    },
     "rule": {
+     "description": "Raw tree rule - technical detail, not primary display",
      "title": "Rule",
      "type": "string"
     }
    },
    "required": [
     "leaf_id",
+    "name",
+    "plain",
     "rule",
     "n_lines",
     "n_customers",
@@ -1730,6 +1761,14 @@
   "kpis": {
    "$ref": "#/$defs/SummaryKpis"
   },
+  "labels": {
+   "additionalProperties": {
+    "$ref": "#/$defs/LabelEntry"
+   },
+   "description": "Central code -> display label dictionary; the UI never shows raw codes",
+   "title": "Labels",
+   "type": "object"
+  },
   "leakage_components_overall": {
    "items": {
     "$ref": "#/$defs/LeakageComponent"
@@ -1825,6 +1864,7 @@
   "engine_version",
   "data_label",
   "honest_labels",
+  "labels",
   "kpis",
   "reconciliation",
   "residuals",

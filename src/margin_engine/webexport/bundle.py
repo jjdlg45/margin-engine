@@ -111,7 +111,9 @@ class DispersionSection(BaseModel):
 
 class SegmentRule(BaseModel):
     leaf_id: int
-    rule: str
+    name: str = Field(description="Short plain-English name derived from the rule")
+    plain: str = Field(description="One-sentence description derived from the rule")
+    rule: str = Field(description="Raw tree rule - technical detail, not primary display")
     n_lines: int
     n_customers: int
     n_items: int
@@ -314,11 +316,19 @@ class ManifestInfo(BaseModel):
     note_on_volatile_fields: str
 
 
+class LabelEntry(BaseModel):
+    label: str
+    description: str
+
+
 class WebBundle(BaseModel):
     bundle_version: str
     engine_version: str
     data_label: str
     honest_labels: list[str]
+    labels: dict[str, LabelEntry] = Field(
+        description="Central code -> display label dictionary; the UI never shows raw codes"
+    )
     kpis: SummaryKpis
     reconciliation: list[ReconciliationCheck]
     residuals: list[Residual]

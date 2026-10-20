@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from margin_engine.labels import label as _label
+
 
 def _idx(v: Any) -> str:
     return f"{float(v):.2f}" if v is not None else "unknown"
@@ -78,21 +80,21 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
         f"Closing the gap to the proposed pocket price is worth {_dollars(gross)} "
         "over the baseline window, assuming volume does not change."
     )
-    if treatment == "causal" and expected is not None:
+    if treatment == "expected_change" and expected is not None:
         return (
             base + f" This segment's elasticity is causal-supported, so the engine also "
             f"models the volume response: the expected contribution change is "
             f"{_dollars(expected)}. The two figures answer different questions and "
             "are never added together."
         )
-    if treatment == "iv_range":
+    if treatment == "sensitivity_range_only":
         return (
-            base + f" The segment's elasticity evidence is {status}, so the volume "
-            "response is shown only as a labeled sensitivity range, not as a point "
-            "estimate."
+            base + f" The segment's elasticity evidence is {_label(status).lower()}, so "
+            "the volume response is shown only as a labeled sensitivity range, not as "
+            "a point estimate."
         )
     return (
-        base + f" The segment's elasticity evidence is {status}, so no volume response "
-        "is modeled. Treat the figure as a ceiling at unchanged volume, not as a "
-        "forecast."
+        base + f" The segment's elasticity evidence is {_label(status).lower()}, so no "
+        "volume response is modeled. Treat the figure as a ceiling at unchanged "
+        "volume, not as a forecast."
     )

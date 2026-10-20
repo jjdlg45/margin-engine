@@ -145,7 +145,7 @@ def segmentation_checks(tmp: Path) -> list[dict[str, Any]]:
     return [
         _row(
             "Commercial segments vs planted (out-of-sample ARI)",
-            "≥ 0.70 on well_identified",
+            "At least 0.70 on the well-identified preset",
             f"ARI {ari:.3f} (seed 3, default scale)",
             ari >= 0.70,
         ),
@@ -208,8 +208,8 @@ def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
     reachable = any(r["status"] == STATUS_CAUSAL for r in study)
     rows.append(
         _row(
-            "causal_elasticity_supported reachable",
-            "Reached on well_identified with all criteria enforced",
+            "Causal support reachable",
+            "Reached on the well-identified preset with all criteria enforced",
             "Reached" if reachable else "Never reached",
             reachable,
         )
@@ -252,9 +252,11 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     weak_ok = all(r["status"] != STATUS_CAUSAL for r in sens.to_dicts())
     rows.append(
         _row(
-            "weak_instrument preset",
-            "Never causal_elasticity_supported; weak-IV-robust CI reported",
-            "No segment reached causal support; AR set reported" if weak_ok else "FAILED",
+            "weak-instrument preset",
+            "Never reaches causal support; weak-IV-robust interval reported",
+            "No segment reached causal support; Anderson-Rubin set reported"
+            if weak_ok
+            else "FAILED",
             weak_ok,
         )
     )
@@ -277,7 +279,7 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
             downgraded += 1
     rows.append(
         _row(
-            "invalid_instrument preset",
+            "invalid-instrument preset",
             "Overidentification rejects on ≥ 80% of seeds; status downgraded",
             f"Rejected on {rejected}/{n} seeds; downgraded on {downgraded}/{n}",
             rejected >= 0.8 * n and downgraded == n,
@@ -290,8 +292,8 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
         ok = all(r["status"] in (STATUS_INSUFFICIENT, STATUS_DESCRIPTIVE) for r in sens.to_dicts())
         rows.append(
             _row(
-                f"{name} preset",
-                "insufficient_data or descriptive_elasticity only",
+                f"{name.replace(chr(95), chr(45))} preset",
+                "Insufficient data or descriptive only - never higher",
                 "Held for every segment" if ok else "FAILED",
                 ok,
             )

@@ -41,6 +41,7 @@ export function OpportunityPage() {
       {
         header: "Volume treatment",
         accessorKey: "volume_treatment",
+        cell: (c) => <StatusChip status={c.row.original.volume_treatment} />,
       },
       {
         header: "Evidence",
@@ -51,9 +52,7 @@ export function OpportunityPage() {
         header: "Why",
         accessorKey: "explanation",
         enableSorting: false,
-        cell: (c) => (
-          <span className="left block max-w-md text-caption">{c.row.original.explanation}</span>
-        ),
+        cell: (c) => <span className="why min-w-[20rem] text-caption">{c.row.original.explanation}</span>,
       },
     ],
     [],

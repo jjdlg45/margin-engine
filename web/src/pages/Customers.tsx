@@ -11,12 +11,14 @@ import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { SortableTable } from "../components/SortableTable";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
+import { useLabels } from "../lib/labels";
 import { useCompact } from "../lib/useCompact";
 import { count, dollars, pct } from "../lib/format";
 import type { CustomerEconomics } from "../types/bundle";
 
 export function Customers() {
   const b = useBundle();
+  const labels = useLabels();
   const compact = useCompact();
   const [params, setParams] = useSearchParams();
   const selected = params.get("customer");
@@ -78,13 +80,15 @@ export function Customers() {
         enableSorting: false,
         cell: (c) =>
           c.row.original.service_flags.length ? (
-            <span className="chip chip-hatched">{c.row.original.service_flags.join(", ")}</span>
+            <span className="chip chip-hatched" title={c.row.original.service_flags.join(", ")}>
+              {c.row.original.service_flags.map((f) => labels(f).label).join(", ")}
+            </span>
           ) : (
             "—"
           ),
       },
     ],
-    [setParams],
+    [setParams, labels],
   );
 
   return (
@@ -131,6 +135,7 @@ function CustomerDetail({
   onBack: () => void;
 }) {
   const b = useBundle();
+  const labels = useLabels();
   const wf = b.waterfall_by_customer.find((g) => g.key === customer.customer_id);
   const pairs = b.guidance.filter((g) => g.customer_id === customer.customer_id);
   const topItems = [...pairs]
@@ -153,8 +158,8 @@ function CustomerDetail({
         <span>{dollars(customer.returns_contribution_cents)} returns impact</span>
         <span>{pct(customer.pct_revenue_excluded)} revenue excluded (cost unknown)</span>
         {customer.service_flags.map((f) => (
-          <span key={f} className="chip chip-hatched">
-            {f}
+          <span key={f} className="chip chip-hatched" title={f}>
+            {labels(f).label}
           </span>
         ))}
       </div>

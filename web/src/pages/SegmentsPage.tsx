@@ -7,6 +7,8 @@ import { count, num, pct } from "../lib/format";
 
 interface Rule {
   leaf_id: number;
+  name: string;
+  plain: string;
   rule: string;
   n_lines: number;
   n_customers: number;
@@ -21,7 +23,7 @@ function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
         <thead>
           <tr>
             <th>Leaf</th>
-            <th>Rule</th>
+            <th className="left">Rule</th>
             <th>Lines</th>
             <th>Customers</th>
             <th>Items</th>
@@ -32,7 +34,14 @@ function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
           {rules.map((r) => (
             <tr key={r.leaf_id}>
               <td>{r.leaf_id}</td>
-              <td className="left max-w-xl font-mono text-caption">{r.rule}</td>
+              <td className="left max-w-xl">
+                <span className="font-medium">{r.name}</span>
+                <span className="block text-caption secondary">{r.plain}</span>
+                <details className="text-caption secondary">
+                  <summary>Technical rule</summary>
+                  <code className="font-mono">{r.rule}</code>
+                </details>
+              </td>
               <td>{count(r.n_lines)}</td>
               <td>{count(r.n_customers)}</td>
               <td>{count(r.n_items)}</td>

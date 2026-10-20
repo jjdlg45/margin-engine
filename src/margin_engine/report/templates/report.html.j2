@@ -66,7 +66,7 @@
 <table>
   <tr><th>Residual</th><th>Amount ($)</th><th>What it is</th><th>Why it is not allocated to lines</th><th>Where it is listed</th></tr>
   {% for r in residuals %}
-  <tr><td>{{ r.residual }}</td><td>{{ r.amount }}</td>
+  <tr><td title="{{ r.residual_code }}">{{ r.residual }}</td><td>{{ r.amount }}</td>
       <td style="text-align:left">{{ r.what }}</td>
       <td style="text-align:left">{{ r.why }}</td>
       <td style="text-align:left">{{ r.where }}</td></tr>
@@ -91,7 +91,10 @@
 <table>
   <tr><th>Segment</th><th>Rule</th><th>Lines</th><th>Customers</th><th>Items</th><th>Median price index</th></tr>
   {% for r in segments.rules %}
-  <tr><td>{{ r.leaf_id }}</td><td style="text-align:left">{{ r.rule }}</td><td>{{ r.n_lines }}</td><td>{{ r.n_customers }}</td><td>{{ r.n_items }}</td><td>{{ "%.3f"|format(r.median_price_index) }}</td></tr>
+  <tr><td>{{ r.leaf_id }}</td>
+      <td style="text-align:left"><strong>{{ r.name }}</strong><br><span class="muted">{{ r.plain }}</span>
+        <details><summary class="muted">Technical rule</summary><code>{{ r.rule }}</code></details></td>
+      <td>{{ r.n_lines }}</td><td>{{ r.n_customers }}</td><td>{{ r.n_items }}</td><td>{{ "%.3f"|format(r.median_price_index) }}</td></tr>
   {% endfor %}
 </table>
 
@@ -106,7 +109,7 @@
     <td>{{ "%.3f"|format(s.naive_fe_ols) if s.naive_fe_ols is not none else "-" }}</td>
     <td>{{ "%.0f"|format(s.first_stage_f) if s.first_stage_f is not none else "-" }}</td>
     <td>{{ "%.3f"|format(s.overid_p) if s.overid_p is not none else "-" }}</td>
-    <td><span class="status {{ 'ok' if s.status == 'causal_elasticity_supported' else ('warn' if s.status != 'insufficient_data' else 'bad') }}">{{ s.status }}</span></td>
+    <td><span class="status {{ 'ok' if s.status == 'causal_elasticity_supported' else ('warn' if s.status != 'insufficient_data' else 'bad') }}">{{ s.status_label }}</span></td>
   </tr>
   {% endfor %}
 </table>
@@ -116,7 +119,7 @@
 <table>
   <tr><th>Status</th><th>Customer-item pairs</th><th>Share</th></tr>
   {% for g in guidance_summary %}
-  <tr><td>{{ g.status }}</td><td>{{ g.n }}</td><td>{{ g.share }}</td></tr>
+  <tr><td title="{{ g.status_code }}">{{ g.status }}</td><td>{{ g.n }}</td><td>{{ g.share }}</td></tr>
   {% endfor %}
 </table>
 <p class="muted">Targets are {{ guidance_label }} — historical reference points, not optimal prices, until elasticity support allows optimization.</p>

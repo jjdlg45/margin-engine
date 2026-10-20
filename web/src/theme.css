@@ -124,3 +124,34 @@ button:not([class]) ,
 .row button:disabled {
   @apply opacity-50;
 }
+
+/* Table standard (phase 23.5): one shared style for every data table.
+   Row dividers instead of a full cell grid, comfortable padding, breathing
+   room between columns, a clear header row, right-aligned tabular numbers
+   with left-aligned text (the .left marker on text cells). */
+table {
+  @apply w-full border-collapse text-sm;
+}
+thead th {
+  @apply border-b-2 border-ink/25 px-4 py-2.5 text-right align-bottom font-semibold;
+}
+thead th:first-child {
+  @apply text-left;
+}
+tbody td {
+  @apply border-b hairline px-4 py-2.5 text-right align-top leading-relaxed;
+}
+tbody td:first-child {
+  @apply text-left;
+}
+td.left,
+th.left {
+  @apply text-left;
+}
+tbody tr:last-child td {
+  @apply border-b-0;
+}
+/* Explanation cells ("why" columns): their own readable block. */
+td .why {
+  @apply block max-w-prose py-1 text-left leading-relaxed;
+}

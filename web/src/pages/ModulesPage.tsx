@@ -31,7 +31,7 @@ export function ModulesPage() {
                   <th>Price coefficient</th>
                   <th>95% CI</th>
                   <th>Negotiation gap</th>
-                  <th>Status</th>
+                  <th className="left">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -73,7 +73,7 @@ export function ModulesPage() {
                   <th>Substitute</th>
                   <th>Observations</th>
                   <th>Cross elasticity</th>
-                  <th>Status</th>
+                  <th className="left">Status</th>
                 </tr>
               </thead>
               <tbody>

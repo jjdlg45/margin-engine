@@ -1,7 +1,7 @@
 {
- "generated_utc": "2026-10-17T00:51:26+00:00",
+ "generated_utc": "2026-10-20T21:24:37+00:00",
  "script": "scripts/measure_validation.py",
- "runtime_s": 699.7,
+ "runtime_s": 912.7,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
  "results": [
   {
@@ -30,7 +30,7 @@
   },
   {
    "check": "Commercial segments vs planted (out-of-sample ARI)",
-   "target": "\u2265 0.70 on well_identified",
+   "target": "At least 0.70 on the well-identified preset",
    "achieved": "ARI 1.000 (seed 3, default scale)",
    "passed": true
   },
@@ -59,8 +59,8 @@
    "passed": true
   },
   {
-   "check": "causal_elasticity_supported reachable",
-   "target": "Reached on well_identified with all criteria enforced",
+   "check": "Causal support reachable",
+   "target": "Reached on the well-identified preset with all criteria enforced",
    "achieved": "Reached",
    "passed": true
   },
@@ -71,26 +71,26 @@
    "passed": true
   },
   {
-   "check": "weak_instrument preset",
-   "target": "Never causal_elasticity_supported; weak-IV-robust CI reported",
-   "achieved": "No segment reached causal support; AR set reported",
+   "check": "weak-instrument preset",
+   "target": "Never reaches causal support; weak-IV-robust interval reported",
+   "achieved": "No segment reached causal support; Anderson-Rubin set reported",
    "passed": true
   },
   {
-   "check": "invalid_instrument preset",
+   "check": "invalid-instrument preset",
    "target": "Overidentification rejects on \u2265 80% of seeds; status downgraded",
    "achieved": "Rejected on 5/5 seeds; downgraded on 5/5",
    "passed": true
   },
   {
-   "check": "price_constant preset",
-   "target": "insufficient_data or descriptive_elasticity only",
+   "check": "price-constant preset",
+   "target": "Insufficient data or descriptive only - never higher",
    "achieved": "Held for every segment",
    "passed": true
   },
   {
    "check": "sparse preset",
-   "target": "insufficient_data or descriptive_elasticity only",
+   "target": "Insufficient data or descriptive only - never higher",
    "achieved": "Held for every segment",
    "passed": true
   },
@@ -115,7 +115,7 @@
   {
    "check": "Performance (full Run-1 pipeline)",
    "target": "500k+ lines under 2 minutes",
-   "achieved": "811,253 lines in 32.2s on AMD64 (Windows)",
+   "achieved": "811,253 lines in 50.7s on AMD64 (Windows)",
    "passed": true
   }
  ]
