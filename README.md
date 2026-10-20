@@ -130,6 +130,28 @@ time and never committed. docs/validation.json (shown on the site) is
 produced by `uv run python scripts/measure_validation.py`, which runs the
 actual measurements; no validation number is hand-typed.
 
+## Supported input formats
+
+The engine reads tabular invoice-line exports: **CSV** (any of `,` `;` tab
+`|` as the delimiter) or **.xlsx** (sheet name or index declared in the
+mapping). PDF and scanned invoices are not supported - the data must already
+be line-level (one row per invoice line).
+
+Physical format is declared in the mapping, never guessed, under `input:`:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `delimiter` | `,` | CSV field separator: `,` `;` tab or `|` |
+| `encoding` | `utf-8` | Any Python codec (e.g. `windows-1252`); a UTF-8 BOM is always handled |
+| `currency_symbols` | `[]` | Literal symbols stripped from money values, e.g. `["$"]`, `["EUR"]`, `["MXN"]` |
+| `negative_format` | `minus` | `minus` for `-113.57`, `parentheses` for `(113.57)` |
+| `trim_whitespace` | `true` | Strip surrounding whitespace from headers and values |
+
+Plus, at the mapping root: `decimal_separator` (`.` default, or `,` for
+`1.234,56`-style numbers), `lines_sheet` / per-table `sheet` for .xlsx, and a
+`format` on every date field. A wrong declaration fails with a message naming
+the likely cause and the option to set.
+
 ## Running on real data
 
 1. Copy `config/mappings/synth_erp.yaml` and edit it for your export: column

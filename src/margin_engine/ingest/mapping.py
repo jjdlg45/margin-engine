@@ -150,10 +150,27 @@ class LinesMapping(StrictModel):
         return self
 
 
+class InputOptions(StrictModel):
+    """Physical input format, declared in the mapping - never guessed.
+    Applies to every file of the source system."""
+
+    delimiter: Literal[",", ";", "	", "|"] = ","
+    # Any Python codec name; a UTF-8 BOM is always handled.
+    encoding: str = "utf-8"
+    # Literal symbols stripped from money values, e.g. ["$"], ["EUR"], ["MXN"].
+    currency_symbols: list[str] = Field(default_factory=list)
+    # How negatives are written: leading minus, or accounting parentheses.
+    negative_format: Literal["minus", "parentheses"] = "minus"
+    # Strip surrounding whitespace from headers and every value.
+    trim_whitespace: bool = True
+
+
 class ReferenceTable(StrictModel):
     file: str
     columns: dict[str, str]  # canonical name -> source column
     date_format: str | None = None
+    # For .xlsx files: sheet name or zero-based index (default: first sheet).
+    sheet: str | int | None = None
 
 
 class SourceMapping(StrictModel):
@@ -161,7 +178,10 @@ class SourceMapping(StrictModel):
 
     source_system: str
     lines_file: str
+    # For .xlsx lines files: sheet name or zero-based index (default: first).
+    lines_sheet: str | int | None = None
     decimal_separator: Literal[".", ","] = "."
+    input: InputOptions = Field(default_factory=InputOptions)
     lines: LinesMapping
     # Optional reference tables, keyed by canonical table name.
     reference_tables: dict[str, ReferenceTable] = Field(default_factory=dict)

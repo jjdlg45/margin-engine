@@ -21,17 +21,45 @@ class MoneyParseError(ValueError):
     """A money column contained a value that cannot be parsed exactly."""
 
 
-def parse_money_expr(col: str, decimal_separator: str = ".") -> pl.Expr:
+def normalize_money_expr(
+    expr: pl.Expr,
+    decimal_separator: str = ".",
+    currency_symbols: list[str] | None = None,
+    negative_format: str = "minus",
+) -> pl.Expr:
+    """Normalize raw money strings to canonical '-123.45' form, digit-exact:
+    trims, strips declared currency symbols, converts declared parentheses
+    negatives to a leading minus, and resolves grouping vs decimal separators.
+    Shared by the parser and its validator so both see identical values."""
+    s = expr.cast(pl.String).str.strip_chars()
+    for sym in currency_symbols or []:
+        s = s.str.replace_all(sym, "", literal=True).str.strip_chars()
+    if negative_format == "parentheses":
+        wrapped = s.str.starts_with("(") & s.str.ends_with(")")
+        s = (
+            pl.when(wrapped)
+            .then(pl.lit("-") + s.str.strip_chars("()").str.strip_chars())
+            .otherwise(s)
+        )
+    if decimal_separator == ",":
+        s = s.str.replace_all(".", "", literal=True).str.replace_all(",", ".", literal=True)
+    else:
+        s = s.str.replace_all(",", "", literal=True)
+    return s
+
+
+def parse_money_expr(
+    col: str,
+    decimal_separator: str = ".",
+    currency_symbols: list[str] | None = None,
+    negative_format: str = "minus",
+) -> pl.Expr:
     """Parse a string money column into scaled Int64 (10^-4 units), digit-exact.
 
     Empty strings and nulls stay null. Raises downstream via `validate_parsed`
     when values have too many decimals or stray characters.
     """
-    s = pl.col(col).cast(pl.String).str.strip_chars()
-    if decimal_separator == ",":
-        s = s.str.replace_all(".", "", literal=True).str.replace_all(",", ".", literal=True)
-    else:
-        s = s.str.replace_all(",", "", literal=True)
+    s = normalize_money_expr(pl.col(col), decimal_separator, currency_symbols, negative_format)
     s = s.replace("", None)
     neg = s.str.starts_with("-")
     body = s.str.strip_chars_start("+-")
@@ -54,6 +82,8 @@ def assert_parse_ok(
     file_label: str,
     decimal_separator: str = ".",
     key_col: str | None = None,
+    currency_symbols: list[str] | None = None,
+    negative_format: str = "minus",
 ) -> None:
     """Fail actionably when non-empty raw values did not parse. When key_col is
     given, up to 10 offending source line keys are listed."""
@@ -71,16 +101,16 @@ def assert_parse_ok(
         sample = bad[raw_col].head(5).to_list()
         msg = (
             f"{file_label}: column '{raw_col}' has {bad.height} unparseable money "
-            f"value(s), e.g. {sample}. Fix the data or the mapping's "
-            f"decimal_separator.{keys_of(bad)}"
+            f"value(s), e.g. {sample}. Likely causes: a currency symbol not listed "
+            f"in the mapping's input.currency_symbols, parentheses negatives without "
+            f"input.negative_format: parentheses, or the wrong decimal_separator."
+            f"{keys_of(bad)}"
         )
         raise MoneyParseError(msg)
     # Values with more than PARSE_SCALE decimals would be silently truncated: refuse.
-    normalized = pl.col(raw_col).cast(pl.String).str.strip_chars()
-    if decimal_separator == ",":
-        normalized = normalized.str.replace_all(".", "", literal=True).str.replace_all(
-            ",", ".", literal=True
-        )
+    normalized = normalize_money_expr(
+        pl.col(raw_col), decimal_separator, currency_symbols, negative_format
+    )
     too_precise = df.filter(
         normalized.str.split_exact(".", 1)
         .struct.field("field_1")

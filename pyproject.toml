@@ -19,6 +19,7 @@ dependencies = [
     "typer>=0.15",
     "jinja2>=3.1",
     "numpy>=1.26",
+    "openpyxl>=3.1.5",
 ]
 
 [project.scripts]
@@ -35,6 +36,7 @@ dev = [
     "types-pyyaml>=6.0",
     "pandas-stubs>=3.0.5.260914",
     "jsonschema>=4.26.0",
+    "types-openpyxl>=3.1.5.20261017",
 ]
 
 [build-system]

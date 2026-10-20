@@ -35,7 +35,12 @@ for (const route of ROUTES) {
         document.documentElement.dataset.theme = t;
       }, theme);
       await expect(page.locator("h1")).toBeVisible();
-      await page.waitForTimeout(350);
+      await page.waitForLoadState("networkidle");
+      // Chart pages: wait for the rendered surface, not a fixed delay.
+      if ((await page.locator("svg.recharts-surface").count()) > 0) {
+        await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
+      }
+      await page.waitForTimeout(400);
 
       const axe = await new AxeBuilder({ page }).analyze();
       const serious = axe.violations.filter(

@@ -8,11 +8,12 @@ produces identical canonical frames.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import polars as pl
 
-from margin_engine.ingest.mapping import MappingError, SourceMapping
+from margin_engine.ingest.mapping import InputOptions, MappingError, SourceMapping
 from margin_engine.money import (
     assert_parse_ok,
     parse_money_expr,
@@ -26,6 +27,130 @@ CANONICAL_MONEY_FIELDS = {
     "customer_rebate_amount": "rebate_cents",
     "freight_concession": "freight_concession_cents",
 }
+
+
+_DELIM_NAMES = {",": "','", ";": "';'", "	": "tab", "|": "'|'"}
+
+
+def _excel_to_frame(path: Path, sheet: str | int | None, opts: InputOptions) -> pl.DataFrame:
+    """Read one .xlsx sheet into an all-string frame via openpyxl (pure
+    Python). Numbers render digit-preserving (trailing .0 trimmed); date cells
+    render ISO (%Y-%m-%d) - declare that format in the mapping. The result
+    joins the exact same validation path as CSV."""
+    import datetime as dt
+
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+    except Exception as exc:
+        msg = (
+            f"{path}: not a readable .xlsx workbook ({exc}). If this is a CSV "
+            f"with an .xlsx name, rename it and map it as CSV."
+        )
+        raise MappingError(msg) from exc
+    try:
+        if sheet is None:
+            ws = wb.worksheets[0]
+        elif isinstance(sheet, int):
+            if sheet >= len(wb.worksheets):
+                msg = (
+                    f"{path}: sheet index {sheet} out of range "
+                    f"({len(wb.worksheets)} sheet(s)). Fix 'sheet' in the mapping."
+                )
+                raise MappingError(msg)
+            ws = wb.worksheets[sheet]
+        else:
+            if sheet not in wb.sheetnames:
+                msg = (
+                    f"{path}: no sheet named '{sheet}'. Available: {wb.sheetnames}. "
+                    f"Fix 'sheet' in the mapping."
+                )
+                raise MappingError(msg)
+            ws = wb[sheet]
+
+        def cell_str(v: object) -> str | None:
+            if v is None:
+                return None
+            if isinstance(v, bool):
+                return str(v)
+            if isinstance(v, dt.datetime):
+                return v.date().isoformat()
+            if isinstance(v, dt.date):
+                return v.isoformat()
+            if isinstance(v, float) and v.is_integer():
+                return str(int(v))
+            return str(v)
+
+        rows = ws.iter_rows(values_only=True)
+        try:
+            header = [str(h) if h is not None else "" for h in next(rows)]
+        except StopIteration:
+            msg = f"{path}: sheet '{ws.title}' is empty."
+            raise MappingError(msg) from None
+        data: dict[str, list[str | None]] = {h: [] for h in header}
+        for row in rows:
+            for h, v in zip(header, row, strict=False):
+                data[h].append(cell_str(v))
+        return pl.DataFrame(data, schema=dict.fromkeys(header, pl.String))
+    finally:
+        wb.close()
+
+
+def read_table(path: Path, opts: InputOptions, sheet: str | int | None = None) -> pl.DataFrame:
+    """Read a source table (CSV or .xlsx) into an all-string frame under the
+    mapping's declared input options. Any parse failure is reported with its
+    likely cause and the mapping option to set - never a raw library error."""
+    if path.suffix.lower() == ".xlsx":
+        raw = _excel_to_frame(path, sheet, opts)
+    else:
+        blob = path.read_bytes()
+        codec = (
+            "utf-8-sig"
+            if opts.encoding.lower().replace("_", "-") in ("utf-8", "utf8")
+            else opts.encoding
+        )
+        try:
+            text = blob.decode(codec)
+        except (UnicodeDecodeError, LookupError) as exc:
+            msg = (
+                f"{path}: cannot decode as '{opts.encoding}' ({exc}). The file is "
+                f"probably in another encoding (Windows exports are often "
+                f"windows-1252); set input.encoding in the mapping."
+            )
+            raise MappingError(msg) from exc
+        try:
+            raw = pl.read_csv(
+                io.BytesIO(text.encode("utf-8")),
+                infer_schema=False,
+                separator=opts.delimiter,
+                quote_char='"',
+            )
+        except Exception as exc:
+            msg = (
+                f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+                f"delimited CSV ({exc}). Check input.delimiter and input.encoding "
+                f"in the mapping."
+            )
+            raise MappingError(msg) from exc
+    if opts.trim_whitespace:
+        raw = raw.rename({c: c.strip() for c in raw.columns})
+        raw = raw.with_columns(pl.col(pl.String).str.strip_chars())
+    # A single parsed column whose name contains another delimiter is the
+    # classic wrong-delimiter signature: name the fix instead of failing later.
+    if raw.width == 1:
+        head = raw.columns[0]
+        for cand in (",", ";", "	", "|"):
+            if cand != opts.delimiter and cand in head:
+                msg = (
+                    f"{path}: parsed as a single column with "
+                    f"{_DELIM_NAMES[opts.delimiter]} as the delimiter, but the "
+                    f"header contains {_DELIM_NAMES[cand]} - the file is likely "
+                    f"{_DELIM_NAMES[cand]}-delimited. Set input.delimiter: "
+                    f"'{cand}' in the mapping."
+                )
+                raise MappingError(msg)
+    return raw
 
 
 def _require_columns(df: pl.DataFrame, cols: list[str], file_label: str) -> None:
@@ -44,9 +169,11 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
     if not path.exists():
         msg = f"lines file not found: {path}"
         raise MappingError(msg)
-    raw = pl.read_csv(path, infer_schema=False)
+    raw = read_table(path, mapping.input, mapping.lines_sheet)
     lm = mapping.lines
     sep = mapping.decimal_separator
+    syms = mapping.input.currency_symbols
+    negf = mapping.input.negative_format
 
     declared: list[str] = []
     for f in type(lm).model_fields:
@@ -63,7 +190,15 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
         .alias("invoice_date"),
         pl.col(lm.customer_id.column).alias("customer_id"),
         pl.col(lm.item_id.column).alias("item_id"),
-        pl.col(lm.quantity.column).cast(pl.Float64, strict=False).alias("quantity"),
+        (
+            pl.col(lm.quantity.column)
+            .str.replace_all(".", "", literal=True)
+            .str.replace_all(",", ".", literal=True)
+            if mapping.decimal_separator == ","
+            else pl.col(lm.quantity.column)
+        )
+        .cast(pl.Float64, strict=False)
+        .alias("quantity"),
     )
     # Unparseable dates are a data error, reported actionably with line keys.
     bad_dates = out.filter(pl.col("invoice_date").is_null())
@@ -127,11 +262,23 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
         scaled_name = f"_{cents}_scaled"
         scaled_cols[scaled_name] = (src, cents)
     parsed = raw.select(
-        [parse_money_expr(src, sep).alias(name) for name, (src, _) in scaled_cols.items()]
+        [
+            parse_money_expr(src, sep, syms, negf).alias(name)
+            for name, (src, _) in scaled_cols.items()
+        ]
     )
     check = pl.concat([raw, parsed], how="horizontal")
     for name, (src, _) in scaled_cols.items():
-        assert_parse_ok(check, src, name, str(path), sep, lm.source_line_key.column)
+        assert_parse_ok(
+            check,
+            src,
+            name,
+            str(path),
+            sep,
+            lm.source_line_key.column,
+            currency_symbols=syms,
+            negative_format=negf,
+        )
     out = pl.concat(
         [
             out,
@@ -147,7 +294,9 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
 
     # Unit price and list price: per-unit values at parse scale (ten-thousandths).
     if lm.unit_price is not None:
-        up = raw.select(parse_money_expr(lm.unit_price.column, sep).alias("unit_price_scaled"))
+        up = raw.select(
+            parse_money_expr(lm.unit_price.column, sep, syms, negf).alias("unit_price_scaled")
+        )
         assert_parse_ok(
             pl.concat([raw, up], how="horizontal"),
             lm.unit_price.column,
@@ -155,11 +304,15 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             str(path),
             sep,
             lm.source_line_key.column,
+            currency_symbols=syms,
+            negative_format=negf,
         )
         out = pl.concat([out, up], how="horizontal")
         if lm.net_amount is None and lm.unit_price.authoritative:
             # net = quantity x unit price, half-even to cents, integer math.
-            qty_scaled = raw.select(parse_money_expr(lm.quantity.column, sep).alias("_q"))["_q"]
+            qty_scaled = raw.select(
+                parse_money_expr(lm.quantity.column, sep, syms, negf).alias("_q")
+            )["_q"]
             out = (
                 out.with_columns(pl.Series("_q_scaled", qty_scaled))
                 .with_columns(
@@ -170,7 +323,9 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
                 .drop("_q_scaled")
             )
     if lm.list_price is not None:
-        lp = raw.select(parse_money_expr(lm.list_price.column, sep).alias("list_price_scaled"))
+        lp = raw.select(
+            parse_money_expr(lm.list_price.column, sep, syms, negf).alias("list_price_scaled")
+        )
         assert_parse_ok(
             pl.concat([raw, lp], how="horizontal"),
             lm.list_price.column,
@@ -178,11 +333,15 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             str(path),
             sep,
             lm.source_line_key.column,
+            currency_symbols=syms,
+            negative_format=negf,
         )
         out = pl.concat([out, lp], how="horizontal")
 
     if lm.unit_cost is not None:
-        uc = raw.select(parse_money_expr(lm.unit_cost.column, sep).alias("unit_cost_scaled"))
+        uc = raw.select(
+            parse_money_expr(lm.unit_cost.column, sep, syms, negf).alias("unit_cost_scaled")
+        )
         assert_parse_ok(
             pl.concat([raw, uc], how="horizontal"),
             lm.unit_cost.column,
@@ -190,6 +349,8 @@ def load_lines(data_dir: Path, mapping: SourceMapping) -> pl.DataFrame:
             str(path),
             sep,
             lm.source_line_key.column,
+            currency_symbols=syms,
+            negative_format=negf,
         )
         out = pl.concat([out, uc], how="horizontal")
         if lm.unit_cost.missing_as == "zero_is_missing":
@@ -262,7 +423,7 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
     path = data_dir / spec.file
     if not path.exists():
         return None
-    raw = pl.read_csv(path, infer_schema=False)
+    raw = read_table(path, mapping.input, spec.sheet)
     _require_columns(raw, list(spec.columns.values()), str(path))
     df = raw.select([pl.col(src).alias(canon) for canon, src in spec.columns.items()])
     # Typed columns by canonical name convention.
@@ -280,7 +441,12 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
     for canon in spec.columns:
         if canon in money_cols:
             target = money_cols[canon]
-            e = parse_money_expr(canon, mapping.decimal_separator)
+            e = parse_money_expr(
+                canon,
+                mapping.decimal_separator,
+                mapping.input.currency_symbols,
+                mapping.input.negative_format,
+            )
             exprs.append(
                 scaled_to_cents(e).alias(target) if target.endswith("_cents") else e.alias(target)
             )
@@ -305,7 +471,13 @@ def load_reference_table(data_dir: Path, mapping: SourceMapping, name: str) -> p
             "duty_pct",
             "rate",
         ):
-            exprs.append(pl.col(canon).cast(pl.Float64).alias(canon))
+            # Plain numeric columns honor the declared decimal separator too.
+            num = pl.col(canon)
+            if mapping.decimal_separator == ",":
+                num = num.str.replace_all(".", "", literal=True).str.replace_all(
+                    ",", ".", literal=True
+                )
+            exprs.append(num.cast(pl.Float64).alias(canon))
         elif canon in ("is_service", "price_protected"):
             exprs.append((pl.col(canon).cast(pl.Int64) != 0).alias(canon))
     df = df.with_columns(exprs)

@@ -1236,3 +1236,41 @@ was restored afterward.
 
 **Checks (exit codes).** ruff 0; mypy 0; npm test 0; npm run build 0;
 npx playwright test 0 (88 passed); sparse-repro run of the reworked test 0.
+
+---
+## Phase 23.3 — Input format robustness (2026-10-20)
+
+**Built.** A declared-never-guessed physical input layer:
+- Mapping `input:` options - delimiter (`,` `;` tab `|`), encoding (any Python
+  codec, UTF-8 BOM always handled), currency_symbols (stripped literally from
+  money values), negative_format (minus | parentheses), trim_whitespace
+  (default true, headers and values). decimal_separator (existing) now also
+  governs plain numeric reference columns (weight, rates) and quantities, not
+  just money - two real gaps the new tests caught.
+- Money parsing: one shared normalize_money_expr feeds both the parser and its
+  validator, so symbols, parentheses and separators are handled identically in
+  both; digit-exactness unchanged.
+- .xlsx input via openpyxl (pure Python - no compiled extension for this
+  machine's Smart App Control to block): sheet by name or index from the
+  mapping (lines_sheet / per-table sheet), numeric cells rendered digit-
+  preserving, date cells rendered ISO (documented); joins the exact same
+  validation path as CSV.
+- Central read_table with actionable errors: wrong delimiter detected by the
+  single-column-header signature and reported with the option to set; decode
+  failures name input.encoding and the windows-1252 likelihood; xlsx errors
+  name the sheet options. No raw library errors reach the user.
+
+**Verification (tests/test_input_formats.py, all from the committed sample,
+ledger totals cents-exact against the clean run).** Currency symbols;
+parentheses negatives; semicolon + decimal comma (including fractional
+quantities and float reference columns); padded whitespace (default trim);
+UTF-8 BOM (default); Windows-1252 with a non-ASCII extra unmapped column;
+.xlsx with a named sheet and numeric money cells (plus wrong-sheet error);
+ISO dates with the declared format (plus undeclared-format error); renamed +
+reordered columns. Every negative case asserts the actionable message names
+the mapping option (currency_symbols, negative_format, input.delimiter,
+input.encoding, sheet, date format). 9/9 pass.
+
+**Docs.** README "Supported input formats" (tabular CSV/.xlsx only; not PDF or
+scans; line-level required; full option table) and a matching methodology
+section.

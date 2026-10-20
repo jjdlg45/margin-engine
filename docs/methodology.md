@@ -32,6 +32,17 @@ with the applied rate per line; reconciliation conserves each currency's
 source total exactly. A missing rate is an actionable error — the engine never
 guesses an exchange rate.
 
+### Supported input formats
+
+Tabular invoice-line exports only: CSV (configurable delimiter, encoding with
+BOM handling, currency symbols, minus or parentheses negatives, whitespace
+trimming) or .xlsx via a pure-Python reader (sheet declared in the mapping;
+numeric cells rendered digit-preserving, date cells rendered ISO). Both routes
+join the same validation path; money parses digit-exactly from strings under
+the declared options, and any physical-format failure reports the likely cause
+and the mapping option to set. PDF or scanned invoices are out of scope; data
+must already be line-level.
+
 ## 2. Transaction classification and the two views
 
 Classification follows the spec's table: returns and credits are classified
