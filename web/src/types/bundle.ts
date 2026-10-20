@@ -127,6 +127,10 @@ export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type ItemId1 = string;
 export type Segment1 = number | null;
+/**
+ * One short row-specific sentence for the table
+ */
+export type Summary = string;
 export type VolumeTreatment = string;
 export type TopOpportunities = OpportunityRecord[];
 /**
@@ -198,6 +202,13 @@ export type P75 = number;
 export type Segment3 = number;
 export type IndexDistribution = SegmentIndexStats[];
 export type MarginDriverNote = string;
+/**
+ * 1-based rank by size; viewers see 'Segment {rank}'
+ */
+export type DisplayRank = number;
+/**
+ * Tree node id - technical detail only
+ */
 export type LeafId = number;
 export type MeanTarget = number;
 export type NCustomers1 = number;
@@ -215,6 +226,10 @@ export type Plain = string;
  * Raw tree rule - technical detail, not primary display
  */
 export type Rule = string;
+/**
+ * Merge/leaf mechanics for the expander
+ */
+export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
@@ -437,6 +452,7 @@ export interface OpportunityRecord {
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   item_id: ItemId1;
   segment: Segment1;
+  summary: Summary;
   volume_treatment: VolumeTreatment;
 }
 export interface OptionalModules {
@@ -526,6 +542,7 @@ export interface SegmentIndexStats {
   segment: Segment3;
 }
 export interface SegmentRule {
+  display_rank: DisplayRank;
   leaf_id: LeafId;
   mean_target: MeanTarget;
   n_customers: NCustomers1;
@@ -534,6 +551,7 @@ export interface SegmentRule {
   name: Name2;
   plain: Plain;
   rule: Rule;
+  technical_note: TechnicalNote;
 }
 export interface SensitivitySegment {
   ar_ci_high: ArCiHigh;

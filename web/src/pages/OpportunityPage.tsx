@@ -50,9 +50,18 @@ export function OpportunityPage() {
       },
       {
         header: "Why",
-        accessorKey: "explanation",
+        accessorKey: "summary",
         enableSorting: false,
-        cell: (c) => <span className="why min-w-[20rem] text-caption">{c.row.original.explanation}</span>,
+        meta: { left: true },
+        cell: (c) => (
+          <span className="why min-w-[20rem] text-caption">
+            {c.row.original.summary}
+            <details className="mt-1 secondary">
+              <summary>Full explanation</summary>
+              {c.row.original.explanation}
+            </details>
+          </span>
+        ),
       },
     ],
     [],
@@ -62,27 +71,29 @@ export function OpportunityPage() {
       <PageHeader title="Opportunity" lede={o.never_summed_note} />
       <div className="mt-2 grid gap-4 sm:grid-cols-3">
         <div className="panel px-5 py-5">
-          <p className="m-0 text-caption secondary">Level 1 · observed leakage ({o.window_label})</p>
+          <h2 className="m-0 text-section">Observed leakage</h2>
           <p className="m-0 mt-1 text-title font-semibold text-petrol">
             {dollarsShort(o.leakage_total_cents)}
           </p>
+          <p className="m-0 text-caption secondary">{o.window_label}</p>
           <p className="mb-0 mt-2 text-caption secondary">
             Reconciled dollars that left between list and pocket - an
             accounting fact, not a recommendation.
           </p>
         </div>
         <div className="panel px-5 py-5">
-          <p className="m-0 text-caption secondary">Level 2 · gross price opportunity</p>
+          <h2 className="m-0 text-section">Gross price opportunity</h2>
           <p className="m-0 mt-1 text-title font-semibold text-petrol">
             {dollarsShort(o.gross_total_cents)}
           </p>
+          <p className="m-0 text-caption secondary">{o.window_label}, at unchanged volume</p>
           <p className="mb-0 mt-2 text-caption secondary">
             Eligible quantity times the positive gap to the proposed pocket
             price, at unchanged volume - a ceiling, not a forecast.
           </p>
         </div>
         <div className="panel px-5 py-5">
-          <p className="m-0 text-caption secondary">Level 3 · expected contribution change</p>
+          <h2 className="m-0 text-section">Expected contribution change</h2>
           <p className="m-0 mt-1 text-title font-semibold text-petrol">
             {dollarsShort(o.expected_total_cents)}
           </p>
@@ -99,6 +110,7 @@ export function OpportunityPage() {
             columns={columns}
             filterPlaceholder="Filter by customer or item"
             filterUrlParam="filter"
+            pageSize={10}
             initialSort={[{ id: "gross_price_opportunity_cents", desc: true }]}
           />
         ) : (

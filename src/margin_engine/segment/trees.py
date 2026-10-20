@@ -265,10 +265,20 @@ def _extract_rules(
         s = stats_map.get(leaf_id)
         if s is None:
             continue  # leaf unused by this sample
+        # A cell at an internal node holds lines merged UP from leaves below
+        # the reporting minimums: its path conditions hold for those lines but
+        # do not uniquely describe them, so the rule must say so - a root cell
+        # is NOT "all lines" unless it truly holds every line.
+        is_internal = tree.children_left[leaf_id] != _tree.TREE_LEAF
+        if is_internal and s["n_lines"] < len(leaves):
+            qualifier = "[not assigned to a more specific leaf]"
+            rule = (" AND ".join(conds) + " " + qualifier) if conds else qualifier
+        else:
+            rule = " AND ".join(conds) if conds else "(all lines)"
         out.append(
             {
                 "leaf_id": int(leaf_id),
-                "rule": " AND ".join(conds) if conds else "(all lines)",
+                "rule": rule,
                 "n_lines": s["n_lines"],
                 "n_customers": s["n_customers"],
                 "n_items": s["n_items"],

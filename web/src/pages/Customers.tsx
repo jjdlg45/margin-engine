@@ -13,7 +13,7 @@ import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
 import { useLabels } from "../lib/labels";
 import { useCompact } from "../lib/useCompact";
-import { count, dollars, pct } from "../lib/format";
+import { count, dollars, pct, pctOfList } from "../lib/format";
 import type { CustomerEconomics } from "../types/bundle";
 
 export function Customers() {
@@ -184,7 +184,7 @@ function CustomerDetail({
                 <tr>
                   <th>Item</th>
                   <th>Baseline revenue</th>
-                  <th>Current index</th>
+                  <th>Current price (% of list)</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -194,7 +194,7 @@ function CustomerDetail({
                   <tr key={g.item_id}>
                     <td className="font-mono">{g.item_id}</td>
                     <td>{dollars(g.annual_net_revenue_cents)}</td>
-                    <td>{g.current_index?.toFixed(3) ?? "—"}</td>
+                    <td>{pctOfList(g.current_index)}</td>
                     <td>
                       <StatusChip status={g.status} />
                     </td>

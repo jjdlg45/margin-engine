@@ -312,11 +312,15 @@ def build_bundle(
 
     # --- segments ------------------------------------------------------------
     def _rules(tree_rules: list[dict[str, Any]]) -> list[SegmentRule]:
+        ranked = sorted(tree_rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"])))
+        rank_of = {int(r["leaf_id"]): i + 1 for i, r in enumerate(ranked)}
         return [
             SegmentRule(
                 leaf_id=int(r["leaf_id"]),
+                display_rank=rank_of[int(r["leaf_id"])],
                 name=plain_rule(str(r["rule"]))[0],
                 plain=plain_rule(str(r["rule"]))[1],
+                technical_note=plain_rule(str(r["rule"]))[2],
                 rule=str(r["rule"]),
                 n_lines=_i(r["n_lines"]),
                 n_customers=_i(r["n_customers"]),
@@ -448,6 +452,7 @@ def build_bundle(
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
             evidence_status=r.get("evidence_status"),
+            summary=explain.opportunity_summary(r),
             explanation=explain.opportunity_explanation(r),
         )
         for r in opp_df.head(200).to_dicts()

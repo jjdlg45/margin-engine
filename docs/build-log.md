@@ -1350,3 +1350,53 @@ visual snapshots regenerated (40) and stable.
 
 **Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
 build 0; playwright 0 (108 passed, including the 20 raw-code scans).
+
+---
+## Phase 23.6 — Readability pass 2 (2026-10-20)
+
+**1. Opportunity "why".** Each row now carries a one-sentence, row-specific
+summary generated at export (opportunity_summary: the numbers and what drives
+them), with the full explanation in an expandable detail inside the row. The
+general never-summed note lives once in the section intro and was removed
+from the per-row causal template. "Why" header left-aligned (SortableTable
+gained per-column alignment meta); 10 rows per page.
+
+**2. Rule phrasing.** plain_rule rewritten: exclusions read "all item
+families except FAM05, FAM06 ...", natural lists ("facilities, retail and
+services customers"), band features inverted to "low cost ratio", data-value
+case preserved (capitalization no longer lowercases FAM19), and the merge
+mechanics moved out of prose - plain_rule now returns a third technical-note
+element ("Merged from N tree leaves") shown only in the expander, in the UI
+and the HTML report alike.
+
+**3. Segment names by size.** Rules carry display_rank (1-based by line
+count); viewers see "Segment 1, 2 ..." everywhere (segments tables, waterfall
+picker, sensitivity rows and chart, guidance detail); leaf ids appear only
+inside the technical expanders. The parity test was updated to the new
+display semantics.
+
+**4. Number formats.** Price-index figures render as percent of list
+(84.5%) across segments tables, guidance lookup and detail tables (headers
+say "% of list"); pocket margins render as signed percentages (-0.7%);
+index spreads as points.
+
+**5. Margin-driver leaf 0 investigated and fixed.** Cause: cells merged up
+into internal nodes (including the root) took their PATH-PREFIX rule, so a
+576-line root cell read "(all lines)". _extract_rules now qualifies any
+internal-node cell holding fewer than all lines with an explicit
+"[not assigned to a more specific leaf]" marker; plain_rule renders it as
+"Other lines" with an honest description. New test asserts: "(all lines)"
+only when the cell truly holds every line; internal-node cells carry the
+qualifier and never read "All lines"; and node sample counts contain every
+assigned line (path-prefix consistency).
+
+**6. Level cards.** Middle-dot eyebrow labels replaced by plain headings
+("Observed leakage") with the window as supporting text.
+
+**Evidence.** Before/after screenshots (opportunity, segments, methodology:
+{page}-light-desktop-{before236,after236}.png); 40 visual snapshots
+regenerated; the raw-code scanner stays green (20/20).
+
+**Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
+build 0; playwright 0 (108 passed; one known waterfall-dark snapshot flake
+passed on retry and in the full run).

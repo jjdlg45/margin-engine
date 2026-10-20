@@ -77,8 +77,11 @@ test("guidance page: pair lookup shows bundle floors and explanation", async ({ 
 test("sensitivity page: segment rows match the bundle", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/sensitivity");
+  // Viewers see display ranks ("Segment 1"), never leaf ids.
+  const rankOf = new Map(bundle.segments.rules.map((r) => [r.leaf_id, r.display_rank]));
   for (const r of bundle.sensitivity) {
-    await expect(page.getByText(`Segment ${r.segment}`, { exact: false }).first()).toBeVisible();
+    const label = `Segment ${rankOf.get(r.segment) ?? r.segment}`;
+    await expect(page.getByText(label, { exact: false }).first()).toBeVisible();
   }
   const causal = bundle.sensitivity.filter((r) => r.status === "causal_elasticity_supported");
   await expect(page.locator(".chip-solid")).toHaveCount(causal.length);

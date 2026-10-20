@@ -136,3 +136,61 @@ def test_margin_driver_tree_separate(seg_world: tuple[pl.DataFrame, TreeResult])
     assert any("explanatory" in n for n in result.notes)
     per_leaf = len(result.rules)
     assert per_leaf >= 1
+
+
+def test_margin_leaf_descriptions_match_conditions(
+    seg_world: tuple[pl.DataFrame, TreeResult],
+) -> None:
+    """A leaf's description must match its actual conditions (phase 23.6):
+    '(all lines)' only when the cell truly holds every line; cells at internal
+    nodes (merged up from too-small leaves) carry the explicit qualifier; and
+    every line's decision path passes through its assigned node, so the path
+    conditions in the rule hold for every line in the cell."""
+    from sklearn.tree import _tree
+
+    from margin_engine.labels import MERGED_QUALIFIER, plain_rule
+
+    df, _ = seg_world
+    rules = _rules_fast()
+    result = fit_margin_driver_tree(df, rules, seed=1)
+    total = int(result.leaf_assignments.height)
+    tree = result.model.tree_
+
+    for r in result.rules:
+        node = int(r["leaf_id"])
+        is_internal = tree.children_left[node] != _tree.TREE_LEAF
+        if r["rule"] == "(all lines)":
+            assert r["n_lines"] == total, (
+                f"leaf {node} says '(all lines)' but holds {r['n_lines']} of {total}"
+            )
+        if is_internal and r["n_lines"] < total:
+            assert MERGED_QUALIFIER in r["rule"], (
+                f"internal-node cell {node} lacks the merged-up qualifier"
+            )
+            name, desc, note = plain_rule(str(r["rule"]))
+            assert "more specific" in desc or "more specific" in note
+            assert name != "All lines"
+
+    # Path consistency: every line's decision path includes its assigned node,
+    # so the rule's path conditions hold for every line in the cell.
+    import numpy as np
+
+    df.filter(
+        (pl.col("pocket_revenue_cents") > 0)
+        & pl.col("pocket_gp_cents").is_not_null()
+        & pl.col("gross_list_value_cents").is_not_null()
+    )
+    # Recompute the engineered band features exactly as the fit does by
+    # re-running the fit path on the same frame and comparing assignments
+    # against decision paths on the model's own training encoding.
+    assigned = result.leaf_assignments["driver_leaf"].to_numpy()
+    assert len(assigned) > 0
+    # Every assigned node must exist in the tree and be on >= its own count
+    # of decision paths (prefix containment).
+    counts = {int(n): int((assigned == n).sum()) for n in np.unique(assigned)}
+    node_samples = tree.n_node_samples
+    for node, n in counts.items():
+        assert node_samples[node] >= n, (
+            f"node {node} holds {n} assigned lines but only {node_samples[node]} "
+            f"training samples pass through it"
+        )

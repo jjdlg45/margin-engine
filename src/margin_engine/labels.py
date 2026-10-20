@@ -222,28 +222,25 @@ def describe(code: str) -> str:
 # Segment-rule translation: plain English generated from the rule structure.
 # ---------------------------------------------------------------------------
 
-_FEATURE_NOUNS: dict[str, tuple[str, str]] = {
-    # feature -> (noun for IN phrasing, noun for NOT-IN phrasing)
-    "industry": ("customers", "customers"),
-    "size_band": ("accounts", "accounts"),
-    "region": ("regions", "regions"),
-    "channel": ("channel", "channel"),
-    "contract_type": ("contracts", "contracts"),
-    "item_family": ("items", "items"),
-    "item_role": ("items", "items"),
-    "order_size_band": ("orders", "orders"),
-    "revenue_abc": ("revenue class", "revenue class"),
+_FEATURE_NOUNS: dict[str, str] = {
+    "industry": "customers",
+    "size_band": "accounts",
+    "region": "regions",
+    "channel": "channels",
+    "contract_type": "contracts",
+    "item_family": "item families",
+    "item_role": "items",
+    "order_size_band": "orders",
+    "revenue_abc": "revenue class",
 }
 
 _VALUE_WORDS: dict[str, str] = {
     "kvi": "key-value",
     "long_tail": "long-tail",
     "strategic_contract": "strategic-contract",
-    "specialty": "specialty",
-    "A": "A",
-    "B": "B",
-    "C": "C",
 }
+
+MERGED_QUALIFIER = "[not assigned to a more specific leaf]"
 
 
 def _nice_value(v: str) -> str:
@@ -251,16 +248,25 @@ def _nice_value(v: str) -> str:
     return _VALUE_WORDS.get(v, v.replace("_", " "))
 
 
+def _natural_list(values: list[str], conj: str = "and") -> str:
+    vals = [_nice_value(v) for v in values]
+    if len(vals) == 1:
+        return vals[0]
+    return ", ".join(vals[:-1]) + f" {conj} {vals[-1]}"
+
+
 def _phrase(feature: str, values: list[str], negated: bool) -> str:
-    noun = _FEATURE_NOUNS.get(feature, (feature.replace("_", " "), ""))[0]
-    vals = " or ".join(_nice_value(v) for v in values)
-    if feature == "revenue_abc":
-        return f"revenue class {'not ' if negated else ''}{vals}"
-    if feature in ("order_size_band", "size_band"):
-        return f"{'not ' if negated else ''}{vals} {noun}"
+    noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
     if negated:
-        return f"{noun} outside {vals}"
-    return f"{vals} {noun}"
+        # Exclusions read as "all X except A, B and C".
+        return f"all {noun} except {_natural_list(values)}"
+    if feature == "revenue_abc":
+        return f"revenue class {_natural_list(values, 'or')}"
+    if feature in ("order_size_band", "size_band"):
+        return f"{_natural_list(values, 'or')} {noun}"
+    if feature == "item_family":
+        return f"{_natural_list(values, 'or')} {noun}"
+    return f"{_natural_list(values, 'or')} {noun}"
 
 
 def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
@@ -275,27 +281,83 @@ def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
     return out
 
 
-def plain_rule(rule: str) -> tuple[str, str]:
-    """(short name, one-sentence description) derived from a tree rule string.
-    Never hand-written: both come from the rule's own structure. Falls back to
-    'All lines' / the raw rule when the rule has no parseable conditions."""
-    if not rule or rule.strip() == "(all lines)":
-        return "All lines", "Every line; the tree found no split for this leaf."
-    clauses = [c.strip(" ()") for c in rule.split(" OR ")]
+def _one_hot_words(cond: str) -> str:
+    """One-hot condition name to words: 'cost_ratio_band_low' -> 'low cost
+    ratio'; 'item_family_FAM19' -> 'item family FAM19'; NOT negates."""
+    neg = cond.startswith("NOT ")
+    body = cond.removeprefix("NOT ")
+    words: str
+    if "_band_" in body:
+        feat, val = body.rsplit("_band_", 1)
+        words = f"{val} {feat.replace('_', ' ')}"
+    else:
+        for feat in (
+            "item_family",
+            "item_role",
+            "industry",
+            "region",
+            "channel",
+            "contract_type",
+            "size_band",
+            "order_size_band",
+            "revenue_abc",
+        ):
+            if body.startswith(feat + "_"):
+                val = body[len(feat) + 1 :]
+                words = f"{feat.replace('_', ' ')} {_nice_value(val)}"
+                break
+        else:
+            words = body.replace("_", " ")
+    return ("not " + words) if neg else words
+
+
+def _cap_first(text: str) -> str:
+    """Capitalize only the first character; data values keep their case."""
+    return text[:1].upper() + text[1:] if text else text
+
+
+def plain_rule(rule: str) -> tuple[str, str, str]:
+    """(short name, one-sentence description, technical note) derived from a
+    tree rule string - never hand-written. The technical note carries
+    merge/leaf mechanics that belong in expanders, not prose."""
+    rule = rule.strip()
+    merged_up = MERGED_QUALIFIER in rule
+    core = rule.replace(MERGED_QUALIFIER, "").strip()
+    note = ""
+    if merged_up:
+        note = (
+            "Holds lines merged up from leaves below the reporting minimums; "
+            "the conditions hold but a more specific leaf does not exist."
+        )
+    if not core or core == "(all lines)":
+        if merged_up:
+            return (
+                "Other lines",
+                "Lines that fell out of leaves too small to report; no more "
+                "specific grouping applies.",
+                note,
+            )
+        return "All lines", "Every line; the tree found no split for this leaf.", note
+    clauses = [c.strip(" ()") for c in core.split(" OR ")]
     parsed = [_parse_clause(c) for c in clauses]
     parsed = [p for p in parsed if p]
     if not parsed:
-        # One-hot style rules ("feat" / "NOT feat") from the margin tree.
-        conds = [c.strip() for c in rule.replace("(", "").replace(")", "").split(" AND ")]
-        words = []
-        for c in conds[:4]:
-            neg = c.startswith("NOT ")
-            words.append(("not " if neg else "") + c.removeprefix("NOT ").replace("_", " "))
-        name = " · ".join(words[:3]) or "All lines"
-        return name.capitalize(), "Lines where " + " and ".join(words) + "."
+        # One-hot style rules from the margin tree.
+        conds = [
+            c.strip() for c in core.replace("(", "").replace(")", "").split(" AND ") if c.strip()
+        ]
+        words = [_one_hot_words(c) for c in conds]
+        name = _cap_first(" · ".join(words[:3]))
+        description = _cap_first(" and ".join(words) + ".")
+        if merged_up:
+            description += " A more specific leaf does not exist for these lines."
+        return name or "All lines", description, note
     first = parsed[0]
-    name = " · ".join(_phrase(f, v, n) for f, v, n in first[:3])
+    name = _cap_first(" · ".join(_phrase(f, v, n) for f, v, n in first[:3]))
     sentences = [" with ".join(_phrase(f, v, n) for f, v, n in conds) for conds in parsed]
-    extra = f" (plus {len(parsed) - 1} similar group(s))" if len(parsed) > 1 else ""
-    description = f"Lines from {sentences[0]}{extra}."
-    return name.capitalize(), description
+    description = _cap_first(f"Lines from {sentences[0]}.")
+    if len(parsed) > 1:
+        note = (f"Merged from {len(parsed)} tree leaves. " + note).strip()
+    if merged_up:
+        description += " A more specific leaf does not exist for these lines."
+    return name, description, note

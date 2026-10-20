@@ -3,12 +3,14 @@
 
 import { PageHeader, Section, ScrollX } from "../components/Page";
 import { useBundle } from "../lib/bundle";
-import { count, num, pct } from "../lib/format";
+import { count, num, pct, pctOfList, signedPct } from "../lib/format";
 
 interface Rule {
   leaf_id: number;
+  display_rank: number;
   name: string;
   plain: string;
+  technical_note: string;
   rule: string;
   n_lines: number;
   n_customers: number;
@@ -16,13 +18,24 @@ interface Rule {
   mean_target: number;
 }
 
-function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
+function RuleTable({
+  rules,
+  target,
+  rowWord,
+  fmt,
+}: {
+  rules: Rule[];
+  target: string;
+  rowWord: string;
+  fmt: (v: number) => string;
+}) {
+  const ranked = [...rules].sort((a, z) => a.display_rank - z.display_rank);
   return (
     <ScrollX label="Segment table">
       <table>
         <thead>
           <tr>
-            <th>Leaf</th>
+            <th className="left">{rowWord}</th>
             <th className="left">Rule</th>
             <th>Lines</th>
             <th>Customers</th>
@@ -31,21 +44,24 @@ function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
           </tr>
         </thead>
         <tbody>
-          {rules.map((r) => (
+          {ranked.map((r) => (
             <tr key={r.leaf_id}>
-              <td>{r.leaf_id}</td>
+              <td className="left whitespace-nowrap">{rowWord} {r.display_rank}</td>
               <td className="left max-w-xl">
                 <span className="font-medium">{r.name}</span>
                 <span className="block text-caption secondary">{r.plain}</span>
                 <details className="text-caption secondary">
                   <summary>Technical rule</summary>
-                  <code className="font-mono">{r.rule}</code>
+                  <span>
+                    Leaf {r.leaf_id}. {r.technical_note}
+                  </span>
+                  <code className="block font-mono">{r.rule}</code>
                 </details>
               </td>
               <td>{count(r.n_lines)}</td>
               <td>{count(r.n_customers)}</td>
               <td>{count(r.n_items)}</td>
-              <td>{num(r.mean_target, 3)}</td>
+              <td>{fmt(r.mean_target)}</td>
             </tr>
           ))}
         </tbody>
@@ -57,6 +73,7 @@ function RuleTable({ rules, target }: { rules: Rule[]; target: string }) {
 export function SegmentsPage() {
   const b = useBundle();
   const s = b.segments;
+  const rankOf = new Map(s.rules.map((r) => [r.leaf_id, r.display_rank]));
   return (
     <div>
       <PageHeader
@@ -74,7 +91,7 @@ export function SegmentsPage() {
         }
       />
       <Section title="Segment rules" lede="Each leaf is a readable conjunction of context conditions.">
-        <RuleTable rules={s.rules} target="Median price index" />
+        <RuleTable rules={s.rules} target="Median price (% of list)" rowWord="Segment" fmt={pctOfList} />
       </Section>
       <Section
         title="Price-index distribution per segment"
@@ -84,25 +101,27 @@ export function SegmentsPage() {
           <table className="max-w-2xl">
             <thead>
               <tr>
-                <th>Segment</th>
+                <th className="left">Segment</th>
                 <th>Pairs</th>
-                <th>P25</th>
-                <th>P50</th>
-                <th>P75</th>
-                <th>Spread (P75 - P25)</th>
+                <th>P25 (% of list)</th>
+                <th>P50 (% of list)</th>
+                <th>P75 (% of list)</th>
+                <th>Spread</th>
               </tr>
             </thead>
             <tbody>
-              {s.index_distribution.map((d) => (
-                <tr key={d.segment}>
-                  <td>{d.segment}</td>
-                  <td>{count(d.n_pairs)}</td>
-                  <td>{num(d.p25, 3)}</td>
-                  <td>{num(d.p50, 3)}</td>
-                  <td>{num(d.p75, 3)}</td>
-                  <td>{num(d.p75 - d.p25, 3)}</td>
-                </tr>
-              ))}
+              {[...s.index_distribution]
+                .sort((a, z) => (rankOf.get(a.segment) ?? 99) - (rankOf.get(z.segment) ?? 99))
+                .map((d) => (
+                  <tr key={d.segment}>
+                    <td className="left">Segment {rankOf.get(d.segment) ?? d.segment}</td>
+                    <td>{count(d.n_pairs)}</td>
+                    <td>{pctOfList(d.p25)}</td>
+                    <td>{pctOfList(d.p50)}</td>
+                    <td>{pctOfList(d.p75)}</td>
+                    <td>{(100 * (d.p75 - d.p25)).toFixed(1)} pts</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </ScrollX>
@@ -111,7 +130,7 @@ export function SegmentsPage() {
         title="Margin drivers (explanatory, not segments)"
         lede={s.margin_driver_note}
       >
-        <RuleTable rules={s.margin_driver_rules} target="Mean pocket margin" />
+        <RuleTable rules={s.margin_driver_rules} target="Mean pocket margin" rowWord="Driver" fmt={signedPct} />
       </Section>
     </div>
   );

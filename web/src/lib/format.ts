@@ -36,3 +36,16 @@ export function count(x: number | null | undefined): string {
   if (x === null || x === undefined) return "—";
   return x.toLocaleString("en-US");
 }
+
+/** Price index (1.0 = list) as a percent-of-list figure: 0.845 -> "84.5%". */
+export function pctOfList(x: number | null | undefined): string {
+  if (x === null || x === undefined || !isFinite(x)) return "—";
+  return `${(x * 100).toFixed(1)}%`;
+}
+
+/** Signed percentage for margins: -0.007 -> "−0.7%". */
+export function signedPct(x: number | null | undefined, digits = 1): string {
+  if (x === null || x === undefined || !isFinite(x)) return "—";
+  const sign = x < 0 ? "−" : "";
+  return `${sign}${(Math.abs(x) * 100).toFixed(digits)}%`;
+}

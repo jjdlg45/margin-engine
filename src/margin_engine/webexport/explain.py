@@ -70,6 +70,24 @@ def guidance_explanation(row: dict[str, Any]) -> str:
     )
 
 
+def opportunity_summary(row: dict[str, Any]) -> str:
+    """One short, row-specific sentence: the numbers and what drives them."""
+    gross = row.get("gross_price_opportunity_cents")
+    expected = row.get("expected_contribution_change_cents")
+    treatment = row.get("volume_treatment") or "fixed_volume_only"
+    if treatment == "expected_change" and expected is not None:
+        return (
+            f"{_dollars(gross)} gap at unchanged volume; causal evidence puts the "
+            f"expected change at {_dollars(expected)} after the volume response."
+        )
+    if treatment == "sensitivity_range_only":
+        return (
+            f"{_dollars(gross)} gap at unchanged volume; instrument-level evidence "
+            "limits the volume response to a labeled range."
+        )
+    return f"{_dollars(gross)} gap at unchanged volume; no volume response is modeled."
+
+
 def opportunity_explanation(row: dict[str, Any]) -> str:
     """Why this opportunity is sized the way it is, from its own numbers."""
     gross = row.get("gross_price_opportunity_cents")
@@ -84,8 +102,7 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
         return (
             base + f" This segment's elasticity is causal-supported, so the engine also "
             f"models the volume response: the expected contribution change is "
-            f"{_dollars(expected)}. The two figures answer different questions and "
-            "are never added together."
+            f"{_dollars(expected)}."
         )
     if treatment == "sensitivity_range_only":
         return (

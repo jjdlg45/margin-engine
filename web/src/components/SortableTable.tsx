@@ -81,8 +81,9 @@ export function SortableTable<T>({
               <tr key={hg.id}>
                 {hg.headers.map((h) => {
                   const sorted = h.column.getIsSorted();
+                  const left = (h.column.columnDef.meta as { left?: boolean } | undefined)?.left;
                   return (
-                    <th key={h.id}>
+                    <th key={h.id} className={left ? "left" : undefined}>
                       {h.column.getCanSort() ? (
                         <button
                           className="w-full cursor-pointer border-0 bg-transparent p-0 text-center font-semibold text-ink/[0.87]"

@@ -110,9 +110,11 @@ class DispersionSection(BaseModel):
 
 
 class SegmentRule(BaseModel):
-    leaf_id: int
+    leaf_id: int = Field(description="Tree node id - technical detail only")
+    display_rank: int = Field(description="1-based rank by size; viewers see 'Segment {rank}'")
     name: str = Field(description="Short plain-English name derived from the rule")
     plain: str = Field(description="One-sentence description derived from the rule")
+    technical_note: str = Field(description="Merge/leaf mechanics for the expander")
     rule: str = Field(description="Raw tree rule - technical detail, not primary display")
     n_lines: int
     n_customers: int
@@ -188,6 +190,7 @@ class OpportunityRecord(BaseModel):
     expected_contribution_change_cents: int | None
     volume_treatment: str
     evidence_status: str | None
+    summary: str = Field(description="One short row-specific sentence for the table")
     explanation: str
 
 

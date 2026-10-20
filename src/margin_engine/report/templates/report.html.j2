@@ -91,9 +91,10 @@
 <table>
   <tr><th>Segment</th><th>Rule</th><th>Lines</th><th>Customers</th><th>Items</th><th>Median price index</th></tr>
   {% for r in segments.rules %}
-  <tr><td>{{ r.leaf_id }}</td>
+  <tr><td>Segment {{ r.display_rank }}</td>
       <td style="text-align:left"><strong>{{ r.name }}</strong><br><span class="muted">{{ r.plain }}</span>
-        <details><summary class="muted">Technical rule</summary><code>{{ r.rule }}</code></details></td>
+        <details><summary class="muted">Technical rule</summary>
+          <span class="muted">Leaf {{ r.leaf_id }}. {{ r.technical_note }}</span><br><code>{{ r.rule }}</code></details></td>
       <td>{{ r.n_lines }}</td><td>{{ r.n_customers }}</td><td>{{ r.n_items }}</td><td>{{ "%.3f"|format(r.median_price_index) }}</td></tr>
   {% endfor %}
 </table>

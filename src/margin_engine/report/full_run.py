@@ -533,8 +533,17 @@ def run_full(
         },
         "segments": {
             "rules": [
-                {**r, "name": plain_rule(str(r["rule"]))[0], "plain": plain_rule(str(r["rule"]))[1]}
-                for r in seg.rules
+                {
+                    **r,
+                    "display_rank": rank,
+                    "name": plain_rule(str(r["rule"]))[0],
+                    "plain": plain_rule(str(r["rule"]))[1],
+                    "technical_note": plain_rule(str(r["rule"]))[2],
+                }
+                for rank, r in enumerate(
+                    sorted(seg.rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"]))),
+                    start=1,
+                )
             ],
             "bootstrap_ari": f"{seg.bootstrap_median_ari:.3f}"
             if seg.bootstrap_median_ari is not None

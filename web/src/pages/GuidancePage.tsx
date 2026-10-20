@@ -9,7 +9,7 @@ import { BandChart } from "../charts/Band";
 import { EmptyState, PageHeader, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { useBundle } from "../lib/bundle";
-import { count, dollars } from "../lib/format";
+import { count, dollars, pctOfList } from "../lib/format";
 
 export function GuidancePage() {
   const b = useBundle();
@@ -80,7 +80,10 @@ export function GuidancePage() {
             <StatusChip status={pair.status} />
             {pair.target_label && <StatusChip status={pair.target_label} />}
             <span className="text-caption secondary">
-              segment {pair.segment ?? "—"}{" · "}
+              {(() => {
+                const r = b.segments.rules.find((x) => x.leaf_id === pair.segment);
+                return r ? `Segment ${r.display_rank}` : "no segment";
+              })()}{" · "}
               {dollars(pair.annual_net_revenue_cents)} baseline revenue
             </span>
           </div>
@@ -104,8 +107,8 @@ export function GuidancePage() {
               <dd className="m-0">{dollars(pair.invoice_floor_cents)}</dd>
             </div>
             <div>
-              <dt className="text-caption secondary">Target index</dt>
-              <dd className="m-0">{pair.target_index?.toFixed(3) ?? "—"}</dd>
+              <dt className="text-caption secondary">Target price (% of list)</dt>
+              <dd className="m-0">{pctOfList(pair.target_index)}</dd>
             </div>
           </dl>
           <p className="mb-0 mt-4 max-w-2xl">{pair.explanation}</p>
@@ -120,7 +123,7 @@ export function GuidancePage() {
                   <tr>
                     <th>Customer</th>
                     <th>Item</th>
-                    <th>Current index</th>
+                    <th>Current price (% of list)</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -139,7 +142,7 @@ export function GuidancePage() {
                           {g.item_id}
                         </button>
                       </td>
-                      <td>{g.current_index?.toFixed(3) ?? "—"}</td>
+                      <td>{pctOfList(g.current_index)}</td>
                       <td>
                         <StatusChip status={g.status} />
                       </td>

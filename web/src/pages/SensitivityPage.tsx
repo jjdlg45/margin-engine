@@ -11,7 +11,11 @@ import { count, num } from "../lib/format";
 
 export function SensitivityPage() {
   const b = useBundle();
-  const rows = b.sensitivity;
+  const rankOf = new Map(b.segments.rules.map((r) => [r.leaf_id, r.display_rank]));
+  const disp = (seg: number) => `Segment ${rankOf.get(seg) ?? seg}`;
+  const rows = [...b.sensitivity].sort(
+    (a, z) => (rankOf.get(a.segment) ?? 99) - (rankOf.get(z.segment) ?? 99),
+  );
   const withIv = rows.filter((r) => r.iv !== null);
   return (
     <div>
@@ -28,7 +32,7 @@ export function SensitivityPage() {
       />
       {withIv.length ? (
         <div className="panel mt-2 px-5 py-6 sm:px-8">
-          <IntervalChart rows={rows} />
+          <IntervalChart rows={rows} nameOf={disp} />
           <p className="mb-0 mt-3 text-caption secondary">
             Filled circle = causal-supported; half-filled = IV-level; open =
             descriptive. The open amber square is the naive within-estimate:
@@ -49,7 +53,7 @@ export function SensitivityPage() {
             <li key={r.segment} className="border-t hairline py-4">
               <Collapsible.Root>
                 <div className="row items-center">
-                  <span className="w-28 font-medium">Segment {r.segment}</span>
+                  <span className="w-28 font-medium">{disp(r.segment)}</span>
                   <span className="w-24">{r.iv !== null ? num(r.iv) : "—"}</span>
                   <span className="text-caption secondary">
                     {r.iv_ci_low !== null && r.iv_ci_high !== null

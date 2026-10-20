@@ -28,12 +28,12 @@ export function WaterfallPage() {
       },
       { replace: true },
     );
-  const segName = new Map(b.segments.rules.map((r) => [String(r.leaf_id), r.name]));
+  const segOf = new Map(b.segments.rules.map((r) => [String(r.leaf_id), r]));
   const groups = (view === "segment" ? b.waterfall_by_segment : b.waterfall_by_customer).map(
-    (g) =>
-      view === "segment" && segName.has(g.key)
-        ? { ...g, label: `${g.label} — ${segName.get(g.key)}` }
-        : g,
+    (g) => {
+      const seg = view === "segment" ? segOf.get(g.key) : undefined;
+      return seg ? { ...g, label: `Segment ${seg.display_rank} — ${seg.name}` } : g;
+    },
   );
   const active = useMemo(
     () => groups.find((g) => g.key === groupKey) ?? groups[0],

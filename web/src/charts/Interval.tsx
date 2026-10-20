@@ -6,7 +6,13 @@
 import { num } from "../lib/format";
 import type { SensitivitySegment } from "../types/bundle";
 
-export function IntervalChart({ rows }: { rows: SensitivitySegment[] }) {
+export function IntervalChart({
+  rows,
+  nameOf,
+}: {
+  rows: SensitivitySegment[];
+  nameOf?: (segment: number) => string;
+}) {
   const withIv = rows.filter((r) => r.iv !== null);
   const values = withIv.flatMap((r) =>
     [r.iv, r.iv_ci_low, r.iv_ci_high, r.naive_fe_ols].filter(
@@ -38,7 +44,7 @@ export function IntervalChart({ rows }: { rows: SensitivitySegment[] }) {
         return (
           <g key={r.segment}>
             <text x={4} y={y + 4} fontSize={11} fill="rgb(var(--ink) / 0.87)">
-              Segment {r.segment}
+              {nameOf ? nameOf(r.segment) : `Segment ${r.segment}`}
             </text>
             {r.iv_ci_low !== null && r.iv_ci_high !== null && (
               <line

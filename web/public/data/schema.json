@@ -628,6 +628,11 @@
      ],
      "title": "Segment"
     },
+    "summary": {
+     "description": "One short row-specific sentence for the table",
+     "title": "Summary",
+     "type": "string"
+    },
     "volume_treatment": {
      "title": "Volume Treatment",
      "type": "string"
@@ -641,6 +646,7 @@
     "expected_contribution_change_cents",
     "volume_treatment",
     "evidence_status",
+    "summary",
     "explanation"
    ],
    "title": "OpportunityRecord",
@@ -1110,7 +1116,13 @@
   },
   "SegmentRule": {
    "properties": {
+    "display_rank": {
+     "description": "1-based rank by size; viewers see 'Segment {rank}'",
+     "title": "Display Rank",
+     "type": "integer"
+    },
     "leaf_id": {
+     "description": "Tree node id - technical detail only",
      "title": "Leaf Id",
      "type": "integer"
     },
@@ -1144,12 +1156,19 @@
      "description": "Raw tree rule - technical detail, not primary display",
      "title": "Rule",
      "type": "string"
+    },
+    "technical_note": {
+     "description": "Merge/leaf mechanics for the expander",
+     "title": "Technical Note",
+     "type": "string"
     }
    },
    "required": [
     "leaf_id",
+    "display_rank",
     "name",
     "plain",
+    "technical_note",
     "rule",
     "n_lines",
     "n_customers",
