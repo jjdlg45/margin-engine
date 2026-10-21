@@ -5,6 +5,12 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
+import { EntityLabel, entityText } from "../components/EntityLabel";
+import { EntityCombobox } from "../components/filters/Combobox";
+import { FilterBar } from "../components/filters/FilterBar";
+import { MultiSelect } from "../components/filters/MultiSelect";
+import { RangeFilter } from "../components/filters/RangeFilter";
+import { ChipDescriptor, inRange, rangeChipLabel, useFilterParams } from "../lib/filters";
 import { Link, useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
 import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
@@ -16,22 +22,79 @@ import { useCompact } from "../lib/useCompact";
 import { count, dollars, pct, pctOfList } from "../lib/format";
 import type { CustomerEconomics } from "../types/bundle";
 
+const FILTER_KEYS = ["cust", "flags", "losing", "returns", "excluded", "orders"];
+
 export function Customers() {
   const b = useBundle();
   const labels = useLabels();
   const compact = useCompact();
+  const f = useFilterParams();
   const [params, setParams] = useSearchParams();
   const selected = params.get("customer");
   const customer = b.economics.customers.find((c) => c.customer_id === selected);
+
+  const custFilter = f.params.get("cust");
+  const flagFilter = f.getList("flags");
+  const losing = f.params.get("losing") === "1";
+  const returnsRange = f.getRange("returns");
+  const excludedRange = f.getRange("excluded");
+  const ordersRange = f.getRange("orders");
+
+  const custOptions = useMemo(
+    () => b.economics.customers.map((c) => ({ id: c.customer_id, name: c.customer_name ?? null })),
+    [b.economics.customers],
+  );
+  const flagOptions = useMemo(
+    () => [...new Set(b.economics.customers.flatMap((c) => c.service_flags))].sort(),
+    [b.economics.customers],
+  );
+  const filtered = b.economics.customers.filter(
+    (c) =>
+      (!custFilter || c.customer_id === custFilter) &&
+      (!flagFilter.length || flagFilter.some((fl) => c.service_flags.includes(fl))) &&
+      (!losing || c.contribution_after_activity_cents < 0) &&
+      inRange(c.returns_contribution_cents / 100, returnsRange) &&
+      inRange(c.pct_revenue_excluded * 100, excludedRange) &&
+      inRange(c.n_orders, ordersRange),
+  );
+  const chips: ChipDescriptor[] = [];
+  if (custFilter)
+    chips.push({
+      key: "cust",
+      label: entityText(custOptions.find((c) => c.id === custFilter)?.name, custFilter),
+      onRemove: () => f.set("cust", null),
+    });
+  for (const fl of flagFilter)
+    chips.push({
+      key: `fl-${fl}`,
+      label: labels(fl).label,
+      onRemove: () => f.setList("flags", flagFilter.filter((x) => x !== fl)),
+    });
+  if (losing)
+    chips.push({
+      key: "losing",
+      label: "Losing money after cost-to-serve",
+      onRemove: () => f.set("losing", null),
+    });
+  const rChip = rangeChipLabel("Returns impact", returnsRange, " $");
+  if (rChip)
+    chips.push({ key: "returns", label: rChip, onRemove: () => f.setRange("returns", { min: null, max: null }) });
+  const eChip = rangeChipLabel("Revenue excluded", excludedRange, "%");
+  if (eChip)
+    chips.push({ key: "excluded", label: eChip, onRemove: () => f.setRange("excluded", { min: null, max: null }) });
+  const oChip = rangeChipLabel("Orders", ordersRange);
+  if (oChip)
+    chips.push({ key: "orders", label: oChip, onRemove: () => f.setRange("orders", { min: null, max: null }) });
 
   const columns = useMemo<ColumnDef<CustomerEconomics, unknown>[]>(
     () => [
       {
         header: "Customer",
         accessorKey: "customer_id",
+        meta: { left: true },
         cell: (c) => (
           <button
-            className="cursor-pointer border-0 bg-transparent p-0 font-mono text-petrol underline-offset-4 hover:underline"
+            className="cursor-pointer border-0 bg-transparent p-0 text-left text-petrol underline-offset-4 hover:underline"
             onClick={() =>
               setParams((p) => {
                 p.set("customer", c.row.original.customer_id);
@@ -39,7 +102,7 @@ export function Customers() {
               })
             }
           >
-            {c.row.original.customer_id}
+            <EntityLabel name={c.row.original.customer_name} id={c.row.original.customer_id} />
           </button>
         ),
       },
@@ -113,13 +176,52 @@ export function Customers() {
           return p;
         })} />
       ) : (
-        <SortableTable
-          data={b.economics.customers}
-          columns={columns}
-          filterPlaceholder="Filter customers"
-          filterUrlParam="filter"
-          initialSort={[{ id: "contribution_after_activity_cents", desc: false }]}
-        />
+        <>
+          <FilterBar
+            chips={chips}
+            onClearAll={() => f.clearAll(FILTER_KEYS)}
+            shown={filtered.length}
+            total={b.economics.customers.length}
+            noun="customers"
+          >
+            <EntityCombobox
+              label="Customer"
+              options={custOptions}
+              value={custFilter}
+              onChange={(v) => f.set("cust", v)}
+            />
+            <MultiSelect
+              label="Service flags"
+              options={flagOptions}
+              values={flagFilter}
+              onChange={(v) => f.setList("flags", v)}
+              renderOption={(fl) => labels(fl).label}
+            />
+            <div className="flex flex-col gap-1">
+              <span className="text-caption secondary">After cost-to-serve</span>
+              <button
+                type="button"
+                aria-pressed={losing}
+                onClick={() => f.set("losing", losing ? null : "1")}
+                className={
+                  losing
+                    ? "rounded-badge border border-petrol bg-petrol px-2 py-1 text-sm text-paper"
+                    : "rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/70"
+                }
+              >
+                Losing money only
+              </button>
+            </div>
+            <RangeFilter label="Returns impact" unit="$" range={returnsRange} onChange={(r) => f.setRange("returns", r)} />
+            <RangeFilter label="Revenue excluded" unit="%" range={excludedRange} onChange={(r) => f.setRange("excluded", r)} />
+            <RangeFilter label="Orders" range={ordersRange} onChange={(r) => f.setRange("orders", r)} />
+          </FilterBar>
+          <SortableTable
+            data={filtered}
+            columns={columns}
+            initialSort={[{ id: "contribution_after_activity_cents", desc: false }]}
+          />
+        </>
       )}
     </div>
   );
@@ -150,7 +252,7 @@ function CustomerDetail({
         Back to all customers
       </button>
       <h2 className="heading-rule mb-2 mt-4 text-section">
-        <span className="font-mono">{customer.customer_id}</span>
+        <EntityLabel name={customer.customer_name} id={customer.customer_id} />
       </h2>
       <div className="row text-caption secondary">
         <span>{count(customer.n_orders)} orders</span>
@@ -192,7 +294,9 @@ function CustomerDetail({
               <tbody>
                 {topItems.map((g) => (
                   <tr key={g.item_id}>
-                    <td className="font-mono">{g.item_id}</td>
+                    <td className="left">
+                      <EntityLabel name={g.item_name} id={g.item_id} />
+                    </td>
                     <td>{dollars(g.annual_net_revenue_cents)}</td>
                     <td>{pctOfList(g.current_index)}</td>
                     <td>

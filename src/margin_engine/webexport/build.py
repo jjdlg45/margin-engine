@@ -169,12 +169,52 @@ def _leakage_components(leak: pl.DataFrame) -> list[LeakageComponent]:
     ]
 
 
+def _name_maps(
+    res: FullRunResult,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
+    """customer, item, supplier and category display names from the mapped
+    reference tables; empty when the export carries IDs only."""
+    cust: dict[str, str] = {}
+    item: dict[str, str] = {}
+    supp: dict[str, str] = {}
+    cat: dict[str, str] = {}
+    customers = res.pipeline.reference.get("customers")
+    if customers is not None and "customer_name" in customers.columns:
+        cust = {
+            r["customer_id"]: r["customer_name"]
+            for r in customers.select("customer_id", "customer_name").to_dicts()
+            if r["customer_name"]
+        }
+    items = res.pipeline.reference.get("items")
+    if items is not None:
+        if "item_description" in items.columns:
+            item = {
+                r["item_id"]: r["item_description"]
+                for r in items.select("item_id", "item_description").to_dicts()
+                if r["item_description"]
+            }
+        if "supplier_name" in items.columns:
+            supp = {
+                r["supplier_id"]: r["supplier_name"]
+                for r in items.select("supplier_id", "supplier_name").unique().to_dicts()
+                if r["supplier_name"]
+            }
+        if "category_name" in items.columns:
+            cat = {
+                r["item_category"]: r["category_name"]
+                for r in items.select("item_category", "category_name").unique().to_dicts()
+                if r["category_name"]
+            }
+    return cust, item, supp, cat
+
+
 def build_bundle(
     res: FullRunResult,
     rules: Rules,
     repo_root: Path,
     data_label: str | None = None,
 ) -> WebBundle:
+    cust_name, item_name, supp_name, cat_name = _name_maps(res)
     ledger = res.pipeline.ledger
     sale = ledger.filter(pl.col("transaction_type") == "sale")
     seg_of_line = res.segments.leaf_assignments
@@ -380,7 +420,9 @@ def build_bundle(
     guidance_pairs = [
         GuidancePair(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             item_id=str(r["item_id"]),
+            item_name=item_name.get(str(r["item_id"])),
             segment=int(r["segment_leaf"]) if r.get("segment_leaf") is not None else None,
             current_index=_r(r.get("current_index")),
             band_p25=_r(r.get("band_p25")),
@@ -450,12 +492,19 @@ def build_bundle(
     top_opps = [
         OpportunityRecord(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             item_id=str(r["item_id"]),
+            item_name=item_name.get(str(r["item_id"])),
             segment=int(r["segment_leaf"]) if r.get("segment_leaf") is not None else None,
             gross_price_opportunity_cents=_i(r["gross_price_opportunity_cents"]),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
             evidence_status=r.get("evidence_status"),
+            pct_below_target=_r(
+                (float(r["target_index"]) - float(r["current_index"])) / float(r["target_index"])
+            )
+            if r.get("target_index") and r.get("current_index") is not None
+            else None,
             summary=explain.opportunity_summary(r),
             explanation=explain.opportunity_explanation(r),
         )
@@ -514,6 +563,7 @@ def build_bundle(
     customers = [
         CustomerEconomics(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             n_orders=_i(r["n_orders"]),
             net_revenue_cents=_i(r["net_cents"]),
             sales_contribution_cents=_i(r["sales_contribution_cents"]),
@@ -549,7 +599,7 @@ def build_bundle(
     economics = EconomicsSection(customers=customers, orders=orders)
 
     # --- scenario grids ------------------------------------------------------------
-    scenario_grids = _scenario_grids(res, rules)
+    scenario_grids = _scenario_grids(res, rules, supp_name, cat_name)
 
     # --- optional modules ------------------------------------------------------------
     optional = _optional_modules(res)
@@ -604,7 +654,14 @@ def build_bundle(
             "Segment {}",
             top_n=50,
         ),
-        waterfall_by_customer=_group_waterfalls(sale, "customer_id", "{}", top_n=200),
+        waterfall_by_customer=[
+            gw.model_copy(
+                update={
+                    "label": f"{cust_name[gw.key]} · {gw.key}" if gw.key in cust_name else gw.label
+                }
+            )
+            for gw in _group_waterfalls(sale, "customer_id", "{}", top_n=200)
+        ],
         leakage_components_overall=_leakage_components(leak),
         dispersion=dispersion,
         segments=segments,
@@ -619,7 +676,12 @@ def build_bundle(
     )
 
 
-def _scenario_grids(res: FullRunResult, rules: Rules) -> list[ScenarioGrid]:
+def _scenario_grids(
+    res: FullRunResult,
+    rules: Rules,
+    supp_name: dict[str, str],
+    cat_name: dict[str, str],
+) -> list[ScenarioGrid]:
     """Pass-through grids (0..100% in 10% steps) for the top categories and
     suppliers by baseline revenue, at a +10% landed-cost shock."""
     from datetime import date
@@ -663,11 +725,13 @@ def _scenario_grids(res: FullRunResult, rules: Rules) -> list[ScenarioGrid]:
             n_pairs = int(grid.select(pl.col("n_pairs").max()).item() or 0) if grid.height else 0
             if n_pairs == 0:
                 continue
+            scope_label = (supp_name if scope == "supplier" else cat_name).get(str(value))
             grids.append(
                 ScenarioGrid(
                     name=shock.name,
                     scope=scope,
                     scope_value=str(value),
+                    scope_label=scope_label,
                     pct_increase=0.10,
                     n_pairs=n_pairs,
                     cogs_timing=timing,

@@ -91,6 +91,12 @@ Physical format is declared in the mapping, never guessed:
 | `currency_symbols` | `[]` | Symbols stripped from money values, e.g. `["$"]`, `["MXN"]` |
 | `negative_format` | `minus` | `minus` for `-113.57`, `parentheses` for `(113.57)` |
 | `trim_whitespace` | `true` | Strip surrounding whitespace from headers and values |
+
+Reference tables may also map optional display names - `customer_name` on the
+customers table, and `item_description`, `supplier_name`, `category_name` on
+the items table. When present, the demo UI and report show names first with
+the ID secondary ("Gulf Coast Mechanical Supply · C10031") and search
+matches either; when absent, IDs are shown alone.
 | `decimal_separator` | `.` | `,` for `1.234,56`-style numbers |
 
 Options set globally under `input:` can be overridden per file (`lines_input:` for the invoice lines, `input:` on any reference table), for example semicolon-delimited invoice lines alongside a comma-delimited price list. Blank rows are dropped and counted in the run manifest. A wrong declaration fails with a message naming the likely cause and the option to set.

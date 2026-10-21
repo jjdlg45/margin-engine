@@ -5,6 +5,7 @@
 import * as Slider from "@radix-ui/react-slider";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { EntityCombobox } from "../components/filters/Combobox";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { useBundle } from "../lib/bundle";
 import { count, dollars, pct } from "../lib/format";
@@ -48,27 +49,23 @@ export function ScenariosPage() {
           </>
         }
       />
-      <div className="row">
-        <label className="text-caption secondary" htmlFor="scenario-pick">
-          Scenario
-        </label>
-        <select
-          id="scenario-pick"
-          value={grid.name}
-          onChange={(e) =>
-            setParams((p) => {
-              p.set("scenario", e.target.value);
-              return p;
-            })
-          }
-        >
-          {b.scenario_grids.map((g) => (
-            <option key={g.name} value={g.name}>
-              {g.name} ({count(g.n_pairs)} pairs)
-            </option>
-          ))}
-        </select>
-      </div>
+      <EntityCombobox
+        label="Scenario"
+        options={b.scenario_grids.map((g) => ({
+          id: g.name,
+          name: g.scope_label ?? g.scope_value,
+          group: g.scope === "category" ? "Category" : "Supplier",
+          hint: `${count(g.n_pairs)} pairs`,
+        }))}
+        value={grid.name}
+        onChange={(v) =>
+          setParams((p) => {
+            if (v) p.set("scenario", v);
+            else p.delete("scenario");
+            return p;
+          })
+        }
+      />
       <div className="panel mt-4 max-w-2xl px-5 py-6 sm:px-8">
         <label className="text-caption secondary" htmlFor="pt-slider">
           Pass-through: <span className="font-semibold text-ink">{pct(point.pass_through, 0)}</span>{" "}

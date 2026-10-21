@@ -166,8 +166,16 @@ def export_reference_tables(
     # export artifacts and must not inflate settlement or freight aggregates.
     lines = lines.unique(subset=["line_key"], keep="first", maintain_order=True)
 
-    customers.select(
+    from synth.names import category_names, customer_names, item_descriptions, supplier_names
+
+    cust_names = customer_names(cfg.seed, customers["customer_id"].to_list())
+    item_descs = item_descriptions(cfg.seed, items["item_id"].to_list())
+    supp_map = supplier_names(cfg.seed, items["supplier_id"].to_list())
+    cat_map = category_names(items["item_category"].to_list())
+
+    customers.join(cust_names, on="customer_id").select(
         pl.col("customer_id").alias("CUST_NO"),
+        pl.col("customer_name").alias("CUST_NAME"),
         pl.col("industry").alias("INDUSTRY"),
         pl.col("region").alias("REGION"),
         pl.col("size_band").alias("SIZE_BAND"),
@@ -178,11 +186,17 @@ def export_reference_tables(
         pl.col("sales_rep_id").alias("REP_ID"),
     ).write_csv(out / "customers.csv")
 
-    items.select(
+    items.join(item_descs, on="item_id").with_columns(
+        pl.col("supplier_id").replace_strict(supp_map).alias("_supp_name"),
+        pl.col("item_category").replace_strict(cat_map).alias("_cat_name"),
+    ).select(
         pl.col("item_id").alias("ITEM_NO"),
+        pl.col("item_description").alias("ITEM_DESC"),
         pl.col("item_family").alias("FAMILY"),
         pl.col("item_category").alias("CATEGORY"),
+        pl.col("_cat_name").alias("CAT_NAME"),
         pl.col("supplier_id").alias("SUPPLIER"),
+        pl.col("_supp_name").alias("SUPP_NAME"),
         pl.col("item_role").alias("ITEM_ROLE"),
         pl.col("is_service").cast(pl.Int8).alias("SVC_FLAG"),
         pl.col("base_uom").alias("BASE_UOM"),

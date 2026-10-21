@@ -141,7 +141,9 @@ class SegmentsSection(BaseModel):
 
 class GuidancePair(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     item_id: str
+    item_name: str | None = None
     segment: int | None
     current_index: float | None
     band_p25: float | None
@@ -184,12 +186,17 @@ class SensitivitySegment(BaseModel):
 
 class OpportunityRecord(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     item_id: str
+    item_name: str | None = None
     segment: int | None
     gross_price_opportunity_cents: int
     expected_contribution_change_cents: int | None
     volume_treatment: str
     evidence_status: str | None
+    pct_below_target: float | None = Field(
+        default=None, description="(target - current) / target, from the pair's guidance"
+    )
     summary: str = Field(description="One short row-specific sentence for the table")
     explanation: str
 
@@ -215,6 +222,7 @@ class OpportunitySection(BaseModel):
 
 class CustomerEconomics(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     n_orders: int
     net_revenue_cents: int
     sales_contribution_cents: int
@@ -255,6 +263,7 @@ class ScenarioGrid(BaseModel):
     name: str
     scope: str
     scope_value: str
+    scope_label: str | None = Field(default=None, description="Supplier/category display name")
     pct_increase: float
     n_pairs: int
     cogs_timing: str

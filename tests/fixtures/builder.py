@@ -97,9 +97,12 @@ class FixtureWorld:
         self.items.append(
             {
                 "ITEM_NO": item,
+                "ITEM_DESC": f"Fixture item {item}",
                 "FAMILY": "FAM1",
                 "CATEGORY": "CAT1",
+                "CAT_NAME": "Fixture category",
                 "SUPPLIER": supplier,
+                "SUPP_NAME": f"Fixture supplier {supplier}",
                 "ITEM_ROLE": "core",
                 "SVC_FLAG": "1" if service else "0",
                 "BASE_UOM": base_uom,

@@ -21,6 +21,7 @@ export type AvgOrderValueCents = number;
 export type ContributionAfterActivityCents = number;
 export type ContributionCents = number;
 export type CustomerId = string;
+export type CustomerName = string | null;
 export type NOrders = number;
 export type NetRevenueCents = number;
 export type PctRevenueExcluded = number;
@@ -41,10 +42,12 @@ export type BandP50 = number | null;
 export type BandP75 = number | null;
 export type CurrentIndex = number | null;
 export type CustomerId1 = string;
+export type CustomerName1 = string | null;
 export type Explanation = string;
 export type FloorIndex = number | null;
 export type InvoiceFloorCents = number | null;
 export type ItemId = string;
+export type ItemName = string | null;
 export type PocketFloorCents = number | null;
 export type Segment = number | null;
 export type Status = string;
@@ -121,11 +124,17 @@ export type LeakageTotalCents = number;
 export type NRecords = number;
 export type NeverSummedNote = string;
 export type CustomerId3 = string;
+export type CustomerName2 = string | null;
 export type EvidenceStatus = string | null;
 export type ExpectedContributionChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type ItemId1 = string;
+export type ItemName1 = string | null;
+/**
+ * (target - current) / target, from the pair's guidance
+ */
+export type PctBelowTarget = number | null;
 export type Segment1 = number | null;
 /**
  * One short row-specific sentence for the table
@@ -192,6 +201,10 @@ export type RecoveredCents = number;
 export type ResidualExposureCents = number;
 export type Points = ScenarioGridPoint[];
 export type Scope = string;
+/**
+ * Supplier/category display name
+ */
+export type ScopeLabel = string | null;
 export type ScopeValue = string;
 export type ScenarioGrids = ScenarioGrid[];
 export type BootstrapMedianAri = number | null;
@@ -342,6 +355,7 @@ export interface CustomerEconomics {
   contribution_after_activity_cents: ContributionAfterActivityCents;
   contribution_cents: ContributionCents;
   customer_id: CustomerId;
+  customer_name?: CustomerName;
   n_orders: NOrders;
   net_revenue_cents: NetRevenueCents;
   pct_revenue_excluded: PctRevenueExcluded;
@@ -364,10 +378,12 @@ export interface GuidancePair {
   band_p75: BandP75;
   current_index: CurrentIndex;
   customer_id: CustomerId1;
+  customer_name?: CustomerName1;
   explanation: Explanation;
   floor_index: FloorIndex;
   invoice_floor_cents: InvoiceFloorCents;
   item_id: ItemId;
+  item_name?: ItemName;
   pocket_floor_cents: PocketFloorCents;
   segment: Segment;
   status: Status;
@@ -446,11 +462,14 @@ export interface CustomerLeakage {
 }
 export interface OpportunityRecord {
   customer_id: CustomerId3;
+  customer_name?: CustomerName2;
   evidence_status: EvidenceStatus;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   item_id: ItemId1;
+  item_name?: ItemName1;
+  pct_below_target?: PctBelowTarget;
   segment: Segment1;
   summary: Summary;
   volume_treatment: VolumeTreatment;
@@ -515,6 +534,7 @@ export interface ScenarioGrid {
   pct_increase: PctIncrease;
   points: Points;
   scope: Scope;
+  scope_label?: ScopeLabel;
   scope_value: ScopeValue;
 }
 export interface ScenarioGridPoint {

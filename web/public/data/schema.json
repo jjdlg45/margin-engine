@@ -84,6 +84,18 @@
      "title": "Customer Id",
      "type": "string"
     },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
+    },
     "n_orders": {
      "title": "N Orders",
      "type": "integer"
@@ -317,6 +329,18 @@
      "title": "Customer Id",
      "type": "string"
     },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
+    },
     "explanation": {
      "title": "Explanation",
      "type": "string"
@@ -346,6 +370,18 @@
     "item_id": {
      "title": "Item Id",
      "type": "string"
+    },
+    "item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Item Name"
     },
     "pocket_floor_cents": {
      "anyOf": [
@@ -583,6 +619,18 @@
      "title": "Customer Id",
      "type": "string"
     },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
+    },
     "evidence_status": {
      "anyOf": [
       {
@@ -616,6 +664,31 @@
     "item_id": {
      "title": "Item Id",
      "type": "string"
+    },
+    "item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Item Name"
+    },
+    "pct_below_target": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "(target - current) / target, from the pair's guidance",
+     "title": "Pct Below Target"
     },
     "segment": {
      "anyOf": [
@@ -1013,6 +1086,19 @@
     "scope": {
      "title": "Scope",
      "type": "string"
+    },
+    "scope_label": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Supplier/category display name",
+     "title": "Scope Label"
     },
     "scope_value": {
      "title": "Scope Value",

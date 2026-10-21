@@ -1427,3 +1427,53 @@ label). **4. The Expected contribution change card** carries its time window
 
 **Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
 build 0; playwright 0 (108 passed; snapshots regenerated).
+
+---
+## Phase 23.8 — Filters and lookups (2026-10-21)
+
+**1. Names in the data model.** Optional canonical fields - customer_name
+(customers table), item_description / supplier_name / category_name (items
+table) - in the mapping and the bundle schema; absent means IDs only, and the
+UI falls back per value. The generator produces deterministic names on
+dedicated RNG streams (seed+1001..1003: distributor-style accounts, item
+descriptions with size and material, supplier and category line-card names),
+verified not to perturb any other column. Committed sample regenerated (which
+also absorbed the long-pending base_qty 2.6->3.0 drift: the old sample
+predated the phase-17.1 bump); demo world regenerates at export. Display is
+name-first with the ID secondary everywhere (EntityLabel), and search matches
+name or ID.
+
+**2. Shared filter system.** React Aria Components (Radix stays for existing
+primitives): searchable EntityCombobox (type-ahead over names and IDs,
+keyboard navigation, Name/ID lookup toggle, grouped sections), MultiSelect,
+RangeFilter (min/max with presets), and a FilterBar with labeled filters,
+removable chips, Clear all and a result count - all state in the URL
+(useFilterParams). No native select elements remain anywhere.
+
+**3. Pages.** Guidance: the two dropdowns became a filterable pair table
+(customer, item, segment, status multi-select, current price % of list range
+with a "Below 90% of list" preset, gap-to-floor range with a "Below floor"
+preset); row click opens the band chart and explanation; single-pair deep
+links kept. Opportunities: customer, item, evidence and treatment
+multi-selects, gross $ range, % below target range (new pct_below_target on
+the record, derived from the pair's guidance). Customers: name/ID lookup,
+service-flag multi-select, losing-money toggle, returns impact / % excluded /
+order count ranges. Scenarios: searchable combobox grouped Category /
+Supplier with pair counts and display names (scope_label). Waterfall's group
+picker also moved to the combobox.
+
+**4. Verification.** New e2e/filters.spec.ts: every filter alone and
+combined, chip removal, clear all, URL round trips, keyboard-only combobox
+use, name and ID search, range boundaries (inclusive bounds checked at an
+exact pair value) - with every filtered count asserted equal to the bundle's
+own row count (parity). 128/128 Playwright across both widths; axe clean on
+the new components; raw-code scanner clean; bundle 1.35 MB (< 5 MB); initial
+JS ~199 KB gzipped (< 500 KB; the combobox chunk lazy-loads with the filter
+pages). Before/after screenshots of Guidance, Opportunity, Customers and
+Scenarios in both themes ({page}-{theme}-{before238,after238}.png); 40 visual
+snapshots regenerated. ruff, mypy strict and the full Python suite pass.
+One suite iteration surfaced 32 failures with a single cause: the hand-built
+fixture world wrote items.csv without the newly mapped name columns, and the
+mapping contract is strict by design (a declared column must exist). The
+fixture builder now emits the name columns; all 32 recovered without touching
+the loader's fail-closed behavior.

@@ -5,6 +5,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
+import { EntityCombobox } from "../components/filters/Combobox";
 import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { useBundle } from "../lib/bundle";
 import { useCompact } from "../lib/useCompact";
@@ -80,21 +81,17 @@ export function WaterfallPage() {
         </Tabs.Content>
         {(["segment", "customer"] as const).map((scope) => (
           <Tabs.Content key={scope} value={scope}>
-            <div className="row mt-4">
-              <label className="text-caption secondary" htmlFor={`${scope}-pick`}>
-                {scope === "segment" ? "Segment" : "Customer"}
-              </label>
-              <select
-                id={`${scope}-pick`}
-                value={active?.key ?? ""}
-                onChange={(e) => setGroupKey(e.target.value)}
-              >
-                {groups.map((g) => (
-                  <option key={g.key} value={g.key}>
-                    {g.label} ({dollarsShort(g.net_revenue_cents)})
-                  </option>
-                ))}
-              </select>
+            <div className="mt-4">
+              <EntityCombobox
+                label={scope === "segment" ? "Segment" : "Customer"}
+                options={groups.map((g) => ({
+                  id: g.key,
+                  name: g.label,
+                  hint: dollarsShort(g.net_revenue_cents),
+                }))}
+                value={active?.key ?? null}
+                onChange={(v) => setGroupKey(v ?? "")}
+              />
             </div>
             {active ? (
               <div className="panel mt-3 px-5 pb-5 pt-6 sm:px-8">

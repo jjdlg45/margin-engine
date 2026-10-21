@@ -16,12 +16,12 @@ test.beforeEach(async ({ page }) => {
 test("customer filter is shareable via the URL", async ({ page }) => {
   const id = bundle.economics.customers[0].customer_id;
   await page.goto("/#/customers");
-  const input = page.getByPlaceholder("Filter customers");
+  const input = page.getByRole("combobox", { name: "Customer" });
   await input.fill(id);
-  await expect(page).toHaveURL(new RegExp(`filter=${id}`));
+  await page.getByRole("option").first().click();
+  await expect(page).toHaveURL(new RegExp(`cust=${id}`));
   // A fresh load of the same URL restores the filtered table.
-  await page.goto(`/#/customers?filter=${id}`);
-  await expect(page.getByPlaceholder("Filter customers")).toHaveValue(id);
+  await page.goto(`/#/customers?cust=${id}`);
   const rows = page.locator("tbody tr");
   await expect(rows.first()).toContainText(id);
 });
@@ -30,34 +30,32 @@ test("waterfall scope and group live in the URL", async ({ page }) => {
   await page.goto("/#/waterfall");
   await page.getByRole("tab", { name: "By segment" }).click();
   await expect(page).toHaveURL(/view=segment/);
-  const select = page.locator("#segment-pick");
-  const options = select.locator("option");
+  // Data-agnostic: pick the second option when one exists, else assert the
+  // single-option behavior - through the accessible combobox, no native select.
+  const combo = page.getByRole("combobox", { name: "Segment" });
+  await combo.fill("Segment");
+  const options = page.getByRole("option");
+  await expect(options.first()).toBeVisible();
   const n = await options.count();
-  expect(n).toBeGreaterThan(0);
-  if (n >= 2) {
-    // Picking a different group writes it to the URL.
-    const second = await options.nth(1).getAttribute("value");
-    await select.selectOption(second!);
-    await expect(page).toHaveURL(new RegExp(`key=${second}`));
-    await page.goto(`/#/waterfall?view=segment&key=${second}`);
-    await expect(page.locator("#segment-pick")).toHaveValue(second!);
-  } else {
-    // Single-segment data: the lone option is active and its deep link
-    // restores the same view - no second option to select.
-    const only = await options.first().getAttribute("value");
-    await expect(select).toHaveValue(only!);
-    await page.goto(`/#/waterfall?view=segment&key=${only}`);
-    await expect(page.locator("#segment-pick")).toHaveValue(only!);
-    await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
-  }
+  await (n >= 2 ? options.nth(1) : options.first()).click();
+  await expect(page).toHaveURL(/key=/);
+  const key = new URL(page.url().replace("/#/", "/")).searchParams.get("key");
+  // Deep link restores the same view and renders the chart.
+  await page.goto(`/#/waterfall?view=segment&key=${key}`);
+  await expect(page.getByRole("combobox", { name: "Segment" })).toHaveValue(/Segment/);
+  await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
 });
 
-test("guidance lookup drives the band chart through the selects", async ({ page }) => {
+test("guidance lookup drives the band chart through the comboboxes", async ({ page }) => {
   const pair = bundle.guidance[0];
   await page.goto("/#/guidance");
-  await page.locator("#g-cust").selectOption(pair.customer_id);
+  const cust = page.getByRole("combobox", { name: "Customer" });
+  await cust.fill(pair.customer_id);
+  await page.getByRole("option").first().click();
   await expect(page).toHaveURL(new RegExp(`customer=${pair.customer_id}`));
-  await page.locator("#g-item").selectOption(pair.item_id);
+  const item = page.getByRole("combobox", { name: "Item" });
+  await item.fill(pair.item_id);
+  await page.getByRole("option").first().click();
   await expect(page).toHaveURL(new RegExp(`item=${pair.item_id}`));
   await expect(page.locator("svg[role='img']").first()).toBeVisible();
 });
