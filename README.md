@@ -78,6 +78,34 @@ cd web && npm install && npm run dev
 
 `--demo` generates a fixed world (seed 42, 40 customers × 100 items, ~17k lines): the smallest scale at which a segment reaches causal-supported elasticity, so the site shows both the fail-closed and the supported path. CI rebuilds the bundle at deploy time; it is never committed. Every figure on the site comes from the engine's exports, and parity tests check them to the cent.
 
+### Going live
+
+The demo is static hosting, but the UI is already structured for a live
+deployment behind a backend-for-frontend (BFF):
+
+- **One data client.** Every page reads through a single data-client
+  interface ([`web/src/lib/api/types.ts`](web/src/lib/api/types.ts)) using
+  TanStack Query hooks - no component fetches JSON directly. The static
+  adapter implements that interface over the exported files; a live
+  deployment swaps in an HTTP adapter against the BFF, a one-file change in
+  [`web/src/lib/api/client.ts`](web/src/lib/api/client.ts).
+- **The contract exists today.** [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
+  specifies the BFF: one aggregated endpoint per page plus paginated table
+  endpoints (`page`, `page_size`, `sort`, named filters → `items`, `total`,
+  `has_more`). The static adapter implements the same contract - filters,
+  sorting and pagination behave identically, so swapping adapters changes
+  transport, not behavior.
+- **The BFF owns the server-side concerns:** response caching (results are
+  immutable per engine run, so cache keys include the run manifest hash),
+  rate limiting, pagination over large tables, and any server-side
+  computation. The browser formats and filters; it never recalculates
+  financials.
+- **The export is already split** into per-page and per-table files, each
+  under 1 MB, so the Overview loads only its own data and the other pages
+  fetch lazily - the same request shapes the BFF would serve. Loading,
+  error-with-Retry and partial-data states are handled at every section, with
+  retries capped (two, exponential backoff, none on 4xx).
+
 ## Supported input formats
 
 The engine reads **tabular, line-level invoice exports**: one row per invoice line, as **CSV** or **.xlsx**. PDF and scanned invoices are not supported; they need a separate extraction step first.

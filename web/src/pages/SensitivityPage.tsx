@@ -4,32 +4,22 @@
 
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { IntervalChart } from "../charts/Interval";
+import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { useBundle } from "../lib/bundle";
+import type { SensitivityData } from "../lib/api/types";
+import { usePageData } from "../lib/queries";
 import { count, num } from "../lib/format";
 
-export function SensitivityPage() {
-  const b = useBundle();
-  const rankOf = new Map(b.segments.rules.map((r) => [r.leaf_id, r.display_rank]));
+function SensitivityBody({ d }: { d: SensitivityData }) {
+  const rankOf = new Map(d.segment_names.map((r) => [r.leaf_id, r.display_rank]));
   const disp = (seg: number) => `Segment ${rankOf.get(seg) ?? seg}`;
-  const rows = [...b.sensitivity].sort(
+  const rows = [...d.rows].sort(
     (a, z) => (rankOf.get(a.segment) ?? 99) - (rankOf.get(z.segment) ?? 99),
   );
   const withIv = rows.filter((r) => r.iv !== null);
   return (
-    <div>
-      <PageHeader
-        title="Price sensitivity"
-        lede={
-          <>
-            Own-price elasticity per segment, instrumented with supplier cost
-            and category tariff shocks. The evidence status is the headline:
-            only causal-supported estimates feed volume-response math anywhere
-            in this app. Open a segment for its full diagnostics.
-          </>
-        }
-      />
+    <>
       {withIv.length ? (
         <div className="panel mt-2 px-5 py-6 sm:px-8">
           <IntervalChart rows={rows} nameOf={disp} />
@@ -117,6 +107,28 @@ export function SensitivityPage() {
           ))}
         </ul>
       </Section>
+    </>
+  );
+}
+
+export function SensitivityPage() {
+  const q = usePageData("sensitivity");
+  return (
+    <div>
+      <PageHeader
+        title="Price sensitivity"
+        lede={
+          <>
+            Own-price elasticity per segment, instrumented with supplier cost
+            and category tariff shocks. The evidence status is the headline:
+            only causal-supported estimates feed volume-response math anywhere
+            in this app. Open a segment for its full diagnostics.
+          </>
+        }
+      />
+      <QuerySection query={q} label="price sensitivity" lines={8}>
+        {(d) => <SensitivityBody d={d} />}
+      </QuerySection>
     </div>
   );
 }

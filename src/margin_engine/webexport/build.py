@@ -828,8 +828,133 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
 from margin_engine.webexport.bundle import WinCurve as WinCurveModel  # noqa: E402
 
 
+def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
+    """Per-page projections of the bundle (the static files behind the data
+    client's page endpoints) plus per-table files. Pure projections - every
+    figure still comes from the one WebBundle."""
+    d = bundle.model_dump(mode="json")
+    seg_rules = d["segments"]["rules"]
+    guidance = d["guidance"]
+    opp = d["opportunity"]
+    econ = d["economics"]
+    sens = d["sensitivity"]
+
+    def facet_entities(
+        rows: list[dict[str, object]], id_key: str, name_key: str
+    ) -> list[dict[str, object]]:
+        seen: dict[str, object] = {}
+        for r in rows:
+            rid = str(r[id_key])
+            if rid not in seen:
+                seen[rid] = r.get(name_key)
+        return [{"id": k, "name": v} for k, v in seen.items()]
+
+    seg_names = [
+        {"leaf_id": r["leaf_id"], "display_rank": r["display_rank"], "name": r["name"]}
+        for r in seg_rules
+    ]
+    leak_sorted = sorted(d["leakage_components_overall"], key=lambda c: -int(c["amount_cents"]))
+    pages: dict[str, dict[str, object]] = {
+        "app": {
+            "bundle_version": d["bundle_version"],
+            "engine_version": d["engine_version"],
+            "data_label": d["data_label"],
+            "honest_labels": d["honest_labels"],
+            "labels": d["labels"],
+            "kpis": d["kpis"],
+        },
+        "overview": {
+            "waterfall_overall": d["waterfall_overall"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "leakage_top_component": leak_sorted[0] if leak_sorted else None,
+            "gross_total_cents": opp["gross_total_cents"],
+            "window_label": opp["window_label"],
+            "below_floor_pairs": sum(1 for g in guidance if g["status"] == "below_floor"),
+            "causal_segments": sum(1 for r in sens if r["status"] == "causal_elasticity_supported"),
+            "total_segments": len(sens),
+            "negative_contribution_orders": econ["orders"]["negative_contribution_orders"],
+            "n_library_warnings": len(d["library_warnings"]),
+        },
+        "waterfall": {
+            "overall": d["waterfall_overall"],
+            "by_segment": d["waterfall_by_segment"],
+            "by_customer": d["waterfall_by_customer"],
+            "leakage_components": d["leakage_components_overall"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "window_label": opp["window_label"],
+            "segment_names": seg_names,
+        },
+        "customers": {
+            "orders": econ["orders"],
+            "facets": {
+                "customers": facet_entities(econ["customers"], "customer_id", "customer_name"),
+                "service_flags": sorted({f for c in econ["customers"] for f in c["service_flags"]}),
+            },
+            "waterfall_by_customer": d["waterfall_by_customer"],
+        },
+        "segments": d["segments"],
+        "guidance": {
+            "n_pairs": len(guidance),
+            "facets": {
+                "customers": facet_entities(guidance, "customer_id", "customer_name"),
+                "items": facet_entities(guidance, "item_id", "item_name"),
+                "statuses": sorted({g["status"] for g in guidance}),
+                "segments": seg_names,
+            },
+        },
+        "sensitivity": {"rows": sens, "segment_names": seg_names},
+        "opportunity": {
+            "never_summed_note": opp["never_summed_note"],
+            "window_label": opp["window_label"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "gross_total_cents": opp["gross_total_cents"],
+            "expected_total_cents": opp["expected_total_cents"],
+            "expected_total_note": opp["expected_total_note"],
+            "n_records": opp["n_records"],
+            "leakage_by_customer": opp["leakage_by_customer"],
+            "facets": {
+                "customers": facet_entities(
+                    opp["top_opportunities"], "customer_id", "customer_name"
+                ),
+                "items": facet_entities(opp["top_opportunities"], "item_id", "item_name"),
+                "evidence": sorted(
+                    {
+                        str(r["evidence_status"] or "insufficient_data")
+                        for r in opp["top_opportunities"]
+                    }
+                ),
+                "treatments": sorted({r["volume_treatment"] for r in opp["top_opportunities"]}),
+            },
+        },
+        "scenarios": {"grids": d["scenario_grids"]},
+        "methodology": {
+            "data_label": d["data_label"],
+            "reconciliation": d["reconciliation"],
+            "residuals": d["residuals"],
+            "unallocated_settlements": d["unallocated_settlements"],
+            "library_warnings": d["library_warnings"],
+            "validation_results": d["validation_results"],
+            "manifest": d["manifest"],
+        },
+        "modules": d["optional_modules"],
+        # Explanations ride a companion file fetched only when a pair is
+        # opened - keeps the table file itself well under the size gate.
+        "tables/guidance": {
+            "items": [{k: v for k, v in g.items() if k != "explanation"} for g in guidance]
+        },
+        "tables/guidance_explanations": {
+            "items": {f"{g['customer_id']}|{g['item_id']}": g["explanation"] for g in guidance}
+        },
+        "tables/opportunities": {"items": opp["top_opportunities"]},
+        "tables/customers": {"items": econ["customers"]},
+    }
+    return pages
+
+
 def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
-    """Write bundle.json (sorted keys, deterministic) and schema.json."""
+    """Write bundle.json (full model, for tooling and parity tests),
+    schema.json, and the split per-page / per-table files the app consumes -
+    all deterministic (sorted keys, newline-terminated)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = out_dir / "bundle.json"
     schema_path = out_dir / "schema.json"
@@ -837,4 +962,10 @@ def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
     bundle_path.write_text(payload + "\n", encoding="utf-8", newline="\n")
     schema = json.dumps(WebBundle.model_json_schema(), sort_keys=True, indent=1)
     schema_path.write_text(schema + "\n", encoding="utf-8", newline="\n")
+    for name, data in _page_payloads(bundle).items():
+        path = out_dir / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, sort_keys=True, indent=1) + "\n", encoding="utf-8", newline="\n"
+        )
     return bundle_path, schema_path

@@ -188,7 +188,7 @@ def item_descriptions(seed: int, item_ids: list[str]) -> pl.DataFrame:
     ]
     seen: dict[str, int] = {}
     out = []
-    for iid, d in zip(item_ids, descs, strict=True):
+    for _iid, d in zip(item_ids, descs, strict=True):
         if d in seen:
             seen[d] += 1
             d = f"{d}, Style {seen[d]}"

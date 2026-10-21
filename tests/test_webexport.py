@@ -255,20 +255,66 @@ def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
         res = run_full(SAMPLE, MAPPING, rules_path, tmp_path / f"engine{i}")
         bundle = build_bundle(res, load_rules(rules_path), REPO)
         out = tmp_path / f"data{i}"
-        bundle_path, schema_path = write_bundle(bundle, out)
+        write_bundle(bundle, out)
         hashes.append(
-            (
-                hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
-                hashlib.sha256(schema_path.read_bytes()).hexdigest(),
-            )
+            {
+                str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted(out.rglob("*.json"))
+            }
         )
-    assert hashes[0] == hashes[1], "bundle must be byte-identical across runs"
+    assert hashes[0] == hashes[1], "all exported files must be byte-identical across runs"
 
 
 def test_size_under_5mb(built: tuple[FullRunResult, Rules, WebBundle, Path]) -> None:
     _, _, _, out = built
-    total = sum(p.stat().st_size for p in out.iterdir())
+    total = sum(p.stat().st_size for p in out.rglob("*.json"))
     assert total < 5 * 1024 * 1024, f"bundle dir {total / 1e6:.1f} MB exceeds 5 MB"
+
+
+def test_split_page_files(built: tuple[FullRunResult, Rules, WebBundle, Path]) -> None:
+    """The split per-page / per-table files the app consumes: all present,
+    pure projections of the one bundle, explanations split out, and every
+    app-consumed file under the 1 MB hard limit."""
+    _, _, _, out = built
+    pages = [
+        "app",
+        "overview",
+        "waterfall",
+        "customers",
+        "segments",
+        "guidance",
+        "sensitivity",
+        "opportunity",
+        "scenarios",
+        "methodology",
+        "modules",
+        "tables/guidance",
+        "tables/guidance_explanations",
+        "tables/opportunities",
+        "tables/customers",
+    ]
+    for name in pages:
+        path = out / f"{name}.json"
+        assert path.exists(), f"missing split file {name}.json"
+        size = path.stat().st_size
+        assert size < 1024 * 1024, f"{name}.json is {size / 1e6:.2f} MB (limit 1 MB)"
+
+    full = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+    app = json.loads((out / "app.json").read_text(encoding="utf-8"))
+    assert app["labels"] == full["labels"]
+    assert app["kpis"] == full["kpis"]
+
+    rows = json.loads((out / "tables" / "guidance.json").read_text(encoding="utf-8"))["items"]
+    assert rows, "guidance table must not be empty"
+    assert all("explanation" not in r for r in rows), "explanations must live in their own file"
+    expl = json.loads((out / "tables" / "guidance_explanations.json").read_text(encoding="utf-8"))[
+        "items"
+    ]
+    for g in full["guidance"]:
+        assert expl[f"{g['customer_id']}|{g['item_id']}"] == g["explanation"]
+
+    customers = json.loads((out / "tables" / "customers.json").read_text(encoding="utf-8"))
+    assert customers["items"] == full["economics"]["customers"]
 
 
 def test_cli_export_web(tmp_path: Path) -> None:

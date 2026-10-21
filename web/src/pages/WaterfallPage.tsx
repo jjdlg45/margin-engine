@@ -5,17 +5,18 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Waterfall } from "../charts/Waterfall";
+import { QuerySection } from "../components/Async";
 import { EntityCombobox } from "../components/filters/Combobox";
 import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
-import { useBundle } from "../lib/bundle";
+import type { WaterfallData } from "../lib/api/types";
+import { usePageData } from "../lib/queries";
 import { useCompact } from "../lib/useCompact";
 import { dollars, dollarsShort, pct } from "../lib/format";
 
 const tabClass =
   "rounded-badge px-3 py-1 text-sm data-[state=active]:bg-petrol data-[state=active]:text-paper text-ink/70 hover:text-ink";
 
-export function WaterfallPage() {
-  const b = useBundle();
+function WaterfallBody({ d }: { d: WaterfallData }) {
   const compact = useCompact();
   const [params, setParams] = useSearchParams();
   const view = params.get("view") ?? "overall";
@@ -29,30 +30,17 @@ export function WaterfallPage() {
       },
       { replace: true },
     );
-  const segOf = new Map(b.segments.rules.map((r) => [String(r.leaf_id), r]));
-  const groups = (view === "segment" ? b.waterfall_by_segment : b.waterfall_by_customer).map(
-    (g) => {
-      const seg = view === "segment" ? segOf.get(g.key) : undefined;
-      return seg ? { ...g, label: `Segment ${seg.display_rank} — ${seg.name}` } : g;
-    },
-  );
+  const segOf = new Map(d.segment_names.map((r) => [String(r.leaf_id), r]));
+  const groups = (view === "segment" ? d.by_segment : d.by_customer).map((g) => {
+    const seg = view === "segment" ? segOf.get(g.key) : undefined;
+    return seg ? { ...g, label: `Segment ${seg.display_rank} — ${seg.name}` } : g;
+  });
   const active = useMemo(
     () => groups.find((g) => g.key === groupKey) ?? groups[0],
     [groups, groupKey],
   );
-  const leakTotal = b.opportunity.leakage_total_cents;
   return (
-    <div>
-      <PageHeader
-        title="Price waterfall"
-        lede={
-          <>
-            From list value to contribution on sale lines (returns appear in
-            Customers &amp; orders), overall or for a single segment or
-            customer. Hatched bars are pricing leakage; dotted bars are costs.
-          </>
-        }
-      />
+    <>
       <Tabs.Root
         value={view}
         onValueChange={(v) => {
@@ -76,7 +64,7 @@ export function WaterfallPage() {
         </Tabs.List>
         <Tabs.Content value="overall">
           <div className="panel mt-4 px-5 pb-5 pt-6 sm:px-8">
-            <Waterfall stages={b.waterfall_overall} compact={compact} />
+            <Waterfall stages={d.overall} compact={compact} />
           </div>
         </Tabs.Content>
         {(["segment", "customer"] as const).map((scope) => (
@@ -102,7 +90,7 @@ export function WaterfallPage() {
               </div>
             ) : (
               <EmptyState title={`No ${scope} breakdown available`}>
-                The bundle carries no {scope}-level waterfall for this run.
+                The export carries no {scope}-level waterfall for this run.
               </EmptyState>
             )}
           </Tabs.Content>
@@ -112,8 +100,8 @@ export function WaterfallPage() {
         title="Leakage by component"
         lede={
           <>
-            Where the {dollars(leakTotal)} between list and pocket went over
-            the {b.opportunity.window_label}. Shares are of total leakage.
+            Where the {dollars(d.leakage_total_cents)} between list and pocket
+            went over the {d.window_label}. Shares are of total leakage.
           </>
         }
       >
@@ -127,7 +115,7 @@ export function WaterfallPage() {
               </tr>
             </thead>
             <tbody>
-              {b.leakage_components_overall.map((c) => (
+              {d.leakage_components.map((c) => (
                 <tr key={c.component}>
                   <td>{c.component}</td>
                   <td>{dollars(c.amount_cents)}</td>
@@ -138,6 +126,27 @@ export function WaterfallPage() {
           </table>
         </ScrollX>
       </Section>
+    </>
+  );
+}
+
+export function WaterfallPage() {
+  const q = usePageData("waterfall");
+  return (
+    <div>
+      <PageHeader
+        title="Price waterfall"
+        lede={
+          <>
+            From list value to contribution on sale lines (returns appear in
+            Customers &amp; orders), overall or for a single segment or
+            customer. Hatched bars are pricing leakage; dotted bars are costs.
+          </>
+        }
+      />
+      <QuerySection query={q} label="the price waterfall" lines={8}>
+        {(d) => <WaterfallBody d={d} />}
+      </QuerySection>
     </div>
   );
 }

@@ -95,6 +95,9 @@ test("guidance: keyboard-only combobox use", async ({ page }) => {
   const input = page.getByRole("combobox", { name: "Customer" });
   await input.focus();
   await page.keyboard.type(bundle.guidance[0].customer_id.slice(0, 5));
+  // Wait for the filtered options to render (as a keyboard user would see
+  // them) before navigating - ArrowDown must not race the list update.
+  await expect(page.getByRole("option").first()).toBeVisible();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/customer=/);

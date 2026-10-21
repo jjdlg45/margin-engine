@@ -2,20 +2,16 @@
  * only when present in the bundle; absence states its reason in plain
  * language rather than hiding the section. */
 
+import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { useBundle } from "../lib/bundle";
+import type { OptionalModules } from "../types/bundle";
+import { usePageData } from "../lib/queries";
 import { count, dollars, num, pct } from "../lib/format";
 
-export function ModulesPage() {
-  const b = useBundle();
-  const m = b.optional_modules;
+function ModulesBody({ m }: { m: OptionalModules }) {
   return (
-    <div>
-      <PageHeader
-        title="Optional modules"
-        lede="Each module switches on only when its input data exists in the mapped export; when one is off, the reason is stated here."
-      />
+    <>
       <Section
         title="Quote win/loss curves"
         lede="Logistic win probability on the quote price index, per segment. Only precision-gated fits carry estimated status; the rest are reported with their reason and never gated."
@@ -127,6 +123,21 @@ export function ModulesPage() {
           <EmptyState title="Inventory costing is off">{m.inventory_absent_reason}</EmptyState>
         )}
       </Section>
+    </>
+  );
+}
+
+export function ModulesPage() {
+  const q = usePageData("modules");
+  return (
+    <div>
+      <PageHeader
+        title="Optional modules"
+        lede="Each module switches on only when its input data exists in the mapped export; when one is off, the reason is stated here."
+      />
+      <QuerySection query={q} label="optional modules" lines={8}>
+        {(m) => <ModulesBody m={m} />}
+      </QuerySection>
     </div>
   );
 }

@@ -5,38 +5,36 @@
 import * as Slider from "@radix-ui/react-slider";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { QuerySection } from "../components/Async";
 import { EntityCombobox } from "../components/filters/Combobox";
 import { EmptyState, PageHeader, Section } from "../components/Page";
-import { useBundle } from "../lib/bundle";
+import type { ScenarioGrid } from "../types/bundle";
+import { usePageData } from "../lib/queries";
 import { count, dollars, pct } from "../lib/format";
 
-export function ScenariosPage() {
-  const b = useBundle();
+function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
   const [params, setParams] = useSearchParams();
-  const name = params.get("scenario") ?? b.scenario_grids[0]?.name ?? "";
-  const grid = useMemo(
-    () => b.scenario_grids.find((g) => g.name === name) ?? b.scenario_grids[0],
-    [b.scenario_grids, name],
-  );
+  const name = params.get("scenario") ?? grids[0]?.name ?? "";
+  const grid = useMemo(() => grids.find((g) => g.name === name) ?? grids[0], [grids, name]);
   const [step, setStep] = useState(5); // index into the 0..100% grid, start at 50%
-  if (!b.scenario_grids.length) {
+  if (!grids.length) {
     return (
-      <div>
+      <>
         <PageHeader
           title="Cost / tariff scenarios"
           lede="Pass-through economics for a landed-cost shock, from the engine's precomputed grid."
         />
-        <EmptyState title="No scenario grids in this bundle">
+        <EmptyState title="No scenario grids in this run">
           The run produced no baseline pairs for any category or supplier
           shock, so there is nothing to slide through. Scenario grids appear
           when the data carries enough baseline volume in a scoped group.
         </EmptyState>
-      </div>
+      </>
     );
   }
   const point = grid.points[step] ?? grid.points[0];
   return (
-    <div>
+    <>
       <PageHeader
         title="Cost / tariff scenarios"
         lede={
@@ -51,7 +49,7 @@ export function ScenariosPage() {
       />
       <EntityCombobox
         label="Scenario"
-        options={b.scenario_grids.map((g) => ({
+        options={grids.map((g) => ({
           id: g.name,
           name: g.scope_label ?? g.scope_value,
           group: g.scope === "category" ? "Category" : "Supplier",
@@ -127,6 +125,17 @@ export function ScenariosPage() {
           COGS under that method.
         </p>
       </Section>
+    </>
+  );
+}
+
+export function ScenariosPage() {
+  const q = usePageData("scenarios");
+  return (
+    <div>
+      <QuerySection query={q} label="cost and tariff scenarios" lines={8}>
+        {(d) => <ScenariosBody grids={d.grids} />}
+      </QuerySection>
     </div>
   );
 }

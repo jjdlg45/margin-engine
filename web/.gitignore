@@ -1,4 +1,7 @@
-public/data/bundle.json
+# Exported engine data is rebuilt at deploy time, never committed -
+# except schema.json, which gen-types reads to produce the TS types.
+public/data/*
+!public/data/schema.json
 node_modules/
 dist/
 test-results/

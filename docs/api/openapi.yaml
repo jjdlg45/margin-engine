@@ -1,0 +1,149 @@
+# Planned backend-for-frontend (BFF) contract for the Margin Engine demo UI.
+#
+# The static site implements this exact contract today with a local adapter
+# that reads the exported JSON files (web/src/lib/api/staticAdapter.ts);
+# a live deployment swaps that one file for an HTTP adapter against these
+# endpoints. The BFF owns caching, rate limiting, pagination and any
+# server-side computation - the browser never recalculates financials.
+
+openapi: 3.1.0
+info:
+  title: Margin Engine BFF
+  version: 1.0.0
+  description: >
+    One aggregated endpoint per page plus paginated table endpoints.
+    Every figure originates from the engine's exports; money is integer cents.
+
+paths:
+  /app:
+    get:
+      summary: App-level data loaded once per session
+      description: Label dictionary, headline KPIs, honest-label notices, versions.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppData" }
+
+  /pages/{page}:
+    get:
+      summary: Aggregated payload for one page
+      parameters:
+        - name: page
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              [overview, waterfall, customers, segments, guidance,
+               sensitivity, opportunity, scenarios, methodology, modules]
+      responses:
+        "200":
+          description: >
+            The page's aggregates and facet lists. Shapes are the exported
+            page files (web/public/data/{page}.json); the authoritative field
+            shapes live in the bundle schema (web/public/data/schema.json).
+          content:
+            application/json:
+              schema: { type: object }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /tables/{table}:
+    get:
+      summary: Paginated, filterable, sortable table rows
+      parameters:
+        - name: table
+          in: path
+          required: true
+          schema: { type: string, enum: [guidance, opportunities, customers] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 50 }
+        - name: sort
+          in: query
+          description: "field or -field for descending"
+          schema: { type: string }
+        - name: filters
+          in: query
+          description: >
+            URL-encoded JSON object of named filters. Supported keys per
+            table - guidance: customer, item, statuses[], segments[],
+            pol_min/pol_max (current price, % of list), gap_min/gap_max
+            (points vs floor); opportunities: customer, item, evidence[],
+            treatments[], gross_min/gross_max (dollars), below_min/below_max
+            (percent); customers: customer, flags[], losing (bool),
+            returns_min/returns_max (dollars), excluded_min/excluded_max
+            (percent), orders_min/orders_max.
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TablePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /tables/guidance/explanations/{customer_id}/{item_id}:
+    get:
+      summary: Plain-English explanation for one guidance pair
+      parameters:
+        - { name: customer_id, in: path, required: true, schema: { type: string } }
+        - { name: item_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [explanation]
+                properties:
+                  explanation: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  schemas:
+    AppData:
+      type: object
+      required: [bundle_version, engine_version, data_label, honest_labels, labels, kpis]
+      properties:
+        bundle_version: { type: string }
+        engine_version: { type: string }
+        data_label: { type: string }
+        honest_labels: { type: array, items: { type: string } }
+        labels:
+          type: object
+          additionalProperties:
+            type: object
+            required: [label, description]
+            properties:
+              label: { type: string }
+              description: { type: string }
+        kpis: { type: object }
+    TablePage:
+      type: object
+      required: [items, total, total_unfiltered, page, page_size, has_more]
+      properties:
+        items: { type: array, items: { type: object } }
+        total: { type: integer, description: Rows matching the filters }
+        total_unfiltered: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        has_more: { type: boolean }
+  responses:
+    NotFound:
+      description: Unknown page, table or pair
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { detail: { type: string } }
+    BadRequest:
+      description: Malformed pagination, sort or filter parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { detail: { type: string } }

@@ -1477,3 +1477,93 @@ fixture world wrote items.csv without the newly mapped name columns, and the
 mapping contract is strict by design (a declared column must exist). The
 fixture builder now emits the name columns; all 32 recovered without touching
 the loader's fail-closed behavior.
+
+## Phase 23.9 — Live-ready data layer (2026-10-21)
+
+**1. Single data layer.** All pages now fetch through one data client:
+`web/src/lib/api/types.ts` defines the contract (AppData, per-page payloads,
+TablePage with items / total / total_unfiltered / has_more, ApiError carrying
+an HTTP status), `staticAdapter.ts` implements it over the exported JSON
+files (named filters, "field"/"-field" sorting, pagination as pure selection
+- no financial math), and `client.ts` is the one-line swap point for a future
+HTTP adapter. Components use TanStack Query hooks (`lib/queries.ts`):
+useAppData, usePageData, useTableQuery, useGuidanceExplanation. The old
+BundleProvider/useBundle context is deleted; no component reads JSON
+directly, and labels resolve through the app payload. Retries: capped at 2,
+exponential backoff (500 ms · 2^n, max 4 s), never on 4xx; staleTime
+Infinity (static files do not change under a session).
+
+**2. OpenAPI contract.** `docs/api/openapi.yaml` specifies the planned BFF:
+GET /app, GET /pages/{page} (10 pages), GET /tables/{table} with page /
+page_size (max 5000) / sort / URL-encoded JSON filters (vocabulary documented
+per table and implemented identically by the static adapter), and
+GET /tables/guidance/explanations/{customer_id}/{item_id}. README gained a
+"Going live" section describing the swap and the BFF's responsibilities
+(caching keyed on the run manifest hash, rate limiting, pagination,
+server-side computation).
+
+**3. Split export.** `write_bundle` now also writes per-page projections
+(app, overview, waterfall, customers, segments, guidance, sensitivity,
+opportunity, scenarios, methodology, modules) and per-table files
+(tables/guidance with explanations split into tables/guidance_explanations,
+tables/opportunities, tables/customers) - all deterministic, all pure
+projections of the one WebBundle. Demo sizes: largest app file
+tables/guidance.json at 632 KB; every app file is under the 1 MB hard limit.
+tables/guidance.json and tables/guidance_explanations.json (406 KB) exceed
+the 300 KB soft target; splitting further would mean sharding rows across
+files, which the BFF's pagination makes unnecessary - recorded here rather
+than silently accepted. bundle.json (1,351 KB) and schema.json remain as
+tooling/parity artifacts: the app never fetches them (the Playwright
+size test scopes to app files for this reason), parity e2e suites and
+gen-types still read them. The index.html preload now points at app.json +
+overview.json instead of bundle.json, and the Overview provably loads only
+those two (asserted by interception). web/.gitignore now ignores all
+exported data except the committed schema.json.
+
+**4. Loading, error and partial states.** `components/Async.tsx`: Skeleton
+(role=status), ErrorState (role=alert, plain-English message, Retry button
+wired to query.refetch), QuerySection (skeleton while pending, error state on
+failure, children only on complete data - partial data never renders as
+complete), and a Boundary error boundary used per route (App.tsx) and per
+major section. The app shell shows a page-level error only if app.json
+itself fails.
+
+**5. Virtualization.** New `components/VirtualTable.tsx` (TanStack Virtual
+3.10.9): the guidance results table now renders every filtered row
+scrollable but keeps only visible rows in the DOM (spacer rows preserve
+scroll geometry; measureElement handles row-height variance). Combobox
+option lists of 100+ entries are virtualized with React Aria's Virtualizer +
+ListLayout. Two deviations to record honestly: (a) react-aria-components was
+upgraded 1.5.0 → 1.7.0 because 1.5's UNSTABLE_Virtualizer rendered an empty
+zero-height listbox inside a ComboBox popover (probed empirically; 1.7 is
+the first release with the stable Virtualizer, and it works); (b) the
+combobox now filters its options itself (controlled inputValue + items),
+because React Aria's virtualizer needs an explicit list height - controlled
+filtering lets the list be sized exactly (rows × 32 px, capped at 288 px),
+so short filtered lists do not show an empty 288 px popover. The
+virtualization threshold is "100 or more" options rather than "over 100" so
+the demo's 100-item list exercises the virtualized path end to end. The
+opportunity table keeps its 10-row pagination (10 rows rendered - nothing to
+virtualize); the customers table has 40 rows.
+
+**6. Verification.** New e2e/livedata.spec.ts with network interception:
+delayed overview.json shows skeletons then content; a failing waterfall.json
+shows the role=alert error with Retry, and Retry recovers after the
+automatic retries are exhausted; persistent 500 stops at exactly 3 requests
+(1 + 2 retries); a 404 is never retried (1 request); every app data file
+under 1 MB; the virtualized guidance table renders only visible rows (13-20
+of 1,211) while still reporting the full count; the 100-option item combobox
+renders fewer than 50 options in the DOM; the Overview fetches only app.json
++ overview.json. One keyboard-only combobox e2e was flaky under controlled
+filtering (ArrowDown racing the list update on the mobile project); the test
+now waits for the filtered options to be visible before navigating - the
+assertion is unchanged. Python: test_webexport gained test_split_page_files
+(all 15 files present, each under 1 MB, app projections equal the bundle,
+explanations split losslessly), the byte-determinism test now hashes every
+exported file, and the 5 MB size test walks the tables/ subdirectory.
+Guidance-page visual snapshots regenerated (4 guidance + 1 waterfall-light
+within settle tolerance); all other snapshots unchanged.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict 0 (50 files);
+pytest full suite 0 (221 tests, all passed); web: tsc + vite build 0; vitest
+0 (5 tests); Playwright 144/144 passed, exit 0.

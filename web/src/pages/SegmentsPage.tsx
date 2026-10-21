@@ -1,8 +1,10 @@
 /** Segments: readable context-only rules with sizes, the per-segment price
  * index distribution, and the separately-labeled margin-driver tree. */
 
+import { QuerySection } from "../components/Async";
 import { PageHeader, Section, ScrollX } from "../components/Page";
-import { useBundle } from "../lib/bundle";
+import type { SegmentsSection } from "../types/bundle";
+import { usePageData } from "../lib/queries";
 import { count, num, pct, pctOfList, signedPct } from "../lib/format";
 
 interface Rule {
@@ -70,12 +72,10 @@ function RuleTable({
   );
 }
 
-export function SegmentsPage() {
-  const b = useBundle();
-  const s = b.segments;
+function SegmentsBody({ s }: { s: SegmentsSection }) {
   const rankOf = new Map(s.rules.map((r) => [r.leaf_id, r.display_rank]));
   return (
-    <div>
+    <>
       <PageHeader
         title="Segments"
         lede={
@@ -132,6 +132,17 @@ export function SegmentsPage() {
       >
         <RuleTable rules={s.margin_driver_rules} target="Mean pocket margin" rowWord="Driver" fmt={signedPct} />
       </Section>
+    </>
+  );
+}
+
+export function SegmentsPage() {
+  const q = usePageData("segments");
+  return (
+    <div>
+      <QuerySection query={q} label="segments" lines={8}>
+        {(s) => <SegmentsBody s={s} />}
+      </QuerySection>
     </div>
   );
 }
