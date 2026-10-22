@@ -271,12 +271,15 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     # Optional market/competitor price index control (24.10).
     has_mkt = "log_mkt" in pos.columns and pos["log_mkt"].null_count() == 0
     est.market_control_used = bool(has_mkt)
+    # Instruments can be absent entirely (no supplier/tariff reference data):
+    # select them only when the panel carries them; `have_z` below caps the
+    # status at descriptive in that case.
+    z_present = [c for c in ("z_cost", "z_tariff") if c in pos.columns]
     pdf = _to_pandas(
         pos.select(
             "log_qty",
             "log_price",
-            "z_cost",
-            "z_tariff",
+            *z_present,
             "pair",
             "month_idx",
             *cluster_cols,

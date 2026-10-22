@@ -367,6 +367,26 @@ class SensitivityConfig(StrictModel):
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)
+    # Instrument builder (Run 4, 27.6): where the supplier cost instrument
+    # comes from. "reference_table" uses a mapped supplier_cost_index table as
+    # before; "receipts" builds it from purchase/receipt history (log change
+    # in qty-weighted average purchase cost per supplier-month, demeaned);
+    # "external" maps a public series (e.g. BLS PPI) to categories via
+    # external_index_map and to suppliers via their modal category.
+    instrument_source: Literal["reference_table", "receipts", "external"] = "reference_table"
+    external_index_map: dict[str, str] = Field(default_factory=dict)
+    # Validation without planted truth (Run 4, 27.4): temporal backtest,
+    # placebo tests and rolling-window stability, reported in the "Real-data
+    # validation" report section. All informational, never gated.
+    real_data_validation: bool = True
+    backtest_holdout_months: int = Field(default=6, ge=1)
+    placebo_draws: int = Field(default=10, ge=2)
+    stability_window_months: int = Field(default=12, ge=3)
+    stability_step_months: int = Field(default=6, ge=1)
+    # Above this many positive rows, a segment's placebo diagnostics run on a
+    # seeded pair subsample (labeled in the output). Headline estimates never
+    # sample.
+    real_validation_max_rows: int = Field(default=200_000, ge=10_000)
     shrinkage: Literal["empirical_bayes_to_parent_segment"] = "empirical_bayes_to_parent_segment"
     min_observations: int = Field(default=30, ge=2)
     # IV-based statuses (iv_estimated / causal) additionally require this much
@@ -418,6 +438,11 @@ class ReportingConfig(StrictModel):
     output_formats: tuple[Literal["parquet", "csv", "html"], ...] = ("parquet", "csv", "html")
     show_evidence_status: bool = True
     show_data_coverage: bool = True
+    # Books tie-out (Run 4, 27.3): a month fails when the engine-vs-GL
+    # difference exceeds BOTH bounds (the cents floor keeps tiny months from
+    # failing on rounding pennies). Failing months are flagged, never hidden.
+    tieout_tolerance_pct: float = Field(default=0.5, ge=0)
+    tieout_tolerance_cents: int = Field(default=100, ge=0)
 
 
 # ---------------------------------------------------------------------------

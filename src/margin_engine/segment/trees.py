@@ -661,6 +661,26 @@ def fit_margin_driver_tree(df: pl.DataFrame, rules: Rules, *, seed: int = 0) -> 
         ),
     )
     work = work.filter(pl.col("pocket_margin_pct").is_finite())
+    if work.height < 2:
+        # No usable lines (e.g. no list price reference, so gross list value is
+        # null everywhere): the module switches OFF with a stated reason
+        # instead of crashing - the spec's optional-module policy (27.7 made
+        # this reachable: a world with no reference tables at all).
+        return TreeResult(
+            kind="margin_drivers",
+            target="pocket_margin_pct",
+            feature_names=[],
+            leaf_assignments=pl.DataFrame(
+                schema={"source_line_key": pl.String, "driver_leaf": pl.Int64}
+            ),
+            rules=[],
+            model=DecisionTreeRegressor(),
+            notes=[
+                "margin-driver tree OFF: no lines with positive pocket revenue, "
+                "known pocket GP and a gross list value (is the price list "
+                "reference table missing?)"
+            ],
+        )
 
     def band(col: str, name: str) -> pl.Expr:
         q1 = work[col].quantile(0.25)

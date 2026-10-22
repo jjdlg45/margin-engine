@@ -103,6 +103,20 @@ sensitivity:
   # the 90-98% target - and on the iid well-identified world it matches
   # month-only coverage exactly, so nothing is given up.
   cluster_level: month_customer
+  # Where the supplier cost instrument comes from (Run 4, 27.6):
+  #   reference_table  a mapped supplier_cost_index table (default)
+  #   receipts         built from purchase/receipt history (mix-corrected
+  #                    within-supplier log cost deviations)
+  #   external         a public series (e.g. BLS PPI) mapped to categories via
+  #                    external_index_map, then to suppliers by modal category
+  instrument_source: reference_table
+  # Validation without planted truth (Run 4, 27.4): temporal backtest, placebo
+  # tests and rolling-window stability in the report. Informational only.
+  real_data_validation: true
+  backtest_holdout_months: 6
+  placebo_draws: 10
+  stability_window_months: 12
+  stability_step_months: 6
   instruments:
     - name: supplier_cost_shock
       column: supplier_cost_shock
@@ -137,3 +151,8 @@ reporting:
   output_formats: [parquet, csv, html]
   show_evidence_status: true
   show_data_coverage: true
+  # Books tie-out (Run 4, 27.3), used when a gl_totals table is mapped: a
+  # month-measure fails when the engine-vs-GL difference exceeds BOTH bounds
+  # (the cents floor keeps tiny months from failing on rounding pennies).
+  tieout_tolerance_pct: 0.5
+  tieout_tolerance_cents: 100

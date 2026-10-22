@@ -117,11 +117,13 @@ def price_opportunities(
         eligible = eligible & ~pl.col("contract_protected")
     g = g.filter(eligible)
 
+    # Casts: when NO segment has an IV estimate these columns are all null and
+    # polars infers dtype Null, on which pow/abs raise (27.7 matrix finding).
     sens_cols = [
         pl.col("segment").alias("segment_leaf"),
-        pl.col("iv").alias("elasticity"),
-        pl.col("iv_ci_low").alias("elasticity_ci_low"),
-        pl.col("iv_ci_high").alias("elasticity_ci_high"),
+        pl.col("iv").cast(pl.Float64).alias("elasticity"),
+        pl.col("iv_ci_low").cast(pl.Float64).alias("elasticity_ci_low"),
+        pl.col("iv_ci_high").cast(pl.Float64).alias("elasticity_ci_high"),
         pl.col("status").alias("evidence_status"),
     ]
     # Identifying price support (24.6): the 5th-95th percentile range of
@@ -154,7 +156,12 @@ def price_opportunities(
     # pocket after percentage post-invoice deductions. F is per-unit and fixed,
     # so it cancels out of price GAPS but not of contribution LEVELS.
     if "deduction_bp" in g.columns:
-        retain = (10_000 - pl.col("deduction_bp").fill_null(0)) / 10_000
+        # round(6): deduction_bp is an integer, so retention has at most 4
+        # decimal digits - the round is lossless and pins the value against
+        # polars choosing a divide vs reciprocal-multiply kernel between
+        # otherwise identical runs (a last-ulp difference the 27.7 matrix
+        # determinism invariant caught in opportunities.parquet).
+        retain = ((10_000 - pl.col("deduction_bp").fill_null(0)) / 10_000).round(6)
     else:
         retain = pl.lit(1.0)
     fixed_f = (
@@ -323,7 +330,9 @@ def optimize_targets(
             pl.lit("provisional_historical").alias("target_basis"),
         )
     beta = pl.col("elasticity")
-    retain = (10_000 - pl.col("deduction_bp").fill_null(0)) / 10_000
+    # round(6): lossless (deduction_bp is an integer) and kernel-stable; see
+    # the same round in price_opportunities.
+    retain = ((10_000 - pl.col("deduction_bp").fill_null(0)) / 10_000).round(6)
     # Pocket-aware marginal cost of an invoice dollar: (C + F) / (1 - d).
     c_eff = (pl.col("unit_cost_cents") + pl.col("fixed_deduction_cents").fill_null(0)) / retain
     interior = causal & in_support & (beta < -1.0) & pl.col("unit_cost_cents").is_not_null()

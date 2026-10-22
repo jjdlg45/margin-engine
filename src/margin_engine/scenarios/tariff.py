@@ -137,7 +137,9 @@ def _scenario_baseline(
     )
     sens = sensitivity.select(
         pl.col("segment").alias("segment_leaf"),
-        pl.col("iv").alias("elasticity"),
+        # Cast: when no segment has an IV estimate the column is all null and
+        # polars infers dtype Null, on which abs/pow raise (matrix 27.7).
+        pl.col("iv").cast(pl.Float64).alias("elasticity"),
         pl.col("status").alias("evidence_status"),
     )
     base = base.join(sens, on="segment_leaf", how="left").sort("customer_id", "item_id")

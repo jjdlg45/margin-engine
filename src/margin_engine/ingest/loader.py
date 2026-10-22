@@ -109,35 +109,71 @@ def read_table(
     if path.suffix.lower() == ".xlsx":
         raw = _excel_to_frame(path, sheet, opts)
     else:
-        blob = path.read_bytes()
-        codec = (
-            "utf-8-sig"
-            if opts.encoding.lower().replace("_", "-") in ("utf-8", "utf8")
-            else opts.encoding
-        )
-        try:
-            text = blob.decode(codec)
-        except (UnicodeDecodeError, LookupError) as exc:
-            msg = (
-                f"{path}: cannot decode as '{opts.encoding}' ({exc}). The file is "
-                f"probably in another encoding (Windows exports are often "
-                f"windows-1252); set input.encoding in the mapping."
-            )
-            raise MappingError(msg) from exc
-        try:
-            raw = pl.read_csv(
-                io.BytesIO(text.encode("utf-8")),
-                infer_schema=False,
-                separator=opts.delimiter,
-                quote_char='"',
-            )
-        except Exception as exc:
-            msg = (
-                f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
-                f"delimited CSV ({exc}). Check input.delimiter and input.encoding "
-                f"in the mapping."
-            )
-            raise MappingError(msg) from exc
+        is_utf8 = opts.encoding.lower().replace("_", "-") in ("utf-8", "utf8")
+        if is_utf8:
+            # Fast path (27.2): let polars read the file directly instead of
+            # holding bytes + decoded text + a re-encoded copy in memory at
+            # once - at 10M lines those three copies alone are several GB.
+            # polars strips a UTF-8 BOM itself; invalid bytes surface as a
+            # ComputeError that we turn into the same actionable message.
+            try:
+                raw = pl.read_csv(
+                    path,
+                    infer_schema=False,
+                    separator=opts.delimiter,
+                    quote_char='"',
+                )
+            except pl.exceptions.ComputeError as exc:
+                if "utf" in str(exc).lower() or "invalid" in str(exc).lower():
+                    msg = (
+                        f"{path}: cannot decode as '{opts.encoding}' ({exc}). The "
+                        f"file is probably in another encoding (Windows exports "
+                        f"are often windows-1252); set input.encoding in the mapping."
+                    )
+                    raise MappingError(msg) from exc
+                msg = (
+                    f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+                    f"delimited CSV ({exc}). Check input.delimiter and "
+                    f"input.encoding in the mapping."
+                )
+                raise MappingError(msg) from exc
+            except Exception as exc:
+                msg = (
+                    f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+                    f"delimited CSV ({exc}). Check input.delimiter and "
+                    f"input.encoding in the mapping."
+                )
+                raise MappingError(msg) from exc
+            # A UTF-8 BOM, if present, must not leak into the first header.
+            if raw.width and raw.columns[0].startswith("﻿"):
+                raw = raw.rename({raw.columns[0]: raw.columns[0].lstrip("﻿")})
+        else:
+            blob = path.read_bytes()
+            try:
+                text = blob.decode(opts.encoding)
+            except (UnicodeDecodeError, LookupError) as exc:
+                msg = (
+                    f"{path}: cannot decode as '{opts.encoding}' ({exc}). The file is "
+                    f"probably in another encoding (Windows exports are often "
+                    f"windows-1252); set input.encoding in the mapping."
+                )
+                raise MappingError(msg) from exc
+            del blob
+            try:
+                raw = pl.read_csv(
+                    io.BytesIO(text.encode("utf-8")),
+                    infer_schema=False,
+                    separator=opts.delimiter,
+                    quote_char='"',
+                )
+            except Exception as exc:
+                msg = (
+                    f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+                    f"delimited CSV ({exc}). Check input.delimiter and input.encoding "
+                    f"in the mapping."
+                )
+                raise MappingError(msg) from exc
+            del text
     if opts.trim_whitespace:
         raw = raw.rename({c: c.strip() for c in raw.columns})
         raw = raw.with_columns(pl.col(pl.String).str.strip_chars())
@@ -199,6 +235,9 @@ def load_lines(
         if spec is not None:
             declared.append(spec.column)
     _require_columns(raw, declared, str(path))
+    # Unmapped source columns are never read again: dropping them here keeps a
+    # wide real-world export from costing memory for columns nobody declared.
+    raw = raw.select(list(dict.fromkeys(declared)))
 
     out = raw.select(
         pl.col(lm.source_line_key.column).alias("source_line_key"),
@@ -371,6 +410,8 @@ def load_lines(
             negative_format=negf,
         )
         out = pl.concat([out, uc], how="horizontal")
+        del raw  # last use of the all-string source frame; free it before
+        # the remaining typed-column passes (27.2 memory headroom)
         if lm.unit_cost.missing_as == "zero_is_missing":
             out = out.with_columns(
                 pl.when(pl.col("unit_cost_scaled") == 0)
@@ -462,6 +503,10 @@ def load_reference_table(
         "close_price": "close_price_cents",
         "inbound_freight_per_unit": "inbound_freight_pu_scaled",
         "duty_per_unit": "duty_pu_scaled",
+        # Books tie-out (27.3): GL monthly totals.
+        "net_sales": "net_sales_cents",
+        "cogs": "cogs_cents",
+        "returns": "returns_cents",
     }
     exprs: list[pl.Expr] = []
     for canon in spec.columns:
@@ -496,6 +541,8 @@ def load_reference_table(
             "cost_idx",
             "duty_pct",
             "rate",
+            "market_index",
+            "value",
         ):
             # Plain numeric columns honor the declared decimal separator too.
             num = pl.col(canon)

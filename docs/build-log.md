@@ -1776,3 +1776,137 @@ with no user-visible benefit on static hosting, and the BFF paginates.
 **Checks.** Python untouched by this phase (exit codes from the phase-24/25
 cycle stand: ruff 0, format 0, mypy 0, pytest 248 passed exit 0); web: tsc 0;
 vite build 0; vitest 0 (11 tests, 2 files); Playwright 144/144 passed, exit 0.
+
+## Phase 27 — Real-data readiness (2026-10-21, Run 4 branch)
+
+**27.1 Data profiler and mapping assistant.** `margin-engine profile <file>`
+scans a CSV/.xlsx export and reports, per column: type guess, null rate,
+distinct count, detected date formats, and canonical-field candidates each
+with a confidence and a reason; file-level it detects delimiter, encoding,
+decimal separator, sign patterns (parentheses negatives, currency symbols)
+and suspected transaction-type code columns. `margin-engine draft-mapping`
+writes a draft YAML in which every guessed value is marked `# CONFIRM` and
+listed under `unconfirmed_fields` — and `load_mapping` REFUSES to run any
+mapping whose `unconfirmed_fields` list is non-empty, so a person confirms
+each guess by reviewing and deleting its entry. Suggestions never become
+silent decisions. Tests cover detection on messy variants and the refusal.
+
+**27.2 Scale.** The loader gained a direct-polars fast path for UTF-8 CSVs
+(the old path held raw bytes + decoded text + a re-encoded copy at once),
+drops unmapped source columns immediately, and frees the all-string source
+frame before the typed passes; the pipeline releases the classified ledger
+and intermediate frames as soon as they are superseded; optional
+stage-level RSS logging (MARGIN_ENGINE_RSS_LOG=1). Measurement is a
+memory-aware ladder (scripts/measure_scale.py): it checks available memory
+first, projects each next rung's peak from measured rungs, and stops BEFORE
+a rung that would not fit, so it can never OOM the machine. KNOWN GAP
+(hardware): this 13.8 GB laptop had 5.9-6.4 GB available, so the 8 GB
+peak budget could not even be allocated, let alone verified at 10M lines.
+Largest run that fits the machine's 4.9 GB budget: 241,162 lines in 32.1s, peak 2.92 GB (the ladder also measured 811k lines at 6.42 GB peak / 95.6s in an earlier run with more headroom, exceeding that day's budget). Per-stage RSS at 811k lines: ledger
+work reaches 3.4 GB, segmentation adds ~1.2 GB, peak 6.4 GB — the memory is
+structural (several wide line-level frames alive), so the spec's
+DuckDB-backed/streaming refactor remains the path to 10M-under-8GB; it is
+deferred because no result on this machine could verify it. Recorded
+honestly in validation.json with the hardware limits.
+
+**27.3 Books tie-out.** Optional `gl_totals` reference table (month,
+net_sales, cogs, optionally returns). The tie-out compares engine monthly
+totals to the books with absolute and % differences; a month-measure fails
+only when it exceeds BOTH the configured % and cents tolerances
+(reporting.tieout_tolerance_pct/cents). Failing months are flagged, never
+hidden; the report section states the measure definitions (returns
+recognized when they occur; engine COGS covers known-cost lines only, with
+the coverage share printed beside the comparison). Fixtures to the cent.
+
+**27.4 Validation without planted truth.** New
+sensitivity/real_validation.py, on by default (sensitivity.real_data_validation):
+- Temporal backtest: elasticity fit on months 1..T-k, then held-out
+  volume-change prediction error vs a zero-elasticity baseline (within-pair
+  changes, demeaned per test month).
+- Placebo tests: instruments permuted IN TIME within each supplier/category
+  (a derangement, so no unit keeps its series) — the statistic is the
+  reduced form plus the first stage, NOT the 2SLS ratio, which concentrates
+  around OLS when the instrument is irrelevant; and fake price-change dates
+  per pair, which must show no volume response. Cross-unit shuffles were
+  rejected on method: with few units, month demeaning mixes every unit's
+  series into every row's quantity, so another unit's real series stays
+  correlated by construction.
+- Rolling-window stability: per-segment FE-OLS elasticity per window, and
+  the commercial segmentation refit per window with ARI against the
+  full-sample partition.
+All informational, never gating. Exported as four frames, rendered in a
+"Real-data validation" report section; segments above
+sensitivity.real_validation_max_rows run placebos on a seeded pair
+subsample, labeled. On the committed sample: backtest, placebo and
+stability tables all populate. 7 tests on a controlled DGP (planted beta
+-2.0) pin each property.
+
+**27.5 Anonymizer.** `margin-engine anonymize`: customer/item/supplier IDs
+and names (and ship-to/bill-to/parent ids) become salted keyed hashes
+(HMAC-SHA256, truncated, kind-prefixed), so referential integrity holds and
+the same mapping runs on the anonymized copy; `--scale-money` additionally
+scales every mapped money column by a secret salt-derived factor in
+[0.5, 1.5), half-even to cents, so internal reconciliation still holds.
+Salt from --salt-file or MARGIN_ENGINE_ANON_SALT (>= 16 bytes), never
+committed, never in any output or manifest; an ANONYMIZED.md note documents
+what was done without revealing the salt. Tests: determinism, referential
+integrity, salt-sensitivity, scaling consistency, salt never in outputs.
+
+**27.6 Instrument builder.** sensitivity.instrument_source selects where
+the supplier cost instrument comes from: `reference_table` (as before),
+`receipts` (built from purchase history), or `external` (a public series
+mapped to categories via sensitivity.external_index_map, then to suppliers
+by modal category). The receipts index is MIX-CORRECTED: log average
+purchase cost demeaned per item first, then quantity-averaged within
+supplier x month — averaging raw costs across items lets month-to-month
+item-mix shifts swamp the few-percent cost movements (first draft recovered
+planted shocks at r=0.14; the mix-corrected index passes r>0.9). Gaps are
+forward-filled within supplier and labeled. The exclusion-rationale
+requirement is unchanged whichever way the instrument is built.
+
+**27.7 Scenario matrix.** tests/matrix_worlds.py samples worlds
+deterministically across preset (all ten), size, months, missing-cost rate
+(0-50%), returns rate, credit-memo rate, currency mix, ERP format profile
+(plain / semicolon+decimal-comma / windows-1252+currency symbols /
+parentheses negatives / BOM+padding+blank rows / .xlsx) and optional-table
+presence. Invariants per world: reconciliation exact; fail-closed (no
+causal status on weak_instrument, invalid_instrument, price_constant,
+sparse, competitor_comovement — heterogeneous/nonconstant/persistent are
+identifiable-with-caveats per the committed 24.9 results, where the
+recovered estimand is a documented average, so they are not in the
+fail-closed set); byte-identical parquet exports across two runs of the
+same world; identical ledger totals across format profiles; floor and
+cost-increase monotonicity; and no crash (plus three deliberately invalid
+inputs that must raise actionable MappingError/MoneyParseError). Fast tier:
+30 worlds + 3 invalid-input tests in the default suite (~3 minutes). Full
+tier: 300 worlds behind `-m slow` / scripts/run_matrix_full.py, summary in
+validation.json: 300 worlds, 300 passed all invariants, 0 failed, 1,784s.
+(The first full-tier run found 13 of 300 worlds crashing on the
+null-elasticity bug below; after the fix the re-run is clean.)
+
+**Bugs the matrix caught (all fixed, that is its job):**
+1. Margin-driver tree crashed (sklearn, 0 samples) when no price list
+   exists anywhere; it now switches off with a stated reason.
+2. estimate_segment selected z_cost/z_tariff unconditionally and crashed
+   when no instrument data exists; now conditional, status caps at
+   descriptive as designed.
+3. market_index (and the external series value column) ignored the declared
+   decimal separator; comma-decimal reference tables now parse exactly.
+4. Opportunity sizing crashed on worlds where NO segment has an IV estimate
+   (all-null elasticity column gets polars dtype Null, on which pow/abs
+   raise) — found on 13 of 300 full-tier worlds and one fast-tier world;
+   fixed with explicit Float64 casts in sizing.py and tariff.py.
+5. A genuine nondeterminism: opportunities.parquet differed between two
+   runs of the same world in one process — polars evaluated
+   (10000 - bp)/10000 via a divide kernel in one run and a
+   reciprocal-multiply in another, a last-ulp difference. pocket_retention
+   is exact in basis points, so a lossless round(6) at both build sites
+   pins it. (The export-level 10-sig-fig rounding covers solver outputs
+   only; opportunities bypassed it.)
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (56 files); pytest
+full suite 0 (309 tests passed; the slow full-tier marker is deselected
+by default and run via scripts/run_matrix_full.py); matrix fast tier 33/33; matrix full tier
+300/300; scale ladder recorded (KNOWN GAP above). Web untouched by
+this phase (phase-26 exit codes stand: tsc 0, vite build 0, vitest 0,
+Playwright 144/144).

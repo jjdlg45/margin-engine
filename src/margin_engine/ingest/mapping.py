@@ -206,6 +206,11 @@ class SourceMapping(StrictModel):
     # (customer_error, distributor_error, defective). Unmapped codes become
     # "unspecified" and receive only estimated default handling costs.
     return_reason_map: dict[str, str] = Field(default_factory=dict)
+    # Draft-mapping confirmation protocol (Run 4, 27.1): `margin-engine
+    # draft-mapping` lists every guessed field here. The engine refuses to run
+    # while any entry remains - a person confirms each guess by reviewing it
+    # and deleting its entry. Suggestions never become silent decisions.
+    unconfirmed_fields: tuple[str, ...] = ()
 
     def effective_input(self, override: TableInput | None) -> tuple[InputOptions, str]:
         """Resolve (InputOptions, decimal_separator) for one table: per-table
@@ -260,6 +265,8 @@ KNOWN_REFERENCE_TABLES = {
     "quotes",
     "substitution_groups",
     "market_price_index",
+    "gl_totals",
+    "external_cost_series",
 }
 
 
@@ -284,6 +291,17 @@ def load_mapping(path: str | Path) -> SourceMapping:
         msg = (
             f"mapping declares unknown reference tables {sorted(unknown)}; "
             f"known tables: {sorted(KNOWN_REFERENCE_TABLES)}"
+        )
+        raise MappingError(msg)
+    if mapping.unconfirmed_fields:
+        fields = "\n  - ".join(mapping.unconfirmed_fields)
+        msg = (
+            f"mapping file {path} is a DRAFT with {len(mapping.unconfirmed_fields)} "
+            f"unconfirmed field(s):\n  - {fields}\n"
+            "Each entry is a profiler guess that a person has not confirmed. Review "
+            "the matching '# CONFIRM' line, correct it if the guess is wrong, then "
+            "delete its entry from unconfirmed_fields. The engine never runs on "
+            "unconfirmed guesses."
         )
         raise MappingError(msg)
     return mapping
