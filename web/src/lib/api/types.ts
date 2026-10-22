@@ -25,6 +25,13 @@ import type {
   WaterfallStage,
 } from "../../types/bundle";
 
+export interface RefreshSectionStatus {
+  refreshed_utc: string;
+  stale: boolean;
+  detail?: string;
+  data_as_of?: string;
+}
+
 export interface AppData {
   bundle_version: string;
   engine_version: string;
@@ -32,6 +39,11 @@ export interface AppData {
   honest_labels: string[];
   labels: Record<string, LabelEntry>;
   kpis: SummaryKpis;
+  /** Live mode only (30.4): the latest replayed data day. */
+  data_as_of?: string;
+  /** Live mode only (30.4): per-section refresh status; stale sections are
+   * labeled in the shell. */
+  refresh_status?: Record<string, RefreshSectionStatus>;
 }
 
 export interface SegmentName {

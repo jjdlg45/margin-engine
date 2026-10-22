@@ -2038,3 +2038,84 @@ sample files are committed in this phase.
 **Checks.** ruff check 0; ruff format 0; mypy strict 0 (61 files); pytest
 full suite exit 0 (327 tests passed; slow and network markers deselected). Web
 untouched by this phase (phase-26 exit codes stand).
+
+## Phase 30 — Backend-for-frontend API and live mode (2026-10-22, Run 4 branch)
+
+**30.1 Service.** FastAPI app in `api/` implementing docs/api/openapi.yaml
+exactly, mounted under /api (the http adapter's default): /app, /pages/{page},
+/tables/{table} (page, page_size, sort, URL-encoded JSON filters),
+/tables/guidance/explanations/{c}/{i}, plus /health and /version. The filter,
+sort and pagination semantics are a line-for-line port of the static
+adapter's (api/filters.py), including the restored guidance nulls and the
+nulls-first-on-descending sort quirk — interchangeable adapters, provably.
+New dependency group `api` (fastapi, uvicorn, httpx).
+
+**30.2 Storage and caching.** api/store.py: the exported bundle loads into
+DuckDB (pages and tables as versioned documents, replay bookkeeping in a meta
+table) under a content-hash version; the API serves an in-memory snapshot
+swapped atomically on refresh and restorable from DuckDB on restart.
+Responses carry ETag + Last-Modified from the version; If-None-Match returns
+304.
+
+**30.3 Rate limiting.** Inbound token bucket per client (configurable rate
+and burst) returning 429 with Retry-After and a detail body. Outbound:
+refresh jobs go through the Phase 29 connectors (their limiter, cache and
+stale labels); request handlers NEVER call an external source.
+
+**30.4 Live mode with a replay feed.** api/replay.py feeds Online Retail II
+one business day per tick (configurable seconds/day): each tick rebuilds the
+world from every source line dated <= the replayed day, re-runs the engine,
+re-exports the bundle, reloads the store, and only then advances the state —
+idempotent by construction (filtered from source, never appended; a day at or
+before the state is a no-op) and crash-safe (an interrupted tick re-runs).
+The bundle's data_label reads "Historical data replayed (… through <day>;
+not live)". api/refresh.py schedules FX daily, PPI monthly and the replay
+tick as in-process asyncio jobs; every job records a per-section status, and
+a failed refresh marks the section stale with its age instead of breaking
+anything. /api/app gains additive data_as_of + refresh_status fields; the UI
+shell shows "Data as of <day>" and a visible textual stale notice per stale
+section (never color alone).
+
+**30.5 UI in API mode.** VITE_DATA_SOURCE=http against the real API works
+end to end: the vite dev server proxies /api same-origin
+(VITE_API_PROXY_TARGET), and index.html's static-bundle preloads are
+stripped at build time in API mode (they are a static-hosting paint
+optimization the API mode never fetches). New Playwright config
+(playwright.api.config.ts) boots uvicorn + the UI and proves: the Overview
+loads entirely from /api with zero static data-file fetches and no console
+errors; tables paginate server-side; a simulated upstream failure (the exact
+stale payload the API emits) shows the stale-data label; the replay
+data-as-of label renders.
+
+**30.6 One command.** Docker is unavailable on this machine, so the spec's
+documented alternative applies: `uv run python scripts/live_mode.py` starts
+the API (replay on, committed sample by default; --source for the full
+dataset) and the UI in API mode, documented in README "Live mode".
+
+**30.7 Verify.** tests/test_api.py (11 tests, offline): contract tests
+generated from the OpenAPI spec (responses validated against its schemas
+with jsonschema, every enum page/table exercised, 404/400 shapes); parity
+(every API table row equals the exported bundle row field-for-field,
+cents-exact, across pagination); filters and sort; explanations; ETag 304;
+rate-limit 429 with Retry-After; refresh jobs from fixtures with a simulated
+upstream failure marking the section stale; replay idempotency on the
+committed sample (day re-run is a no-op, version unchanged, totals grow only
+by the next day's lines, label says replayed). Plus the 4 API-mode
+Playwright tests above.
+
+**30.8 Deployment (documented, not executed).** docs/deploy-api.md: Render
+free tier (verified from Render's own docs: 750 h/month, 15-min spin-down,
+no persistent disk — consequences for the replay feed stated) and Oracle
+Cloud Always Free (verified 2026-10-22 coverage of the reduced 2 OCPU/12 GB
+A1 limits, caveat to re-check Oracle's docs), with env vars, scheduler
+placement, UI switch and the no-CORS proxy pattern. No accounts created, no
+deploy; the GitHub Pages demo stays static.
+
+**Checks.** ruff check 0; ruff format 0; mypy src+api 0 (69 files); pytest
+full suite exit 0 (339 tests); web: tsc 0, vitest 0 (11 tests), vite build 0,
+Playwright API mode 4/4, Playwright static suite 144/144 after a reviewed
+snapshot update: the header notice now shows the bundle's authoritative
+data_label (required so replay mode can label data as replayed), and the demo
+world's longer label wraps to one extra caption line at 375 px - all 20
+mobile baselines (10 pages x light/dark) re-recorded 17 px taller after
+visual review confirmed clean wrapping; desktop baselines unchanged.

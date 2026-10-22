@@ -102,9 +102,21 @@ function Shell() {
             <ThemeToggle />
           </span>
         </div>
-        <p className="mb-2 mt-1 text-caption secondary">
-          Synthetic demo data with planted ground truth - every figure
-          reconciles to source and carries its evidence status.
+        <p className="mb-2 mt-1 text-caption secondary" data-testid="data-notice">
+          {app.data?.data_label ??
+            "Synthetic demo data with planted ground truth"}{" "}
+          - every figure reconciles to source and carries its evidence status.
+          {app.data?.data_as_of && (
+            <span data-testid="data-as-of"> Data as of {app.data.data_as_of}.</span>
+          )}
+          {Object.entries(app.data?.refresh_status ?? {})
+            .filter(([, s]) => s.stale)
+            .map(([name, s]) => (
+              <span key={name} className="text-garnet" data-testid={`stale-${name}`}>
+                {" "}
+                {name.toUpperCase()} data is stale (last refresh {s.refreshed_utc}).
+              </span>
+            ))}
         </p>
       </header>
       <main id="main" className="min-h-[85vh]">

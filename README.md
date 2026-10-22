@@ -108,6 +108,29 @@ deployment behind a backend-for-frontend (BFF):
   error-with-Retry and partial-data states are handled at every section, with
   retries capped (two, exponential backoff, none on 4xx).
 
+### Live mode
+
+The BFF exists (Run 4, [`api/`](api/)): a FastAPI service implementing
+[`docs/api/openapi.yaml`](docs/api/openapi.yaml) exactly, with engine outputs
+and connector caches in DuckDB, ETag/Last-Modified response caching, inbound
+per-client rate limiting (429 + Retry-After) and scheduled refreshes (FX
+daily, PPI monthly) through the rate-limited [connectors](docs/data-sources.md)
+— the API never calls an external source inside a request handler.
+
+No free source publishes live B2B invoices, so live data is simulated
+honestly with a **replay feed**: the Online Retail II dataset is fed in one
+business day at a time, the engine re-runs, and the UI shows "Data as of
+<day>" with the data labeled *historical data replayed*. Replay ticks are
+idempotent (each day's world is filtered from source, never appended), so
+re-running a day cannot double count.
+
+Run everything locally with one command (Docker-free; see
+[docs/deploy-api.md](docs/deploy-api.md) for hosting options):
+
+```bash
+uv run python scripts/live_mode.py          # UI :4174 in API mode, API :8321, replay on
+```
+
 ## Supported input formats
 
 The engine reads **tabular, line-level invoice exports**: one row per invoice line, as **CSV** or **.xlsx**. PDF and scanned invoices are not supported; they need a separate extraction step first.

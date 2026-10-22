@@ -36,3 +36,4 @@ Thumbs.db
 *.env
 .claude/settings.local.json
 .connector_cache/
+.api_state/

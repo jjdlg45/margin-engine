@@ -26,6 +26,11 @@ dependencies = [
 margin-engine = "margin_engine.cli:app"
 
 [dependency-groups]
+api = [
+    "fastapi>=0.159.1",
+    "httpx>=0.28.1",
+    "uvicorn>=0.54.0",
+]
 dev = [
     "ruff>=0.8",
     "mypy>=1.13",
