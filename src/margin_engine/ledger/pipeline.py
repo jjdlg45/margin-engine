@@ -58,6 +58,7 @@ REFERENCE_TABLES = [
     "inventory_receipts",
     "quotes",
     "substitution_groups",
+    "market_price_index",
 ]
 
 

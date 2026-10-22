@@ -40,14 +40,18 @@ export type AnnualNetRevenueCents = number | null;
 export type BandP25 = number | null;
 export type BandP50 = number | null;
 export type BandP75 = number | null;
+export type BindingFloorBasis = string | null;
 export type CurrentIndex = number | null;
 export type CustomerId1 = string;
 export type CustomerName1 = string | null;
 export type Explanation = string;
 export type FloorIndex = number | null;
+export type InvoiceContributionFloorCents = number | null;
 export type InvoiceFloorCents = number | null;
+export type InvoiceFloorGrossCents = number | null;
 export type ItemId = string;
 export type ItemName = string | null;
+export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
 export type Segment = number | null;
 export type Status = string;
@@ -83,7 +87,7 @@ export type PocketGrossProfitCents = number;
  */
 export type PocketMarginPct = number | null;
 /**
- * After returns, like every headline KPI - never exceeds net revenue
+ * After returns, like every headline KPI - never exceeds net invoiced revenue
  */
 export type PocketRevenueCents = number;
 export type ReconciliationPass = boolean;
@@ -114,6 +118,7 @@ export type Notes = string[];
 export type RulesSha256 = string;
 export type ExpectedTotalCents = number;
 export type ExpectedTotalNote = string;
+export type GrossConservativeTotalCents = number | null;
 export type GrossTotalCents = number;
 export type Components = LeakageComponent[];
 export type CustomerId2 = string;
@@ -121,14 +126,18 @@ export type NetRevenueCents2 = number;
 export type TotalLeakageCents = number;
 export type LeakageByCustomer = CustomerLeakage[];
 export type LeakageTotalCents = number;
+export type NCostUnavailable = number;
+export type NOutsidePriceSupport = number;
 export type NRecords = number;
 export type NeverSummedNote = string;
+export type CostUnavailable = boolean;
 export type CustomerId3 = string;
 export type CustomerName2 = string | null;
 export type EvidenceStatus = string | null;
 export type ExpectedContributionChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
+export type GrossPriceOpportunityConservativeCents = number | null;
 export type ItemId1 = string;
 export type ItemName1 = string | null;
 /**
@@ -246,14 +255,17 @@ export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
+export type ArBounded = boolean | null;
 export type ArCiHigh = number | null;
 export type ArCiLow = number | null;
+export type CarriedForwardShare = number | null;
 export type FirstStageF = number | null;
 export type IdentifyingCoverage = number | null;
 export type Iv = number | null;
 export type IvCiHigh = number | null;
 export type IvCiLow = number | null;
 export type IvSe = number | null;
+export type MarketControlUsed = boolean;
 export type NObs1 = number;
 export type NPairs2 = number;
 export type NPositive = number;
@@ -263,11 +275,14 @@ export type NaiveVsIvNote = string;
 export type OveridJ = number | null;
 export type OveridP = number | null;
 export type Ppml = number | null;
+export type PpmlPositive = number | null;
 export type PriceCvWithin = number;
 export type RobustnessSpread = number | null;
 export type Segment4 = number;
 export type Status3 = string;
 export type StatusReasons = string;
+export type SupportLogHi = number | null;
+export type SupportLogLo = number | null;
 export type Sensitivity = SensitivitySegment[];
 export type AmountCents2 = number;
 export type CustomerId4 = string;
@@ -376,14 +391,18 @@ export interface GuidancePair {
   band_p25: BandP25;
   band_p50: BandP50;
   band_p75: BandP75;
+  binding_floor_basis?: BindingFloorBasis;
   current_index: CurrentIndex;
   customer_id: CustomerId1;
   customer_name?: CustomerName1;
   explanation: Explanation;
   floor_index: FloorIndex;
+  invoice_contribution_floor_cents?: InvoiceContributionFloorCents;
   invoice_floor_cents: InvoiceFloorCents;
+  invoice_floor_gross_cents?: InvoiceFloorGrossCents;
   item_id: ItemId;
   item_name?: ItemName;
+  list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
   segment: Segment;
   status: Status;
@@ -446,9 +465,12 @@ export interface SoftwareVersions {
 export interface OpportunitySection {
   expected_total_cents: ExpectedTotalCents;
   expected_total_note: ExpectedTotalNote;
+  gross_conservative_total_cents?: GrossConservativeTotalCents;
   gross_total_cents: GrossTotalCents;
   leakage_by_customer: LeakageByCustomer;
   leakage_total_cents: LeakageTotalCents;
+  n_cost_unavailable?: NCostUnavailable;
+  n_outside_price_support?: NOutsidePriceSupport;
   n_records: NRecords;
   never_summed_note: NeverSummedNote;
   top_opportunities: TopOpportunities;
@@ -461,12 +483,14 @@ export interface CustomerLeakage {
   total_leakage_cents: TotalLeakageCents;
 }
 export interface OpportunityRecord {
+  cost_unavailable?: CostUnavailable;
   customer_id: CustomerId3;
   customer_name?: CustomerName2;
   evidence_status: EvidenceStatus;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
+  gross_price_opportunity_conservative_cents?: GrossPriceOpportunityConservativeCents;
   item_id: ItemId1;
   item_name?: ItemName1;
   pct_below_target?: PctBelowTarget;
@@ -574,14 +598,17 @@ export interface SegmentRule {
   technical_note: TechnicalNote;
 }
 export interface SensitivitySegment {
+  ar_bounded?: ArBounded;
   ar_ci_high: ArCiHigh;
   ar_ci_low: ArCiLow;
+  carried_forward_share?: CarriedForwardShare;
   first_stage_f: FirstStageF;
   identifying_coverage: IdentifyingCoverage;
   iv: Iv;
   iv_ci_high: IvCiHigh;
   iv_ci_low: IvCiLow;
   iv_se: IvSe;
+  market_control_used?: MarketControlUsed;
   n_obs: NObs1;
   n_pairs: NPairs2;
   n_positive: NPositive;
@@ -591,11 +618,14 @@ export interface SensitivitySegment {
   overid_j: OveridJ;
   overid_p: OveridP;
   ppml: Ppml;
+  ppml_positive?: PpmlPositive;
   price_cv_within: PriceCvWithin;
   robustness_spread: RobustnessSpread;
   segment: Segment4;
   status: Status3;
   status_reasons: StatusReasons;
+  support_log_hi?: SupportLogHi;
+  support_log_lo?: SupportLogLo;
 }
 export interface UnallocatedSettlement {
   amount_cents: AmountCents2;

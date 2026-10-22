@@ -23,6 +23,21 @@ class Preset(StrEnum):
     # the log-log estimand) and the noise levels from before the default world
     # was tightened. Recovery on this preset is REPORTED, not gated.
     REALISTIC_NOISE = "realistic_noise"
+    # Run 4 (24.5): customer demand shocks follow an AR(1) over months, so
+    # residuals are correlated within customers across time. Used by the
+    # persistent-demand coverage study that picks the clustering default.
+    PERSISTENT_DEMAND = "persistent_demand"
+    # Run 4 (24.9) misspecified worlds — informational, never gated:
+    # pair elasticities vary around the segment value (the engine's
+    # one-beta-per-segment model is wrong by construction);
+    HETEROGENEOUS_ELASTICITY = "heterogeneous_elasticity"
+    # demand curvature makes elasticity depend on the price level (the
+    # constant-elasticity log-log model is wrong by construction);
+    NONCONSTANT_ELASTICITY = "nonconstant_elasticity"
+    # competitor prices co-move with the cost instruments and shift demand:
+    # the exclusion restriction is violated for BOTH instruments in a way
+    # overidentification cannot detect (both move together).
+    COMPETITOR_COMOVEMENT = "competitor_comovement"
 
 
 class MessRates(BaseModel):
@@ -58,6 +73,19 @@ class DemandParams(BaseModel):
     base_index_max: float = 0.98
     # Std dev of the time-varying unobserved demand shock (customer x month).
     demand_shock_sd: float = 0.22
+    # AR(1) persistence of the customer demand shock (24.5). 0 = iid (default,
+    # unchanged worlds); the persistent_demand preset raises it.
+    demand_ar: float = 0.0
+    # Pair-level elasticity heterogeneity WITHIN segment (24.9, misspecified
+    # world): sd of a normal around the segment beta. 0 = exact segment betas.
+    within_segment_beta_sd: float = 0.0
+    # Demand curvature (24.9): log mu += curvature x (log P/P_ref)^2, so the
+    # local elasticity beta + 2 x curvature x log(P/P_ref) is price-dependent.
+    elasticity_curvature: float = 0.0
+    # Competitor co-movement (24.9/24.10): a category market price index moves
+    # with the industry cost shocks (same pass-through as own prices) and
+    # shifts demand by this factor. 0 = off.
+    competitor_comovement: float = 0.0
     # AR(1) persistence of instrument processes.
     instrument_ar: float = 0.70
     # Innovation sd of supplier cost shock and category tariff shock (log scale).
@@ -199,6 +227,14 @@ class GeneratorConfig(BaseModel):
                     "pair_price_sd": 0.06,
                 }
             )
+        elif preset is Preset.PERSISTENT_DEMAND:
+            demand = demand.model_copy(update={"demand_ar": 0.70})
+        elif preset is Preset.HETEROGENEOUS_ELASTICITY:
+            demand = demand.model_copy(update={"within_segment_beta_sd": 0.40})
+        elif preset is Preset.NONCONSTANT_ELASTICITY:
+            demand = demand.model_copy(update={"elasticity_curvature": -1.5})
+        elif preset is Preset.COMPETITOR_COMOVEMENT:
+            demand = demand.model_copy(update={"competitor_comovement": 0.8})
         base["demand"] = demand
         if preset is Preset.SPARSE:
             base["n_customers"] = 40

@@ -20,10 +20,13 @@ const TREATMENT: Record<string, string> = {
   below_reference: "chip-hatched",
   below_floor: "chip-fail",
   insufficient_pricing_headroom: "chip-fail",
+  market_reference_below_floor: "chip-fail",
   provisional_historical: "chip-outline",
   expected_change: "chip-solid",
   sensitivity_range_only: "chip-hatched",
   fixed_volume_only: "chip-outline",
+  outside_price_support: "chip-dashed",
+  cost_unavailable: "chip-dashed",
   minimum_order_policy: "chip-hatched",
   delivery_frequency_policy: "chip-hatched",
 };

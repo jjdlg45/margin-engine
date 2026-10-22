@@ -70,9 +70,13 @@ def run(
 # Demo world for the hosted site: generated in CI at deploy time, never
 # committed. Scale chosen in Phase 19.1 as the smallest where at least one
 # segment reaches causal-supported elasticity with the bundle under 5 MB.
-DEMO_SEED = 42
-DEMO_CUSTOMERS = 40  # smallest size with >=1 causal-supported segment (Phase 19.1 experiment)
-DEMO_ITEMS = 100
+# Smallest scanned world with >=1 causal-supported segment under the Run 4
+# criteria (AR bounded and <= 1.5x the primary CI, carried-forward robustness
+# gap, identifying-support guard): 50 x 120 at seed 3. The Phase 19.1 world
+# (40 x 100 seed 42) no longer reaches causal with the stricter gates.
+DEMO_SEED = 3
+DEMO_CUSTOMERS = 50
+DEMO_ITEMS = 120
 
 
 @app.command()
@@ -114,6 +118,10 @@ def export_web(
                     seed=DEMO_SEED,
                     n_customers=DEMO_CUSTOMERS,
                     n_items=DEMO_ITEMS,
+                    # Same substitution structure as the committed sample, so
+                    # the cross-price module is exercised on the demo site and
+                    # the world matches the scanned causal-reaching candidate.
+                    n_substitution_groups=4,
                 )
                 world = Path(td) / "world"
                 _generate(cfg, world)

@@ -28,7 +28,7 @@ def test_defaults_match_spec_section_8() -> None:
     assert rules.segmentation.margin_driver_tree.max_depth == 4
     assert rules.segmentation.commercial_tree.min_leaf_customers == 20
     assert rules.segmentation.commercial_tree.min_leaf_items == 10
-    assert rules.price_guidance.min_pocket_margin == Decimal("0.05")
+    assert rules.price_guidance.min_pocket_gross_margin == Decimal("0.05")
     assert rules.sensitivity.min_first_stage_f == 10.0
     assert rules.sensitivity.active_assortment_lookback_months == 6
     assert rules.opportunity.baseline_window_months == 12
@@ -37,7 +37,12 @@ def test_defaults_match_spec_section_8() -> None:
 
 def test_min_pocket_margin_is_decimal_not_float() -> None:
     rules = Rules()
-    assert isinstance(rules.price_guidance.min_pocket_margin, Decimal)
+    assert isinstance(rules.price_guidance.min_pocket_gross_margin, Decimal)
+
+
+def test_renamed_margin_key_rejected_with_actionable_error() -> None:
+    with pytest.raises(ValidationError, match="min_pocket_gross_margin"):
+        Rules.model_validate({"price_guidance": {"min_pocket_margin": "0.05"}})
 
 
 def test_unknown_key_rejected() -> None:

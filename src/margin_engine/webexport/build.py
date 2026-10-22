@@ -431,6 +431,10 @@ def build_bundle(
             floor_index=_r(r.get("floor_index")),
             pocket_floor_cents=r.get("pocket_floor_cents"),
             invoice_floor_cents=r.get("invoice_floor_cents"),
+            invoice_floor_gross_cents=r.get("invoice_floor_gross_cents"),
+            invoice_contribution_floor_cents=r.get("invoice_contribution_floor_cents"),
+            binding_floor_basis=r.get("binding_floor_basis"),
+            list_provenance=r.get("list_provenance"),
             target_index=_r(r.get("target_index")),
             target_label=r.get("target_label"),
             status=str(r.get("guidance_status")),
@@ -473,6 +477,12 @@ def build_bundle(
                 ar_ci_high=_r(r.get("ar_ci_high")),
                 robustness_spread=_r(r.get("robustness_spread")),
                 identifying_coverage=_r(r.get("identifying_coverage")),
+                ar_bounded=r.get("ar_bounded"),
+                support_log_lo=_r(r.get("support_log_lo")),
+                support_log_hi=_r(r.get("support_log_hi")),
+                ppml_positive=_r(r.get("ppml_positive")),
+                carried_forward_share=_r(r.get("carried_forward_share")),
+                market_control_used=bool(r.get("market_control_used") or False),
                 status=str(r["status"]),
                 status_reasons=str(r.get("status_reasons") or ""),
                 naive_vs_iv_note=note,
@@ -497,8 +507,12 @@ def build_bundle(
             item_name=item_name.get(str(r["item_id"])),
             segment=int(r["segment_leaf"]) if r.get("segment_leaf") is not None else None,
             gross_price_opportunity_cents=_i(r["gross_price_opportunity_cents"]),
+            gross_price_opportunity_conservative_cents=r.get(
+                "gross_price_opportunity_conservative_cents"
+            ),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
+            cost_unavailable=bool(r.get("cost_unavailable") or False),
             evidence_status=r.get("evidence_status"),
             pct_below_target=_r(
                 (float(r["target_index"]) - float(r["current_index"])) / float(r["target_index"])
@@ -528,6 +542,20 @@ def build_bundle(
         leakage_total_cents=_i(leak["total_leakage_cents"].sum()),
         leakage_by_customer=leak_by_customer,
         gross_total_cents=_i(res.opportunities["gross_price_opportunity_cents"].sum())
+        if res.opportunities.height
+        else 0,
+        gross_conservative_total_cents=_i(
+            res.opportunities["gross_price_opportunity_conservative_cents"].fill_null(0).sum()
+        )
+        if res.opportunities.height
+        and "gross_price_opportunity_conservative_cents" in res.opportunities.columns
+        else 0,
+        n_cost_unavailable=_i((res.opportunities["volume_treatment"] == "cost_unavailable").sum())
+        if res.opportunities.height
+        else 0,
+        n_outside_price_support=_i(
+            (res.opportunities["volume_treatment"] == "outside_price_support").sum()
+        )
         if res.opportunities.height
         else 0,
         expected_total_cents=_i(
@@ -908,9 +936,12 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
             "window_label": opp["window_label"],
             "leakage_total_cents": opp["leakage_total_cents"],
             "gross_total_cents": opp["gross_total_cents"],
+            "gross_conservative_total_cents": opp["gross_conservative_total_cents"],
             "expected_total_cents": opp["expected_total_cents"],
             "expected_total_note": opp["expected_total_note"],
             "n_records": opp["n_records"],
+            "n_cost_unavailable": opp["n_cost_unavailable"],
+            "n_outside_price_support": opp["n_outside_price_support"],
             "leakage_by_customer": opp["leakage_by_customer"],
             "facets": {
                 "customers": facet_entities(
@@ -938,9 +969,13 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         },
         "modules": d["optional_modules"],
         # Explanations ride a companion file fetched only when a pair is
-        # opened - keeps the table file itself well under the size gate.
+        # opened, and null fields are omitted from table rows (absent ==
+        # null to the UI) - keeps the table file itself under the size gate.
         "tables/guidance": {
-            "items": [{k: v for k, v in g.items() if k != "explanation"} for g in guidance]
+            "items": [
+                {k: v for k, v in g.items() if k != "explanation" and v is not None}
+                for g in guidance
+            ]
         },
         "tables/guidance_explanations": {
             "items": {f"{g['customer_id']}|{g['item_id']}": g["explanation"] for g in guidance}
@@ -951,10 +986,52 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
     return pages
 
 
+# Hard per-file limit for app-consumed files is 1 MB; shards aim well below it
+# because the size estimate uses compact per-row dumps while files are written
+# indented (~10% overhead), and growth headroom should remain. Transport detail
+# only: the data client follows the "next" links, and the HTTP adapter never
+# sees shards (the BFF paginates).
+_SHARD_BYTES = 700_000
+
+
+def _shard_table(name: str, data: dict[str, object]) -> list[tuple[str, dict[str, object]]]:
+    """Split a table payload into <= _SHARD_BYTES files chained by "next".
+    Lists shard by element; dicts shard by (already deterministic) key order.
+    Returns [(file name, payload), ...] - a single unchained file when small."""
+    items = data["items"]
+    blob = json.dumps(data, sort_keys=True, indent=1)
+    if len(blob.encode("utf-8")) <= _SHARD_BYTES:
+        return [(name, data)]
+    entries: list[tuple[object, int]] = []
+    if isinstance(items, dict):
+        for k in items:
+            entries.append(((k, items[k]), len(json.dumps({k: items[k]}).encode("utf-8"))))
+    else:
+        assert isinstance(items, list)  # table payloads carry list or dict items
+        for it in items:
+            entries.append((it, len(json.dumps(it).encode("utf-8"))))
+    chunks: list[list[object]] = [[]]
+    size = 0
+    for entry, nbytes in entries:
+        if size + nbytes > _SHARD_BYTES and chunks[-1]:
+            chunks.append([])
+            size = 0
+        chunks[-1].append(entry)
+        size += nbytes
+    out: list[tuple[str, dict[str, object]]] = []
+    for i, chunk in enumerate(chunks):
+        fname = name if i == 0 else f"{name}_{i + 1}"
+        nxt = f"{name}_{i + 2}.json" if i + 1 < len(chunks) else None
+        chunk_items: object = dict(chunk) if isinstance(items, dict) else chunk  # type: ignore[arg-type]
+        out.append((fname, {**data, "items": chunk_items, "next": nxt}))
+    return out
+
+
 def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
     """Write bundle.json (full model, for tooling and parity tests),
     schema.json, and the split per-page / per-table files the app consumes -
-    all deterministic (sorted keys, newline-terminated)."""
+    all deterministic (sorted keys, newline-terminated). Oversized table files
+    are sharded into "next"-linked chunks so every app file stays under 1 MB."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = out_dir / "bundle.json"
     schema_path = out_dir / "schema.json"
@@ -962,7 +1039,18 @@ def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
     bundle_path.write_text(payload + "\n", encoding="utf-8", newline="\n")
     schema = json.dumps(WebBundle.model_json_schema(), sort_keys=True, indent=1)
     schema_path.write_text(schema + "\n", encoding="utf-8", newline="\n")
+    # Clear old table shards so a shrinking export leaves no orphan files.
+    tables_dir = out_dir / "tables"
+    if tables_dir.is_dir():
+        for old in tables_dir.glob("*.json"):
+            old.unlink()
+    files: list[tuple[str, dict[str, object]]] = []
     for name, data in _page_payloads(bundle).items():
+        if name.startswith("tables/"):
+            files.extend(_shard_table(name, data))
+        else:
+            files.append((name, data))
+    for name, data in files:
         path = out_dir / f"{name}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(

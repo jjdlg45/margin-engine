@@ -324,6 +324,21 @@ def export_reference_tables(
     ]
     pl.DataFrame(tar_rows).write_csv(out / "tariff_schedule.csv")
 
+    # Market / competitor price index (24.9/24.10): written only when the
+    # competitor-co-movement mechanism is on, so every other world is unchanged
+    # and the engine's optional control switches off with the absent file.
+    if world.market_index is not None:
+        mkt_rows = [
+            {
+                "CATEGORY": f"CAT{g:02d}",
+                "PERIOD": periods[t],
+                "MKT_IDX": round(float(world.market_index[g, t]), 6),
+            }
+            for g in range(cfg.n_categories)
+            for t in range(cfg.months)
+        ]
+        pl.DataFrame(mkt_rows).write_csv(out / "market_price_index.csv")
+
     # Inventory receipts (Phase 14): monthly receipts covering ~115% of sold
     # units at the month's planted unit cost, plus an opening stock receipt.
     sold = (
@@ -483,6 +498,25 @@ def export_ground_truth(
             "negative than the true elasticity."
         ),
         "mess_counts": mess_counts,
+        # Run 4 misspecification notes (24.5/24.9): what each mechanism breaks
+        # and what the engine is expected to do about it (fail closed / report).
+        "misspecification": {
+            "demand_ar": cfg.demand.demand_ar,
+            "within_segment_beta_sd": cfg.demand.within_segment_beta_sd,
+            "elasticity_curvature": cfg.demand.elasticity_curvature,
+            "competitor_comovement": cfg.demand.competitor_comovement,
+            "expectation": (
+                "persistent_demand: iid-cluster CIs undercover; two-way "
+                "month x customer clustering should restore nominal coverage. "
+                "heterogeneous_elasticity: segment estimate is a weighted "
+                "average of pair betas, not any single truth. "
+                "nonconstant_elasticity: the log-log estimand is a local "
+                "average; recovery of the planted base beta degrades. "
+                "competitor_comovement: both instruments violate exclusion "
+                "together; overidentification cannot detect it and estimates "
+                "understate own-price sensitivity (reported, never gated)."
+            ),
+        },
         "planted_totals_cents": totals,
         "n_lines_exported": lines.height,
         "n_customers": customers.height,

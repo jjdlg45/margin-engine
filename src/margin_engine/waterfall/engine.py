@@ -98,6 +98,7 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
         return lines.with_columns(
             pl.lit(None, dtype=pl.Int64).alias("eff_list_cents"),
             pl.lit(None, dtype=pl.Int64).alias("gross_list_value_cents"),
+            pl.lit(None, dtype=pl.Date).alias("list_effective_date"),
         )
     pl_sorted = price_list.sort("item_id", "effective_date").with_columns(
         pl.col("list_price_scaled").alias("_eff_list_scaled")
@@ -121,6 +122,9 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
             ),
             1_000_000,
         ).alias("gross_list_value_cents"),
+        # Kept for provenance: guidance excludes floor-index comparisons when
+        # the list in force is stale relative to the invoice date (24.4).
+        pl.col("effective_date").alias("list_effective_date"),
     ).drop("_eff_list_scaled", "effective_date")
 
 

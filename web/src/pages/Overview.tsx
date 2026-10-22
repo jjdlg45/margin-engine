@@ -68,7 +68,7 @@ function Headline({ app }: { app: AppData }) {
     <div className="flex flex-wrap items-baseline gap-x-12 gap-y-5">
       <div>
         <span className="block text-display font-bold tracking-tight text-petrol">{dollarsShort(k.net_revenue_cents)}</span>
-        <span className="text-caption secondary">net revenue after returns, {k.window_label}</span>
+        <span className="text-caption secondary">net invoiced revenue after returns, {k.window_label}</span>
       </div>
       <div>
         <span className="block text-display font-bold tracking-tight">{dollarsShort(k.pocket_revenue_cents)}</span>
@@ -195,7 +195,7 @@ export function Overview() {
                 <p className="mb-0 mt-5 text-caption secondary">
                   {dollars(k.contribution_cents)} of contribution on cost-known
                   sale lines over {k.window_label}; returns of {dollars(k.returns_cents)} are
-                  included in net revenue and customer economics. Lines without cost stay in revenue figures and are excluded
+                  included in net invoiced revenue and customer economics. Lines without cost stay in revenue figures and are excluded
                   from margin figures - the exclusion is reported, never hidden.
                 </p>
               </>

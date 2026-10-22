@@ -46,6 +46,9 @@ class DemandWorld:
     z_cost: np.ndarray  # (n_suppliers, months)
     z_tariff: np.ndarray  # (n_categories, months)
     demand_shock: np.ndarray  # (n_customers, months)
+    # Market/competitor price index (n_categories, months), 1.0 when the
+    # competitor_comovement mechanism is off (24.9/24.10).
+    market_index: np.ndarray | None = None
 
 
 def _ar1(rng: np.random.Generator, n_series: int, months: int, sd: float, ar: float) -> np.ndarray:
@@ -114,6 +117,12 @@ def build_pairs(
     # Long-tail items override the customer segment (planted rule, segment 5).
     seg = np.where(long_tail[i], 5, cust_seg)
     beta = np.array([segments[s].elasticity for s in seg])
+    # Misspecified world (24.9): pair elasticities vary around the segment
+    # value. Separate RNG stream so every other world keeps its draws.
+    if d.within_segment_beta_sd > 0:
+        het_rng = np.random.default_rng(cfg.seed + 333)
+        beta = beta + het_rng.normal(0, d.within_segment_beta_sd, len(beta))
+        beta = np.minimum(beta, -0.1)  # demand stays downward-sloping
     base_ix = np.array([segments[s].base_price_index for s in seg])
 
     # Contract coverage: customer x item_family exact match.
@@ -188,6 +197,15 @@ def simulate_panel(
     z_cost = _ar1(rng, cfg.n_suppliers, months, d.cost_shock_sd, d.instrument_ar)
     z_tariff = _ar1(rng, cfg.n_categories, months, d.tariff_shock_sd, d.instrument_ar)
     u = rng.normal(0, d.demand_shock_sd, (cfg.n_customers, months))
+    if d.demand_ar > 0:
+        # Persistent customer demand (24.5): AR(1) over months. The same
+        # innovations feed the recursion, so demand_ar=0 reproduces the iid
+        # world exactly.
+        ar_u = np.zeros_like(u)
+        ar_u[:, 0] = u[:, 0]
+        for t in range(1, months):
+            ar_u[:, t] = d.demand_ar * ar_u[:, t - 1] + u[:, t]
+        u = ar_u
 
     # Stockouts: item x month.
     stockout = rng.random((items.height, months)) < cfg.mess.stockout_rate
@@ -265,6 +283,19 @@ def simulate_panel(
     log_p_rel = np.log(np.maximum(unit_price_cents, 1) / base_list)
     season = SEASON_AMPLITUDE * np.sin(2 * np.pi * (t_tile % 12) / 12)
     log_mu = log_bq + beta * log_p_rel + ut + d.tariff_demand_leak * zt + season
+    # Non-constant elasticity (24.9): local elasticity is price-dependent.
+    if d.elasticity_curvature != 0.0:
+        log_mu = log_mu + d.elasticity_curvature * log_p_rel**2
+    # Competitor co-movement (24.9/24.10): a category market index moves with
+    # the industry-wide cost shocks (same pass-through as own prices) and
+    # shifts demand. This violates the exclusion restriction for BOTH
+    # instruments in the same direction, which overidentification cannot see.
+    market_index: np.ndarray | None = None
+    if d.competitor_comovement > 0:
+        zbar_cost = z_cost.mean(axis=0)  # industry cost shock per month
+        log_mkt = d.price_passthrough * (zbar_cost[np.newaxis, :] + z_tariff)
+        market_index = np.exp(log_mkt)  # (n_categories, months)
+        log_mu = log_mu + d.competitor_comovement * log_mkt[ca, t_tile]
 
     # Cross-price effects (Phase 17): for substitution-group partners, demand
     # for A rises with B's relative price when the same customer carries both.
@@ -343,4 +374,11 @@ def simulate_panel(
             "z_tariff": zt,
         }
     )
-    return DemandWorld(pairs=pairs, panel=panel, z_cost=z_cost, z_tariff=z_tariff, demand_shock=u)
+    return DemandWorld(
+        pairs=pairs,
+        panel=panel,
+        z_cost=z_cost,
+        z_tariff=z_tariff,
+        demand_shock=u,
+        market_index=market_index,
+    )

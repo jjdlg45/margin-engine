@@ -76,7 +76,7 @@ uv run margin-engine export-web --demo --out web/public/data
 cd web && npm install && npm run dev
 ```
 
-`--demo` generates a fixed world (seed 42, 40 customers × 100 items, ~17k lines): the smallest scale at which a segment reaches causal-supported elasticity, so the site shows both the fail-closed and the supported path. CI rebuilds the bundle at deploy time; it is never committed. Every figure on the site comes from the engine's exports, and parity tests check them to the cent.
+`--demo` generates a fixed world (seed 3, 50 customers × 120 items, ~25k lines): the smallest scanned scale at which a segment reaches causal-supported elasticity under the Run 4 evidence criteria, so the site shows both the fail-closed and the supported path. CI rebuilds the bundle at deploy time; it is never committed. Every figure on the site comes from the engine's exports, and parity tests check them to the cent.
 
 ### Going live
 
@@ -172,6 +172,8 @@ A mapping YAML declares column names and business meaning; ingestion fails actio
 - **Historical reference bands are not optimal prices.** Targets stay `provisional_historical` unless elasticity evidence supports optimization.
 - **Descriptive elasticities are not causal.** The naive estimate is reported to document bias, never used for decisions.
 - **Instruments rest on assumptions.** The overidentification test only detects an invalid instrument when the two instruments disagree; exclusion restrictions are documented per instrument in `config/rules.yaml`.
+- **Industry-wide cost shocks also move competitor prices.** A customer facing an industry-wide increase has nowhere cheaper to go, so measured responses are flatter than the response to a unilateral move: estimates likely **understate** own-price sensitivity, and overidentification cannot detect it because both instruments shift competitor prices in the same direction. An optional market-price-index control (`market_price_index` reference table) mitigates but cannot eliminate this.
+- **Volume responses are never extrapolated** beyond the price variation the instruments actually induced: proposed moves outside each segment's identifying price range are labeled `outside_price_support` and sized at unchanged volume.
 - **Allocated and estimated amounts are labeled** as such, never presented as actuals. Unallocatable amounts stay visible as residuals with a plain-English explanation.
 - **Item availability is proxied** by market-wide activity, since stockouts aren't observable in invoice data. The proxy is labeled.
 - **Synthetic validation is not real-world validation.** Tests demonstrate recovery of planted truth; they don't prove accuracy on any specific company's data.

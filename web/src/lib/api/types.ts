@@ -94,9 +94,12 @@ export interface OpportunityData {
   window_label: string;
   leakage_total_cents: number;
   gross_total_cents: number;
+  gross_conservative_total_cents: number | null;
   expected_total_cents: number;
   expected_total_note: string;
   n_records: number;
+  n_cost_unavailable: number;
+  n_outside_price_support: number;
   leakage_by_customer: { customer_id: string; net_revenue_cents: number; total_leakage_cents: number; components: LeakageComponent[] }[];
   facets: {
     customers: EntityFacet[];

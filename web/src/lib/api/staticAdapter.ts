@@ -26,8 +26,55 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Oversized table files are sharded into "next"-linked chunks (a transport
+ * detail of static hosting; the HTTP adapter gets paginated responses from
+ * the BFF instead). Follows the chain and concatenates items. */
+async function fetchTableRows(path: string): Promise<Row[]> {
+  const rows: Row[] = [];
+  let nextPath: string | null = path;
+  while (nextPath) {
+    const page: { items: Row[]; next?: string | null } = await fetchJson(nextPath);
+    rows.push(...page.items);
+    nextPath = page.next ?? null;
+  }
+  return rows;
+}
+
+async function fetchKeyedShards(path: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  let nextPath: string | null = path;
+  while (nextPath) {
+    const page: { items: Record<string, string>; next?: string | null } =
+      await fetchJson(nextPath);
+    Object.assign(out, page.items);
+    nextPath = page.next ?? null;
+  }
+  return out;
+}
+
 type Row = Record<string, unknown>;
 type Predicate = (row: Row, filters: Record<string, unknown>) => boolean;
+
+/** Nullable guidance-row fields whose nulls the exported file omits. */
+const GUIDANCE_NULLABLE = [
+  "segment",
+  "customer_name",
+  "item_name",
+  "current_index",
+  "band_p25",
+  "band_p50",
+  "band_p75",
+  "floor_index",
+  "pocket_floor_cents",
+  "invoice_floor_cents",
+  "invoice_floor_gross_cents",
+  "invoice_contribution_floor_cents",
+  "binding_floor_basis",
+  "list_provenance",
+  "target_index",
+  "target_label",
+  "annual_net_revenue_cents",
+];
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && isFinite(v) ? v : null;
@@ -102,7 +149,17 @@ export const staticAdapter: DataClient = {
     table: T,
     query: TableQuery,
   ): Promise<TablePage<TableRowMap[T]>> {
-    const { items } = await fetchJson<{ items: Row[] }>(`tables/${table}.json`);
+    const items = await fetchTableRows(`tables/${table}.json`);
+    // The guidance file omits null fields to stay under the size gate; the
+    // API contract has them as nulls, so restore them here (an HTTP adapter
+    // receives them from the BFF as-is).
+    if (table === "guidance") {
+      for (const r of items) {
+        for (const k of GUIDANCE_NULLABLE) {
+          if (!(k in r)) r[k] = null;
+        }
+      }
+    }
     const filters = query.filters ?? {};
     const filtered = items.filter((r) => FILTERS[table](r, filters));
     const sorted = applySort(filtered, query.sort);
@@ -121,9 +178,7 @@ export const staticAdapter: DataClient = {
   },
 
   async getGuidanceExplanation(customerId: string, itemId: string): Promise<string> {
-    const { items } = await fetchJson<{ items: Record<string, string> }>(
-      "tables/guidance_explanations.json",
-    );
+    const items = await fetchKeyedShards("tables/guidance_explanations.json");
     const text = items[`${customerId}|${itemId}`];
     if (!text) throw new ApiError(`no explanation for ${customerId}/${itemId}`, 404);
     return text;

@@ -9,7 +9,7 @@ import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import type { SensitivityData } from "../lib/api/types";
 import { usePageData } from "../lib/queries";
-import { count, num } from "../lib/format";
+import { count, num, pct } from "../lib/format";
 
 function SensitivityBody({ d }: { d: SensitivityData }) {
   const rankOf = new Map(d.segment_names.map((r) => [r.leaf_id, r.display_rank]));
@@ -96,8 +96,36 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       <dd className="m-0">{r.naive_fe_ols !== null ? num(r.naive_fe_ols) : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">PPML</dt>
-                      <dd className="m-0">{r.ppml !== null ? num(r.ppml) : "—"}</dd>
+                      <dt className="text-caption secondary">PPML (with zeros / positive only)</dt>
+                      <dd className="m-0">
+                        {r.ppml !== null && r.ppml !== undefined ? num(r.ppml) : "—"}
+                        {" / "}
+                        {r.ppml_positive !== null && r.ppml_positive !== undefined
+                          ? num(r.ppml_positive)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Carried-forward rows</dt>
+                      <dd className="m-0">
+                        {r.carried_forward_share !== null && r.carried_forward_share !== undefined
+                          ? pct(r.carried_forward_share)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Identified price range</dt>
+                      <dd className="m-0">
+                        {r.support_log_lo !== null &&
+                        r.support_log_lo !== undefined &&
+                        r.support_log_hi !== null &&
+                        r.support_log_hi !== undefined
+                          ? `${(100 * (Math.exp(r.support_log_lo) - 1)).toFixed(1)}% to +${(
+                              100 *
+                              (Math.exp(r.support_log_hi) - 1)
+                            ).toFixed(1)}%`
+                          : "—"}
+                      </dd>
                     </div>
                   </dl>
                   <p className="mb-0 mt-2 max-w-2xl text-caption secondary">{r.naive_vs_iv_note}</p>

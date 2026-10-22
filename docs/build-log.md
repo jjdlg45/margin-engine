@@ -1567,3 +1567,154 @@ within settle tolerance); all other snapshots unchanged.
 **Checks.** ruff check 0; ruff format --check 0; mypy strict 0 (50 files);
 pytest full suite 0 (221 tests, all passed); web: tsc + vite build 0; vitest
 0 (5 tests); Playwright 144/144 passed, exit 0.
+
+## Phase 24 — Logic remediation (2026-10-21, Run 4 branch `run4`)
+
+Fourteen audit items, every change gated by hand-calculable fixtures or
+simulation studies. Engine-wide consequences are reported below with
+before/after numbers from the demo world.
+
+**24.1 Pocket-aware opportunity.** Levels 2 and 3 now live on the pocket
+basis: gross opportunity = invoice gap x (1 - d) x quantity (a raised invoice
+price also raises the rebates and concessions that scale with it); expected
+contribution change uses unit contribution c(P) = P(1 - d) - F - C; the
+interior optimum is P* = (C + F)/(1 - d) x beta/(1 + beta). Price columns are
+renamed to their actual basis (current/proposed_invoice_price_cents,
+gap_invoice_cents). Hand-calc fixtures: d=10% turns a 500c invoice gap into
+450c pocket (gross 9,000c on 20 units; expected change 3,773c at beta=-2);
+F=100c cancels in the gap but not in the levels (3,031c); P* with d=10%,
+F=120c, C=6,000c at beta=-3 lands at 10,200c interior.
+
+**24.2 Missing cost is never zero.** The `fill_null(0)` on unit cost is gone;
+cost-less pairs keep their price-based level 2, are excluded from
+cost-dependent levels, and carry `cost_unavailable` (counted in the bundle:
+n_cost_unavailable). Fixture: null cost -> gross present, expected change and
+optimization refused.
+
+**24.3 Explicit margins and a contribution floor.** Config key renamed to
+`min_pocket_gross_margin` (the old key fails with an actionable error naming
+the rename). Optional `min_contribution_margin` adds a second floor
+((C + K)/(1 - m_c) + F)/(1 - d) with K = the pair's estimated per-unit
+cost-to-serve from config activity rates; guidance reports both floors and
+`binding_floor_basis`. New status `market_reference_below_floor` when the
+segment P50 sits below the binding floor (precedence documented: the pair's
+own below_floor outranks it). Fixtures to the cent (e.g. C=$100, K=$2,
+m_c=4%, d=10% -> pocket contribution floor exactly $106.25, invoice $118.06,
+binding over the $116.96 gross floor).
+
+**24.4 Units and provenance.** Every methodology floor formula now states its
+unit; floor-index comparisons are made only against a present, positive,
+non-stale effective list (`max_list_age_months`, default 24; provenance column
+`list_provenance`); a test proves index-space and dollar-space comparisons
+agree exactly for valid lists, and a stale-list fixture keeps dollar floors
+while refusing the index comparison.
+
+**24.5 Inference under persistent demand.** The generator gained AR(1)
+customer demand shocks (`demand_ar`, preset `persistent_demand` at 0.70, with
+a test showing lag-1 autocorrelation ~0.5+ vs ~0 iid). Two-way clustering
+month x customer (Cameron-Gelbach-Miller: V = V_month + V_customer -
+V_intersection, applied to the sandwich, the AR inversion and the
+leave-one-cluster-out IV jackknife) joined `cluster_level`. Pilot (10 seeds,
+60 segment-estimates): under persistent demand, month-only clustering covers
+78.3% and supplier x month 76.7% - both badly under nominal - while
+month x customer covers 91.7%; on the iid well-identified world month and
+month x customer both cover 93.3%, so two-way gives up nothing. **The shipped
+default is now `cluster_level: month_customer`**; the full 50-simulation
+study per option is recorded in docs/validation.json.
+
+**24.6 Extrapolation guard.** Each segment records its identifying price
+support (5th-95th percentile of instrument-predicted within log-price
+movement, ~ +/-9% on default worlds). Proposed moves outside it get
+`outside_price_support`: no volume response at any evidence status. On the
+new demo world this reclassifies 122 of 660 opportunity records to
+fixed-volume sizing.
+
+**24.7 Causal threshold.** `causal_elasticity_supported` additionally
+requires the Anderson-Rubin set to be bounded (an empty set is called out as
+joint rejection/misspecification, not "unbounded") and no wider than
+`ar_max_width_ratio` (1.5) x the primary interval. Probe on the full-size
+world (seed 7): 2 of 6 segments causal; one segment correctly demoted when a
+chance overidentification rejection emptied its AR set.
+
+**24.8 Zero rows and carried-forward prices.** PPML runs twice (full panel
+with zeros at carried-forward prices, and positive rows only); the gap joins
+the robustness criterion and the per-segment carried-forward share is
+reported (also shown in the UI diagnostics). On the probe world this demoted
+two segments whose zero rows drove the PPML estimate.
+
+**24.9 Misspecified worlds (informational).** New presets
+`heterogeneous_elasticity` (pair betas vary within segment),
+`nonconstant_elasticity` (demand curvature), `competitor_comovement`
+(competitor prices follow the industry cost shocks and shift demand -
+exclusion violated for BOTH instruments in a way overidentification cannot
+see). Recovery and status outcomes recorded in validation.json as
+informational rows; generator tests pin each mechanism.
+
+**24.10 Competitor co-movement.** Optional `market_price_index` reference
+table (category x month) joins the elasticity models as a log control
+(partialled out after the fixed effects); the generator writes it on the
+competitor preset. README and methodology document the limitation: estimates
+likely understate own-price sensitivity, with or without the control.
+
+**24.11 GAAP alignment.** The headline KPI reads "net invoiced revenue"
+everywhere (HTML report, web UI); methodology gained an ASC mapping section
+(606 variable consideration / consideration payable to a customer / right of
+return, 330, 705-20, the shipping-and-handling election) stating where the
+management view differs and why.
+
+**24.12 LIFO.** Fourth costing method (newest layers first), with fixtures:
+exact per-sale COGS, value conservation to the cent, and the timing property
+that a cost change reaches COGS immediately while old layers persist in
+ending inventory. Accepted as a declared mapping cost basis.
+
+**24.13 Opportunity framing.** Conservative level-2 variant (below-P25 pairs
+to P25 only) reported alongside the main level in the bundle, UI and HTML
+report - never summed with it. Win-aware optimization now accepts NO
+elasticity: (P - C) x P_win(P) with deal size at baseline, because an
+elasticity estimated from the panel including zeros already contains the
+extensive margin the win curve models - the signature makes double counting
+impossible, and the methodology documents the overlap.
+
+**24.14 Config hygiene.** The hardcoded `_pair_n >= 6` outlier-exclusion
+reliability threshold moved to `sensitivity.outlier_exclusion_min_pair_lines`.
+
+**Demo world.** Under the stricter criteria the Phase 19.1 demo world
+(40 x 100, seed 42) no longer reaches causal support (0 of 2 segments; its
+expected-change level would read $0). A scan over sizes and seeds found the
+smallest causal-reaching world at **50 x 120, seed 3** (now with the same
+substitution structure as the committed sample, so the cross-price module is
+exercised on the site). New demo: 1,550 guidance pairs, 1 causal + 2 IV
+segments, leakage $3,925,645.31, gross (pocket) $404,500.15, conservative
+$114,784.71, expected change $77,996.86, 122 outside-support and 0
+cost-unavailable records. Old demo for comparison: gross $478,516.90
+(invoice basis - the pocket conversion is most of the drop), expected
+$284,364.28 under the pre-Run-4 causal gate.
+
+**Bundle/table sizes.** The richer guidance rows pushed tables/guidance.json
+past 1 MB; table files now omit null fields and shard into "next"-linked
+chunks under ~700 KB (the static adapter follows the chain and restores the
+contract's nulls; an HTTP adapter would receive paginated BFF responses
+instead, so the API contract is untouched). Round-trip sharding is unit
+tested; the Playwright size test walks the chains.
+
+**Validation studies (docs/validation.json, 26/26 passed, 4,018s).**
+Official 50-simulation persistent-demand coverage per clustering option:
+month 83.3%, supplier x month 82.3% (both badly under nominal, informational
+rows), month x customer 93.3% (shipped default, within 90-98%); the original
+well-identified coverage stays 92.7% under the new default. Elasticity
+recovery unchanged (median 0.019, P90 0.051, worst 0.110 reported);
+weak/invalid/price-constant/sparse gates all hold. Misspecified worlds
+(informational): persistent_demand error 0.021; heterogeneous_elasticity
+0.024 (the segment estimate is the within-segment average, which the engine
+recovers); nonconstant_elasticity 0.320 (the constant-elasticity estimand is
+a local average - reported, not gated); competitor_comovement 0.236 with ZERO
+segments reaching causal support - the AR-set and robustness criteria catch
+what overidentification cannot. KVI recall 96.7%; win-curve worst 4.0%;
+byte-determinism holds; 811,253 lines in 37.0s.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict 0 (50 files);
+pytest full suite 0 (248 tests, all passed); scripts/measure_validation.py
+exit 0 (26/26); web: tsc + vite build 0; vitest 0; Playwright 144/144
+passed, exit 0 (guidance/sensitivity/opportunity snapshots regenerated for
+the new demo world; two e2e selectors updated for the renamed KPI label and
+the new status label - assertions unchanged).

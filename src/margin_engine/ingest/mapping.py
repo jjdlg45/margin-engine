@@ -31,6 +31,7 @@ class CostBasisDecl(StrEnum):
     STANDARD = "standard"
     AVERAGE = "average"
     FIFO = "fifo"
+    LIFO = "lifo"
     LANDED = "landed"
 
 
@@ -258,6 +259,7 @@ KNOWN_REFERENCE_TABLES = {
     "inventory_receipts",
     "quotes",
     "substitution_groups",
+    "market_price_index",
 }
 
 

@@ -64,7 +64,9 @@ test("customers page: drill-down shows the customer's bundle figures", async ({ 
   // The row button, not the filter chip (both carry the id in their name).
   await page.locator("tbody").getByRole("button", { name: new RegExp(target.customer_id) }).first().click();
   await expect(page.locator("h2").first()).toContainText(target.customer_id);
-  await expect(page.getByText(`${dollars(target.net_revenue_cents)} net revenue`)).toBeVisible();
+  await expect(
+    page.getByText(`${dollars(target.net_revenue_cents)} net invoiced revenue`),
+  ).toBeVisible();
 });
 
 test("guidance page: pair lookup shows bundle floors and explanation", async ({ page }) => {

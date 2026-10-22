@@ -32,6 +32,7 @@ def build_panel(
     supplier_cost_index: pl.DataFrame | None,
     tariff_schedule: pl.DataFrame | None,
     rules: Rules,
+    market_price_index: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Returns one row per (customer, item, month) with qty (including true
     zeros), log price, instruments, and cluster columns."""
@@ -52,8 +53,9 @@ def build_panel(
         # shock-driven price move looks like a one-off against 3-4 points of
         # history) and excluding those points provably biases sparse-segment
         # elasticities away from zero, so the exclusion requires enough pair
-        # history to mean something.
-        reliable = pl.col("_pair_n") >= 6 if "_pair_n" in sales.columns else pl.lit(True)
+        # history to mean something (threshold in config, 24.14).
+        min_hist = rules.sensitivity.outlier_exclusion_min_pair_lines
+        reliable = pl.col("_pair_n") >= min_hist if "_pair_n" in sales.columns else pl.lit(True)
         sales = sales.filter(~(pl.col("flag_commercial_pricing_outlier") & reliable))
 
     # Stable row order before aggregation: the float qty sum and the first()
@@ -161,6 +163,19 @@ def build_panel(
             on=["item_category", "period"],
             how="left",
         )
+    # Optional market / competitor price index (24.10): a log control in the
+    # elasticity models. Industry-wide cost shocks also move competitor prices,
+    # so without this control estimates likely understate own-price
+    # sensitivity (documented limitation; overidentification cannot detect it).
+    if market_price_index is not None and "item_category" in panel.columns:
+        mpi = market_price_index.with_columns(
+            pl.col("market_index").cast(pl.Float64).log().alias("log_mkt")
+        )
+        panel = panel.join(
+            mpi.select("item_category", "period", "log_mkt"),
+            on=["item_category", "period"],
+            how="left",
+        )
 
     panel = panel.with_columns(
         (pl.col("customer_id") + "|" + pl.col("item_id")).alias("pair"),
@@ -171,6 +186,7 @@ def build_panel(
         or supplier_cost_index is not None
         else pl.lit("all").alias("cluster_supplier_month"),
         pl.col("period").alias("cluster_month"),
+        pl.col("customer_id").alias("cluster_customer"),
         (
             (pl.col("item_role").fill_null("unknown") + "@" + pl.col("period"))
             if items is not None and "item_role" in items.columns

@@ -29,7 +29,7 @@
 <div>
   <span class="kpi"><span class="v">{{ coverage.n_lines }}</span>ledger lines</span>
   <span class="kpi"><span class="v">{{ coverage.n_observations }}</span>sales observations</span>
-  <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net revenue</span>
+  <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net invoiced revenue</span>
   <span class="kpi"><span class="v">{{ coverage.missing_cost_revenue_share }}</span>revenue with missing cost</span>
   <span class="kpi"><span class="v">{{ coverage.blank_rows_dropped }}</span>blank input rows dropped</span>
 </div>
@@ -128,7 +128,8 @@
 <h2>Opportunity (three levels, never summed)</h2>
 <div>
   <span class="kpi"><span class="v">${{ opportunity.leakage_total }}</span>observed leakage (12m)</span>
-  <span class="kpi"><span class="v">${{ opportunity.gross_total }}</span>gross price opportunity</span>
+  <span class="kpi"><span class="v">${{ opportunity.gross_total }}</span>gross price opportunity (pocket)</span>
+  <span class="kpi"><span class="v">${{ opportunity.gross_conservative_total }}</span>conservative variant (below-P25 to P25)</span>
   <span class="kpi"><span class="v">${{ opportunity.expected_total }}</span>expected contribution change (causal only)</span>
 </div>
 <p class="muted">{{ opportunity.n_records }} opportunity records; volume treatment: {{ opportunity.treatment_counts }}</p>
@@ -142,11 +143,11 @@
 </div>
 <p class="muted">Sales contribution ${{ economics.sales_contribution }}; linked returns {{ economics.returns_contribution }} (included, shown separately);
 activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled estimated; the base contribution is kept).
-{{ economics.pct_revenue_excluded }} of net revenue is excluded from contribution because cost is unknown.
+{{ economics.pct_revenue_excluded }} of net invoiced revenue is excluded from contribution because cost is unknown.
 {{ economics.n_service_flags }} customer(s) carry service-policy flags (separate from pricing).</p>
 <h3>Top contributors (after activity cost)</h3>
 <table>
-  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  <tr><th>Customer</th><th>Net invoiced revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
   {% for r in economics.top_customers %}
   <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
       <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>
@@ -154,7 +155,7 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
 </table>
 <h3>Bottom contributors (after activity cost)</h3>
 <table>
-  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  <tr><th>Customer</th><th>Net invoiced revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
   {% for r in economics.bottom_customers %}
   <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
       <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>

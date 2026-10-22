@@ -234,7 +234,28 @@ def run_full(
     timings["segmentation"] = time.perf_counter() - t
 
     t = time.perf_counter()
-    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"])
+    # Per-unit cost-to-serve K (estimated, from config activity rates) for the
+    # optional contribution floor (24.3): pair totals over covered sale lines.
+    cts_per_unit = (
+        res.ledger.filter(
+            (pl.col("transaction_type") == "sale")
+            & (pl.col("quantity_norm") > 0)
+            & pl.col("activity_cts_cents").is_not_null()
+        )
+        .group_by("customer_id", "item_id")
+        .agg(
+            pl.col("activity_cts_cents").sum().alias("_cts"),
+            pl.col("quantity_norm").sum().alias("_qty"),
+        )
+        .filter(pl.col("_qty") > 0)
+        .with_columns(
+            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents")
+        )
+        .select("customer_id", "item_id", "cts_per_unit_cents")
+        if "activity_cts_cents" in res.ledger.columns
+        else None
+    )
+    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit)
     timings["guidance"] = time.perf_counter() - t
 
     t = time.perf_counter()
@@ -244,6 +265,7 @@ def run_full(
         res.reference["supplier_cost_index"],
         res.reference["tariff_schedule"],
         rules,
+        market_price_index=res.reference.get("market_price_index"),
     )
     timings["panel"] = time.perf_counter() - t
 
@@ -265,7 +287,7 @@ def run_full(
         from margin_engine.extended.inventory import cost_sales
 
         res.pipeline_cost_basis if hasattr(res, "pipeline_cost_basis") else None
-        method = {"standard": "standard", "average": "average", "fifo": "fifo"}.get(
+        method = {"standard": "standard", "average": "average", "fifo": "fifo", "lifo": "lifo"}.get(
             res.mapping.lines.unit_cost.cost_basis.value if res.mapping.lines.unit_cost else "",
             "average",
         )
@@ -582,6 +604,11 @@ def run_full(
             "leakage_total": _fmt_dollars(int(leak["total_leakage_cents"].sum())),
             "gross_total": _fmt_dollars(
                 int(opps["gross_price_opportunity_cents"].sum()) if opps.height else 0
+            ),
+            "gross_conservative_total": _fmt_dollars(
+                int(opps["gross_price_opportunity_conservative_cents"].fill_null(0).sum())
+                if opps.height and "gross_price_opportunity_conservative_cents" in opps.columns
+                else 0
             ),
             "expected_total": _fmt_dollars(
                 int(opps["expected_contribution_change_cents"].fill_null(0).sum())

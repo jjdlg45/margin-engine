@@ -62,6 +62,34 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "No pricing headroom",
         "description": "The floor sits at or above the reference band; no price satisfies both.",
     },
+    "market_reference_below_floor": {
+        "label": "Reference below floor",
+        "description": "The segment's median historical price sits below the economic floor, "
+        "so the market reference cannot be the target; the floor is.",
+    },
+    "pocket_gross_margin": {
+        "label": "Gross-margin floor binds",
+        "description": "The binding floor comes from the minimum pocket gross margin.",
+    },
+    "contribution_margin": {
+        "label": "Contribution floor binds",
+        "description": "The binding floor comes from the minimum contribution margin "
+        "(includes estimated cost-to-serve).",
+    },
+    "effective_list": {
+        "label": "Effective list",
+        "description": "A valid effective-dated list price backs this pair's index comparisons.",
+    },
+    "stale_list": {
+        "label": "Stale list",
+        "description": "The list in force is older than the configured maximum age at the "
+        "pair's last sale; dollar floors are kept, index comparisons are not made.",
+    },
+    "missing_or_zero_list": {
+        "label": "No list price",
+        "description": "No positive effective-dated list price: index-based comparisons are "
+        "not made (a list price is never manufactured from the invoice price).",
+    },
     "provisional_historical": {
         "label": "Provisional (historical)",
         "description": "A historical position, not an optimal price - provisional until "
@@ -91,6 +119,17 @@ LABELS: dict[str, dict[str, str]] = {
     "fixed_volume_only": {
         "label": "Fixed volume",
         "description": "No supported elasticity: the figure assumes unchanged volume.",
+    },
+    "outside_price_support": {
+        "label": "Outside price support",
+        "description": "The proposed move lies outside the price variation the instruments "
+        "ever induced in this segment, so no volume response is modeled - the figure "
+        "assumes unchanged volume.",
+    },
+    "cost_unavailable": {
+        "label": "Cost unavailable",
+        "description": "No unit cost is known for this pair: cost-dependent figures are not "
+        "produced (missing cost is never treated as zero).",
     },
     # --- service-policy flags -----------------------------------------------------
     "minimum_order_policy": {

@@ -31,13 +31,43 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("every app data file is under 1 MB", async ({ request }) => {
-  for (const f of APP_FILES) {
+  // Table files may be sharded into "next"-linked chunks; every file in a
+  // chain is an app file and must respect the limit.
+  const queue = [...APP_FILES];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const f = queue.shift()!;
+    if (seen.has(f)) continue;
+    seen.add(f);
     const res = await request.get(`/data/${f}`);
     expect(res.ok(), `${f} must exist`).toBe(true);
-    const size = (await res.body()).length;
-    expect(size, `${f} is ${(size / 1e6).toFixed(2)} MB`).toBeLessThan(1024 * 1024);
+    const body = await res.body();
+    expect(body.length, `${f} is ${(body.length / 1e6).toFixed(2)} MB`).toBeLessThan(1024 * 1024);
+    if (f.startsWith("tables/")) {
+      const next = (JSON.parse(body.toString()) as { next?: string | null }).next;
+      if (next) queue.push(`tables/${next.replace(/^tables\//, "")}`);
+    }
   }
+  expect(seen.size).toBeGreaterThanOrEqual(APP_FILES.length);
 });
+
+/** Follow a table's shard chain and return all rows. */
+async function allTableRows(
+  request: import("@playwright/test").APIRequestContext,
+  path: string,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let next: string | null = path;
+  while (next) {
+    const page = (await (await request.get(`/data/${next}`)).json()) as {
+      items: unknown[];
+      next?: string | null;
+    };
+    rows.push(...page.items);
+    next = page.next ? `tables/${page.next.replace(/^tables\//, "")}` : null;
+  }
+  return rows;
+}
 
 test("slow responses show skeletons, then the content", async ({ page }) => {
   await page.route("**/data/overview.json", async (route) => {
@@ -101,20 +131,18 @@ test("4xx responses are not retried", async ({ page }) => {
 });
 
 test("virtualized guidance table renders only visible rows", async ({ page, request }) => {
-  const table = (await (await request.get("/data/tables/guidance.json")).json()) as {
-    items: unknown[];
-  };
-  test.skip(table.items.length <= 100, "needs more than 100 rows to prove virtualization");
+  const rows = await allTableRows(request, "tables/guidance.json");
+  test.skip(rows.length <= 100, "needs more than 100 rows to prove virtualization");
   await page.goto("/#/guidance");
   const region = page.getByRole("region", { name: "Guidance pairs table" });
   await expect(region).toBeVisible();
   const rendered = await region.locator("tbody tr:not([aria-hidden='true'])").count();
-  expect(rendered, `rendered ${rendered} of ${table.items.length}`).toBeLessThan(
-    Math.min(80, table.items.length / 2),
+  expect(rendered, `rendered ${rendered} of ${rows.length}`).toBeLessThan(
+    Math.min(80, rows.length / 2),
   );
   // The full filtered set is still reported, not truncated.
   await expect(page.getByText(/Showing [\d,]+ of [\d,]+/)).toContainText(
-    `of ${table.items.length.toLocaleString("en-US")}`,
+    `of ${rows.length.toLocaleString("en-US")}`,
   );
 });
 

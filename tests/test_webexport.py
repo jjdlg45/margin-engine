@@ -317,6 +317,42 @@ def test_split_page_files(built: tuple[FullRunResult, Rules, WebBundle, Path]) -
     assert customers["items"] == full["economics"]["customers"]
 
 
+def test_shard_table_roundtrip() -> None:
+    """Sharding splits oversized table payloads into "next"-linked chunks that
+    reassemble losslessly, for both list and dict items; small payloads are
+    written as a single unchained file."""
+    from margin_engine.webexport.build import _shard_table
+
+    small = {"items": [{"a": 1}]}
+    assert _shard_table("tables/x", small) == [("tables/x", small)]
+
+    rows = [{"id": i, "pad": "x" * 2000} for i in range(1000)]
+    shards = _shard_table("tables/big", {"items": rows})
+    assert len(shards) > 1
+    assert shards[0][0] == "tables/big"
+    assert shards[1][0] == "tables/big_2"
+    reassembled: list[dict[str, object]] = []
+    for i, (_name, payload) in enumerate(shards):
+        expected_next = f"tables/big_{i + 2}.json" if i + 1 < len(shards) else None
+        assert payload["next"] == expected_next
+        items = payload["items"]
+        assert isinstance(items, list)
+        reassembled.extend(items)  # type: ignore[arg-type]
+        blob = json.dumps(payload, sort_keys=True, indent=1).encode("utf-8")
+        assert len(blob) < 1024 * 1024
+    assert reassembled == rows
+
+    keyed = {f"K{i}": "y" * 2000 for i in range(1000)}
+    dshards = _shard_table("tables/keyed", {"items": keyed})
+    assert len(dshards) > 1
+    merged: dict[str, str] = {}
+    for _, payload in dshards:
+        items_d = payload["items"]
+        assert isinstance(items_d, dict)
+        merged.update(items_d)  # type: ignore[arg-type]
+    assert merged == keyed
+
+
 def test_cli_export_web(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 

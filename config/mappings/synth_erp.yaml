@@ -163,6 +163,11 @@ reference_tables:
   tariff_schedule:
     file: tariff_schedule.csv
     columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}
+  # Optional market/competitor price index (Run 4, 24.10): an elasticity
+  # control. Absent file = control off; the engine states that.
+  market_price_index:
+    file: market_price_index.csv
+    columns: {item_category: CATEGORY, period: PERIOD, market_index: MKT_IDX}
   return_freight_log:
     file: return_freight_log.csv
     columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}

@@ -84,7 +84,7 @@ function WaterfallBody({ d }: { d: WaterfallData }) {
             {active ? (
               <div className="panel mt-3 px-5 pb-5 pt-6 sm:px-8">
                 <p className="mb-1 mt-0 text-caption secondary">
-                  {active.label}: {dollars(active.net_revenue_cents)} net revenue on sale lines.
+                  {active.label}: {dollars(active.net_revenue_cents)} net invoiced revenue on sale lines.
                 </p>
                 <Waterfall stages={active.stages} compact={compact} />
               </div>

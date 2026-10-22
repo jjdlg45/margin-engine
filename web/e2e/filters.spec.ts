@@ -32,7 +32,7 @@ test("guidance: status filter count matches the bundle", async ({ page }) => {
     : bundle.guidance[0].status;
   const expected = bundle.guidance.filter((g) => g.status === status).length;
   await page.getByRole("button", { name: "Any" }).first().click();
-  await page.getByRole("option", { name: bundle.labels[status]?.label ?? status }).click();
+  await page.getByRole("option", { name: bundle.labels[status]?.label ?? status, exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(showing(page)).toContainText(
     `Showing ${expected.toLocaleString("en-US")} of ${bundle.guidance.length.toLocaleString("en-US")}`,

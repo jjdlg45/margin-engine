@@ -141,11 +141,10 @@ def test_insufficient_quotes_fail_closed() -> None:
 
 
 def test_win_aware_optimum_below_monopoly() -> None:
-    """A falling win curve pulls the optimum below the no-win-curve optimum,
+    """A falling win curve pulls the optimum below the flat-curve optimum,
     and a steeper curve pulls it lower still."""
     base = {
         "cost_cents": 6_000,
-        "elasticity": -1.6,
         "p0_cents": 9_000,
         "list_cents": 10_000,
         "floor_cents": 6_500,
@@ -156,3 +155,22 @@ def test_win_aware_optimum_below_monopoly() -> None:
     assert p_soft < p_flat
     assert p_steep < p_soft
     assert p_soft >= base["floor_cents"]
+
+
+def test_win_aware_uses_single_volume_response() -> None:
+    """24.13: the win-aware optimizer accepts NO elasticity - one volume
+    response source per record is enforced by the signature itself."""
+    import inspect
+
+    params = inspect.signature(optimal_price_win_aware).parameters
+    assert "elasticity" not in params
+    with pytest.raises(TypeError):
+        optimal_price_win_aware(
+            cost_cents=6_000,
+            elasticity=-1.6,  # type: ignore[call-arg]
+            p0_cents=9_000,
+            win_intercept=5.4,
+            win_price_coef=-6.0,
+            list_cents=10_000,
+            floor_cents=6_500,
+        )

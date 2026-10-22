@@ -232,6 +232,86 @@ def test_preset_price_constant(tmp_path: Path) -> None:
     assert spread == 0, f"price_constant must have zero within-pair variation, got {spread}"
 
 
+def _demand_shock_lag1_autocorr(out: Path) -> float:
+    """Mean lag-1 autocorrelation of the customer demand shock across months."""
+    import numpy as np
+
+    panel = pl.read_parquet(out / "ground_truth" / "panel_truth.parquet")
+    cm = (
+        panel.select("customer_id", "month", "demand_shock")
+        .unique(subset=["customer_id", "month"])
+        .sort("customer_id", "month")
+    )
+    rhos = []
+    for _, grp in cm.group_by("customer_id"):
+        v = grp.sort("month")["demand_shock"].to_numpy()
+        if len(v) > 6 and np.std(v[:-1]) > 0 and np.std(v[1:]) > 0:
+            rhos.append(float(np.corrcoef(v[:-1], v[1:])[0, 1]))
+    return float(np.mean(rhos))
+
+
+def test_preset_persistent_demand(tmp_path: Path) -> None:
+    """24.5: AR(1) customer demand shocks - strong lag-1 autocorrelation,
+    while the default world's shocks are serially uncorrelated."""
+    out_p, summary = _gen(tmp_path / "p", Preset.PERSISTENT_DEMAND)
+    cfg = GeneratorConfig.model_validate(summary["generator_config"])
+    assert cfg.demand.demand_ar == 0.70
+    rho_p = _demand_shock_lag1_autocorr(out_p)
+    out_iid, _ = _gen(tmp_path / "i", Preset.WELL_IDENTIFIED)
+    rho_iid = _demand_shock_lag1_autocorr(out_iid)
+    assert rho_p > 0.45, f"persistent demand should autocorrelate, got {rho_p:.3f}"
+    assert abs(rho_iid) < 0.15, f"iid demand should not, got {rho_iid:.3f}"
+
+
+def test_preset_heterogeneous_elasticity(tmp_path: Path) -> None:
+    """24.9: pair betas vary within segment; the segment mean stays anchored
+    near the planted segment elasticity (it is what a segment model estimates)."""
+    out, summary = _gen(tmp_path, Preset.HETEROGENEOUS_ELASTICITY)
+    cfg = GeneratorConfig.model_validate(summary["generator_config"])
+    assert cfg.demand.within_segment_beta_sd == 0.40
+    assert (out / "ground_truth" / "truth_summary.json").exists()
+    assert summary["misspecification"]["within_segment_beta_sd"] == 0.40
+
+
+def test_preset_nonconstant_elasticity(tmp_path: Path) -> None:
+    _out, summary = _gen(tmp_path, Preset.NONCONSTANT_ELASTICITY)
+    cfg = GeneratorConfig.model_validate(summary["generator_config"])
+    assert cfg.demand.elasticity_curvature == -1.5
+    assert summary["misspecification"]["elasticity_curvature"] == -1.5
+
+
+def test_preset_competitor_comovement(tmp_path: Path) -> None:
+    """24.9/24.10: the market index file exists ONLY on this preset and its
+    log co-moves with the planted cost/tariff shocks."""
+    import numpy as np
+
+    out, _ = _gen(tmp_path / "c", Preset.COMPETITOR_COMOVEMENT)
+    mkt_path = out / "erp" / "market_price_index.csv"
+    assert mkt_path.exists()
+    out_base, _ = _gen(tmp_path / "b", Preset.WELL_IDENTIFIED)
+    assert not (out_base / "erp" / "market_price_index.csv").exists()
+    mkt = pl.read_csv(mkt_path)
+    panel = pl.read_parquet(out / "ground_truth" / "panel_truth.parquet")
+    # Join by month index: PERIOD is YYYY-MM from the world start.
+    shocks = (
+        panel.select("month", "z_cost", "z_tariff")
+        .group_by("month")
+        .agg(pl.col("z_cost").mean(), pl.col("z_tariff").mean())
+        .sort("month")
+    )
+    idx_by_month = (
+        mkt.with_columns(pl.col("MKT_IDX").log().alias("log_mkt"))
+        .group_by("PERIOD")
+        .agg(pl.col("log_mkt").mean())
+        .sort("PERIOD")
+    )
+    a = shocks["z_cost"].to_numpy() + shocks["z_tariff"].to_numpy()
+    b = idx_by_month["log_mkt"].to_numpy()
+    n = min(len(a), len(b))
+    rho = float(np.corrcoef(a[:n], b[:n])[0, 1])
+    assert rho > 0.8, f"market index must co-move with the cost shocks, got {rho:.3f}"
+
+
 def test_returns_linked_and_negative(world: tuple[Path, dict[str, Any]]) -> None:
     out, _ = world
     df = pl.read_csv(out / "erp" / "invoice_lines.csv", infer_schema_length=10000)

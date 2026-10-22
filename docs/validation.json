@@ -1,7 +1,7 @@
 {
- "generated_utc": "2026-10-20T21:24:37+00:00",
+ "generated_utc": "2026-10-22T00:56:14+00:00",
  "script": "scripts/measure_validation.py",
- "runtime_s": 912.7,
+ "runtime_s": 4018.4,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
  "results": [
   {
@@ -67,7 +67,25 @@
   {
    "check": "95% CI coverage, 50 simulations",
    "target": "Covers truth 90-98% of the time",
-   "achieved": "276/300 = 92.0%",
+   "achieved": "278/300 = 92.7%",
+   "passed": true
+  },
+  {
+   "check": "95% CI coverage under persistent demand, cluster=month (alternative, informational)",
+   "target": "Informational - reported to justify the clustering default",
+   "achieved": "250/300 = 83.3%",
+   "passed": true
+  },
+  {
+   "check": "95% CI coverage under persistent demand, cluster=month_customer (shipped default)",
+   "target": "Covers truth 90-98% of the time",
+   "achieved": "280/300 = 93.3%",
+   "passed": true
+  },
+  {
+   "check": "95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational)",
+   "target": "Informational - reported to justify the clustering default",
+   "achieved": "247/300 = 82.3%",
    "passed": true
   },
   {
@@ -95,6 +113,30 @@
    "passed": true
   },
   {
+   "check": "Misspecified world: persistent_demand (informational)",
+   "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
+   "achieved": "median abs error vs planted 0.021; statuses {causal_elasticity_supported: 8, iv_estimated_elasticity: 10}",
+   "passed": true
+  },
+  {
+   "check": "Misspecified world: heterogeneous_elasticity (informational)",
+   "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
+   "achieved": "median abs error vs planted 0.024; statuses {causal_elasticity_supported: 8, iv_estimated_elasticity: 10}",
+   "passed": true
+  },
+  {
+   "check": "Misspecified world: nonconstant_elasticity (informational)",
+   "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
+   "achieved": "median abs error vs planted 0.320; statuses {causal_elasticity_supported: 9, iv_estimated_elasticity: 9}",
+   "passed": true
+  },
+  {
+   "check": "Misspecified world: competitor_comovement (informational)",
+   "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
+   "achieved": "median abs error vs planted 0.236; statuses {iv_estimated_elasticity: 18}",
+   "passed": true
+  },
+  {
    "check": "KVI candidates",
    "target": "\u2265 80% of planted KVIs in top-ranked candidates",
    "achieved": "Recall 96.7% (30 planted)",
@@ -115,7 +157,7 @@
   {
    "check": "Performance (full Run-1 pipeline)",
    "target": "500k+ lines under 2 minutes",
-   "achieved": "811,253 lines in 50.7s on AMD64 (Windows)",
+   "achieved": "811,253 lines in 37.0s on AMD64 (Windows)",
    "passed": true
   }
  ]

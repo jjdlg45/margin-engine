@@ -224,8 +224,14 @@ export function OpportunityPage() {
                 </p>
                 <p className="m-0 text-caption secondary">{o.window_label}, at unchanged volume</p>
                 <p className="mb-0 mt-2 text-caption secondary">
-                  Eligible quantity times the positive gap to the proposed pocket
+                  Eligible quantity times the positive pocket gap to the proposed
                   price, at unchanged volume - a ceiling, not a forecast.
+                  {o.gross_conservative_total_cents !== null && (
+                    <>
+                      {" "}Conservative variant (below-P25 pairs raised to P25
+                      only): {dollarsShort(o.gross_conservative_total_cents)}.
+                    </>
+                  )}
                 </p>
               </div>
               <div className="panel px-5 py-5">
@@ -234,7 +240,22 @@ export function OpportunityPage() {
                   {dollarsShort(o.expected_total_cents)}
                 </p>
                 <p className="m-0 text-caption secondary">{o.window_label}, causal-supported records only</p>
-                <p className="mb-0 mt-2 text-caption secondary">{o.expected_total_note}</p>
+                <p className="mb-0 mt-2 text-caption secondary">
+                  {o.expected_total_note}
+                  {o.n_outside_price_support > 0 && (
+                    <>
+                      {" "}{count(o.n_outside_price_support)} records propose moves outside
+                      the segment's identified price range and are sized at
+                      unchanged volume instead.
+                    </>
+                  )}
+                  {o.n_cost_unavailable > 0 && (
+                    <>
+                      {" "}{count(o.n_cost_unavailable)} records have no known unit cost and
+                      are excluded from cost-dependent levels.
+                    </>
+                  )}
+                </p>
               </div>
             </div>
             <Section

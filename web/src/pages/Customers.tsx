@@ -105,7 +105,7 @@ function CustomersTable({ d }: { d: CustomersData }) {
       },
       { header: "Orders", accessorKey: "n_orders", cell: (c) => count(c.row.original.n_orders) },
       {
-        header: "Net revenue",
+        header: "Net invoiced revenue",
         accessorKey: "net_revenue_cents",
         cell: (c) => dollars(c.row.original.net_revenue_cents),
       },
@@ -299,7 +299,7 @@ function CustomerDetail({
               </h2>
               <div className="row text-caption secondary">
                 <span>{count(customer.n_orders)} orders</span>
-                <span>{dollars(customer.net_revenue_cents)} net revenue</span>
+                <span>{dollars(customer.net_revenue_cents)} net invoiced revenue</span>
                 <span>{dollars(customer.returns_contribution_cents)} returns impact</span>
                 <span>{pct(customer.pct_revenue_excluded)} revenue excluded (cost unknown)</span>
                 {customer.service_flags.map((f) => (

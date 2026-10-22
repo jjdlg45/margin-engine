@@ -45,6 +45,10 @@ class SegmentEstimate:
     naive_fe_ols: float | None = None
     naive_se: float | None = None
     ppml: float | None = None
+    # PPML on positive-quantity rows only (24.8): its gap to the full-panel
+    # PPML reveals when carried-forward-price zero rows drive the estimate.
+    ppml_positive: float | None = None
+    carried_forward_share: float | None = None
     iv: float | None = None
     iv_se: float | None = None
     iv_ci_low: float | None = None
@@ -54,8 +58,15 @@ class SegmentEstimate:
     overid_p: float | None = None
     ar_ci_low: float | None = None
     ar_ci_high: float | None = None
+    ar_bounded: bool | None = None
     robustness_spread: float | None = None
     identifying_coverage: float | None = None
+    # Identifying price support (24.6): 5th-95th percentile of the
+    # instrument-predicted within log-price movement. Proposed moves outside
+    # this range are extrapolation and get no volume response downstream.
+    support_log_lo: float | None = None
+    support_log_hi: float | None = None
+    market_control_used: bool = False
     status: str = STATUS_INSUFFICIENT
     status_reasons: list[str] = field(default_factory=list)
 
@@ -89,6 +100,30 @@ def _cluster_codes(clusters: np.ndarray) -> tuple[np.ndarray, int]:
     return codes, int(codes.max()) + 1
 
 
+# A multiway cluster specification: (codes, n_groups, sign). One entry for
+# one-way clustering; for two-way (Cameron-Gelbach-Miller) three entries:
+# dimension A (+1), dimension B (+1), intersection A x B (-1).
+ClusterSpec = list[tuple[np.ndarray, int, int]]
+
+
+def _make_cluster_spec(*dims: np.ndarray) -> ClusterSpec:
+    """One-way spec for a single dimension; CGM two-way spec for two."""
+    if len(dims) == 1:
+        codes, n_g = _cluster_codes(dims[0])
+        return [(codes, n_g, +1)]
+    a, b = dims
+    ca, na = _cluster_codes(a)
+    cb, nb = _cluster_codes(b)
+    inter = np.char.add(np.char.add(a.astype(str), "|"), b.astype(str))
+    ci, ni = _cluster_codes(inter)
+    return [(ca, na, +1), (cb, nb, +1), (ci, ni, -1)]
+
+
+def _spec_min_groups(spec: ClusterSpec) -> int:
+    """Degrees of freedom driver: the smallest positive-sign group count."""
+    return min(n_g for _, n_g, sign in spec if sign > 0)
+
+
 def _cluster_meat(x: np.ndarray, resid: np.ndarray, codes: np.ndarray, n_g: int) -> np.ndarray:
     """Sum over clusters of (X_g' u_g)(X_g' u_g)', vectorized."""
     k = x.shape[1]
@@ -97,24 +132,29 @@ def _cluster_meat(x: np.ndarray, resid: np.ndarray, codes: np.ndarray, n_g: int)
     return scores.T @ scores
 
 
-def _cluster_ols(
-    y: np.ndarray, x: np.ndarray, clusters: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """OLS beta and CRV1 cluster-robust vcov (no intercept; demeaned inputs)."""
+def _cluster_ols(y: np.ndarray, x: np.ndarray, spec: ClusterSpec) -> tuple[np.ndarray, np.ndarray]:
+    """OLS beta and CRV1 cluster-robust vcov (no intercept; demeaned inputs).
+    Multiway vcov combines per-dimension sandwiches with CGM signs; a
+    non-positive-definite combination falls back to the largest one-way
+    component (standard CGM practice for the scalar case)."""
     xtx = x.T @ x
     xtx_inv = np.linalg.pinv(xtx)
     beta = xtx_inv @ (x.T @ y)
     resid = y - x @ beta
-    codes, n_g = _cluster_codes(clusters)
-    meat = _cluster_meat(x, resid, codes, n_g)
     n, k = x.shape
-    dof = (n_g / (n_g - 1)) * ((n - 1) / (n - k)) if n_g > 1 and n > k else 1.0
-    vcov = dof * xtx_inv @ meat @ xtx_inv
+    parts: list[np.ndarray] = []
+    for codes, n_g, sign in spec:
+        meat = _cluster_meat(x, resid, codes, n_g)
+        dof = (n_g / (n_g - 1)) * ((n - 1) / (n - k)) if n_g > 1 and n > k else 1.0
+        parts.append(sign * dof * xtx_inv @ meat @ xtx_inv)
+    vcov = np.sum(np.stack(parts), axis=0)
+    if k == 1 and float(vcov[0, 0]) <= 0 and len(parts) > 1:
+        vcov = np.array([[max(float(p[0, 0]) for p in parts if float(p[0, 0]) > 0)]])
     return beta, vcov
 
 
-def _first_stage_f(p: np.ndarray, z: np.ndarray, clusters: np.ndarray) -> float:
-    beta, vcov = _cluster_ols(p, z, clusters)
+def _first_stage_f(p: np.ndarray, z: np.ndarray, spec: ClusterSpec) -> float:
+    beta, vcov = _cluster_ols(p, z, spec)
     try:
         f = float(beta @ np.linalg.pinv(vcov) @ beta / z.shape[1])
     except np.linalg.LinAlgError:
@@ -126,38 +166,38 @@ def _ar_confidence_set(
     y: np.ndarray,
     p: np.ndarray,
     z: np.ndarray,
-    clusters: np.ndarray,
+    spec: ClusterSpec,
     grid: np.ndarray,
 ) -> tuple[float | None, float | None]:
     """Anderson-Rubin confidence set by grid inversion: betas where instruments
-    have no explanatory power for y - beta*p (cluster-robust Wald).
+    have no explanatory power for y - beta*p (cluster-robust Wald, multiway
+    via CGM signs).
 
     Vectorized over the grid: the reduced-form coefficient and per-cluster
     scores are linear in beta, so meat(beta) is a quadratic matrix form.
     """
     crit = 5.99 if z.shape[1] == 2 else 3.84
     k = z.shape[1]
-    codes, n_g = _cluster_codes(clusters)
     ztz_inv = np.linalg.pinv(z.T @ z)
     a0 = ztz_inv @ (z.T @ y)  # coef at beta=0
     a1 = ztz_inv @ (z.T @ p)  # d(coef)/d(-beta)
-    # Per-cluster score components: s_g(b) = c0_g - b * c1_g
+    # Per-cluster score components: s_g(b) = c0_g - b * c1_g, per spec entry.
     u0 = y - z @ a0
     u1 = p - z @ a1
-    c0 = np.zeros((n_g, k))
-    c1 = np.zeros((n_g, k))
-    np.add.at(c0, codes, z * u0[:, None])
-    np.add.at(c1, codes, z * u1[:, None])
-    m00 = c0.T @ c0
-    m01 = c0.T @ c1
-    m11 = c1.T @ c1
-    dof = n_g / max(n_g - 1, 1)
+    terms: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = []
+    for codes, n_g, sign in spec:
+        c0 = np.zeros((n_g, k))
+        c1 = np.zeros((n_g, k))
+        np.add.at(c0, codes, z * u0[:, None])
+        np.add.at(c1, codes, z * u1[:, None])
+        dof = sign * n_g / max(n_g - 1, 1)
+        terms.append((dof, c0.T @ c0, c0.T @ c1, c1.T @ c1))
     accepted: list[float] = []
     for b in grid:
         # Wald-form AR: reduced-form coefficient of (y - b p) on Z with
         # cluster-robust vcov; both are affine/quadratic in b.
         coef = a0 - b * a1
-        meat = (m00 - b * (m01 + m01.T) + b * b * m11) * dof
+        meat = sum(d * (m00 - b * (m01 + m01.T) + b * b * m11) for d, m00, m01, m11 in terms)
         vcov = ztz_inv @ meat @ ztz_inv
         try:
             w = float(coef @ np.linalg.pinv(vcov) @ coef)
@@ -195,6 +235,8 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     est.n_pairs = work["pair"].n_unique()
     pos = work.filter(pl.col("qty") > 0)
     est.n_positive = pos.height
+    if "price_carried_forward" in work.columns and work.height:
+        est.carried_forward_share = float(work["price_carried_forward"].mean() or 0.0)  # type: ignore[arg-type]
     if est.n_positive < sc.min_observations:
         est.status_reasons.append(f"only {est.n_positive} positive observations")
         return est
@@ -216,11 +258,19 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         )
         return est
 
-    cluster_col = "cluster_month" if sc.cluster_level == "month" else "cluster_supplier_month"
+    if sc.cluster_level == "month":
+        cluster_cols = ["cluster_month"]
+    elif sc.cluster_level == "month_customer":
+        cluster_cols = ["cluster_month", "cluster_customer"]
+    else:
+        cluster_cols = ["cluster_supplier_month"]
     # Time fixed effects at item-role x month when roles are known: key value
     # items are broadly co-carried and co-move within a month, and absorbing
     # that common component keeps cluster-robust standard errors honest.
     time_fe = "role_month" if "role_month" in pos.columns else "month_idx"
+    # Optional market/competitor price index control (24.10).
+    has_mkt = "log_mkt" in pos.columns and pos["log_mkt"].null_count() == 0
+    est.market_control_used = bool(has_mkt)
     pdf = _to_pandas(
         pos.select(
             "log_qty",
@@ -229,26 +279,47 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
             "z_tariff",
             "pair",
             "month_idx",
-            cluster_col,
+            *cluster_cols,
             "qty",
             *([time_fe] if time_fe != "month_idx" else []),
+            *(["log_mkt"] if has_mkt else []),
         ).drop_nulls(subset=["log_qty", "log_price"])
     )
     if len(pdf) < sc.min_observations:
         est.status_reasons.append("too few complete rows after joins")
         return est
 
+    spec = _make_cluster_spec(*(pdf[c].to_numpy() for c in cluster_cols))
+
+    def _partial_out(dm_frame: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+        """Residualize cols on the demeaned market control (FWL)."""
+        if not has_mkt:
+            return dm_frame
+        m = dm_frame["log_mkt"].to_numpy()
+        denom = float(m @ m)
+        if denom < 1e-12:
+            return dm_frame
+        out = dm_frame.copy()
+        for c in cols:
+            v = out[c].to_numpy()
+            out[c] = v - m * (float(m @ v) / denom)
+        return out
+
     # --- naive FE-OLS ------------------------------------------------------
-    dm = _two_way_demean(pdf, ["log_qty", "log_price"], "pair", time_fe)
+    dm_cols = ["log_qty", "log_price"] + (["log_mkt"] if has_mkt else [])
+    dm = _two_way_demean(pdf, dm_cols, "pair", time_fe)
+    dm = _partial_out(dm, ["log_qty", "log_price"])
     y = dm["log_qty"].to_numpy()
     p = dm[["log_price"]].to_numpy()
-    clusters = pdf[cluster_col].to_numpy()
-    beta, vcov = _cluster_ols(y, p, clusters)
+    beta, vcov = _cluster_ols(y, p, spec)
     est.naive_fe_ols = float(beta[0])
     est.naive_se = float(np.sqrt(vcov[0, 0]))
 
     # --- PPML on the panel incl. zeros --------------------------------------
     est.ppml = _ppml(work, rules)
+    # Robustness against carried-forward zero rows (24.8): the same PPML on
+    # positive-quantity rows only; the gap joins the robustness criterion.
+    est.ppml_positive = _ppml(pos, rules)
 
     # --- IV ------------------------------------------------------------------
     have_z = ("z_cost" in pdf.columns and pdf["z_cost"].notna().all()) and (
@@ -267,7 +338,10 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         est.status_reasons.append("instruments unavailable in the data")
         return est
 
-    dmz = _two_way_demean(pdf, ["log_qty", "log_price", *z_cols], "pair", time_fe)
+    dmz = _two_way_demean(
+        pdf, ["log_qty", "log_price", *z_cols] + (["log_mkt"] if has_mkt else []), "pair", time_fe
+    )
+    dmz = _partial_out(dmz, ["log_qty", "log_price", *z_cols])
     yz = dmz["log_qty"].to_numpy()
     pz = dmz["log_price"].to_numpy()
     z = dmz[z_cols].to_numpy()
@@ -280,7 +354,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         )
         return est
 
-    est.first_stage_f = _first_stage_f(pz, z, clusters)
+    est.first_stage_f = _first_stage_f(pz, z, spec)
     # Identifying coverage: share of pairs with within-pair instrument movement.
     cov = (
         pos.group_by("pair")
@@ -300,47 +374,80 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         return est
     beta_iv = float((p_hat @ yz) / denom)
     est.iv = beta_iv
+    # Identifying price support (24.6): the range of instrument-predicted
+    # within log-price movement. Downstream, proposed moves outside this range
+    # are extrapolation beyond what the instruments ever induced.
+    est.support_log_lo = float(np.quantile(p_hat, 0.05))
+    est.support_log_hi = float(np.quantile(p_hat, 0.95))
+
     # Full cluster-jackknife IV standard error: leave-one-cluster-out betas
     # with the FIRST STAGE re-estimated each time. Fixed-projection sandwiches
     # (CRV1 and partial jackknives) ignore first-stage sampling noise, which is
     # non-negligible in thinner segments and was the source of under-coverage
-    # in simulation; G = 24 month clusters keep this exact and cheap.
-    codes, n_g = _cluster_codes(clusters)
-    k_z = z.shape[1]
-    zz_g = np.zeros((n_g, k_z, k_z))
-    zp_g = np.zeros((n_g, k_z))
-    zy_g = np.zeros((n_g, k_z))
-    for g in range(n_g):
-        m = codes == g
-        zg = z[m]
-        zz_g[g] = zg.T @ zg
-        zp_g[g] = zg.T @ pz[m]
-        zy_g[g] = zg.T @ yz[m]
-    zz_tot = zz_g.sum(axis=0)
-    zp_tot = zp_g.sum(axis=0)
-    zy_tot = zy_g.sum(axis=0)
-    loco_list = []
-    for g in range(n_g):
-        a = np.linalg.pinv(zz_tot - zz_g[g])
-        bz = zp_tot - zp_g[g]
-        by = zy_tot - zy_g[g]
-        d = float(bz @ a @ bz)
-        if abs(d) > 1e-12:
-            loco_list.append(float(bz @ a @ by) / d)
-    loco = np.array(loco_list if loco_list else [beta_iv])
-    n_l = len(loco)
-    est.iv_se = (
-        float(np.sqrt((n_l - 1) / n_l * ((loco - loco.mean()) ** 2).sum())) if n_l > 1 else None
-    ) or None
+    # in simulation. For two-way clustering the variance combines per-dimension
+    # jackknives with CGM signs: V = V_A + V_B - V_AxB (24.5); a non-positive
+    # combination falls back to the larger one-way variance.
+    def _jackknife_var(codes: np.ndarray, n_g: int) -> float | None:
+        k_z = z.shape[1]
+        zz_g = np.zeros((n_g, k_z, k_z))
+        zp_g = np.zeros((n_g, k_z))
+        zy_g = np.zeros((n_g, k_z))
+        for g in range(n_g):
+            m = codes == g
+            zg = z[m]
+            zz_g[g] = zg.T @ zg
+            zp_g[g] = zg.T @ pz[m]
+            zy_g[g] = zg.T @ yz[m]
+        zz_tot = zz_g.sum(axis=0)
+        zp_tot = zp_g.sum(axis=0)
+        zy_tot = zy_g.sum(axis=0)
+        loco_list = []
+        for g in range(n_g):
+            a = np.linalg.pinv(zz_tot - zz_g[g])
+            bz = zp_tot - zp_g[g]
+            by = zy_tot - zy_g[g]
+            d = float(bz @ a @ bz)
+            if abs(d) > 1e-12:
+                loco_list.append(float(bz @ a @ by) / d)
+        if len(loco_list) < 2:
+            return None
+        loco = np.array(loco_list)
+        n_l = len(loco)
+        return float((n_l - 1) / n_l * ((loco - loco.mean()) ** 2).sum())
+
+    jk_vals: list[tuple[float, int]] = []
+    jk_ok = True
+    for codes, n_g, sign in spec:
+        v = _jackknife_var(codes, n_g)
+        if v is None:
+            jk_ok = False
+            break
+        jk_vals.append((v, sign))
+    iv_var: float | None = None
+    if jk_ok:
+        combined = sum(s * v for v, s in jk_vals)
+        if combined <= 0 and len(jk_vals) > 1:
+            positives = [v for v, s in jk_vals if s > 0 and v > 0]
+            combined = max(positives) if positives else 0.0
+        if combined > 0:
+            iv_var = float(combined)
+    est.iv_se = float(np.sqrt(iv_var)) if iv_var is not None else None
     if est.iv_se:
         from scipy import stats as _st
 
-        crit = float(_st.t.ppf(0.975, max(n_g - 1, 2)))
+        crit = float(_st.t.ppf(0.975, max(_spec_min_groups(spec) - 1, 2)))
         est.iv_ci_low = beta_iv - crit * est.iv_se
         est.iv_ci_high = beta_iv + crit * est.iv_se
 
     grid = np.arange(-5.0, 1.0, 0.02)
-    est.ar_ci_low, est.ar_ci_high = _ar_confidence_set(yz, pz, z, clusters, grid)
+    est.ar_ci_low, est.ar_ci_high = _ar_confidence_set(yz, pz, z, spec, grid)
+    # Bounded means the accepted set does not run into the search grid's edges.
+    est.ar_bounded = (
+        est.ar_ci_low is not None
+        and est.ar_ci_high is not None
+        and est.ar_ci_low > float(grid[0]) + 0.021
+        and est.ar_ci_high < float(grid[-1]) - 0.021
+    )
 
     if len(z_cols) >= 2:
         est.overid_j, est.overid_p = _overid_j(yz, pz, z, beta_iv)
@@ -369,6 +476,15 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         reasons.append(f"overidentification rejected (p={est.overid_p:.4f})")
     if est.robustness_spread is not None and est.robustness_spread > sc.robustness_max_spread:
         reasons.append(f"robustness spread {est.robustness_spread:.2f} exceeds maximum")
+    # Carried-forward-price robustness (24.8): the PPML gap between the full
+    # panel (zeros at carried-forward prices) and positive rows only.
+    if est.ppml is not None and est.ppml_positive is not None:
+        cf_gap = abs(est.ppml - est.ppml_positive)
+        if cf_gap > sc.robustness_max_spread:
+            reasons.append(
+                f"carried-forward robustness gap {cf_gap:.2f} exceeds maximum "
+                f"(PPML with zeros {est.ppml:.2f} vs positive-only {est.ppml_positive:.2f})"
+            )
     # The primary 95% interval is the cluster-robust Wald CI with t(G-1)
     # critical values (nominal coverage confirmed by simulation); the
     # Anderson-Rubin set is reported alongside as the weak-IV-robust interval
@@ -380,6 +496,24 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     )
     if ci_width is None or ci_width > sc.max_ci_width:
         reasons.append(f"CI width {ci_width if ci_width is not None else 'n/a'} exceeds maximum")
+    # Weak-IV-robust agreement (24.7): the top status also requires the
+    # Anderson-Rubin set to be bounded and no wider than the configured
+    # multiple of the primary interval.
+    if not est.ar_bounded:
+        if est.ar_ci_low is None:
+            reasons.append(
+                "Anderson-Rubin set empty (the instruments jointly reject every "
+                "candidate elasticity: evidence of misspecification)"
+            )
+        else:
+            reasons.append("Anderson-Rubin set unbounded (weak-IV-robust evidence insufficient)")
+    elif ci_width is not None and est.ar_ci_low is not None and est.ar_ci_high is not None:
+        ar_width = est.ar_ci_high - est.ar_ci_low
+        if ar_width > sc.ar_max_width_ratio * ci_width:
+            reasons.append(
+                f"Anderson-Rubin set width {ar_width:.2f} exceeds "
+                f"{sc.ar_max_width_ratio}x the primary interval ({ci_width:.2f})"
+            )
     est.status = STATUS_CAUSAL if not reasons else STATUS_IV
     est.status_reasons = reasons
     return est
