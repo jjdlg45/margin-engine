@@ -2119,3 +2119,42 @@ data_label (required so replay mode can label data as replayed), and the demo
 world's longer label wraps to one extra caption line at 375 px - all 20
 mobile baselines (10 pages x light/dark) re-recorded 17 px taller after
 visual review confirmed clean wrapping; desktop baselines unchanged.
+
+## Phase 31 — Documentation and final report (2026-10-22, Run 4 branch)
+
+**README.** "Running on real data" now leads with the profiler and the
+draft-mapping CONFIRM protocol and documents the honest-absence declarations
+(cost_unavailable, prefix-derived transaction type), the books tie-out, the
+no-planted-truth validation and the anonymizer. New "Case study: Online
+Retail II" section linking docs/case-study-online-retail.md. "Live mode" was
+added in Phase 30 (one-command run, replay feed, connectors, rate limits).
+The validation table was updated from docs/validation.json: persistent-demand
+coverage under the shipped clustering (93.3%, with the rejected alternatives'
+83.3%/82.3% stated as the reason for the default), the 300/300 scenario
+matrix, the hybrid PPI world (error 0.037), the corrected performance figure
+(37.0s), and the scale row recorded as a KNOWN GAP with the hardware limits
+and the honest largest-fitting measurement — not loosened, not hidden. The
+misspecified-world paragraph now lists all five informational presets with
+their errors and why they are not gated. Existing tone kept; no "How it was
+built" section.
+
+**docs/data-sources.md.** Complete for every external source used in Run 4
+(UCI Online Retail II, Frankfurter FX, BLS PPI v1, USITC HTS): URL, license
+or terms, verified limits, what it is used for, fixture location.
+
+**docs/run4-report.md.** The owner's report: every phase with what changed,
+tests added (248 -> 339 plus slow/network tiers), before/after money
+(gross opportunity $478,516.90 invoice-basis -> $404,500.15 pocket;
+expected change $284,364.28 -> $77,996.86 under the stricter causal gate;
+conservative level $114,784.71; case-study level-2 $698,667 on the labeled
+fallback basis), coverage numbers, runtime and memory (1.07M real lines in
+152s / 4.2 GB; scale ladder results), the four known gaps with reasons, and
+the four decisions waiting on the owner (merge, scale follow-up, hosting,
+replay source).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict src+api 0;
+pytest full suite exit 0 (339 tests, slow and network tiers deselected). Web untouched by this phase
+(phase-30 exit codes stand: tsc 0, vitest 0, build 0, Playwright 144/144
+static and 4/4 API mode).
+
+Run 4 ends here per spec: final commit on `run4`, no merge, no push.

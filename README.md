@@ -156,11 +156,20 @@ Options set globally under `input:` can be overridden per file (`lines_input:` f
 
 ## Running on real data
 
-1. Copy `config/mappings/synth_erp.yaml` and edit it for your export: column names, date formats, transaction codes, and the semantics that matter: the sign convention of every amount, whether discounts are embedded, and the cost basis and what it includes.
-2. Point `--data` at the folder with your invoice export and any reference tables (price list, rebate programs and settlements, order charges, freight log, UOM conversions, supplier cost index, tariff schedule, quotes, receipts). Every table is optional; absent tables switch their features off and the report says so.
-3. The engine refuses to compute anything whose meaning you didn't declare and tells you exactly which declaration is missing.
+1. `margin-engine profile your_export.csv` scans the file and reports, per column: type guess, null rate, distinct count, detected date formats, and candidate canonical fields each with a confidence and a reason — plus the file-level delimiter, encoding, decimal separator and sign patterns.
+2. `margin-engine draft-mapping your_export.csv` turns that into a mapping YAML in which **every guessed value is marked `# CONFIRM`** and listed under `unconfirmed_fields`. The engine refuses to run a mapping while that list is non-empty: a person confirms each guess by reviewing and deleting its entry. Suggestions never become silent decisions.
+3. Declare the semantics that matter: the sign convention of every amount, whether discounts are embedded, the cost basis and what it includes — or declare their honest absence (`cost_unavailable: true` when the source genuinely has no cost; a prefix rule when the transaction type lives in the document number). Every reference table is optional; absent tables switch their features off and the report says so.
+4. The engine refuses to compute anything whose meaning you didn't declare and tells you exactly which declaration is missing.
 
-No code changes are needed for a new source system.
+No code changes are needed for a new source system. Three more tools exist for real deployments:
+
+- **Books tie-out.** Map an optional `gl_totals` table (month, net sales, COGS, optionally returns) and the report compares engine monthly totals to the books with absolute and % differences against a configurable tolerance. Failing months are flagged, never hidden, and the measure definitions (returns recognized when they occur; engine COGS covers known-cost lines, with the coverage share printed) are stated next to the comparison.
+- **Validation without planted truth.** Real data has no ground truth, so every run includes checks that remain possible: a temporal backtest (fit on months 1..T−k, held-out volume-change prediction error vs a zero-elasticity baseline), placebo tests (instruments permuted in time must lose their reduced form and first stage; fake price-change dates must show no volume response), and rolling-window stability for both elasticities and segments. All informational — on the real case study below they correctly argue *against* causal claims.
+- **Anonymizer.** `margin-engine anonymize` replaces customer, item and supplier IDs and names with salted keyed hashes (HMAC-SHA256; referential integrity preserved, so the same mapping runs on the copy) and can scale every money column by a secret salt-derived factor. The salt comes from a local file or environment variable and never appears in any output or manifest.
+
+## Case study: Online Retail II (real data)
+
+The engine runs end to end on a real public dataset: the UCI **Online Retail II** export of a UK online wholesaler — 1,067,371 invoice lines, 2009–2011, GBP, with real cancellations, 14.7% of revenue from anonymous customers, non-product fee codes and true duplicate rows, and **no cost, no list price, no instruments**. Every reconciliation check passes exactly (GBP kept per line, converted to USD at monthly ECB reference rates); cancellations classify as returns via a one-line mapping prefix rule; cost-dependent metrics report `cost_unavailable` instead of numbers; elasticity caps at `descriptive_elasticity`, and the no-planted-truth checks show why that gating is right (the backtest loses to a zero-elasticity baseline out of sample; fake-date placebos "detect" effects that cannot be real). Full write-up: [`docs/case-study-online-retail.md`](docs/case-study-online-retail.md); reproduce with [`scripts/download_online_retail.py`](scripts/download_online_retail.py).
 
 ## Validation results
 
@@ -183,10 +192,14 @@ Planted truth vs. recovered, on synthetic data. These figures are produced by `s
 | `price_constant` / `sparse` presets | Never above descriptive | Holds for every segment |
 | Key-value-item candidates | ≥ 80% of planted KVIs found | 96.7% |
 | Win-curve price coefficient, precision-gated segments | Within ±15% of planted | Worst 4.0% |
+| 95% CI coverage under persistent (AR(1)) demand, shipped clustering | 90–98% | 93.3% (month × customer; the month-only and supplier × month alternatives cover 83.3% / 82.3% — reported, which is why they are not the default) |
 | Determinism | Byte-identical outputs across runs | Byte-identical |
-| Performance (core pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 32.2s |
+| Performance (core pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 37.0s |
+| Scenario matrix, full tier | Every invariant on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300/300 worlds pass |
+| Scale (10M lines under 15 min and 8 GB) | **KNOWN GAP** | Unverifiable on the 13.8 GB build machine (≈5 GB free): the memory-aware ladder records the largest run that fits (241k lines, 2.92 GB, 32.1s; an earlier higher-headroom run: 811k lines, 6.42 GB, 95.6s). Memory is linear in lines across measured rungs, but that is an extrapolation — the 10M target needs the DuckDB/streaming refactor and capable hardware |
+| Hybrid world: real BLS PPI series drive the cost instrument | Informational | Median abs elasticity error 0.037 over 6 segments; 4 causal-supported |
 
-A `realistic_noise` preset (Poisson count quantities, higher noise) is reported but not gated: median error 0.051, P90 0.126, worst 0.210. It's an honest indication that clean synthetic results overstate real-world accuracy.
+Reported but not gated, because the planted number is not the estimand once the model is misspecified: `realistic_noise` (median 0.051, P90 0.126, worst 0.210), `persistent_demand` (0.021), `heterogeneous_elasticity` (0.024 — the segment estimate recovers the within-segment average), `nonconstant_elasticity` (0.320 — a constant-elasticity model on curved demand reports a local average), and `competitor_comovement` (0.236, with **zero** segments reaching causal support: the Anderson-Rubin and robustness criteria catch what overidentification cannot). An honest indication that clean synthetic results overstate real-world accuracy.
 
 ## Method in brief
 
