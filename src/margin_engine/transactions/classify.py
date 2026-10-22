@@ -108,11 +108,14 @@ def classify(lines: pl.DataFrame, rules: Rules) -> ClassifiedData:
 def sales_observations(ledger: pl.DataFrame) -> pl.DataFrame:
     """Clean sale lines for estimating purchase behavior (5.4 view 1).
 
-    Excludes returns, credits, zero/negative quantity, nonpositive net.
-    Financial effects of the excluded rows remain in the ledger.
+    Excludes returns, credits, zero/negative quantity, nonpositive net, and
+    lines with no customer identity (real exports have anonymous/guest sales;
+    they cannot inform customer-level behavior, 28.3). Financial effects of
+    every excluded row remain in the ledger.
     """
     return ledger.filter(
         (pl.col("transaction_type") == "sale")
         & (pl.col("quantity") > 0)
         & (pl.col("net_amount_cents") > 0)
+        & pl.col("customer_id").is_not_null()
     )

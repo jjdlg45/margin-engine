@@ -1910,3 +1910,80 @@ by default and run via scripts/run_matrix_full.py); matrix fast tier 33/33; matr
 300/300; scale ladder recorded (KNOWN GAP above). Web untouched by
 this phase (phase-26 exit codes stand: tsc 0, vite build 0, vitest 0,
 Playwright 144/144).
+
+## Phase 28 — Real dataset case study: Online Retail II (2026-10-22, Run 4 branch)
+
+**28.1 Dataset.** UCI "Online Retail II" verified (page, license CC BY 4.0,
+citation, 1,067,371 lines) and recorded in docs/data-sources.md.
+scripts/download_online_retail.py downloads the 43.5 MB zip to the user cache
+dir (never the repo), pins its SHA-256
+(572e36277c2390fbfde10664750731e0a86f55e33470d91919085f0408e67bfb), converts
+the two xlsx sheets to one CSV with a deterministic ROW_ID (the export has no
+stable line key) and a constant CURRENCY=GBP column, and derives customers.csv
+(modal country -> region) and items.csv (modal description) reference tables.
+
+**28.2 Mapping.** config/mappings/online_retail_ii.yaml, drafted from the
+profiler on the real file and confirmed field by field in comments. Two new
+mapping capabilities the dataset demanded, both config not code:
+- `transaction_type: {derive_from_column, prefix_map, default}` — spec 5.2's
+  "configured rule to derive it" (invoice prefix "C" = cancellation ->
+  return); longest prefix wins, loader-enforced.
+- `cost_unavailable: true` — the explicit, reviewed declaration that the
+  source has no cost. The engine still refuses a mapping that merely omits
+  unit_cost; with the declaration, product cost is null on every line and all
+  cost-dependent metrics report cost_unavailable. Nothing is invented.
+
+**Real-data gaps the run exposed (all fixed, with the sample pinning them in
+CI):** sales_observations now also excludes null-customer lines (anonymous /
+guest sales: in the ledger and totals, out of behavior views, share noted);
+blank required keys ("", customer/item) normalize to null instead of forming
+a giant fake key; the invoice becomes the order unit when no order_id is
+mapped (stated proxy; order economics, frequency ABC); the canonical frame
+always carries credit_reason, contract_id and discount_cents (null/0 when
+unmapped) so classification, peer groups and the margin tree never crash on
+minimal mappings; dispersion's family fallback and segmentation/panel item
+joins tolerate an items table with only id + description; the FX converter
+now also converts a net amount DERIVED from an authoritative line-currency
+unit price (it previously converted only mapped fields); and level-2
+opportunity sizing works without a list price by recovering the index
+denominator from the pair's own baseline price (labeled
+`index_fallback_item_median` in a new price_basis column, consistent with
+24.4) instead of silently producing zero records.
+
+**28.3 Run and case study.** Full pipeline on 1,067,371 lines: 152 s end to
+end, peak 4.2 GB, every reconciliation check exact. $30.40M USD net invoiced
+revenue (£19.29M source, kept per line), 19,494 cancellations classified as
+returns, 242,257 anonymous sale lines (14.7% of sale revenue) handled, 67,250
+look-alike duplicate flags (no stable source key -> flagged, never removed),
+11,071 data-quality anomalies vs 65,082 commercial outliers (flags never
+mixed), non-product codes (POST/DOT/M/D/BANK CHARGES) kept and documented.
+4 commercial segments; guidance bands over 481,917 pairs; level-2 gross
+opportunity $698,667 (conservative variant $566,992), all on the labeled
+fallback price basis; expected-change level correctly absent. Elasticity:
+descriptive_elasticity at most, as the spec predicted (no instruments) — and
+the 27.4 no-truth validation argues the case: backtest worse than the
+zero-elasticity baseline out of sample, fake-date placebos 80-100%
+"significant" (the panel violates the no-effect null without any price
+change), rolling elasticities drifting -2.9 -> -1.3. Written up in
+docs/case-study-online-retail.md.
+
+**28.4 Multi-currency.** GBP -> USD at monthly month-end ECB reference rates
+via the new Frankfurter connector (src/margin_engine/connectors/): keyless,
+client-side rate limiter with exponential backoff, JSON cache with
+timestamps, stale-fallback labeled with age, closed historical ranges never
+refetched. A real recorded response (523 trading days) is the committed
+fixture; every connector test runs offline, one live test sits behind the new
+`network` pytest marker (deselected by default along with `slow`).
+
+**28.5 Committed sample.** data/sample_online_retail/ — first 5,000 converted
+lines + matching reference rows + fx table, CC BY 4.0 with attribution and a
+README stating the format changes. tests/test_online_retail_sample.py (7
+tests) pins: exact reconciliation, prefix-derived returns, GBP->USD
+conversion, declared-no-cost behavior, anonymous-customer two-view treatment,
+flagged-never-removed duplicates, and the full end-to-end run with
+index-fallback opportunities and descriptive-capped elasticity.
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (59 files); pytest
+full suite exit 0 (322 tests passed, slow and network markers deselected, including the 30-world matrix fast tier
+re-validating byte-determinism after the canonical-frame additions). Web
+untouched by this phase (phase-26 exit codes stand).

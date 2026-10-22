@@ -13,7 +13,12 @@ from pathlib import Path
 
 import polars as pl
 
-from margin_engine.ingest.mapping import InputOptions, MappingError, SourceMapping
+from margin_engine.ingest.mapping import (
+    InputOptions,
+    MappingError,
+    SourceMapping,
+    TransactionTypeDerived,
+)
 from margin_engine.money import (
     assert_parse_ok,
     parse_money_expr,
@@ -233,7 +238,9 @@ def load_lines(
     for f in type(lm).model_fields:
         spec = getattr(lm, f)
         if spec is not None:
-            declared.append(spec.column)
+            declared.append(
+                spec.derive_from_column if isinstance(spec, TransactionTypeDerived) else spec.column
+            )
     _require_columns(raw, declared, str(path))
     # Unmapped source columns are never read again: dropping them here keeps a
     # wide real-world export from costing memory for columns nobody declared.
@@ -245,8 +252,11 @@ def load_lines(
         pl.col(lm.invoice_date.column)
         .str.to_date(lm.invoice_date.format, strict=False)
         .alias("invoice_date"),
-        pl.col(lm.customer_id.column).alias("customer_id"),
-        pl.col(lm.item_id.column).alias("item_id"),
+        # Blank identity is missing identity, never a key of its own: real
+        # exports carry anonymous/guest sales (28.3), and an "" customer would
+        # otherwise aggregate into one giant fake account.
+        pl.col(lm.customer_id.column).replace("", None).alias("customer_id"),
+        pl.col(lm.item_id.column).replace("", None).alias("item_id"),
         (
             pl.col(lm.quantity.column)
             .str.replace_all(".", "", literal=True)
@@ -272,6 +282,10 @@ def load_lines(
         extra.append(pl.col(lm.uom.column).alias("uom"))
     if lm.order_id is not None:
         extra.append(pl.col(lm.order_id.column).alias("order_id"))
+    else:
+        # Real exports often carry no order number: the invoice is the natural
+        # order proxy (one document, one shipment). Stated in the run notes.
+        extra.append(pl.col(lm.invoice_id.column).alias("order_id"))
     for key_field in (
         "credit_reason",
         "original_invoice_ref",
@@ -285,8 +299,19 @@ def load_lines(
         spec = getattr(lm, key_field)
         if spec is not None:
             extra.append(pl.col(spec.column).replace("", None).alias(key_field))
+        elif key_field in ("credit_reason", "contract_id"):
+            # Always present in the canonical frame: downstream stages read
+            # them (credit classification; contract regime in peer groups,
+            # segmentation, guidance and the panel), and a mapping without
+            # the column must not crash - null means "none declared".
+            extra.append(pl.lit(None, dtype=pl.String).alias(key_field))
     if lm.transaction_type is not None:
-        extra.append(pl.col(lm.transaction_type.column).alias("_txn_raw"))
+        txn_src = (
+            lm.transaction_type.derive_from_column
+            if isinstance(lm.transaction_type, TransactionTypeDerived)
+            else lm.transaction_type.column
+        )
+        extra.append(pl.col(txn_src).alias("_txn_raw"))
     out = pl.concat([out, raw.select(extra)], how="horizontal")
 
     # --- money fields, digit-exact ---------------------------------------
@@ -423,7 +448,20 @@ def load_lines(
         out = out.with_columns(pl.lit(None, dtype=pl.Int64).alias("unit_cost_scaled"))
 
     # --- transaction type --------------------------------------------------
-    if lm.transaction_type is not None:
+    if isinstance(lm.transaction_type, TransactionTypeDerived):
+        # Configured derivation rule (5.2): longest matching prefix wins; no
+        # match (or a null key) takes the declared default. Build the when-
+        # chain shortest-first so the longest prefix ends up outermost.
+        derived = lm.transaction_type
+        expr: pl.Expr = pl.lit(derived.default)
+        for prefix, typ in sorted(derived.prefix_map.items(), key=lambda kv: len(kv[0])):
+            expr = (
+                pl.when(pl.col("_txn_raw").str.starts_with(prefix))
+                .then(pl.lit(typ))
+                .otherwise(expr)
+            )
+        out = out.with_columns(expr.alias("transaction_type")).drop("_txn_raw")
+    elif lm.transaction_type is not None:
         code_map = lm.transaction_type.code_map
         unknown = out.filter(
             ~pl.col("_txn_raw").is_in(list(code_map.keys())) & pl.col("_txn_raw").is_not_null()

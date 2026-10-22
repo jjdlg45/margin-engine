@@ -251,9 +251,11 @@ def run_dispersion(
     # Stable row order before any float aggregation (quantiles, means over
     # price_index) so outputs are bit-identical across runs.
     df = observations.sort("source_line_key")
-    if items is not None and "item_family" not in df.columns:
+    if items is not None and "item_family" not in df.columns and "item_family" in items.columns:
         df = df.join(items.select("item_id", "item_family"), on="item_id", how="left")
     elif "item_family" not in df.columns:
+        # An items table without a family column (minimal real exports): the
+        # small-cohort family fallback is simply unavailable.
         df = df.with_columns(pl.lit(None, dtype=pl.String).alias("item_family"))
     df = normalized_price(df)
     df = assign_peer_groups(df, rules)

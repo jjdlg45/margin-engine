@@ -248,3 +248,50 @@ def test_date_error_lists_offending_keys(tmp_path: Path) -> None:
     csv = CSV_A.replace("2024-02-03", "03/02/2024")
     with pytest.raises(MappingError, match="k1"):
         _load(tmp_path, BASE_MAPPING, csv)
+
+
+def test_transaction_type_derived_by_prefix(tmp_path: Path) -> None:
+    """Spec 5.2's configured derivation rule: invoice-number prefix decides the
+    type (longest prefix wins, null/default handled), declared in the mapping."""
+
+    from margin_engine.config import Rules
+    from margin_engine.ledger.pipeline import run_pipeline
+
+    erp = tmp_path / "erp"
+    erp.mkdir()
+    (erp / "lines.csv").write_text(
+        "RID,INV,DT,CUST,ITEM,QTY,AMT\n"
+        "r1,537226,2010-12-06,C1,I1,10,25.00\n"
+        "r2,C537227,2010-12-06,C1,I1,-2,-5.00\n"
+        "r3,CX537228,2010-12-06,C1,I1,-1,-2.50\n",
+        encoding="utf-8",
+    )
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        """
+source_system: prefix_test
+lines_file: lines.csv
+cost_unavailable: true
+decimal_separator: "."
+lines:
+  source_line_key: {column: RID}
+  invoice_id: {column: INV}
+  invoice_date: {column: DT, format: "%Y-%m-%d"}
+  customer_id: {column: CUST}
+  item_id: {column: ITEM}
+  quantity: {column: QTY}
+  net_amount:
+    column: AMT
+    currency: USD
+    sign_convention: natural
+    discounts_embedded: true
+  transaction_type:
+    derive_from_column: INV
+    prefix_map: {C: return, CX: credit}
+    default: sale
+""",
+        encoding="utf-8",
+    )
+    res = run_pipeline(erp, mapping, Rules())
+    types = dict(res.ledger.select("source_line_key", "transaction_type").iter_rows())
+    assert types == {"r1": "sale", "r2": "return", "r3": "credit"}

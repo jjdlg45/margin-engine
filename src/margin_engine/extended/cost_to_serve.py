@@ -223,7 +223,19 @@ def service_policy_flags(customers_econ: pl.DataFrame, rules: Rules) -> pl.DataF
 
 
 def run_cost_to_serve(lines: pl.DataFrame, rules: Rules) -> CostToServeResult:
+    if "order_id" not in lines.columns:
+        # Real exports often carry no order number (Online Retail II). The
+        # invoice is the natural order proxy - one document, one shipment -
+        # and the proxy is stated, never silent.
+        lines = lines.with_columns(pl.col("invoice_id").alias("order_id"))
+        lines_proxy_note = [
+            "no order_id in the mapping: the invoice is used as the order unit "
+            "for order economics and activity costs (labeled proxy)"
+        ]
+    else:
+        lines_proxy_note = []
     lines, notes = apply_activity_costs(lines, rules)
+    notes = lines_proxy_note + notes
     orders = order_economics(lines)
     cust = customer_economics(lines)
     flags = service_policy_flags(cust, rules)

@@ -140,11 +140,26 @@ def price_opportunities(
             pl.lit(None, dtype=pl.Float64).alias("support_log_hi"),
         )
 
-    # Proposed INVOICE price: target index x effective list (both invoice
-    # basis). Gap only if positive.
+    # Proposed INVOICE price: target index x the index DENOMINATOR. With a
+    # valid effective list that is the list price; without one (real exports
+    # with no price list, 24.4/28.2) the denominator is recovered from the
+    # pair's own baseline price and its index (baseline / current_index), so
+    # the gap stays index-consistent — labeled with its provenance.
+    has_list = pl.col("eff_list_cents").is_not_null() & (pl.col("eff_list_cents") > 0)
+    denom = (
+        pl.when(has_list)
+        .then(pl.col("eff_list_cents"))
+        .when(pl.col("current_index") > 0)
+        .then(pl.col("baseline_price_cents") / pl.col("current_index"))
+        .otherwise(None)
+    )
     g = g.with_columns(
-        (pl.col("target_index") * pl.col("eff_list_cents")).alias("proposed_invoice_price_cents"),
-        (pl.col("current_index") * pl.col("eff_list_cents")).alias("current_invoice_price_cents"),
+        (pl.col("target_index") * denom).alias("proposed_invoice_price_cents"),
+        (pl.col("current_index") * denom).alias("current_invoice_price_cents"),
+        pl.when(has_list)
+        .then(pl.lit("effective_list"))
+        .otherwise(pl.lit("index_fallback_item_median"))
+        .alias("price_basis"),
     ).with_columns(
         (pl.col("proposed_invoice_price_cents") - pl.col("current_invoice_price_cents")).alias(
             "gap_invoice_cents"
@@ -179,7 +194,7 @@ def price_opportunities(
     )
     # Conservative variant (24.13): raise below-P25 pairs to P25 only.
     if "band_p25" in g.columns:
-        p25_price = pl.col("band_p25") * pl.col("eff_list_cents")
+        p25_price = pl.col("band_p25") * denom
         cons_gap = p25_price - pl.col("current_invoice_price_cents")
         conservative = (
             pl.when(cons_gap > 0)
@@ -253,10 +268,11 @@ def price_opportunities(
         ),
         pl.lit("sum of panel qty over baseline window").alias("quantity_basis"),
         pl.format(
-            "invoice gap = ({} - {}) x list {}c; pocket retention {}; qty {}",
+            "invoice gap = ({} - {}) x {} {}c; pocket retention {}; qty {}",
             pl.col("target_index").round(4),
             pl.col("current_index").round(4),
-            pl.col("eff_list_cents"),
+            pl.col("price_basis"),
+            denom.round(0),
             pl.col("pocket_retention").round(4),
             pl.col("baseline_qty"),
         ).alias("calc_trace"),
@@ -271,6 +287,7 @@ def price_opportunities(
         "current_invoice_price_cents",
         "proposed_invoice_price_cents",
         "gap_invoice_cents",
+        "price_basis",
         "pocket_retention",
         "gross_price_opportunity_cents",
         "gross_price_opportunity_conservative_cents",

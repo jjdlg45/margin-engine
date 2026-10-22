@@ -103,21 +103,31 @@ def convert_lines(
     is_foreign = pl.col("currency") != reporting
     exprs: list[pl.Expr] = []
     converted_cols: list[str] = []
+    to_convert: list[str] = []
     for fld, cols in FIELD_TO_COLUMNS.items():
         spec = getattr(mapping.lines, fld, None)
         if spec is None or getattr(spec, "currency", None) != "line_currency":
             continue
-        for col in cols:
-            if col not in lines.columns:
-                continue
-            converted_cols.append(col)
-            exprs.append(pl.col(col).alias(f"{col}_src"))
-            exprs.append(
-                pl.when(is_foreign & pl.col(col).is_not_null())
-                .then(div_half_even_expr(pl.col(col) * pl.col("fx_rate_ppm"), 1_000_000))
-                .otherwise(pl.col(col))
-                .alias(col)
-            )
+        to_convert.extend(cols)
+    if (
+        mapping.lines.net_amount is None
+        and mapping.lines.unit_price is not None
+        and mapping.lines.unit_price.currency == "line_currency"
+    ):
+        # net_amount was DERIVED at load time from the line-currency unit
+        # price (authoritative-price exports, 28.2), so it converts with it.
+        to_convert.append("net_amount_cents")
+    for col in dict.fromkeys(to_convert):
+        if col not in lines.columns:
+            continue
+        converted_cols.append(col)
+        exprs.append(pl.col(col).alias(f"{col}_src"))
+        exprs.append(
+            pl.when(is_foreign & pl.col(col).is_not_null())
+            .then(div_half_even_expr(pl.col(col) * pl.col("fx_rate_ppm"), 1_000_000))
+            .otherwise(pl.col(col))
+            .alias(col)
+        )
     lines = lines.with_columns(exprs).drop("_fx_period", "rate_ppm")
     return FxResult(
         lines=lines,

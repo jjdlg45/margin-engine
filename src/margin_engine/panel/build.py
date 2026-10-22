@@ -136,10 +136,13 @@ def build_panel(
 
     # Attributes and instruments.
     if items is not None:
-        cols = ["item_id", "supplier_id", "item_category"]
-        if "item_role" in items.columns:
-            cols.append("item_role")
-        panel = panel.join(items.select(cols), on="item_id", how="left")
+        # A minimal real-world items table may carry only id + description:
+        # join whatever attribute columns actually exist.
+        cols = ["item_id"] + [
+            c for c in ("supplier_id", "item_category", "item_role") if c in items.columns
+        ]
+        if len(cols) > 1:
+            panel = panel.join(items.select(cols), on="item_id", how="left")
     year = (pl.col("month_idx") - 1) // 12
     mon = (pl.col("month_idx") - 1) % 12 + 1
     panel = panel.with_columns(

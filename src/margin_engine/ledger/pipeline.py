@@ -159,6 +159,22 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
     rss_log("observations")
     skipped = [name for name in REFERENCE_TABLES if ref[name] is None]
     notes = list(wf.notes) + fx_res.notes
+    if mapping.lines.order_id is None:
+        notes.append(
+            "no order_id in the mapping: the invoice is used as the order unit "
+            "(order economics, frequency ABC, freight allocation) - a labeled proxy"
+        )
+    anon = wf.lines.filter((pl.col("transaction_type") == "sale") & pl.col("customer_id").is_null())
+    if anon.height:
+        sale_rev = int(
+            wf.lines.filter(pl.col("transaction_type") == "sale")["net_amount_cents"].sum()
+        )
+        share = int(anon["net_amount_cents"].sum()) / sale_rev if sale_rev else 0.0
+        notes.append(
+            f"{anon.height:,} sale line(s) ({share:.1%} of sale revenue) carry no "
+            "customer identity: kept in the ledger and totals, excluded from "
+            "customer-level behavior views (observations, segmentation, panel)"
+        )
     if skipped:
         notes.append(f"reference tables absent (features skipped): {skipped}")
     return PipelineResult(

@@ -80,7 +80,7 @@ def prepare_segmentation_frame(
             if c in customers.columns
         ]
         df = df.join(customers.select(keep), on="customer_id", how="left")
-    if items is not None and "item_role" not in df.columns:
+    if items is not None and "item_role" not in df.columns and "item_role" in items.columns:
         df = df.join(items.select("item_id", "item_role"), on="item_id", how="left")
     df = _order_size_band(df)
     for col in CONTEXT_FEATURES:
@@ -644,15 +644,14 @@ def fit_margin_driver_tree(df: pl.DataFrame, rules: Rules, *, seed: int = 0) -> 
     """Margin-driver tree: pocket margin %, context + discount/cost features.
     Output is explanatory, never a pricing segmentation."""
     tc = rules.segmentation.margin_driver_tree
+    disc = pl.col("discount_cents")
     work = df.filter(
         (pl.col("pocket_revenue_cents") > 0)
         & pl.col("pocket_gp_cents").is_not_null()
         & pl.col("gross_list_value_cents").is_not_null()
     ).with_columns(
         (pl.col("pocket_gp_cents") / pl.col("pocket_revenue_cents")).alias("pocket_margin_pct"),
-        (pl.col("discount_cents") / pl.col("gross_list_value_cents").clip(lower_bound=1)).alias(
-            "_disc_pct"
-        ),
+        (disc / pl.col("gross_list_value_cents").clip(lower_bound=1)).alias("_disc_pct"),
         (pl.col("rebate_actual_cents") / pl.col("net_amount_cents").clip(lower_bound=1)).alias(
             "_reb_rate"
         ),
