@@ -1737,3 +1737,42 @@ Re-verified on the run4 branch after the Phase 24 engine changes (new demo
 world, renamed KPI, new statuses): ruff 0; ruff format 0; mypy strict 0;
 pytest full suite 0 (248 tests); web tsc 0; vitest 0; Playwright 144/144,
 exit 0. No code changes belong to this phase.
+
+## Phase 26 — Live-ready UI data layer (2026-10-21, Run 4 branch)
+
+Substantially delivered before Run 4 as phase-23.9 (one TanStack Query data
+layer, OpenAPI contract in docs/api/openapi.yaml, split per-page/per-table
+files with the Overview loading only its own data, skeleton/error/Retry
+states with capped retries and per-route/per-section boundaries, TanStack
+Virtual for 100+ row tables and combobox lists, network-interception
+Playwright suite). This phase adds the piece 23.9 lacked:
+
+**26.1 Two adapters, env-selected.** New `web/src/lib/api/httpAdapter.ts`
+implements the same DataClient contract against the BFF endpoints (GET /app,
+/pages/{page}, /tables/{table} with page/page_size/sort/URL-encoded JSON
+filters, /tables/guidance/explanations/{customer}/{item}); base URL from
+VITE_API_BASE_URL (default /api). `client.ts` selects by VITE_DATA_SOURCE:
+"http" picks the HTTP adapter, anything else is static, so the hosted demo
+can never silently depend on a server. Vitest covers the query-string builder
+(contract-exact: page, page_size, sort, filters as URL-encoded JSON with
+undefined/null entries dropped) and the env selection both ways. README's
+"Going live" section updated accordingly.
+
+**Latent bug fixed along the way.** React Aria's multi-select listbox clears
+the selection on Escape (its default; RAC 1.7 has no escapeKeyBehavior prop).
+For a filter popover that is destructive - and it surfaced as a
+timing-dependent e2e failure (Escape raced the refetch re-render's focus
+move). MultiSelect now intercepts Escape and closes the popover with the
+selection intact, deterministically. Two e2e selectors were also updated for
+Phase 24's renamed KPI ("net invoiced revenue") and the new
+"Reference below floor" status label (exact-match option selection);
+assertions unchanged.
+
+**Known note.** tables/guidance.json and tables/guidance_explanations.json
+exceed the 300 KB soft target (the 1 MB hard limit holds via null-stripping
+and "next"-linked sharding from Phase 24); further splitting would shard rows
+with no user-visible benefit on static hosting, and the BFF paginates.
+
+**Checks.** Python untouched by this phase (exit codes from the phase-24/25
+cycle stand: ruff 0, format 0, mypy 0, pytest 248 passed exit 0); web: tsc 0;
+vite build 0; vitest 0 (11 tests, 2 files); Playwright 144/144 passed, exit 0.

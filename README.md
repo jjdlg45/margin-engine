@@ -83,12 +83,14 @@ cd web && npm install && npm run dev
 The demo is static hosting, but the UI is already structured for a live
 deployment behind a backend-for-frontend (BFF):
 
-- **One data client.** Every page reads through a single data-client
-  interface ([`web/src/lib/api/types.ts`](web/src/lib/api/types.ts)) using
-  TanStack Query hooks - no component fetches JSON directly. The static
-  adapter implements that interface over the exported files; a live
-  deployment swaps in an HTTP adapter against the BFF, a one-file change in
-  [`web/src/lib/api/client.ts`](web/src/lib/api/client.ts).
+- **One data client, two adapters.** Every page reads through a single
+  data-client interface ([`web/src/lib/api/types.ts`](web/src/lib/api/types.ts))
+  using TanStack Query hooks - no component fetches JSON directly. The
+  `static` adapter reads the exported files (GitHub Pages); the `http`
+  adapter talks to the BFF. `VITE_DATA_SOURCE=http` selects the latter at
+  build time ([`web/src/lib/api/client.ts`](web/src/lib/api/client.ts));
+  anything else means static, so the hosted demo can never silently depend
+  on a server.
 - **The contract exists today.** [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
   specifies the BFF: one aggregated endpoint per page plus paginated table
   endpoints (`page`, `page_size`, `sort`, named filters → `items`, `total`,
