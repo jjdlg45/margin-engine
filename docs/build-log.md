@@ -1718,3 +1718,22 @@ exit 0 (26/26); web: tsc + vite build 0; vitest 0; Playwright 144/144
 passed, exit 0 (guidance/sensitivity/opportunity snapshots regenerated for
 the new demo world; two e2e selectors updated for the renamed KPI label and
 the new status label - assertions unchanged).
+
+## Phase 25 — Filters, lookups, and names (2026-10-21, Run 4 branch)
+
+Delivered before Run 4 was specified, as phase-23.8 (see that entry): names in
+the data model (25.1 - optional customer_name / item_description /
+supplier_name / category_name with deterministic generator names, name-first
+display, name-or-ID search), the shared React Aria filter system (25.2 -
+combobox with Name/ID toggle, multi-selects, range filters with presets,
+filter bar with chips / Clear all / result count, all state in the URL, no
+native selects), the per-page filter sets (25.3) and the verification suite
+(25.4 - e2e/filters.spec.ts covers each filter alone and combined, chips,
+clear all, URL round trips, keyboard-only use, name and ID search, inclusive
+range boundaries, and parity of every filtered count against the bundle; axe
+and the raw-code scanner run in quality.spec.ts / labels.spec.ts).
+
+Re-verified on the run4 branch after the Phase 24 engine changes (new demo
+world, renamed KPI, new statuses): ruff 0; ruff format 0; mypy strict 0;
+pytest full suite 0 (248 tests); web tsc 0; vitest 0; Playwright 144/144,
+exit 0. No code changes belong to this phase.
