@@ -17,6 +17,8 @@ build/
 data/*
 !data/sample/
 !data/sample/**
+!data/sample_online_retail/
+!data/sample_online_retail/**
 
 # Outputs
 output/
@@ -33,3 +35,4 @@ Thumbs.db
 .env
 *.env
 .claude/settings.local.json
+.connector_cache/

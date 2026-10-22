@@ -191,6 +191,14 @@ class GeneratorConfig(BaseModel):
     cross_elasticity_min: float = 0.3
     cross_elasticity_max: float = 0.8
 
+    # Hybrid demonstration world (Run 4, 29.4): when set, supplier cost paths
+    # come from REAL external series (e.g. BLS PPI, demeaned log levels) in
+    # place of the simulated AR(1) cost shocks. Suppliers are assigned series
+    # round-robin; each path must cover at least `months` entries. Everything
+    # else (demand, endogeneity, tariff instrument) stays simulated, so the
+    # planted elasticity remains the known truth to recover.
+    external_cost_paths: list[list[float]] | None = None
+
     mess: MessRates = MessRates()
     demand: DemandParams = DemandParams()
 

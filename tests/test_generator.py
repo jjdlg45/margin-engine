@@ -368,3 +368,39 @@ def test_run2_worlds_byte_identical_across_runs(tmp_path: Path) -> None:
     assert _file_hash(a / "ground_truth" / "truth_summary.json") == _file_hash(
         b / "ground_truth" / "truth_summary.json"
     )
+
+
+def test_external_cost_paths_drive_supplier_index(tmp_path):
+    """Hybrid world (29.4): the supplier cost index equals exp(path) exactly,
+    suppliers assigned round-robin; short paths are an actionable error."""
+    import numpy as np
+    import polars as pl
+    import pytest
+
+    paths = [list(np.linspace(-0.1, 0.1, 24)), list(np.linspace(0.05, -0.05, 24))]
+    cfg = GeneratorConfig.for_preset(
+        Preset.WELL_IDENTIFIED,
+        seed=5,
+        n_customers=15,
+        n_items=30,
+        external_cost_paths=paths,
+    )
+    generate(cfg, tmp_path / "w")
+    sci = pl.read_csv(tmp_path / "w" / "erp" / "supplier_cost_index.csv")
+    suppliers = sorted(sci["SUPPLIER"].unique().to_list())
+    for i, sup in enumerate(suppliers[:4]):
+        got = sci.filter(pl.col("SUPPLIER") == sup).sort("PERIOD")["COST_IDX"].to_numpy()
+        want = np.exp(np.array(paths[i % 2]))
+        assert np.allclose(got, want, atol=1e-5)
+
+    with pytest.raises(ValueError, match="shorter than the 24-month"):
+        generate(
+            GeneratorConfig.for_preset(
+                Preset.WELL_IDENTIFIED,
+                seed=5,
+                n_customers=15,
+                n_items=30,
+                external_cost_paths=[[0.1] * 10],
+            ),
+            tmp_path / "w2",
+        )

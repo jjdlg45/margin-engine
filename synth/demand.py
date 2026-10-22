@@ -194,7 +194,27 @@ def simulate_panel(
     n_pairs = pairs.height
 
     # --- shocks ---------------------------------------------------------
-    z_cost = _ar1(rng, cfg.n_suppliers, months, d.cost_shock_sd, d.instrument_ar)
+    if cfg.external_cost_paths:
+        # Hybrid world (29.4): real external cost series drive supplier cost
+        # paths; the demand side stays simulated so planted truth holds.
+        short = [i for i, p in enumerate(cfg.external_cost_paths) if len(p) < months]
+        if short:
+            msg = (
+                f"external_cost_paths {short} shorter than the {months}-month "
+                f"horizon; provide at least {months} entries per series"
+            )
+            raise ValueError(msg)
+        z_cost = np.vstack(
+            [
+                np.asarray(
+                    cfg.external_cost_paths[s % len(cfg.external_cost_paths)][:months],
+                    dtype=float,
+                )
+                for s in range(cfg.n_suppliers)
+            ]
+        )
+    else:
+        z_cost = _ar1(rng, cfg.n_suppliers, months, d.cost_shock_sd, d.instrument_ar)
     z_tariff = _ar1(rng, cfg.n_categories, months, d.tariff_shock_sd, d.instrument_ar)
     u = rng.normal(0, d.demand_shock_sd, (cfg.n_customers, months))
     if d.demand_ar > 0:

@@ -1,5 +1,5 @@
 {
- "generated_utc": "2026-10-22T04:39:00+00:00",
+ "generated_utc": "2026-10-22T05:27:25+00:00",
  "script": "scripts/measure_validation.py",
  "runtime_s": 4018.4,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
@@ -215,6 +215,13 @@
      }
     }
    ]
+  },
+  {
+   "check": "Hybrid world: real PPI cost paths (informational)",
+   "target": "informational: recovery when real cost movements drive the instrument",
+   "achieved": "seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s",
+   "passed": true,
+   "informational": true
   }
  ]
 }

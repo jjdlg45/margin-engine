@@ -35,13 +35,22 @@ jobs and the optional `-m network` test group.
 
 ## U.S. Bureau of Labor Statistics — Public Data API v1 (Phase 29.2)
 
-To be verified before first use in Phase 29 (PPI series as external cost
-index). Known constraint to respect: the keyless v1 API has a strict daily
-query limit (25/day), so series are batched per request and cached
-aggressively.
+| Item | Value |
+|---|---|
+| Docs | https://www.bls.gov/developers/ (signatures: /developers/api_signature.htm; limits: /developers/api_faqs.htm) |
+| Endpoint | `POST https://api.bls.gov/publicAPI/v1/timeseries/data/` with `{seriesid: [...], startyear, endyear}` |
+| Key | None (v1 is open; v2 requires registration) |
+| Limits (verified 2026-10-22) | v1 unregistered: **25 queries/day, 25 series/query, 10 years/query**. Client behavior: all series batched into one request, closed historical ranges cached permanently, 2 s spacing, backoff on failure |
+| Data | BLS time series (public domain); used series: PPI commodities WPU101 (iron & steel), WPU081 (lumber), WPU0638 (plastic resins) |
+| Used for | External cost index option of the instrument builder (27.6, `sensitivity.instrument_source: external`) and the 29.4 hybrid world |
+| Fixture | `tests/fixtures/bls_ppi_2016_2025.json` — a recorded real response (3 series x 120 months) |
 
-## USITC Harmonized Tariff Schedule (Phase 29.3, optional)
+## USITC Harmonized Tariff Schedule (Phase 29.3)
 
-To be verified in Phase 29. If no free machine-readable endpoint is
-available, a documented static tariff table is used instead (KNOWN GAP noted
-at that point).
+| Item | Value |
+|---|---|
+| Site | https://hts.usitc.gov/ |
+| Endpoint (verified working 2026-10-22) | `GET https://hts.usitc.gov/reststop/exportList?from=<hts>&to=<hts>&format=JSON` — the site's own machine-readable export (also offered as CSV/Excel from the search UI) |
+| Key / terms | None; US government work (public domain). No published rate limit — client uses 2 s spacing, 30-day cache |
+| **Documented limitation** | The endpoint serves the **current revision only — no history**. A constant rate has no identifying variation, so HTS rates feed cost/tariff **pass-through scenarios**, never the tariff instrument (which still requires an effective-dated tariff_schedule table). Compound/specific rates ("2.5c/kg + 4%") are kept as raw text, never coerced to a percentage |
+| Fixture | `tests/fixtures/hts_8501_8516.json` — a recorded real export (440 rows, HTS 8501-8516) |

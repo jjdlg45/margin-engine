@@ -1987,3 +1987,54 @@ index-fallback opportunities and descriptive-capped elasticity.
 full suite exit 0 (322 tests passed, slow and network markers deselected, including the 30-world matrix fast tier
 re-validating byte-determinism after the canonical-frame additions). Web
 untouched by this phase (phase-26 exit codes stand).
+
+## Phase 29 — External data connectors, free and keyless (2026-10-22, Run 4 branch)
+
+All sources verified before first use and recorded with URLs, terms, limits
+and fixture locations in docs/data-sources.md. Shared connector plumbing
+(src/margin_engine/connectors/base.py): client-side RateLimiter, exponential
+backoff, JSON cache with timestamps, cache-first fetch where a closed
+historical range is NEVER refetched, stale-fallback labeled with its age, and
+actionable ConnectorError messages. Every connector test runs offline from a
+recorded real response; live calls sit behind the `network` pytest marker.
+
+**29.1 FX — Frankfurter (ECB reference rates).** Delivered in Phase 28 for
+the case study; endpoint, terms and the committed fixture (523 trading days
+GBP->USD) documented. Monthly table = month-end reference rate, stated policy.
+
+**29.2 PPI — BLS Public Data API v1.** Verified limits (25 queries/day,
+25 series/query, 10 years/query, keyless) drive the design: one batched POST
+per request, limits enforced client-side with actionable errors, aggressive
+caching. fetch_ppi_series returns (series_id, period, value) monthly rows and
+write_external_cost_series_csv emits the engine's external_cost_series
+reference table for `sensitivity.instrument_source: external` (27.6).
+Fixture: a real response for WPU101 / WPU081 / WPU0638, 2016-2025.
+
+**29.3 Tariffs — USITC HTS.** A free machine-readable endpoint EXISTS and is
+verified: hts.usitc.gov/reststop/exportList (JSON). Two honesty constraints
+baked in and documented: the endpoint serves the current revision only (no
+history), so HTS rates feed pass-through scenarios and never the tariff
+instrument; and compound/specific rates ("2.5c/kg + 4%", "$1.50/kg") are
+kept as raw text with rate_parsed=false, never coerced to a percentage.
+Fixture: 440 rows, HTS 8501-8516.
+
+**29.4 Hybrid demonstration world.** GeneratorConfig.external_cost_paths:
+supplier cost paths come from real series (round-robin, demeaned log levels)
+in place of the simulated AR(1) shocks; demand stays simulated so the planted
+elasticity remains the truth. Generator test pins exact path pass-through and
+the actionable short-path error. scripts/measure_hybrid_world.py
+--external-cost-index runs the study offline from the PPI fixture: **median
+abs elasticity error 0.037 over 6 segments, statuses 4x
+causal_elasticity_supported + 2x iv_estimated_elasticity** (seed 11, default
+scale; series within-window log sd 0.049/0.033/0.003) — the instrument
+pipeline identifies elasticities from genuine 2024-2025 PPI movements.
+Recorded in validation.json as informational.
+
+**Repo fix caught along the way:** data/* in .gitignore silently excluded the
+Phase 28 committed sample (data/sample_online_retail/) from that commit — the
+sample tests would have failed on a clean clone. Exception added; the five
+sample files are committed in this phase.
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (61 files); pytest
+full suite exit 0 (327 tests passed; slow and network markers deselected). Web
+untouched by this phase (phase-26 exit codes stand).

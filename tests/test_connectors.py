@@ -7,6 +7,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 import margin_engine.connectors.base as base
@@ -112,3 +113,52 @@ def test_rate_limiter_spaces_calls() -> None:
 def test_live_fetch_small_range(tmp_path: Path) -> None:
     daily, _ = fetch_daily_rates("GBP", "USD", "2024-01-02", "2024-01-05", tmp_path)
     assert daily.height >= 3
+
+
+# ---------------------------------------------------------------------------
+# BLS PPI (29.2) and USITC HTS (29.3) - offline from recorded fixtures
+# ---------------------------------------------------------------------------
+
+BLS_FIXTURE = Path(__file__).parent / "fixtures" / "bls_ppi_2016_2025.json"
+HTS_FIXTURE = Path(__file__).parent / "fixtures" / "hts_8501_8516.json"
+
+
+def test_bls_fixture_loads_offline(tmp_path: Path) -> None:
+    from margin_engine.connectors.bls import fetch_ppi_series
+
+    df, notes = fetch_ppi_series(
+        ["WPU101", "WPU081", "WPU0638"], 2016, 2025, tmp_path, fixture=BLS_FIXTURE
+    )
+    assert df["series_id"].n_unique() == 3
+    assert df.height == 360  # 3 series x 120 months
+    assert df["period"].str.contains(r"^\d{4}-\d{2}$").all()
+    assert (df["value"] > 0).all()
+    assert notes == []
+
+
+def test_bls_batch_limits_enforced(tmp_path: Path) -> None:
+    from margin_engine.connectors.bls import fetch_ppi_series
+
+    with pytest.raises(ConnectorError, match="batch limit"):
+        fetch_ppi_series([f"S{i}" for i in range(26)], 2020, 2021, tmp_path)
+    with pytest.raises(ConnectorError, match="years"):
+        fetch_ppi_series(["WPU101"], 2010, 2025, tmp_path)
+
+
+def test_hts_fixture_loads_offline(tmp_path: Path) -> None:
+    from margin_engine.connectors.hts import fetch_tariff_rates
+
+    df, notes = fetch_tariff_rates("8501", "8516", tmp_path, fixture=HTS_FIXTURE)
+    assert df.height > 100
+    assert df.filter(pl.col("rate_parsed"))["general_rate_pct"].min() >= 0.0
+    assert any("current revision only" in n for n in notes)
+
+
+def test_hts_rate_parsing() -> None:
+    from margin_engine.connectors.hts import parse_general_rate
+
+    assert parse_general_rate("6.7%") == 6.7
+    assert parse_general_rate("Free") == 0.0
+    assert parse_general_rate("") is None
+    assert parse_general_rate("2.5c/kg + 4%") is None  # compound: never guessed
+    assert parse_general_rate("$1.50/kg") is None
