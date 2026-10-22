@@ -42,10 +42,28 @@ def _validate(payload: Any, schema_name: str) -> None:
 
 
 @pytest.fixture(scope="module")
-def client(tmp_path_factory: pytest.TempPathFactory) -> TestClient:
+def bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The exported web bundle the API serves. Locally this is the dev copy at
+    web/public/data; in a fresh clone or CI that directory is generated output
+    and absent, so build the same deterministic demo-world bundle once (what
+    the pages workflow builds) into a temp dir."""
+    if (BUNDLE / "bundle.json").exists():
+        return BUNDLE
+    from typer.testing import CliRunner
+
+    from margin_engine.cli import app
+
+    out = tmp_path_factory.mktemp("demo_bundle")
+    result = CliRunner().invoke(app, ["export-web", "--demo", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    return out
+
+
+@pytest.fixture(scope="module")
+def client(bundle: Path, tmp_path_factory: pytest.TempPathFactory) -> TestClient:
     tmp = tmp_path_factory.mktemp("api")
     s = Settings(
-        bundle_dir=BUNDLE,
+        bundle_dir=bundle,
         db_path=tmp / "api.duckdb",
         fx_refresh_s=10_000,
         ppi_refresh_s=10_000,
@@ -91,9 +109,9 @@ def test_tables_match_contract_schema(client: TestClient) -> None:
     assert bad2.status_code == 400
 
 
-def test_parity_api_equals_bundle_to_the_cent(client: TestClient) -> None:
+def test_parity_api_equals_bundle_to_the_cent(client: TestClient, bundle: Path) -> None:
     for table in ("guidance", "opportunities", "customers"):
-        rows = _read_shards(BUNDLE, f"tables/{table}.json")
+        rows = _read_shards(bundle, f"tables/{table}.json")
         got: list[dict[str, Any]] = []
         page = 1
         while True:
@@ -141,9 +159,9 @@ def test_etag_304(client: TestClient) -> None:
     assert again.status_code == 304
 
 
-def test_rate_limit_429_with_retry_after(tmp_path: Path) -> None:
+def test_rate_limit_429_with_retry_after(bundle: Path, tmp_path: Path) -> None:
     s = Settings(
-        bundle_dir=BUNDLE,
+        bundle_dir=bundle,
         db_path=tmp_path / "rl.duckdb",
         rate_limit_per_minute=60,
         rate_limit_burst=3,
@@ -161,13 +179,13 @@ def test_rate_limit_429_with_retry_after(tmp_path: Path) -> None:
 
 
 def test_refresh_jobs_offline_and_stale_on_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from api.refresh import RefreshScheduler
 
-    s = Settings(bundle_dir=BUNDLE, db_path=tmp_path / "r.duckdb")
+    s = Settings(bundle_dir=bundle, db_path=tmp_path / "r.duckdb")
     store = BundleStore(s.db_path)
-    store.load_bundle(BUNDLE)
+    store.load_bundle(bundle)
     sched = RefreshScheduler(s, store)
     sched.refresh_fx()
     sched.refresh_ppi()
@@ -184,16 +202,16 @@ def test_refresh_jobs_offline_and_stale_on_failure(
         raise ConnectorError("upstream down")
 
     monkeypatch.setattr(fxmod, "fetch_daily_rates", boom)
-    s2 = Settings(bundle_dir=BUNDLE, db_path=tmp_path / "r2.duckdb")
+    s2 = Settings(bundle_dir=bundle, db_path=tmp_path / "r2.duckdb")
     sched2 = RefreshScheduler(s2, BundleStore(s2.db_path))
     sched2.refresh_fx()
     assert sched2.status["fx"]["stale"] is True
     assert "down" in sched2.status["fx"]["detail"]
 
 
-def test_replay_idempotency_no_double_count(tmp_path: Path) -> None:
+def test_replay_idempotency_no_double_count(bundle: Path, tmp_path: Path) -> None:
     s = Settings(
-        bundle_dir=BUNDLE,
+        bundle_dir=bundle,
         db_path=tmp_path / "replay.duckdb",
         replay_enabled=True,
         replay_work_dir=tmp_path / "work",

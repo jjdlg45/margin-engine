@@ -14,12 +14,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Sync dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --all-groups
       - name: Lint
         run: uv run ruff check .
       - name: Format check
         run: uv run ruff format --check .
       - name: Type check
-        run: uv run mypy src
+        run: uv run mypy src api
       - name: Tests
         run: uv run pytest --cov --cov-report=term

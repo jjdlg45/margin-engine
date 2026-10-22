@@ -2158,3 +2158,33 @@ pytest full suite exit 0 (339 tests, slow and network tiers deselected). Web unt
 static and 4/4 API mode).
 
 Run 4 ends here per spec: final commit on `run4`, no merge, no push.
+
+## Phase 31.1 — CI installs the api group (2026-10-22, Run 4 branch)
+
+Owner-reported CI failure on the run4 PR: tests/test_api.py could not import
+fastapi because CI ran `uv sync --frozen`, which skips the `api` dependency
+group added in Phase 30.
+
+- .github/workflows/ci.yml: sync step is now `uv sync --frozen --all-groups`;
+  type check is now `uv run mypy src api` (CI now type-checks the API like the
+  local phase checks do).
+- Deleted the stale untracked `src/margin_engine/api/` folder (a leftover
+  `__pycache__` from the archived pre-Run-3 build; the real service lives in
+  `api/`).
+- Verifying like CI (fresh clone of run4, frozen sync with all groups, full
+  suite) exposed a second, real gap the dependency fix alone would not have
+  cured: 9 of the 11 API tests hardcoded the bundle at `web/public/data`,
+  which is generated output and rightly not committed — present locally,
+  absent in any fresh clone, so CI would still have failed. tests/test_api.py
+  now takes a module-scoped `bundle` fixture: the local dev copy when present,
+  otherwise the same deterministic demo-world bundle the pages workflow builds
+  (`export-web --demo`), built once into a temp dir. No assertion was changed
+  or weakened; the tests run against the identical bundle either way.
+- Verified both fixture paths: 11/11 locally with the dev bundle (18.7s) and
+  11/11 in a bundle-less clone via the fallback (39.6s, ~20s of it the demo
+  export). Full fresh-clone verification recorded below after the commit it
+  verifies.
+
+**Checks (fresh clone of this commit, CI-style).** `uv sync --frozen
+--all-groups` exit 0; `pytest --collect-only` exit 0; full pytest suite
+exit 0; ruff check 0; ruff format --check 0; mypy src api 0.
