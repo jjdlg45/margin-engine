@@ -241,6 +241,89 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
     )
 
 
+def persistent_demand_coverage(tmp: Path) -> list[dict[str, Any]]:
+    """Run 4 (24.5): the 50-simulation coverage study under AR(1) customer
+    demand shocks, once per clustering option. Worlds are generated once per
+    seed and re-estimated per option, so the comparison is apples-to-apples.
+    The shipped rules.yaml default is whichever option keeps coverage within
+    90-98% (recorded in the row names)."""
+    levels = ("month", "month_customer", "supplier_month")
+    covered = dict.fromkeys(levels, 0)
+    total = dict.fromkeys(levels, 0)
+    base = rules_full()
+    print("persistent-demand CI coverage, 50 simulations x 3 clusterings... (the other long one)")
+    for seed in range(100, 150):
+        panel, truth, _ = build_world_panel(
+            tmp / "pcov", Preset.PERSISTENT_DEMAND, seed, use_engine_segments=False
+        )
+        for level in levels:
+            rules = base.model_copy(
+                update={"sensitivity": base.sensitivity.model_copy(update={"cluster_level": level})}
+            )
+            sens = run_sensitivity(panel, rules)
+            for r in sens.to_dicts():
+                if r["iv_ci_low"] is None:
+                    continue
+                t = truth[r["segment"]]
+                total[level] += 1
+                covered[level] += int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
+    shipped = rules_full().sensitivity.cluster_level
+    rows = []
+    for level in levels:
+        rate = covered[level] / total[level] if total[level] else 0.0
+        is_default = level == shipped
+        rows.append(
+            _row(
+                f"95% CI coverage under persistent demand, cluster={level}"
+                + (" (shipped default)" if is_default else " (alternative, informational)"),
+                "Covers truth 90-98% of the time"
+                if is_default
+                else "Informational - reported to justify the clustering default",
+                f"{covered[level]}/{total[level]} = {rate:.1%}",
+                (0.90 <= rate <= 0.98) if is_default else True,
+            )
+        )
+    return rows
+
+
+def misspecified_checks(tmp: Path) -> list[dict[str, Any]]:
+    """Run 4 (24.9): recovery and status outcomes on misspecified worlds.
+    Informational, never gated - the point is to show what breaks and that
+    statuses respond honestly."""
+    rules = rules_full()
+    rows = []
+    for preset in (
+        Preset.PERSISTENT_DEMAND,
+        Preset.HETEROGENEOUS_ELASTICITY,
+        Preset.NONCONSTANT_ELASTICITY,
+        Preset.COMPETITOR_COMOVEMENT,
+    ):
+        print(f"misspecified world {preset.value} (3 seeds)...")
+        errs: list[float] = []
+        statuses: dict[str, int] = {}
+        for seed in (5, 6, 7):
+            panel, truth, _ = build_world_panel(
+                tmp / "miss", preset, seed, use_engine_segments=False
+            )
+            sens = run_sensitivity(panel, rules)
+            for r in sens.to_dicts():
+                statuses[r["status"]] = statuses.get(r["status"], 0) + 1
+                if r["iv"] is not None and r["segment"] in truth:
+                    errs.append(abs(r["iv"] - truth[r["segment"]]))
+        med = float(np.median(errs)) if errs else float("nan")
+        status_str = ", ".join(f"{k}: {v}" for k, v in sorted(statuses.items()))
+        rows.append(
+            _row(
+                f"Misspecified world: {preset.value} (informational)",
+                "Informational - reported, not gated (the planted beta is not the "
+                "estimand under misspecification)",
+                f"median abs error vs planted {med:.3f}; statuses {{{status_str}}}",
+                True,
+            )
+        )
+    return rows
+
+
 def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     rules = rules_full()
     rows = []
@@ -423,7 +506,9 @@ def main() -> None:
         results += elasticity_checks(tmp)
         if not args.quick:
             results.append(coverage_check(tmp))
+            results += persistent_demand_coverage(tmp)
         results += preset_checks(tmp)
+        results += misspecified_checks(tmp)
         results.append(kvi_check(tmp))
         results.append(win_curve_check(tmp))
         results.append(determinism_check(tmp))

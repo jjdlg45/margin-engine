@@ -138,6 +138,7 @@ class CostBasis(StrEnum):
     STANDARD = "standard"
     AVERAGE = "average"
     FIFO = "fifo"
+    LIFO = "lifo"
     LANDED = "landed"
 
 
@@ -280,16 +281,43 @@ class SegmentationConfig(StrictModel):
 
 
 class PriceGuidanceConfig(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_margin_key(cls, data: object) -> object:
+        if isinstance(data, dict) and "min_pocket_margin" in data:
+            msg = (
+                "price_guidance.min_pocket_margin was renamed to "
+                "min_pocket_gross_margin (Run 4, 24.3) to make the margin "
+                "definition explicit: (pocket revenue - product cost) / pocket "
+                "revenue. Rename the key in rules.yaml."
+            )
+            raise ValueError(msg)
+        return data
+
     band_percentiles: tuple[float, float, float] = (0.25, 0.50, 0.75)
     # Observation unit: one representative (median) price per customer x item x month.
     observation_unit: Literal["customer_item_month_median", "line"] = "customer_item_month_median"
-    min_pocket_margin: Decimal = Decimal("0.05")
+    # Minimum POCKET GROSS margin (pocket revenue - product cost) / pocket
+    # revenue. Renamed from `min_pocket_margin` in Run 4 (24.3) so the margin
+    # definition is explicit; the old key is rejected with an actionable error.
+    min_pocket_gross_margin: Decimal = Decimal("0.05")
+    # Optional minimum CONTRIBUTION margin (pocket revenue - product cost -
+    # cost-to-serve) / pocket revenue. When set, a second floor is computed:
+    #   contribution invoice floor = ((C + K) / (1 - m_c) + F) / (1 - d)
+    # with K = per-unit cost-to-serve (labeled estimated when it comes from
+    # config activity rates). Guidance reports both floors and which binds.
+    min_contribution_margin: Decimal | None = None
     # Floor rounding policy: floors are computed at full precision and rounded
     # ONCE at the end. "ceiling" (default) guarantees that a price at the floor
     # realizes at least the minimum margin; "half_even" can round a floor down
     # below the margin by a fraction of a cent.
     floor_rounding: Literal["ceiling", "half_even"] = "ceiling"
     min_band_observations: int = Field(default=10, ge=1)
+    # Floor-index comparisons (floor / list vs realized index) require a valid
+    # list price. A list in force but older than this many months at the pair's
+    # last sale is STALE: the pair keeps dollar floors but gets no floor-index
+    # comparison, and its list provenance says why (24.4). None disables.
+    max_list_age_months: int | None = Field(default=24, ge=1)
     # Provisional target/start until optimization is supported (Phase 7).
     provisional_target_percentile: float = 0.50
     provisional_start_percentile: float = 0.75
@@ -328,7 +356,37 @@ class SensitivityConfig(StrictModel):
     # instrument varies (spec default); "month" is coarser and also absorbs
     # customer-month demand-shock correlation across suppliers — use it when
     # residuals are correlated across items a customer buys in the same month.
-    cluster_level: Literal["supplier_month", "month"] = "supplier_month"
+    # "month_customer" clusters two-way (month and customer), for customer
+    # demand shocks that persist over time (Run 4, 24.5). The shipped default
+    # in rules.yaml is chosen by the persistent-demand coverage study recorded
+    # in validation.json, not here.
+    cluster_level: Literal["supplier_month", "month", "month_customer"] = "supplier_month"
+    # causal_elasticity_supported additionally requires the Anderson-Rubin set
+    # to be bounded and no wider than this multiple of the primary CI (24.7).
+    ar_max_width_ratio: float = Field(default=1.5, gt=0)
+    # Commercial-outlier exclusion from the estimation panel requires at least
+    # this many lines of pair history to be reliable (24.14; was hardcoded 6).
+    outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)
+    # Instrument builder (Run 4, 27.6): where the supplier cost instrument
+    # comes from. "reference_table" uses a mapped supplier_cost_index table as
+    # before; "receipts" builds it from purchase/receipt history (log change
+    # in qty-weighted average purchase cost per supplier-month, demeaned);
+    # "external" maps a public series (e.g. BLS PPI) to categories via
+    # external_index_map and to suppliers via their modal category.
+    instrument_source: Literal["reference_table", "receipts", "external"] = "reference_table"
+    external_index_map: dict[str, str] = Field(default_factory=dict)
+    # Validation without planted truth (Run 4, 27.4): temporal backtest,
+    # placebo tests and rolling-window stability, reported in the "Real-data
+    # validation" report section. All informational, never gated.
+    real_data_validation: bool = True
+    backtest_holdout_months: int = Field(default=6, ge=1)
+    placebo_draws: int = Field(default=10, ge=2)
+    stability_window_months: int = Field(default=12, ge=3)
+    stability_step_months: int = Field(default=6, ge=1)
+    # Above this many positive rows, a segment's placebo diagnostics run on a
+    # seeded pair subsample (labeled in the output). Headline estimates never
+    # sample.
+    real_validation_max_rows: int = Field(default=200_000, ge=10_000)
     shrinkage: Literal["empirical_bayes_to_parent_segment"] = "empirical_bayes_to_parent_segment"
     min_observations: int = Field(default=30, ge=2)
     # IV-based statuses (iv_estimated / causal) additionally require this much
@@ -380,6 +438,11 @@ class ReportingConfig(StrictModel):
     output_formats: tuple[Literal["parquet", "csv", "html"], ...] = ("parquet", "csv", "html")
     show_evidence_status: bool = True
     show_data_coverage: bool = True
+    # Books tie-out (Run 4, 27.3): a month fails when the engine-vs-GL
+    # difference exceeds BOTH bounds (the cents floor keeps tiny months from
+    # failing on rounding pennies). Failing months are flagged, never hidden.
+    tieout_tolerance_pct: float = Field(default=0.5, ge=0)
+    tieout_tolerance_cents: int = Field(default=100, ge=0)
 
 
 # ---------------------------------------------------------------------------

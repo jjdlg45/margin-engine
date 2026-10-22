@@ -1,0 +1,6815 @@
+{
+ "source": "https://hts.usitc.gov/reststop/exportList?from=8501&to=8516&format=JSON&styles=false",
+ "recorded_utc": "2026-10-22T05:24:12+00:00",
+ "note": "USITC HTS current revision export; US government work (public domain)",
+ "data": [
+  {
+   "htsno": "8501",
+   "indent": "0",
+   "description": "Electric motors and generators (excluding generating sets):",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10",
+   "indent": "1",
+   "description": "Motors of an output not exceeding 37.5 W:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Of under 18.65 W:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.20.00",
+   "indent": "3",
+   "description": "Synchronous, valued not over $4 each",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "6.7%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "90%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "4.4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.40.20",
+   "indent": "4",
+   "description": "AC",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "DC:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.40.40",
+   "indent": "5",
+   "description": "Brushless",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.40.60",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.40.80",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.60",
+   "indent": "2",
+   "description": "Of 18.65 W or more but not exceeding 37.5 W",
+   "superior": null,
+   "units": [],
+   "general": "2.8%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.60.20",
+   "indent": "3",
+   "description": "AC",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "DC:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.60.40",
+   "indent": "4",
+   "description": "Brushless",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.60.60",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.10.60.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.20",
+   "indent": "1",
+   "description": "Universal AC/DC motors of an output exceeding 37.5 W:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.20.20.00",
+   "indent": "2",
+   "description": "Exceeding 37.5 W but not exceeding 74.6 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.3%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.20.40.00",
+   "indent": "2",
+   "description": "Exceeding 74.6 W but not exceeding 735 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.20.50.00",
+   "indent": "2",
+   "description": "Exceeding 735 W but under 746 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.3%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.20.60.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other DC motors; DC generators, other than photovoltaic generators:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31",
+   "indent": "2",
+   "description": "Of an output not exceeding 750 W:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Motors:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31.20.00",
+   "indent": "4",
+   "description": "Exceeding 37.5 W but not exceeding 74.6 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.8%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31.40.00",
+   "indent": "4",
+   "description": "Exceeding 74.6 W but not exceeding 735 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31.50.00",
+   "indent": "4",
+   "description": "Exceeding 735 W but under 746 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.3%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31.60.00",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.4%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.31.81.00",
+   "indent": "3",
+   "description": "Generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32",
+   "indent": "2",
+   "description": "Of an output exceeding 750 W but not exceeding 75 kW:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Motors:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.20.00",
+   "indent": "4",
+   "description": "Exceeding 750 W but not exceeding 14.92 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.9%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.45.00",
+   "indent": "5",
+   "description": "Electric motors of a kind used as the primary source of mechanical power for electrically powered vehicles of subheadings 8703.40, 8703.50, 8703.60, 8703.70 or 8703.80",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.55",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.55.20",
+   "indent": "6",
+   "description": "For use in civil aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [
+    {
+     "columns": [
+      "desc"
+     ],
+     "value": "See General Note 6.",
+     "type": "endnote"
+    }
+   ],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.55.40",
+   "indent": "6",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.32.61.00",
+   "indent": "3",
+   "description": "Generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kW but not exceeding 375 kW:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Motors:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.20",
+   "indent": "4",
+   "description": "Exceeding 75 kW but under 149.2 kW",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.20.40",
+   "indent": "5",
+   "description": "For use in civil aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [
+    {
+     "columns": [
+      "desc"
+     ],
+     "value": "See General Note 6.",
+     "type": "endnote"
+    }
+   ],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.20.80",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.30.00",
+   "indent": "4",
+   "description": "149.2 kW or more but not exceeding 150 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.8%",
+   "special": "Free (A,AU,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "2.8%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.40.40",
+   "indent": "5",
+   "description": "Not exceeding 373 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.40.60",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.33.61.00",
+   "indent": "3",
+   "description": "Generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.34",
+   "indent": "2",
+   "description": "Of an output exceeding 375 kW:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.34.30.00",
+   "indent": "3",
+   "description": "Motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.8%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.34.61.00",
+   "indent": "3",
+   "description": "Generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40",
+   "indent": "1",
+   "description": "Other AC motors, single-phase:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.20",
+   "indent": "2",
+   "description": "Of an output exceeding 37.5 W but not exceeding 74.6 W",
+   "superior": null,
+   "units": [],
+   "general": "3.3%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.20.20",
+   "indent": "3",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.20.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.40",
+   "indent": "2",
+   "description": "Of an output exceeding 74.6 W but not exceeding 735 W",
+   "superior": null,
+   "units": [],
+   "general": "4%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.40.20",
+   "indent": "3",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.40.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.50",
+   "indent": "2",
+   "description": "Of an output exceeding 735 W but under 746 W",
+   "superior": null,
+   "units": [],
+   "general": "3.3%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.50.20",
+   "indent": "3",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.50.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.60",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "3.7%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.60.20",
+   "indent": "3",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.40.60.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other AC motors, multi-phase:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51",
+   "indent": "2",
+   "description": "Of an output not exceeding 750 W:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.20",
+   "indent": "3",
+   "description": "Exceeding 37.5 W but not exceeding 74.6 W",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.20.20",
+   "indent": "4",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.20.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.40",
+   "indent": "3",
+   "description": "Exceeding 74.6 W but not exceeding 735 W",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.40.20",
+   "indent": "4",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.40.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.50",
+   "indent": "3",
+   "description": "Exceeding 735 W but under 746 W",
+   "superior": null,
+   "units": [],
+   "general": "3.3%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.50.20",
+   "indent": "4",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.50.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.60",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.60.20",
+   "indent": "4",
+   "description": "Gear motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.51.60.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.52",
+   "indent": "2",
+   "description": "Of an output exceeding 750 W but not exceeding 75 kW:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.52.40.00",
+   "indent": "3",
+   "description": "Exceeding 750 W but not exceeding 14.92 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.7%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.52.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.52.80.20",
+   "indent": "4",
+   "description": "For use in civil aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [
+    {
+     "columns": [
+      "desc"
+     ],
+     "value": "See General Note 6.",
+     "type": "endnote"
+    }
+   ],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.52.80.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kW:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.40",
+   "indent": "3",
+   "description": "Exceeding 75 kW but under 149.2 kW",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.40.40",
+   "indent": "4",
+   "description": "For use in civil aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [
+    {
+     "columns": [
+      "desc"
+     ],
+     "value": "See General Note 6.",
+     "type": "endnote"
+    }
+   ],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.40.80",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.60.00",
+   "indent": "3",
+   "description": "149.2 kW or more but not exceeding 150 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "2.8%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.80.40",
+   "indent": "4",
+   "description": "Not exceeding 373 kW",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.53.80.60",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "AC generators (alternators), other than photovoltaic generators:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.61.01.00",
+   "indent": "2",
+   "description": "Of an output not exceeding 75 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.62.01.00",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kVA but not exceeding 375 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.63.01.00",
+   "indent": "2",
+   "description": "Of an output exceeding 375 kVA but not exceeding 750 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.64.01",
+   "indent": "2",
+   "description": "Of an output exceeding 750 kVA",
+   "superior": null,
+   "units": [],
+   "general": "2.4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.64.01.10",
+   "indent": "3",
+   "description": "For wind-powered generating sets classified within 8502.31.00",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.64.01.25",
+   "indent": "4",
+   "description": "Exceeding 750 kVA but not exceeding 10,000 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.64.01.35",
+   "indent": "4",
+   "description": "Exceeding 10,000 kVA but not exceeding 40,000 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.64.01.55",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Photovoltaic DC generators:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.71.00.00",
+   "indent": "2",
+   "description": "Of an output not exceeding 50 W",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.72",
+   "indent": "2",
+   "description": "Of an output exceeding 50 W:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.72.10.00",
+   "indent": "3",
+   "description": "Of an output not exceeding 750 W",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.72.20.00",
+   "indent": "3",
+   "description": "Of an output exceeding 750 W but not exceeding 75 kW",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.72.30.00",
+   "indent": "3",
+   "description": "Of an output exceeding 75 kW but not exceeding 375 kW",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.72.90.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.80",
+   "indent": "1",
+   "description": "Photovoltaic AC generators:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.80.10.00",
+   "indent": "2",
+   "description": "Of an output not exceeding 75 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.80.20.00",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kVA but not exceeding 375 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.80.30.00",
+   "indent": "2",
+   "description": "Of an output exceeding 375 kVA but not exceeding 750 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8501.80.90.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "W"
+   ],
+   "general": "2.4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502",
+   "indent": "0",
+   "description": "Electric generating sets and rotary converters:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Generating sets with compression-ignition internal combustion piston engines (diesel or semi-diesel engines):",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.11.00.00",
+   "indent": "2",
+   "description": "Of an output not exceeding 75 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.12.00.00",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kVA but not exceeding 375 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.13.00",
+   "indent": "2",
+   "description": "Of an output exceeding 375 kVA",
+   "superior": null,
+   "units": [],
+   "general": "2%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.13.00.20",
+   "indent": "3",
+   "description": "Exceeding 375 kVA but not exceeding 1,000 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.13.00.40",
+   "indent": "3",
+   "description": "Exceeding 1,000 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.20.00",
+   "indent": "1",
+   "description": "Generating sets with spark-ignition internal combustion piston engines",
+   "superior": null,
+   "units": [],
+   "general": "2%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.20.00.30",
+   "indent": "2",
+   "description": "Of an output not exceeding 1.875 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.20.00.60",
+   "indent": "2",
+   "description": "Of an output exceeding 1.875 kVA but not exceeding 6.25 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.20.00.70",
+   "indent": "2",
+   "description": "Of an output exceeding 6.25 kVA but not exceeding 75 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.20.00.85",
+   "indent": "2",
+   "description": "Of an output exceeding 75 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other generating sets:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.31.00.00",
+   "indent": "2",
+   "description": "Wind-powered",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.39.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.39.00.40",
+   "indent": "3",
+   "description": "Powered by steam turbine",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.39.00.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8502.40.00.00",
+   "indent": "1",
+   "description": "Electric rotary converters",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00",
+   "indent": "0",
+   "description": "Parts suitable for use solely or principally with the machines of heading 8501 or 8502:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.20.00",
+   "indent": "1",
+   "description": "Commutators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Stators and rotors for the goods of heading 8501:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.35.00",
+   "indent": "2",
+   "description": "For motors of under 18.65 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "6.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "90%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.45.00",
+   "indent": "2",
+   "description": "For generators suitable for use on aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.65.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.75.00",
+   "indent": "2",
+   "description": "For motors of under 18.65 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "6.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "90%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.90.00",
+   "indent": "2",
+   "description": "For generators suitable for use on aircraft",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "3%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95.20",
+   "indent": "3",
+   "description": "Parts of motors",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Parts of generators:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95.46",
+   "indent": "4",
+   "description": "For AC generators (alternators) classified in statistical reporting number 8501.64.0110",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95.50",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95.70",
+   "indent": "4",
+   "description": "Parts of wind-powered generating sets classified in subheading 8502.31.00",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8503.00.95.80",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504",
+   "indent": "0",
+   "description": "Electrical transformers, static converters (for example, rectifiers) and inductors; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.10.00.00",
+   "indent": "1",
+   "description": "Ballasts for discharge lamps or tubes",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Liquid dielectric transformers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.21.00",
+   "indent": "2",
+   "description": "Having a power handling capacity not exceeding 650 kVA",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.21.00.20",
+   "indent": "3",
+   "description": "Having a power handling capacity not exceeding 50 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.21.00.40",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 50 kVA but not exceeding 100 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.21.00.60",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 100 kVA but not exceeding 500 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.21.00.80",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 500 kVA but not exceeding 650 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.22.00",
+   "indent": "2",
+   "description": "Having a power handling capacity exceeding 650 kVA but not exceeding 10,000 kVA",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.22.00.40",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 650 kVA but not exceeding 2,500 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.22.00.80",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 2,500 kVA but not exceeding 10,000 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.23.00",
+   "indent": "2",
+   "description": "Having a power handling capacity exceeding 10,000 kVA",
+   "superior": null,
+   "units": [],
+   "general": "1.6%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.23.00.41",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 10,000 kVA but not exceeding 59,999 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.23.00.45",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 59,999 kVA but not exceeding 100,000 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.23.00.80",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 100,000 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other transformers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31",
+   "indent": "2",
+   "description": "Having a power handling capacity not exceeding 1 kVA:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31.20.00",
+   "indent": "3",
+   "description": "Unrated",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31.40",
+   "indent": "4",
+   "description": "Having a power handling capacity less than 1 kVA",
+   "superior": null,
+   "units": [],
+   "general": "6.6%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31.40.35",
+   "indent": "5",
+   "description": "Having a power handling capacity less than 40 VA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31.40.65",
+   "indent": "5",
+   "description": "Having a power handling capacity 40 VA or greater",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.31.60.00",
+   "indent": "4",
+   "description": "Having a power handling capacity of 1 kVA",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.6%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.32.00.00",
+   "indent": "2",
+   "description": "Having a power handling capacity exceeding 1 kVA but not exceeding 16 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "2.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.33.00",
+   "indent": "2",
+   "description": "Having a power handling capacity exceeding 16 kVA but not exceeding 500 kVA",
+   "superior": null,
+   "units": [],
+   "general": "1.6%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.33.00.20",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 16 kVA but not exceeding 50 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.33.00.40",
+   "indent": "3",
+   "description": "Having a power handling capacity exceeding 50 kVA but not exceeding 500 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.34.00.00",
+   "indent": "2",
+   "description": "Having a power handling capacity exceeding 500 kVA",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "1.6%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40",
+   "indent": "1",
+   "description": "Static converters:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.40.00",
+   "indent": "2",
+   "description": "Speed drive controllers for electric motors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Power supplies for automatic data processing machines or units thereof of heading 8471; power supplies for goods of subheading 8443.31 or 8443.32; power supplies for monitors of subheading 8528.42 or 8528.52 or projectors of subheading 8528.62:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.60",
+   "indent": "3",
+   "description": "Suitable for physical incorporation into automatic data processing machines or units thereof of heading 8471",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.60.01",
+   "indent": "4",
+   "description": "With a power output not exceeding 50 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.60.07",
+   "indent": "4",
+   "description": "With a power output exceeding 50 W but not exceeding 150 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.60.12",
+   "indent": "4",
+   "description": "With a power output exceeding 150 W but not exceeding 500 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.60.18",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.70",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.70.01",
+   "indent": "4",
+   "description": "With a power output not exceeding 50 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.70.07",
+   "indent": "4",
+   "description": "With a power output exceeding 50 W but not exceeding 150 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.70.12",
+   "indent": "4",
+   "description": "With a power output exceeding 150 W but not exceeding 500 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.70.18",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.85.00",
+   "indent": "2",
+   "description": "For telecommunication apparatus",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Rectifiers and rectifying apparatus:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "Power supplies:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.10",
+   "indent": "5",
+   "description": "With a power output not exceeding 50 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.20",
+   "indent": "5",
+   "description": "With a power output exceeding 50 W but not exceeding 150 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.30",
+   "indent": "5",
+   "description": "With a power output exceeding 150 W but not exceeding 500 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.40",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.50",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Inverters:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.71",
+   "indent": "4",
+   "description": "Of a capacity not exceeding 200 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.73",
+   "indent": "4",
+   "description": "Of a capacity exceeding 200 W but not exceeding 650 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.75",
+   "indent": "4",
+   "description": "Of a capacity exceeding 650 W but not exceeding 20,000 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.77",
+   "indent": "4",
+   "description": "Of a capacity exceeding 20,000 W but not exceeding 125,000 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.78",
+   "indent": "4",
+   "description": "Of a capacity exceeding 125,000 W but not exceeding 1,000,000 W",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.79",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.40.95.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.50",
+   "indent": "1",
+   "description": "Other inductors:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.50.40.00",
+   "indent": "2",
+   "description": "For power supplies for automatic data processing machines or units thereof of heading 8471; power supplies for goods of subheading 8443.31 or 8443.32; power supplies for monitors of subheading 8528.42 or 8528.52 or projectors of subheading 8528.62; for telecommunication apparatus",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.50.80.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Of power supplies for automatic data processing machines or units thereof of heading 8471; of power supplies for goods of subheading 8443.31 or 8443.32; of power supplies for monitors of subheading 8528.42 or 8528.52 or projectors of subheading 8528.62:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.20.00",
+   "indent": "3",
+   "description": "Printed circuit assemblies",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.41.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Printed circuit assemblies:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.65.00",
+   "indent": "4",
+   "description": "Of the goods of subheading 8504.40 or 8504.50 for telecommunication apparatus",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.75.00",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "Ferrites:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.10",
+   "indent": "5",
+   "description": "For transformers",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.30",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "Other parts:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "5",
+   "description": "Of transformers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.34",
+   "indent": "6",
+   "description": "Laminations for incorporation into stacked cores",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.38",
+   "indent": "6",
+   "description": "Stacked cores for incorporation into transformers",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.42",
+   "indent": "6",
+   "description": "Wound cores for incorporation into transformers",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.46",
+   "indent": "6",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.50",
+   "indent": "5",
+   "description": "Of static converters",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8504.90.96.90",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505",
+   "indent": "0",
+   "description": "Electromagnets; permanent magnets and articles intended to become permanent magnets after magnetization; electromagnetic or permanent magnet chucks, clamps and similar holding devices; electromagnetic couplings, clutches and brakes; electromagnetic lifting heads; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Permanent magnets and articles intended to become permanent magnets after magnetization:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00",
+   "indent": "2",
+   "description": "Of metal",
+   "superior": null,
+   "units": [],
+   "general": "2.1%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00.10",
+   "indent": "3",
+   "description": "Alnico",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00.30",
+   "indent": "3",
+   "description": "Ceramic",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00.50",
+   "indent": "3",
+   "description": "Sintered samarium-cobalt",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00.70",
+   "indent": "3",
+   "description": "Sintered neodymium-iron-boron",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.11.00.90",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.19",
+   "indent": "2",
+   "description": "Other:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.19.10.00",
+   "indent": "3",
+   "description": "Flexible magnets",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.9%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.19.20.00",
+   "indent": "3",
+   "description": "Composite good containing flexible magnets",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.9%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.19.30.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.9%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.20.00.00",
+   "indent": "1",
+   "description": "Electromagnetic couplings, clutches and brakes",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.1%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.90",
+   "indent": "1",
+   "description": "Other, including parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.90.30.00",
+   "indent": "2",
+   "description": "Electromagnetic lifting heads",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.90.40.00",
+   "indent": "2",
+   "description": "Work holders and parts thereof",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "30%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.90.70.00",
+   "indent": "2",
+   "description": "Electromagnets of a kind used solely or principally for magnetic resonance imaging apparatus, other than apparatus of heading 9018",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8505.90.75.01",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "1.3%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506",
+   "indent": "0",
+   "description": "Primary cells and primary batteries; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.10.00",
+   "indent": "1",
+   "description": "Manganese dioxide",
+   "superior": null,
+   "units": [],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.10.00.10",
+   "indent": "2",
+   "description": "Button and coin cell batteries",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.10.00.90",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.30",
+   "indent": "1",
+   "description": "Mercuric oxide:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.30.10.00",
+   "indent": "2",
+   "description": "Having an external volume not exceeding 300 cm3",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.30.50.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.40",
+   "indent": "1",
+   "description": "Silver oxide:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.40.10",
+   "indent": "2",
+   "description": "Having an external volume not exceeding 300 cm3",
+   "superior": null,
+   "units": [],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.40.10.10",
+   "indent": "3",
+   "description": "Button and coin cell batteries ",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.40.10.90",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.40.50.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.50.00",
+   "indent": "1",
+   "description": "Lithium",
+   "superior": null,
+   "units": [],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.50.00.10",
+   "indent": "2",
+   "description": "Button and coin cell batteries",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.50.00.90",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.60.00",
+   "indent": "1",
+   "description": "Air-zinc",
+   "superior": null,
+   "units": [],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.60.00.10",
+   "indent": "2",
+   "description": "Button and coin cell batteries",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.60.00.90",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.80.00",
+   "indent": "1",
+   "description": "Other primary cells and primary batteries",
+   "superior": null,
+   "units": [],
+   "general": "2.7%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.80.00.10",
+   "indent": "2",
+   "description": "Button and coin cell batteries",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.80.00.90",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8506.90.00.00",
+   "indent": "1",
+   "description": "Parts",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507",
+   "indent": "0",
+   "description": "Electric storage batteries, including separators therefor, whether or not rectangular (including square); parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.10.00",
+   "indent": "1",
+   "description": "Lead-acid storage batteries, of a kind used for starting piston engines",
+   "superior": null,
+   "units": [],
+   "general": "3.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "12 V batteries:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.10.00.30",
+   "indent": "3",
+   "description": "Not exceeding 6 kg in weight",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.10.00.60",
+   "indent": "3",
+   "description": "Exceeding 6 kg in weight",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.10.00.90",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20",
+   "indent": "1",
+   "description": "Other lead-acid storage batteries:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.40.00",
+   "indent": "2",
+   "description": "Of a kind used as the primary source of electrical power for electrically powered vehicles of subheadings 8703.40, 8703.50, 8703.60, 8703.70 or 8703.80",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "3.5%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.80",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "3.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.80.31",
+   "indent": "3",
+   "description": "6 V batteries",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.80.41",
+   "indent": "3",
+   "description": "12 V batteries",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.80.61",
+   "indent": "3",
+   "description": "36 V batteries",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.20.80.92",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.30",
+   "indent": "1",
+   "description": "Nickel-cadmium storage batteries:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.30.40.00",
+   "indent": "2",
+   "description": "Of a kind used as the primary source of electrical power for electrically powered vehicles of subheadings 8703.40, 8703.50, 8703.60, 8703.70 or 8703.80",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.30.80",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.30.80.10",
+   "indent": "3",
+   "description": "Sealed",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.30.80.90",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.50.00.00",
+   "indent": "1",
+   "description": "Nickel-metal hydride batteries",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.60.00",
+   "indent": "1",
+   "description": "Lithium-ion batteries",
+   "superior": null,
+   "units": [],
+   "general": "3.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.60.00.10",
+   "indent": "2",
+   "description": "Of a kind used as the primary source of electrical power for electrically powered vehicles of subheadings 8703.40, 8703.50, 8703.60, 8703.70 or 8703.80",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.60.00.30",
+   "indent": "3",
+   "description": "Battery energy storage systems fully encased within a housing, as described in statistical note 2 to this chapter",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.60.00.90",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.80",
+   "indent": "1",
+   "description": "Other storage batteries:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.80.41.00",
+   "indent": "2",
+   "description": "Of a kind used as the primary source of electrical power for electrically powered vehicles of subheadings 8703.40, 8703.50, 8703.60, 8703.70 or 8703.80",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.80.82.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No.",
+    "kg"
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.90.40.00",
+   "indent": "2",
+   "description": "Of lead-acid storage batteries",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "3.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8507.90.80.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8508",
+   "indent": "0",
+   "description": "Vacuum cleaners; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "With self-contained electric motor:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8508.11.00.00",
+   "indent": "2",
+   "description": "Of a power not exceeding 1,500 W and having a dust bag or other receptacle capacity not exceeding 20 l",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8508.19.00.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8508.60.00.00",
+   "indent": "1",
+   "description": "Other vacuum cleaners",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8508.70.00.00",
+   "indent": "1",
+   "description": "Parts",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509",
+   "indent": "0",
+   "description": "Electromechanical domestic appliances, with self-contained electric motor, other than vacuum cleaners of heading 8508; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.40.00",
+   "indent": "1",
+   "description": "Food grinders, processors and mixers; fruit or vegetable juice extractors",
+   "superior": null,
+   "units": [],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.40.00.15",
+   "indent": "2",
+   "description": "Blenders",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.40.00.25",
+   "indent": "2",
+   "description": "Other food mixers",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.40.00.30",
+   "indent": "2",
+   "description": "Juice extractors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.40.00.40",
+   "indent": "2",
+   "description": "Food grinders and processors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80",
+   "indent": "1",
+   "description": "Other appliances:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.10.00",
+   "indent": "2",
+   "description": "Floor polishers",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.20.00",
+   "indent": "2",
+   "description": "Kitchen waste disposers (disposals)",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.40",
+   "indent": "3",
+   "description": "Can openers (including combination units)",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.45",
+   "indent": "3",
+   "description": "Electric toothbrushes",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Humidifiers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.50",
+   "indent": "4",
+   "description": "Evaporative",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "4",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.70",
+   "indent": "5",
+   "description": "Ultrasonic",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.80",
+   "indent": "5",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.80.50.95",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Parts of floor polishers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.90.25.00",
+   "indent": "3",
+   "description": "Housings",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.90.35.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "3.4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Other:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.90.45.00",
+   "indent": "3",
+   "description": "Housings",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8509.90.55.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510",
+   "indent": "0",
+   "description": "Shavers, hair clippers and hair-removing appliances, with self-contained electric motor; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.10.00.00",
+   "indent": "1",
+   "description": "Shavers",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.20",
+   "indent": "1",
+   "description": "Hair clippers:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.20.10.00",
+   "indent": "2",
+   "description": "Hair clippers to be used for agricultural or horticultural purposes",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.20.90.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.30.00.00",
+   "indent": "1",
+   "description": "Hair-removing appliances",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.2%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Parts of shavers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90.10.00",
+   "indent": "3",
+   "description": "Blades and cutting heads",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "27.5%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90.20.00",
+   "indent": "3",
+   "description": "Other parts of shavers",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Parts of hair clippers:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90.30.01",
+   "indent": "3",
+   "description": "Parts of hair clippers to be used for agricultural or horticultural purposes",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90.40.00",
+   "indent": "3",
+   "description": "Other parts of hair clippers",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8510.90.55.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "4.2%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511",
+   "indent": "0",
+   "description": "Electrical ignition or starting equipment of a kind used for spark-ignition or compression-ignition internal combustion engines (for example, ignition magnetos, magneto-dynamos, ignition coils, spark plugs and glow plugs, starter motors); generators (for example, dynamos, alternators) and cut-outs of a kind used in conjunction with such engines; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.10.00.00",
+   "indent": "1",
+   "description": "Spark plugs",
+   "superior": null,
+   "units": [
+    "hundreds"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.20.00.00",
+   "indent": "1",
+   "description": "Ignition magnetos; magneto-dynamos; magnetic flywheels",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.30.00",
+   "indent": "1",
+   "description": "Distributors; ignition coils",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.30.00.40",
+   "indent": "2",
+   "description": "Distributors",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.30.00.80",
+   "indent": "2",
+   "description": "Ignition coils",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.40.00.00",
+   "indent": "1",
+   "description": "Starter motors and dual purpose starter-generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.50.00.00",
+   "indent": "1",
+   "description": "Other generators",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.80",
+   "indent": "1",
+   "description": "Other equipment:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Voltage and voltage-current regulators with cut-out relays:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.80.20.00",
+   "indent": "3",
+   "description": "Designed for use on 6, 12 or 24 V systems",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "25%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.80.40.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.80.60.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Of voltage and voltage-current regulators with cut-out relays:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90.20.00",
+   "indent": "3",
+   "description": "Designed for use on 6, 12 or 24 V systems",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "3.1%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "25%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90.40.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90.60",
+   "indent": "2",
+   "description": "Other parts",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90.60.20",
+   "indent": "3",
+   "description": "Distributor contact (breaker point) sets",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8511.90.60.40",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512",
+   "indent": "0",
+   "description": "Electrical lighting or signaling equipment (excluding articles of heading 8539), windshield wipers, defrosters and demisters, of a kind used for cycles or motor vehicles; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.10",
+   "indent": "1",
+   "description": "Lighting or visual signaling equipment of a kind used on bicycles:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.10.20.00",
+   "indent": "2",
+   "description": "Lighting equipment",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.10.40.00",
+   "indent": "2",
+   "description": "Visual signaling equipment",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.7%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20",
+   "indent": "1",
+   "description": "Other lighting or visual signaling equipment:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.20",
+   "indent": "2",
+   "description": "Lighting equipment",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "25%",
+   "footnotes": [
+    {
+     "columns": [
+      "other"
+     ],
+     "value": "See 9903.90.08. ",
+     "type": "endnote"
+    }
+   ],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.20.40",
+   "indent": "3",
+   "description": "For vehicles of subheading 8701.21, 8701.22, 8701.23, 8701.24 or 8701.29 or heading 8702, 8703, 8704, 8705 or 8711",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.20.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.40",
+   "indent": "2",
+   "description": "Visual signaling equipment",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.40.40",
+   "indent": "3",
+   "description": "For vehicles of subheading 8701.21, 8701.22, 8701.23, 8701.24 or 8701.29 or heading 8702, 8703, 8704, 8705 or 8711",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.20.40.80",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.30.00",
+   "indent": "1",
+   "description": "Sound signaling equipment",
+   "superior": null,
+   "units": [],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.30.00.20",
+   "indent": "2",
+   "description": "Horns",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.30.00.30",
+   "indent": "2",
+   "description": "Radar detectors of a kind used in motor vehicles",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.30.00.40",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.40",
+   "indent": "1",
+   "description": "Windshield wipers, defrosters and demisters:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.40.20.00",
+   "indent": "2",
+   "description": "Defrosters and demisters",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.40.40.00",
+   "indent": "2",
+   "description": "Windshield wipers",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "25%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90.20.00",
+   "indent": "2",
+   "description": "Of signaling equipment",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Of lighting equipment:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90.40.00",
+   "indent": "3",
+   "description": "Of a kind used on bicycles",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "45%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90.60.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "25%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90.70.00",
+   "indent": "2",
+   "description": "Of defrosters and demisters",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8512.90.90.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,B,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "25%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513",
+   "indent": "0",
+   "description": "Portable electric lamps designed to function by their own source of energy (for example, dry batteries, storage batteries, magnetos), other than lighting equipment of heading 8512; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.10",
+   "indent": "1",
+   "description": "Lamps:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.10.20.00",
+   "indent": "2",
+   "description": "Flashlights",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "12.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.10.40.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "3.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.90.20.00",
+   "indent": "2",
+   "description": "Of flashlights",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "12.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8513.90.40.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "3.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "40%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514",
+   "indent": "0",
+   "description": "Industrial or laboratory electric furnaces and ovens (including those functioning by induction or dielectric loss); other industrial or laboratory equipment for the heat treatment of materials by induction or dielectric loss; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Resistance heated furnaces and ovens:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.11.00.00",
+   "indent": "2",
+   "description": "Hot isostatic presses",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.19.00.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.20",
+   "indent": "1",
+   "description": "Furnaces and ovens functioning by induction or dielectric loss:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "2",
+   "description": "Microwave ovens:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.20.40.00",
+   "indent": "3",
+   "description": "For making hot drinks, or for cooking or heating food",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4%",
+   "special": "Free (A*,AU,BH,C,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.20.60.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "4.2%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.20.80.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Other furnaces and ovens:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.31",
+   "indent": "2",
+   "description": "Electron beam furnaces:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.31.10.00",
+   "indent": "3",
+   "description": "Of a kind used solely or principally for the manufacture of printed circuits or printed circuit assemblies",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.31.90.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.3%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.32",
+   "indent": "2",
+   "description": "Plasma and vacuum arc furnaces:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.32.10.00",
+   "indent": "3",
+   "description": "Of a kind used solely or principally for the manufacture of printed circuits or printed circuit assemblies",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.32.90.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.3%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.39",
+   "indent": "2",
+   "description": "Other:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.39.10.00",
+   "indent": "3",
+   "description": "Of a kind used solely or principally for the manufacture of printed circuits or printed circuit assemblies",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.39.90.00",
+   "indent": "3",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.3%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.40.00.00",
+   "indent": "1",
+   "description": "Other equipment for the heat treatment of materials by induction or dielectric loss",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.90.40.00",
+   "indent": "2",
+   "description": "Of microwave ovens",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "4%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8514.90.80.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "kg"
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515",
+   "indent": "0",
+   "description": "Electric (including electrically heated gas), laser or other light or photon beam, ultrasonic, electron beam, magnetic pulse or plasma arc soldering, brazing or welding machines and apparatus, whether or not capable of cutting; electric machines and apparatus for hot spraying of metals or cermets; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Brazing or soldering machines and apparatus:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.11.00.00",
+   "indent": "2",
+   "description": "Soldering irons and guns",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "2.5%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.19.00.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Machines and apparatus for resistance welding of metal:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.21.00.00",
+   "indent": "2",
+   "description": "Fully or partly automatic",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.29.00.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "1",
+   "description": "Machines and apparatus for arc (including plasma arc) welding of metals:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.31.00.00",
+   "indent": "2",
+   "description": "Fully or partly automatic",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.6%",
+   "special": "Free (A*,AU,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.39.00",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [],
+   "general": "1.6%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "",
+   "indent": "3",
+   "description": "Non-rotating type:",
+   "superior": "true",
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": null,
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.39.00.20",
+   "indent": "4",
+   "description": "AC transformer type",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.39.00.40",
+   "indent": "4",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.39.00.60",
+   "indent": "3",
+   "description": "Rotating type",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.80.00",
+   "indent": "1",
+   "description": "Other machines and apparatus",
+   "superior": null,
+   "units": [],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.80.00.40",
+   "indent": "2",
+   "description": "Ultrasonic welding machines",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.80.00.80",
+   "indent": "2",
+   "description": "Other",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.90",
+   "indent": "1",
+   "description": "Parts:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.90.20.00",
+   "indent": "2",
+   "description": "Of welding machines and apparatus",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "1.6%",
+   "special": "Free (A,AU,BH,CL,CO,D,E,IL,JO,JP,KR,MA,OM,P,PA,PE,S,SG)",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8515.90.40.00",
+   "indent": "2",
+   "description": "Other parts",
+   "superior": null,
+   "units": [
+    "No."
+   ],
+   "general": "Free",
+   "special": "",
+   "other": "35%",
+   "footnotes": [],
+   "quotaQuantity": null,
+   "additionalDuties": null,
+   "addiitionalDuties": null
+  },
+  {
+   "htsno": "8516",
+   "indent": "0",
+   "description": "Electric instantaneous or storage water heaters and immersion heaters; electric space heating apparatus and soil heating apparatus; electrothermic hairdressing apparatus (for example, hair dryers, hair curlers, curling tong heaters) and hand dryers; electric flatirons; other electrothermic appliances of a kind used for domestic purposes; electric heating resistors, other than those of heading 8545; parts thereof:",
+   "superior": null,
+   "units": [],
+   "general": "",
+   "special": "",
+   "other": "",
+   "footnotes": [],
+   "quotaQuantity": "",
+   "additionalDuties": "",
+   "addiitionalDuties": null
+  }
+ ]
+}

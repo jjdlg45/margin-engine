@@ -2,34 +2,50 @@
  * captured warnings, the measured validation results table, and the link to
  * the full methodology document. */
 
+import { QuerySection } from "../components/Async";
 import { PageHeader, Section, ScrollX } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { useBundle } from "../lib/bundle";
+import type { MethodologyData } from "../lib/api/types";
+import { useAppData, usePageData } from "../lib/queries";
 import { useLabels } from "../lib/labels";
 import { count, dollars, pct } from "../lib/format";
 
 const METHODOLOGY_URL = "https://github.com/jjdlg45/margin-engine/blob/main/docs/methodology.md";
 
-export function MethodologyPage() {
-  const b = useBundle();
-  const labels = useLabels();
-  const k = b.kpis;
+function CoverageSection() {
+  const app = useAppData();
   return (
-    <div>
-      <PageHeader
-        title="Data & methodology"
-        lede={
-          <>
-            {b.data_label}. Every check below is measured by the engine's
-            validation script - nothing is hand-typed. The full model detail
-            lives in{" "}
-            <a className="text-petrol underline underline-offset-4" href={METHODOLOGY_URL}>
-              docs/methodology.md
-            </a>
-            .
-          </>
-        }
-      />
+    <Section title="Coverage">
+      <QuerySection query={app} label="coverage" lines={2}>
+        {(a) => (
+          <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
+            <div>
+              <dt className="text-caption secondary">Ledger lines</dt>
+              <dd className="m-0 font-medium">{count(a.kpis.n_ledger_lines)}</dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">Lines with effective list</dt>
+              <dd className="m-0 font-medium">{pct(a.kpis.list_price_coverage_share)}</dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">Revenue with missing cost</dt>
+              <dd className="m-0 font-medium">{pct(a.kpis.missing_cost_revenue_share, 2)}</dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">Window</dt>
+              <dd className="m-0 font-medium">{a.kpis.window_label}</dd>
+            </div>
+          </dl>
+        )}
+      </QuerySection>
+    </Section>
+  );
+}
+
+function MethodologyBody({ d }: { d: MethodologyData }) {
+  const labels = useLabels();
+  return (
+    <>
       <Section title="Reconciliation">
         <ScrollX label="Methodology table">
           <table>
@@ -44,7 +60,7 @@ export function MethodologyPage() {
               </tr>
             </thead>
             <tbody>
-              {b.reconciliation.map((c) => (
+              {d.reconciliation.map((c) => (
                 <tr key={c.check}>
                   <td className="left" title={c.check}>
                     {labels(c.check).label}
@@ -62,7 +78,7 @@ export function MethodologyPage() {
           </table>
         </ScrollX>
       </Section>
-      {b.residuals.length > 0 && (
+      {d.residuals.length > 0 && (
         <Section
           title="Visible residuals"
           lede="Dollars the pipeline keeps at pool level instead of forcing onto lines."
@@ -79,7 +95,7 @@ export function MethodologyPage() {
                 </tr>
               </thead>
               <tbody>
-                {b.residuals.map((r) => (
+                {d.residuals.map((r) => (
                   <tr key={r.name}>
                     <td className="left">
                       {labels(r.name).label}
@@ -99,27 +115,8 @@ export function MethodologyPage() {
           </ScrollX>
         </Section>
       )}
-      <Section title="Coverage">
-        <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
-          <div>
-            <dt className="text-caption secondary">Ledger lines</dt>
-            <dd className="m-0 font-medium">{count(k.n_ledger_lines)}</dd>
-          </div>
-          <div>
-            <dt className="text-caption secondary">Lines with effective list</dt>
-            <dd className="m-0 font-medium">{pct(k.list_price_coverage_share)}</dd>
-          </div>
-          <div>
-            <dt className="text-caption secondary">Revenue with missing cost</dt>
-            <dd className="m-0 font-medium">{pct(k.missing_cost_revenue_share, 2)}</dd>
-          </div>
-          <div>
-            <dt className="text-caption secondary">Window</dt>
-            <dd className="m-0 font-medium">{k.window_label}</dd>
-          </div>
-        </dl>
-      </Section>
-      {b.library_warnings.length > 0 && (
+      <CoverageSection />
+      {d.library_warnings.length > 0 && (
         <Section
           title="Library warnings"
           lede="Captured during the run and recorded here and in the manifest - never printed and lost."
@@ -134,7 +131,7 @@ export function MethodologyPage() {
                 </tr>
               </thead>
               <tbody>
-                {b.library_warnings.map((w, i) => (
+                {d.library_warnings.map((w, i) => (
                   <tr key={i}>
                     <td>{w.category}</td>
                     <td className="left">{w.message}</td>
@@ -161,7 +158,7 @@ export function MethodologyPage() {
               </tr>
             </thead>
             <tbody>
-              {b.validation_results.map((v) => (
+              {d.validation_results.map((v) => (
                 <tr key={v.check}>
                   <td className="left">{v.check}</td>
                   <td className="left">{v.target}</td>
@@ -175,6 +172,31 @@ export function MethodologyPage() {
           </table>
         </ScrollX>
       </Section>
+    </>
+  );
+}
+
+export function MethodologyPage() {
+  const q = usePageData("methodology");
+  return (
+    <div>
+      <PageHeader
+        title="Data & methodology"
+        lede={
+          <>
+            {q.data?.data_label ?? "Synthetic demo data"}. Every check below is
+            measured by the engine's validation script - nothing is hand-typed.
+            The full model detail lives in{" "}
+            <a className="text-petrol underline underline-offset-4" href={METHODOLOGY_URL}>
+              docs/methodology.md
+            </a>
+            .
+          </>
+        }
+      />
+      <QuerySection query={q} label="methodology checks" lines={8}>
+        {(d) => <MethodologyBody d={d} />}
+      </QuerySection>
     </div>
   );
 }

@@ -77,7 +77,11 @@ segmentation:
 price_guidance:
   band_percentiles: [0.25, 0.50, 0.75]
   observation_unit: customer_item_month_median
-  min_pocket_margin: "0.05"
+  # Minimum pocket GROSS margin: (pocket revenue - product cost) / pocket revenue.
+  min_pocket_gross_margin: "0.05"
+  # Optional minimum CONTRIBUTION margin (subtracts cost-to-serve too). Unset
+  # by default; when set, guidance reports both floors and which one binds.
+  # min_contribution_margin: "0.02"
   min_band_observations: 10
   provisional_target_percentile: 0.50
   provisional_start_percentile: 0.75
@@ -90,11 +94,29 @@ sensitivity:
   robustness_max_spread: 0.20
   max_ci_width: 1.0
   overid_alpha: 0.05
-  # Month-level clustering: coarser than supplier x month (where the cost
-  # instrument varies) so that demand-shock correlation across the items a
-  # customer buys in one month is inside, not across, clusters. Validated by
-  # the CI-coverage simulation (see build log / README).
-  cluster_level: month
+  # Two-way clustering (month AND customer, Cameron-Gelbach-Miller): demand
+  # shocks correlate across the items a customer buys in one month AND, when
+  # demand is persistent, across months within a customer. Chosen by the
+  # persistent-demand coverage study (Run 4, 24.5; recorded in
+  # docs/validation.json): under AR(1) customer demand, month-only clustering
+  # covers ~78% and supplier x month ~77%, while month x customer stays within
+  # the 90-98% target - and on the iid well-identified world it matches
+  # month-only coverage exactly, so nothing is given up.
+  cluster_level: month_customer
+  # Where the supplier cost instrument comes from (Run 4, 27.6):
+  #   reference_table  a mapped supplier_cost_index table (default)
+  #   receipts         built from purchase/receipt history (mix-corrected
+  #                    within-supplier log cost deviations)
+  #   external         a public series (e.g. BLS PPI) mapped to categories via
+  #                    external_index_map, then to suppliers by modal category
+  instrument_source: reference_table
+  # Validation without planted truth (Run 4, 27.4): temporal backtest, placebo
+  # tests and rolling-window stability in the report. Informational only.
+  real_data_validation: true
+  backtest_holdout_months: 6
+  placebo_draws: 10
+  stability_window_months: 12
+  stability_step_months: 6
   instruments:
     - name: supplier_cost_shock
       column: supplier_cost_shock
@@ -129,3 +151,8 @@ reporting:
   output_formats: [parquet, csv, html]
   show_evidence_status: true
   show_data_coverage: true
+  # Books tie-out (Run 4, 27.3), used when a gl_totals table is mapped: a
+  # month-measure fails when the engine-vs-GL difference exceeds BOTH bounds
+  # (the cents floor keeps tiny months from failing on rounding pennies).
+  tieout_tolerance_pct: 0.5
+  tieout_tolerance_cents: 100

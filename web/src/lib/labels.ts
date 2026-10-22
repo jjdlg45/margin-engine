@@ -1,8 +1,8 @@
-/** Display labels come from the bundle's central dictionary (one source of
- * truth shared with the engine's HTML report). Raw codes never appear in
+/** Display labels come from the app payload's central dictionary (one source
+ * of truth shared with the engine's HTML report). Raw codes never appear in
  * visible text - only in tooltips and technical-detail expanders. */
 
-import { useBundle } from "./bundle";
+import { useAppData } from "./queries";
 
 export interface LabelEntry {
   label: string;
@@ -16,9 +16,7 @@ export function prettify(code: string): string {
 }
 
 export function useLabels(): (code: string) => LabelEntry {
-  const bundle = useBundle();
-  return (code: string) => {
-    const hit = bundle.labels[code];
-    return hit ?? { label: prettify(code), description: "" };
-  };
+  const app = useAppData();
+  const labels = app.data?.labels;
+  return (code: string) => labels?.[code] ?? { label: prettify(code), description: "" };
 }

@@ -1,5 +1,6 @@
-"""Inventory costing timing (Phase 14): receipts-based COGS under standard,
-average and FIFO methods, with exact integer arithmetic.
+"""Inventory costing timing (Phase 14, LIFO added in Run 4): receipts-based
+COGS under standard, average, FIFO and LIFO methods, with exact integer
+arithmetic.
 
 Definitions (documented; fixtures assert them to the cent):
 - standard: every unit costs the item's standard cost (items reference or the
@@ -10,6 +11,10 @@ Definitions (documented; fixtures assert them to the cent):
   (receipts value == COGS + ending inventory value) holds exactly.
 - fifo: layers consumed in receipt order; COGS is the exact sum of consumed
   layer costs.
+- lifo: layers consumed newest-first (periodic-perpetual LIFO on receipt
+  layers); COGS is the exact sum of consumed layer costs. Older layers can
+  persist indefinitely, so a cost change reaches COGS immediately while new
+  receipts keep arriving, but ending inventory carries old costs.
 
 Sales beyond available receipt quantity are costed at the last known unit cost
 and flagged (`cogs_flag = insufficient_receipts`) — never silently invented.
@@ -51,7 +56,7 @@ def cost_sales(
     sales: source_line_key, item_id, invoice_date, quantity (units, positive).
     All events processed in date order (receipts before sales on the same day).
     """
-    if method not in ("standard", "average", "fifo"):
+    if method not in ("standard", "average", "fifo", "lifo"):
         msg = f"unknown costing method '{method}'"
         raise ValueError(msg)
     rows: list[dict[str, object]] = []
@@ -106,16 +111,22 @@ def cost_sales(
                         flag = "insufficient_receipts"
                     value_on_hand -= _half_even(value_on_hand * take, qty_on_hand)
                     qty_on_hand -= take
-            else:  # fifo
+            else:  # fifo / lifo: layers consumed oldest-first / newest-first
+                newest_first = method == "lifo"
                 cogs = 0
                 remaining = q
                 while remaining > 0 and layers:
-                    lq, lc = layers[0]
+                    lq, lc = layers[-1] if newest_first else layers[0]
                     take = min(lq, remaining)
                     cogs += take * lc
                     remaining -= take
                     if take == lq:
-                        layers.popleft()
+                        if newest_first:
+                            layers.pop()
+                        else:
+                            layers.popleft()
+                    elif newest_first:
+                        layers[-1] = (lq - take, lc)
                     else:
                         layers[0] = (lq - take, lc)
                     qty_on_hand -= take
@@ -134,7 +145,7 @@ def cost_sales(
                     "cogs_flag": flag,
                 }
             )
-        ending = value_on_hand if method in ("average", "fifo") else None
+        ending = value_on_hand if method in ("average", "fifo", "lifo") else None
         identity_rows.append(
             {
                 "item_id": item,
@@ -155,6 +166,11 @@ def scenario_timing_statement(method: str, cost_pool: str) -> str:
         "fifo": (
             "new receipts only: reaches COGS after existing FIFO layers are "
             "consumed (lag depends on inventory cover)"
+        ),
+        "lifo": (
+            "new receipts only: reaches COGS immediately while new receipts "
+            "keep arriving (newest layers consumed first); ending inventory "
+            "retains old-cost layers"
         ),
         "average": "new receipts only: dilutes into moving average immediately on first receipt",
         "standard": (

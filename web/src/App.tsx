@@ -5,7 +5,9 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { lazy, Suspense } from "react";
-import { BundleProvider, useBundleState } from "./lib/bundle";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Boundary } from "./components/Async";
+import { queryClient, useAppData } from "./lib/queries";
 import { Overview } from "./pages/Overview";
 
 const Customers = lazy(() => import("./pages/Customers").then((m) => ({ default: m.Customers })));
@@ -50,7 +52,7 @@ function ThemeToggle() {
 }
 
 function Shell() {
-  const state = useBundleState();
+  const app = useAppData();
   return (
     <div className="mx-auto min-h-screen max-w-[1120px] px-4 sm:px-8">
       <a
@@ -100,25 +102,48 @@ function Shell() {
             <ThemeToggle />
           </span>
         </div>
-        <p className="mb-2 mt-1 text-caption secondary">
-          Synthetic demo data with planted ground truth - every figure
-          reconciles to source and carries its evidence status.
+        <p className="mb-2 mt-1 text-caption secondary" data-testid="data-notice">
+          {app.data?.data_label ??
+            "Synthetic demo data with planted ground truth"}{" "}
+          - every figure reconciles to source and carries its evidence status.
+          {app.data?.data_as_of && (
+            <span data-testid="data-as-of"> Data as of {app.data.data_as_of}.</span>
+          )}
+          {Object.entries(app.data?.refresh_status ?? {})
+            .filter(([, s]) => s.stale)
+            .map(([name, s]) => (
+              <span key={name} className="text-garnet" data-testid={`stale-${name}`}>
+                {" "}
+                {name.toUpperCase()} data is stale (last refresh {s.refreshed_utc}).
+              </span>
+            ))}
         </p>
       </header>
       <main id="main" className="min-h-[85vh]">
-        {state.status === "loading" && <p className="py-16 secondary">Loading engine results…</p>}
-        {state.status === "error" && (
-          <p className="py-16 text-garnet">
-            The data bundle could not be loaded ({state.message}). Run
-            `margin-engine export-web` to generate web/public/data/bundle.json.
+        {app.isError && (
+          <p className="py-16 text-garnet" role="alert">
+            The app data could not be loaded ({app.error.message}). Run
+            `margin-engine export-web` to generate the files under
+            web/public/data/.
           </p>
         )}
-        {state.status === "ready" && (
+        {!app.isError && (
           <Suspense fallback={<p className="py-16 secondary">Loading page…</p>}>
             <Routes>
-              <Route path="/" element={<Overview />} />
+              <Route
+                path="/"
+                element={
+                  <Boundary label="the overview">
+                    <Overview />
+                  </Boundary>
+                }
+              />
               {PAGES.map((p) => (
-                <Route key={p.path} path={p.path} element={p.el} />
+                <Route
+                  key={p.path}
+                  path={p.path}
+                  element={<Boundary label={p.label.toLowerCase()}>{p.el}</Boundary>}
+                />
               ))}
             </Routes>
           </Suspense>
@@ -134,12 +159,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <Tooltip.Provider>
-      <BundleProvider>
+    <QueryClientProvider client={queryClient}>
+      <Tooltip.Provider>
         <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Shell />
         </HashRouter>
-      </BundleProvider>
-    </Tooltip.Provider>
+      </Tooltip.Provider>
+    </QueryClientProvider>
   );
 }

@@ -84,6 +84,18 @@
      "title": "Customer Id",
      "type": "string"
     },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
+    },
     "n_orders": {
      "title": "N Orders",
      "type": "integer"
@@ -302,6 +314,18 @@
      ],
      "title": "Band P75"
     },
+    "binding_floor_basis": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Binding Floor Basis"
+    },
     "current_index": {
      "anyOf": [
       {
@@ -316,6 +340,18 @@
     "customer_id": {
      "title": "Customer Id",
      "type": "string"
+    },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
     },
     "explanation": {
      "title": "Explanation",
@@ -332,6 +368,18 @@
      ],
      "title": "Floor Index"
     },
+    "invoice_contribution_floor_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Invoice Contribution Floor Cents"
+    },
     "invoice_floor_cents": {
      "anyOf": [
       {
@@ -343,9 +391,45 @@
      ],
      "title": "Invoice Floor Cents"
     },
+    "invoice_floor_gross_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Invoice Floor Gross Cents"
+    },
     "item_id": {
      "title": "Item Id",
      "type": "string"
+    },
+    "item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Item Name"
+    },
+    "list_provenance": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "List Provenance"
     },
     "pocket_floor_cents": {
      "anyOf": [
@@ -579,9 +663,26 @@
   },
   "OpportunityRecord": {
    "properties": {
+    "cost_unavailable": {
+     "default": false,
+     "title": "Cost Unavailable",
+     "type": "boolean"
+    },
     "customer_id": {
      "title": "Customer Id",
      "type": "string"
+    },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
     },
     "evidence_status": {
      "anyOf": [
@@ -613,9 +714,46 @@
      "title": "Gross Price Opportunity Cents",
      "type": "integer"
     },
+    "gross_price_opportunity_conservative_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Gross Price Opportunity Conservative Cents"
+    },
     "item_id": {
      "title": "Item Id",
      "type": "string"
+    },
+    "item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Item Name"
+    },
+    "pct_below_target": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "(target - current) / target, from the pair's guidance",
+     "title": "Pct Below Target"
     },
     "segment": {
      "anyOf": [
@@ -662,6 +800,18 @@
      "title": "Expected Total Note",
      "type": "string"
     },
+    "gross_conservative_total_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Gross Conservative Total Cents"
+    },
     "gross_total_cents": {
      "title": "Gross Total Cents",
      "type": "integer"
@@ -675,6 +825,16 @@
     },
     "leakage_total_cents": {
      "title": "Leakage Total Cents",
+     "type": "integer"
+    },
+    "n_cost_unavailable": {
+     "default": 0,
+     "title": "N Cost Unavailable",
+     "type": "integer"
+    },
+    "n_outside_price_support": {
+     "default": 0,
+     "title": "N Outside Price Support",
      "type": "integer"
     },
     "n_records": {
@@ -1014,6 +1174,19 @@
      "title": "Scope",
      "type": "string"
     },
+    "scope_label": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Supplier/category display name",
+     "title": "Scope Label"
+    },
     "scope_value": {
      "title": "Scope Value",
      "type": "string"
@@ -1241,6 +1414,18 @@
   },
   "SensitivitySegment": {
    "properties": {
+    "ar_bounded": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Bounded"
+    },
     "ar_ci_high": {
      "anyOf": [
       {
@@ -1262,6 +1447,18 @@
       }
      ],
      "title": "Ar Ci Low"
+    },
+    "carried_forward_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Carried Forward Share"
     },
     "first_stage_f": {
      "anyOf": [
@@ -1328,6 +1525,11 @@
       }
      ],
      "title": "Iv Se"
+    },
+    "market_control_used": {
+     "default": false,
+     "title": "Market Control Used",
+     "type": "boolean"
     },
     "n_obs": {
      "title": "N Obs",
@@ -1400,6 +1602,18 @@
      ],
      "title": "Ppml"
     },
+    "ppml_positive": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ppml Positive"
+    },
     "price_cv_within": {
      "title": "Price Cv Within",
      "type": "number"
@@ -1426,6 +1640,30 @@
     "status_reasons": {
      "title": "Status Reasons",
      "type": "string"
+    },
+    "support_log_hi": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Log Hi"
+    },
+    "support_log_lo": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Log Lo"
     }
    },
    "required": [
@@ -1519,7 +1757,7 @@
      "title": "Pocket Margin Pct"
     },
     "pocket_revenue_cents": {
-     "description": "After returns, like every headline KPI - never exceeds net revenue",
+     "description": "After returns, like every headline KPI - never exceeds net invoiced revenue",
      "title": "Pocket Revenue Cents",
      "type": "integer"
     },

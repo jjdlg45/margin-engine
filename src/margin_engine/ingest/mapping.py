@@ -31,6 +31,7 @@ class CostBasisDecl(StrEnum):
     STANDARD = "standard"
     AVERAGE = "average"
     FIFO = "fifo"
+    LIFO = "lifo"
     LANDED = "landed"
 
 
@@ -96,6 +97,19 @@ class TransactionTypeField(StrictModel):
     reversal_handling: Literal["own_code", "negative_amounts"] = "own_code"
 
 
+class TransactionTypeDerived(StrictModel):
+    """Spec 5.2's 'configured rule to derive it': the canonical type comes
+    from PREFIX rules on a key column — e.g. ERPs and exports that mark credit
+    or cancellation documents with an invoice-number prefix (Online Retail II
+    prefixes cancellations with "C"). The longest matching prefix wins; rows
+    matching no prefix (or with a null key) take `default`. The rule lives in
+    the mapping, never in code or a conversion script."""
+
+    derive_from_column: str
+    prefix_map: dict[str, Literal["sale", "return", "credit", "free_good"]]
+    default: Literal["sale", "return", "credit", "free_good"] = "sale"
+
+
 class LinesMapping(StrictModel):
     """Field mappings for the invoice-lines file."""
 
@@ -109,7 +123,7 @@ class LinesMapping(StrictModel):
     net_amount: AmountField | None = None
     unit_price: UnitPriceField | None = None
     unit_cost: CostField | None = None
-    transaction_type: TransactionTypeField | None = None
+    transaction_type: TransactionTypeField | TransactionTypeDerived | None = None
     # Optional fields (each unlocks features).
     order_id: KeyField | None = None
     list_price: UnitPriceField | None = None
@@ -205,6 +219,17 @@ class SourceMapping(StrictModel):
     # (customer_error, distributor_error, defective). Unmapped codes become
     # "unspecified" and receive only estimated default handling costs.
     return_reason_map: dict[str, str] = Field(default_factory=dict)
+    # Honest no-cost declaration (Run 4, 28.2): some real exports carry no
+    # cost at all (Online Retail II). The engine still refuses a mapping that
+    # merely OMITS unit_cost — this flag is the explicit, reviewed statement
+    # that cost does not exist in the source. Every cost-dependent metric then
+    # reports `cost_unavailable` instead of a number; nothing is invented.
+    cost_unavailable: bool = False
+    # Draft-mapping confirmation protocol (Run 4, 27.1): `margin-engine
+    # draft-mapping` lists every guessed field here. The engine refuses to run
+    # while any entry remains - a person confirms each guess by reviewing it
+    # and deleting its entry. Suggestions never become silent decisions.
+    unconfirmed_fields: tuple[str, ...] = ()
 
     def effective_input(self, override: TableInput | None) -> tuple[InputOptions, str]:
         """Resolve (InputOptions, decimal_separator) for one table: per-table
@@ -258,6 +283,9 @@ KNOWN_REFERENCE_TABLES = {
     "inventory_receipts",
     "quotes",
     "substitution_groups",
+    "market_price_index",
+    "gl_totals",
+    "external_cost_series",
 }
 
 
@@ -282,6 +310,17 @@ def load_mapping(path: str | Path) -> SourceMapping:
         msg = (
             f"mapping declares unknown reference tables {sorted(unknown)}; "
             f"known tables: {sorted(KNOWN_REFERENCE_TABLES)}"
+        )
+        raise MappingError(msg)
+    if mapping.unconfirmed_fields:
+        fields = "\n  - ".join(mapping.unconfirmed_fields)
+        msg = (
+            f"mapping file {path} is a DRAFT with {len(mapping.unconfirmed_fields)} "
+            f"unconfirmed field(s):\n  - {fields}\n"
+            "Each entry is a profiler guess that a person has not confirmed. Review "
+            "the matching '# CONFIRM' line, correct it if the guess is wrong, then "
+            "delete its entry from unconfirmed_fields. The engine never runs on "
+            "unconfirmed guesses."
         )
         raise MappingError(msg)
     return mapping

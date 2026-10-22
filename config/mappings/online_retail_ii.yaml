@@ -1,0 +1,89 @@
+# Online Retail II (UCI Machine Learning Repository) — Run 4, Phase 28.2.
+#
+# Source, license (CC BY 4.0) and citation: docs/data-sources.md.
+# Input file: the CSV produced by scripts/download_online_retail.py, which
+# converts the published .xlsx (two sheets) one-to-one and adds ROW_ID.
+#
+# Built from `margin-engine profile` output and confirmed field by field; the
+# reasoning sits next to each field. unconfirmed_fields is empty because every
+# guess below has been reviewed.
+source_system: online_retail_ii
+lines_file: online_retail_ii.csv
+decimal_separator: "."
+
+# CONFIRMED ABSENCE (28.2): the dataset has no cost of any kind — the profiler
+# finds no candidate for unit_cost, and the published schema (Invoice,
+# StockCode, Description, Quantity, InvoiceDate, Price, Customer ID, Country)
+# has no cost column. Declared explicitly so every cost-dependent metric
+# (margin, floors, contribution) reports cost_unavailable instead of a number.
+cost_unavailable: true
+
+lines:
+  # ROW_ID: created deterministically at conversion (sheet:row-index) because
+  # the export has no stable line key. Consequence (5.3, documented in the
+  # case study): rows that are true duplicates in the source surface as
+  # LOOK-ALIKE duplicates — flagged, never removed.
+  source_line_key: {column: ROW_ID}
+  # Invoice: 6-digit document number; cancellations carry a "C" prefix
+  # (confirmed against the dataset description and the data itself).
+  invoice_id: {column: Invoice}
+  # InvoiceDate: written as ISO dates by the conversion (source cells are
+  # datetimes; time of day is not used by the engine).
+  invoice_date: {column: InvoiceDate, format: "%Y-%m-%d"}
+  # Customer ID: 22.8% null (anonymous/guest sales). Blank means UNKNOWN
+  # customer, never a customer of its own; such lines stay in the ledger but
+  # are excluded from customer-level behavior views.
+  customer_id: {column: "Customer ID"}
+  # StockCode: the product key (letters allowed: e.g. POST, D, M are
+  # non-product codes — classified via the transaction rules below and
+  # discussed in the case study).
+  item_id: {column: StockCode}
+  # Quantity: integer units; negative on cancellation lines.
+  quantity: {column: Quantity}
+  # Price: unit price in GBP, up to 4 decimals after conversion. There is no
+  # separate net-amount column, so the unit price is authoritative and the
+  # line value is price x quantity. GBP is declared per line via `currency`
+  # below (constant column added at conversion? NO — see `currency`).
+  unit_price:
+    column: Price
+    currency: line_currency
+    authoritative: true
+  # The whole export is GBP (UK wholesaler). The conversion script does not
+  # add a currency column; the engine treats a missing currency column as
+  # reporting-currency lines, so conversion to USD uses the fx_rates table
+  # via the line-level `currency` field being absent... CONFIRMED approach:
+  # a constant GBP column IS written by the conversion so that the engine's
+  # multi-currency path (Phase 9) converts to the USD reporting currency at
+  # the monthly rate. See `currency` just below.
+  currency: {column: CURRENCY}
+  # Transaction type: derived, not a column (5.2's configured rule). The "C"
+  # invoice prefix marks cancellations; the engine classifies them as returns
+  # and links them to originals where possible. Everything else is a sale;
+  # negative-quantity rows without the prefix surface as data-quality flags,
+  # not ordinary sales.
+  transaction_type:
+    derive_from_column: Invoice
+    prefix_map: {"C": return}
+    default: sale
+
+reference_tables:
+  # Derived at conversion from the lines themselves (modal values), so the
+  # UI can show names and segmentation gets a region context feature.
+  customers:
+    file: customers.csv
+    columns:
+      customer_id: CUSTOMER_ID
+      region: COUNTRY
+  items:
+    file: items.csv
+    columns:
+      item_id: ITEM_ID
+      item_description: DESCRIPTION
+  # Monthly GBP->USD reference rates written by the FX connector (29.1) from
+  # ECB daily rates (month-end rate; docs/data-sources.md).
+  fx_rates:
+    file: fx_rates.csv
+    columns:
+      currency: CURRENCY
+      period: PERIOD
+      rate: RATE

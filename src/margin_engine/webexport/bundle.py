@@ -25,7 +25,7 @@ class SummaryKpis(BaseModel):
     returns_cents: int = Field(description="Linked return lines (negative)")
     net_revenue_cents: int = Field(description="Gross sales plus returns - matches economics")
     pocket_revenue_cents: int = Field(
-        description="After returns, like every headline KPI - never exceeds net revenue"
+        description="After returns, like every headline KPI - never exceeds net invoiced revenue"
     )
     pocket_gross_profit_cents: int = Field(description="After returns, cost-known lines")
     contribution_cents: int = Field(description="After returns, cost-known lines")
@@ -141,7 +141,9 @@ class SegmentsSection(BaseModel):
 
 class GuidancePair(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     item_id: str
+    item_name: str | None = None
     segment: int | None
     current_index: float | None
     band_p25: float | None
@@ -150,6 +152,11 @@ class GuidancePair(BaseModel):
     floor_index: float | None
     pocket_floor_cents: int | None
     invoice_floor_cents: int | None
+    # Run 4 (24.3/24.4): both floors, which one binds, and list provenance.
+    invoice_floor_gross_cents: int | None = None
+    invoice_contribution_floor_cents: int | None = None
+    binding_floor_basis: str | None = None
+    list_provenance: str | None = None
     target_index: float | None
     target_label: str | None
     status: str
@@ -177,6 +184,14 @@ class SensitivitySegment(BaseModel):
     ar_ci_high: float | None
     robustness_spread: float | None
     identifying_coverage: float | None
+    # Run 4: weak-IV boundedness (24.7), identifying price support (24.6),
+    # carried-forward robustness (24.8).
+    ar_bounded: bool | None = None
+    support_log_lo: float | None = None
+    support_log_hi: float | None = None
+    ppml_positive: float | None = None
+    carried_forward_share: float | None = None
+    market_control_used: bool = False
     status: str
     status_reasons: str
     naive_vs_iv_note: str
@@ -184,12 +199,19 @@ class SensitivitySegment(BaseModel):
 
 class OpportunityRecord(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     item_id: str
+    item_name: str | None = None
     segment: int | None
     gross_price_opportunity_cents: int
+    gross_price_opportunity_conservative_cents: int | None = None
     expected_contribution_change_cents: int | None
     volume_treatment: str
+    cost_unavailable: bool = False
     evidence_status: str | None
+    pct_below_target: float | None = Field(
+        default=None, description="(target - current) / target, from the pair's guidance"
+    )
     summary: str = Field(description="One short row-specific sentence for the table")
     explanation: str
 
@@ -207,14 +229,18 @@ class OpportunitySection(BaseModel):
     leakage_total_cents: int
     leakage_by_customer: list[CustomerLeakage]
     gross_total_cents: int
+    gross_conservative_total_cents: int | None = None
     expected_total_cents: int
     expected_total_note: str
+    n_cost_unavailable: int = 0
+    n_outside_price_support: int = 0
     top_opportunities: list[OpportunityRecord]
     n_records: int
 
 
 class CustomerEconomics(BaseModel):
     customer_id: str
+    customer_name: str | None = None
     n_orders: int
     net_revenue_cents: int
     sales_contribution_cents: int
@@ -255,6 +281,7 @@ class ScenarioGrid(BaseModel):
     name: str
     scope: str
     scope_value: str
+    scope_label: str | None = Field(default=None, description="Supplier/category display name")
     pct_increase: float
     n_pairs: int
     cogs_timing: str

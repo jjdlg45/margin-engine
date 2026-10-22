@@ -166,8 +166,16 @@ def export_reference_tables(
     # export artifacts and must not inflate settlement or freight aggregates.
     lines = lines.unique(subset=["line_key"], keep="first", maintain_order=True)
 
-    customers.select(
+    from synth.names import category_names, customer_names, item_descriptions, supplier_names
+
+    cust_names = customer_names(cfg.seed, customers["customer_id"].to_list())
+    item_descs = item_descriptions(cfg.seed, items["item_id"].to_list())
+    supp_map = supplier_names(cfg.seed, items["supplier_id"].to_list())
+    cat_map = category_names(items["item_category"].to_list())
+
+    customers.join(cust_names, on="customer_id").select(
         pl.col("customer_id").alias("CUST_NO"),
+        pl.col("customer_name").alias("CUST_NAME"),
         pl.col("industry").alias("INDUSTRY"),
         pl.col("region").alias("REGION"),
         pl.col("size_band").alias("SIZE_BAND"),
@@ -178,11 +186,17 @@ def export_reference_tables(
         pl.col("sales_rep_id").alias("REP_ID"),
     ).write_csv(out / "customers.csv")
 
-    items.select(
+    items.join(item_descs, on="item_id").with_columns(
+        pl.col("supplier_id").replace_strict(supp_map).alias("_supp_name"),
+        pl.col("item_category").replace_strict(cat_map).alias("_cat_name"),
+    ).select(
         pl.col("item_id").alias("ITEM_NO"),
+        pl.col("item_description").alias("ITEM_DESC"),
         pl.col("item_family").alias("FAMILY"),
         pl.col("item_category").alias("CATEGORY"),
+        pl.col("_cat_name").alias("CAT_NAME"),
         pl.col("supplier_id").alias("SUPPLIER"),
+        pl.col("_supp_name").alias("SUPP_NAME"),
         pl.col("item_role").alias("ITEM_ROLE"),
         pl.col("is_service").cast(pl.Int8).alias("SVC_FLAG"),
         pl.col("base_uom").alias("BASE_UOM"),
@@ -309,6 +323,21 @@ def export_reference_tables(
         for t in range(cfg.months)
     ]
     pl.DataFrame(tar_rows).write_csv(out / "tariff_schedule.csv")
+
+    # Market / competitor price index (24.9/24.10): written only when the
+    # competitor-co-movement mechanism is on, so every other world is unchanged
+    # and the engine's optional control switches off with the absent file.
+    if world.market_index is not None:
+        mkt_rows = [
+            {
+                "CATEGORY": f"CAT{g:02d}",
+                "PERIOD": periods[t],
+                "MKT_IDX": round(float(world.market_index[g, t]), 6),
+            }
+            for g in range(cfg.n_categories)
+            for t in range(cfg.months)
+        ]
+        pl.DataFrame(mkt_rows).write_csv(out / "market_price_index.csv")
 
     # Inventory receipts (Phase 14): monthly receipts covering ~115% of sold
     # units at the month's planted unit cost, plus an opening stock receipt.
@@ -469,6 +498,25 @@ def export_ground_truth(
             "negative than the true elasticity."
         ),
         "mess_counts": mess_counts,
+        # Run 4 misspecification notes (24.5/24.9): what each mechanism breaks
+        # and what the engine is expected to do about it (fail closed / report).
+        "misspecification": {
+            "demand_ar": cfg.demand.demand_ar,
+            "within_segment_beta_sd": cfg.demand.within_segment_beta_sd,
+            "elasticity_curvature": cfg.demand.elasticity_curvature,
+            "competitor_comovement": cfg.demand.competitor_comovement,
+            "expectation": (
+                "persistent_demand: iid-cluster CIs undercover; two-way "
+                "month x customer clustering should restore nominal coverage. "
+                "heterogeneous_elasticity: segment estimate is a weighted "
+                "average of pair betas, not any single truth. "
+                "nonconstant_elasticity: the log-log estimand is a local "
+                "average; recovery of the planted base beta degrades. "
+                "competitor_comovement: both instruments violate exclusion "
+                "together; overidentification cannot detect it and estimates "
+                "understate own-price sensitivity (reported, never gated)."
+            ),
+        },
         "planted_totals_cents": totals,
         "n_lines_exported": lines.height,
         "n_customers": customers.height,

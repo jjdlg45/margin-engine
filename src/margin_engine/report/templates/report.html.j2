@@ -29,7 +29,7 @@
 <div>
   <span class="kpi"><span class="v">{{ coverage.n_lines }}</span>ledger lines</span>
   <span class="kpi"><span class="v">{{ coverage.n_observations }}</span>sales observations</span>
-  <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net revenue</span>
+  <span class="kpi"><span class="v">${{ coverage.net_revenue }}</span>net invoiced revenue</span>
   <span class="kpi"><span class="v">{{ coverage.missing_cost_revenue_share }}</span>revenue with missing cost</span>
   <span class="kpi"><span class="v">{{ coverage.blank_rows_dropped }}</span>blank input rows dropped</span>
 </div>
@@ -128,7 +128,8 @@
 <h2>Opportunity (three levels, never summed)</h2>
 <div>
   <span class="kpi"><span class="v">${{ opportunity.leakage_total }}</span>observed leakage (12m)</span>
-  <span class="kpi"><span class="v">${{ opportunity.gross_total }}</span>gross price opportunity</span>
+  <span class="kpi"><span class="v">${{ opportunity.gross_total }}</span>gross price opportunity (pocket)</span>
+  <span class="kpi"><span class="v">${{ opportunity.gross_conservative_total }}</span>conservative variant (below-P25 to P25)</span>
   <span class="kpi"><span class="v">${{ opportunity.expected_total }}</span>expected contribution change (causal only)</span>
 </div>
 <p class="muted">{{ opportunity.n_records }} opportunity records; volume treatment: {{ opportunity.treatment_counts }}</p>
@@ -142,11 +143,11 @@
 </div>
 <p class="muted">Sales contribution ${{ economics.sales_contribution }}; linked returns {{ economics.returns_contribution }} (included, shown separately);
 activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled estimated; the base contribution is kept).
-{{ economics.pct_revenue_excluded }} of net revenue is excluded from contribution because cost is unknown.
+{{ economics.pct_revenue_excluded }} of net invoiced revenue is excluded from contribution because cost is unknown.
 {{ economics.n_service_flags }} customer(s) carry service-policy flags (separate from pricing).</p>
 <h3>Top contributors (after activity cost)</h3>
 <table>
-  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  <tr><th>Customer</th><th>Net invoiced revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
   {% for r in economics.top_customers %}
   <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
       <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>
@@ -154,7 +155,7 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
 </table>
 <h3>Bottom contributors (after activity cost)</h3>
 <table>
-  <tr><th>Customer</th><th>Net revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
+  <tr><th>Customer</th><th>Net invoiced revenue</th><th>Sales contrib.</th><th>Returns contrib.</th><th>Contribution</th><th>Activity cost</th><th>After activity</th><th>% revenue excluded</th></tr>
   {% for r in economics.bottom_customers %}
   <tr><td>{{ r.customer_id }}</td><td>${{ r.net_revenue }}</td><td>${{ r.sales_contribution }}</td><td>{{ r.returns_contribution }}</td>
       <td>${{ r.contribution }}</td><td>${{ r.activity_cost }}</td><td>${{ r.after_activity }}</td><td>{{ r.pct_revenue_excluded }}</td></tr>
@@ -190,6 +191,67 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
   {% endfor %}
 </table>
 <p class="muted">Cross-price estimates exist only within declared substitution groups and only where identified; unsupported cases are labeled with a reason, never estimated.</p>
+{% endif %}
+
+{% if tieout %}
+<h2>Books tie-out</h2>
+<p class="muted">Engine monthly totals vs the general ledger. Engine COGS covers lines with known cost ({{ tieout.cost_coverage }} of sale/return revenue); returns are recognized when they occur (management view, see methodology). {{ tieout.n_failing }} month-measure(s) outside tolerance.</p>
+<table>
+  <tr><th>Month</th><th>Measure</th><th>Engine ($)</th><th>GL ($)</th><th>Difference ($)</th><th>Difference (%)</th><th>Status</th></tr>
+  {% for r in tieout.rows %}
+  <tr><td>{{ r.month }}</td><td>{{ r.measure }}</td><td>{{ r.engine }}</td><td>{{ r.gl }}</td><td>{{ r.diff }}</td>
+      <td>{{ "%.3f%%"|format(r.diff_pct) if r.diff_pct is not none else "-" }}</td>
+      <td><span class="status {{ 'ok' if r.within_tolerance else 'bad' }}">{{ 'PASS' if r.within_tolerance else 'FLAG' }}</span></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if real_validation %}
+<h2>Real-data validation (no planted truth needed)</h2>
+<p class="muted">Checks that remain possible on real data: a temporal backtest, placebo tests and rolling-window stability. All informational; none of them gates an evidence status.</p>
+<h3>Temporal backtest</h3>
+<table>
+  <tr><th>Segment</th><th>Model</th><th>Trained elasticity</th><th>Held-out changes</th><th>RMSE with model</th><th>RMSE no-price baseline</th><th>Improvement</th><th>Out-of-sample slope</th></tr>
+  {% for b in real_validation.backtest %}
+  <tr><td>{{ b.segment }}</td><td>{{ b.model or "-" }}</td>
+      <td>{{ "%.3f"|format(b.beta_train) if b.beta_train is not none else "-" }}</td>
+      <td>{{ b.n_test_changes }}</td>
+      <td>{{ "%.3f"|format(b.rmse_model) if b.rmse_model is not none else "-" }}</td>
+      <td>{{ "%.3f"|format(b.rmse_naive) if b.rmse_naive is not none else "-" }}</td>
+      <td>{{ "%.1f%%"|format(b.improvement * 100) if b.improvement is not none else "-" }}</td>
+      <td>{{ "%.3f"|format(b.beta_out_of_sample) if b.beta_out_of_sample is not none else "-" }}</td></tr>
+  {% endfor %}
+</table>
+<h3>Placebo tests</h3>
+<p class="muted">Shuffled instruments: the statistic is the reduced form (instrument to quantity) because the 2SLS ratio concentrates around OLS when the instrument is irrelevant. Placebo p-values should look uniform (share significant near 5%) and the placebo first stage should die; the actual reduced-form p should be small.</p>
+<table>
+  <tr><th>Segment</th><th>Test</th><th>Draws</th><th>Actual reduced-form p</th><th>Placebo mean</th><th>Placebo 95% band</th><th>Strong first stage (placebo)</th><th>Draws significant</th></tr>
+  {% for p in real_validation.placebo %}
+  <tr><td>{{ p.segment }}</td><td>{{ p.test }}</td><td>{{ p.n_draws }}</td>
+      <td>{{ "%.4f"|format(p.actual) if p.actual is not none else "-" }}</td>
+      <td>{{ "%.3f"|format(p.placebo_mean) }}</td>
+      <td>[{{ "%.2f"|format(p.placebo_p025) }}, {{ "%.2f"|format(p.placebo_p975) }}]</td>
+      <td>{{ "%.0f%%"|format(p.share_strong_first_stage * 100) if p.share_strong_first_stage is not none else "-" }}</td>
+      <td>{{ "%.0f%%"|format(p.share_significant * 100) if p.share_significant is not none else "-" }}</td></tr>
+  {% endfor %}
+</table>
+<h3>Rolling-window stability</h3>
+{% if real_validation.stab_el %}
+<table>
+  <tr><th>Segment</th><th>Windows</th><th>FE-OLS min</th><th>FE-OLS max</th><th>SD across windows</th></tr>
+  {% for s in real_validation.stab_el %}
+  <tr><td>{{ s.segment }}</td><td>{{ s.n_windows }}</td><td>{{ "%.3f"|format(s.beta_min) }}</td><td>{{ "%.3f"|format(s.beta_max) }}</td><td>{{ "%.3f"|format(s.beta_sd) if s.beta_sd is not none else "-" }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if real_validation.stab_seg %}
+<table>
+  <tr><th>Window</th><th>Lines compared</th><th>Segments (window refit)</th><th>ARI vs full sample</th></tr>
+  {% for s in real_validation.stab_seg %}
+  <tr><td>{{ s.window }}</td><td>{{ s.n_lines }}</td><td>{{ s.n_segments_window }}</td><td>{{ "%.3f"|format(s.ari_vs_full_sample) }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endif %}
 
 <h2>Run manifest</h2>

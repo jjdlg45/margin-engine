@@ -92,6 +92,7 @@ reference_tables:
     file: customers.csv
     columns:
       customer_id: CUST_NO
+      customer_name: CUST_NAME
       industry: INDUSTRY
       region: REGION
       size_band: SIZE_BAND
@@ -104,9 +105,12 @@ reference_tables:
     file: items.csv
     columns:
       item_id: ITEM_NO
+      item_description: ITEM_DESC
       item_family: FAMILY
       item_category: CATEGORY
+      category_name: CAT_NAME
       supplier_id: SUPPLIER
+      supplier_name: SUPP_NAME
       item_role: ITEM_ROLE
       is_service: SVC_FLAG
       base_uom: BASE_UOM
@@ -159,6 +163,11 @@ reference_tables:
   tariff_schedule:
     file: tariff_schedule.csv
     columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}
+  # Optional market/competitor price index (Run 4, 24.10): an elasticity
+  # control. Absent file = control off; the engine states that.
+  market_price_index:
+    file: market_price_index.csv
+    columns: {item_category: CATEGORY, period: PERIOD, market_index: MKT_IDX}
   return_freight_log:
     file: return_freight_log.csv
     columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}

@@ -4,32 +4,22 @@
 
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { IntervalChart } from "../charts/Interval";
+import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { useBundle } from "../lib/bundle";
-import { count, num } from "../lib/format";
+import type { SensitivityData } from "../lib/api/types";
+import { usePageData } from "../lib/queries";
+import { count, num, pct } from "../lib/format";
 
-export function SensitivityPage() {
-  const b = useBundle();
-  const rankOf = new Map(b.segments.rules.map((r) => [r.leaf_id, r.display_rank]));
+function SensitivityBody({ d }: { d: SensitivityData }) {
+  const rankOf = new Map(d.segment_names.map((r) => [r.leaf_id, r.display_rank]));
   const disp = (seg: number) => `Segment ${rankOf.get(seg) ?? seg}`;
-  const rows = [...b.sensitivity].sort(
+  const rows = [...d.rows].sort(
     (a, z) => (rankOf.get(a.segment) ?? 99) - (rankOf.get(z.segment) ?? 99),
   );
   const withIv = rows.filter((r) => r.iv !== null);
   return (
-    <div>
-      <PageHeader
-        title="Price sensitivity"
-        lede={
-          <>
-            Own-price elasticity per segment, instrumented with supplier cost
-            and category tariff shocks. The evidence status is the headline:
-            only causal-supported estimates feed volume-response math anywhere
-            in this app. Open a segment for its full diagnostics.
-          </>
-        }
-      />
+    <>
       {withIv.length ? (
         <div className="panel mt-2 px-5 py-6 sm:px-8">
           <IntervalChart rows={rows} nameOf={disp} />
@@ -106,8 +96,36 @@ export function SensitivityPage() {
                       <dd className="m-0">{r.naive_fe_ols !== null ? num(r.naive_fe_ols) : "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">PPML</dt>
-                      <dd className="m-0">{r.ppml !== null ? num(r.ppml) : "—"}</dd>
+                      <dt className="text-caption secondary">PPML (with zeros / positive only)</dt>
+                      <dd className="m-0">
+                        {r.ppml !== null && r.ppml !== undefined ? num(r.ppml) : "—"}
+                        {" / "}
+                        {r.ppml_positive !== null && r.ppml_positive !== undefined
+                          ? num(r.ppml_positive)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Carried-forward rows</dt>
+                      <dd className="m-0">
+                        {r.carried_forward_share !== null && r.carried_forward_share !== undefined
+                          ? pct(r.carried_forward_share)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Identified price range</dt>
+                      <dd className="m-0">
+                        {r.support_log_lo !== null &&
+                        r.support_log_lo !== undefined &&
+                        r.support_log_hi !== null &&
+                        r.support_log_hi !== undefined
+                          ? `${(100 * (Math.exp(r.support_log_lo) - 1)).toFixed(1)}% to +${(
+                              100 *
+                              (Math.exp(r.support_log_hi) - 1)
+                            ).toFixed(1)}%`
+                          : "—"}
+                      </dd>
                     </div>
                   </dl>
                   <p className="mb-0 mt-2 max-w-2xl text-caption secondary">{r.naive_vs_iv_note}</p>
@@ -117,6 +135,28 @@ export function SensitivityPage() {
           ))}
         </ul>
       </Section>
+    </>
+  );
+}
+
+export function SensitivityPage() {
+  const q = usePageData("sensitivity");
+  return (
+    <div>
+      <PageHeader
+        title="Price sensitivity"
+        lede={
+          <>
+            Own-price elasticity per segment, instrumented with supplier cost
+            and category tariff shocks. The evidence status is the headline:
+            only causal-supported estimates feed volume-response math anywhere
+            in this app. Open a segment for its full diagnostics.
+          </>
+        }
+      />
+      <QuerySection query={q} label="price sensitivity" lines={8}>
+        {(d) => <SensitivityBody d={d} />}
+      </QuerySection>
     </div>
   );
 }

@@ -138,7 +138,6 @@ def fit_win_curves(
 def optimal_price_win_aware(
     *,
     cost_cents: int,
-    elasticity: float,
     p0_cents: int,
     win_intercept: float,
     win_price_coef: float,
@@ -147,13 +146,23 @@ def optimal_price_win_aware(
     upper_index: float = 1.2,
     grid_step: float = 0.002,
 ) -> tuple[int, float]:
-    """argmax over a price-index grid of (P - C) x Q(P) x P_win(P), clipped to
-    [floor, upper]. Returns (price_cents, expected win probability there)."""
+    """argmax over a price-index grid of (P - C) x P_win(P), clipped to
+    [floor, upper]. Returns (price_cents, expected win probability there).
+
+    ONE volume-response source per record (Run 4, 24.13): the win curve is the
+    only volume response here — deal size is held at baseline. The demand
+    elasticity path lives in opportunity.optimize_targets. The two must never
+    be multiplied: an elasticity estimated from realized transactions (PPML on
+    the panel including zeros) already contains the extensive margin that the
+    win curve models — lost deals ARE the zeros — so combining them counts the
+    same volume response twice. This function's signature makes the
+    combination impossible rather than merely discouraged.
+    """
+    del p0_cents  # deal size held at baseline; kept for call-site clarity
     lo = max(floor_cents / list_cents, 0.01)
     grid = np.arange(lo, upper_index, grid_step)
     prices = grid * list_cents
-    q_rel = np.power(np.maximum(prices, 1) / max(p0_cents, 1), elasticity)
     p_win = 1.0 / (1.0 + np.exp(-(win_intercept + win_price_coef * grid)))
-    profit = (prices - cost_cents) * q_rel * p_win
+    profit = (prices - cost_cents) * p_win
     best = int(np.argmax(profit))
     return round(prices[best]), float(p_win[best])

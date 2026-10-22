@@ -140,19 +140,46 @@ price increases.
 
 Reference bands are P25/P50/P75 of the normalized index within commercial
 segments; the default observation unit is one median price per customer x item
-x month. The economic floor is exact integer math:
+x month. The economic floors are exact integer math. Units are stated for
+every symbol: C, K, F and all floors are cents per normalized unit; m, m_c
+and d are dimensionless rates; price indexes (current_index, floor_index,
+band percentiles) are dimensionless ratios to the effective list price.
 
-    pocket floor  = C / (1 - m)
-    invoice floor = (C / (1 - m) + F) / (1 - d)
+    pocket gross floor          = C / (1 - m)                        [cents/unit]
+    invoice gross floor         = (C / (1 - m) + F) / (1 - d)        [cents/unit]
+    pocket contribution floor   = (C + K) / (1 - m_c)                [cents/unit]
+    invoice contribution floor  = ((C + K) / (1 - m_c) + F) / (1 - d)[cents/unit]
 
-with C the latest per-unit landed cost net of vendor rebates, m the minimum
-pocket margin, d the customer's rebate-program rate plus the customer's
-realized freight-concession rate (both reduce pocket revenue), F fixed
-per-unit deductions. Statuses: in_band, below_reference, below_floor, above_reference,
+with C the latest per-unit landed cost net of vendor rebates [cents/unit],
+m the minimum pocket GROSS margin ((pocket revenue - product cost) / pocket
+revenue), m_c the optional minimum CONTRIBUTION margin (also subtracts
+cost-to-serve), K the pair's estimated per-unit cost-to-serve from config
+activity rates [cents/unit, labeled estimated], d the customer's
+rebate-program rate plus realized freight-concession rate (both reduce pocket
+revenue), F fixed per-unit deductions [cents/unit]. The BINDING invoice floor
+is the larger of the two invoice floors; guidance reports both and names
+which binds (`binding_floor_basis`).
+
+Floor-index comparisons divide the binding invoice floor [cents/unit] by the
+effective list price [cents/unit], giving a dimensionless floor_index in the
+same space as the realized price index — so index-space and dollar-space
+comparisons agree exactly whenever the list price is valid (tested). The
+comparison is made only when the pair's list is present, positive and not
+stale (older than `max_list_age_months` at the pair's last sale); otherwise
+the pair keeps its dollar floors and `list_provenance` says why no index
+comparison was made. A price index computed against the item-median fallback
+is never compared to a floor index: the two live in different reference
+spaces.
+
+Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (floor above band P75 — flagged, never papered
-over with a fake target), insufficient_data. Targets and starts are
-max(P50/P75, floor) and labeled `provisional_historical`: historical
-benchmarks are not optimal prices.
+over with a fake target), market_reference_below_floor (the segment's P50
+sits below the binding floor, so the historical reference cannot be the
+target), insufficient_data. Precedence: insufficient_data >
+insufficient_pricing_headroom > below_floor (the pair's own breach, the most
+actionable per-pair fact) > market_reference_below_floor > band statuses.
+Targets and starts are max(P50/P75, floor) and labeled
+`provisional_historical`: historical benchmarks are not optimal prices.
 
 ## 7. Price sensitivity
 
@@ -184,11 +211,36 @@ across IV-with-each-instrument-alone and the joint estimate; Anderson-Rubin
 confidence set by grid test inversion (weak-IV robust). The primary 95%
 interval is a full leave-one-cluster-out jackknife (first stage re-estimated
 per left-out cluster) with t(G-1) critical values — calibrated at small
-cluster counts where plug-in sandwiches under-cover — verified by a
-50-simulation coverage study; the AR set is reported alongside and takes over
-under weak identification. Clustering level is configurable; the default
-configuration clusters by month, inside which both the instruments' variation
-and the customer-month demand-shock correlation live.
+cluster counts where plug-in sandwiches under-cover — verified by
+50-simulation coverage studies; the AR set is reported alongside and takes
+over under weak identification. Clustering level is configurable: by month,
+by supplier x month, or two-way month x customer (Cameron-Gelbach-Miller
+combination of per-dimension jackknives, V = V_month + V_customer -
+V_intersection), the robust choice when customer demand shocks persist over
+time. The shipped default is chosen by the persistent-demand coverage study
+recorded in validation.json.
+
+Each segment also records its identifying price support: the 5th-95th
+percentile range of instrument-predicted within log-price movement
+[dimensionless, log price units]. Downstream volume-response math refuses
+proposed price moves outside that range (`outside_price_support`):
+extrapolating a demand curve beyond the variation the instruments ever
+induced would be a claim the data cannot back.
+
+Carried-forward-price robustness: zero-quantity rows carry the pair's last
+observed price, which is an assumption, so PPML runs twice — on the full
+panel including zeros and on positive rows only — and the gap between the two
+joins the robustness criterion. The share of carried-forward rows is reported
+per segment.
+
+Optional competitor control: when a `market_price_index` reference table is
+mapped (category x month), its log joins the models as a control. Documented
+limitation: industry-wide cost shocks also move competitor prices, so without
+the control (and partly even with it) estimates likely UNDERSTATE own-price
+sensitivity — a customer facing an industry-wide increase has nowhere cheaper
+to go, so the measured volume response is flatter than the response to a
+unilateral move. The overidentification test cannot detect this: both
+instruments violate exclusion in the same direction.
 
 Evidence statuses:
 
@@ -200,7 +252,11 @@ Evidence statuses:
   one causal criterion failed (overidentification rejected, robustness spread
   too wide, CI too wide).
 - `causal_elasticity_supported` — every criterion passed AND a documented
-  exclusion rationale exists in config for every instrument.
+  exclusion rationale exists in config for every instrument. Since Run 4 the
+  criteria also require the Anderson-Rubin set to be bounded and no wider
+  than `ar_max_width_ratio` (default 1.5x) times the primary interval: when
+  weak-IV-robust evidence disagrees with the plug-in interval, the top status
+  is not awarded.
 
 Partial pooling: segment x item-category estimates shrink toward the parent
 segment with precision weights (method-of-moments between-variance); raw and
@@ -213,20 +269,34 @@ fully proves.
 
 ## 8. Opportunity and scenarios
 
-Three levels, never summed: observed leakage (reconciled dollars over the
-baseline window), gross price opportunity (eligible quantity x positive gap to
-the proposed pocket price at unchanged volume), and expected contribution
-change ((P1-C1)Q(P1) - (P0-C0)Q(P0)) — the latter only where the elasticity
-status is causal; at `iv_estimated_elasticity` a labeled sensitivity range is
-shown; below that, fixed-volume numbers only. Eligibility excludes
-contract-protected pairs and insufficient-data guidance. Every record carries
-baseline window, action, constraints, quantity basis, price assumptions,
-evidence status and a calculation trace.
+Three levels, never summed. Units: prices and gaps are cents per normalized
+unit on the INVOICE basis (index x effective list); pocket conversion applies
+the pair's percentage post-invoice deductions d.
 
-Target optimization (P* = argmax (P - C_var) Q(P), the log-log interior
-optimum C_var x beta/(1+beta)) applies only at causal support, clipped to the
-floor and corridor; inelastic segments get the corridor top, labeled. All
-other targets remain provisional historical.
+1. Observed leakage: reconciled dollars over the baseline window [cents].
+2. Gross price opportunity: eligible quantity x positive invoice gap x
+   (1 - d), at unchanged volume [pocket cents] — a raised invoice price also
+   raises the rebates and concessions that scale with it, so the pocket gain
+   is (1 - d) of the invoice gap. A conservative variant raises below-P25
+   pairs to P25 only, reported alongside (never added to the main level).
+3. Expected contribution change: c(P1) Q(P1) - c(P0) Q(P0) with pocket-aware
+   unit contribution c(P) = P (1 - d) - F - C [cents/unit] — only where the
+   elasticity status is causal AND the proposed move lies inside the
+   segment's identifying price support; at `iv_estimated_elasticity` a
+   labeled sensitivity range is shown; below that, fixed-volume numbers only.
+
+Pairs without a known unit cost are excluded from cost-dependent levels and
+labeled `cost_unavailable` — missing cost is never treated as zero.
+Eligibility excludes contract-protected pairs and insufficient-data guidance.
+Every record carries baseline window, action, constraints, quantity basis,
+price assumptions, evidence status and a calculation trace.
+
+Target optimization maximizes pocket contribution (P (1 - d) - F - C) Q(P);
+the log-log interior optimum is P* = (C + F) / (1 - d) x beta / (1 + beta)
+[cents/unit, invoice basis], applied only at causal support inside the
+identifying price range, clipped to the floor and corridor; inelastic
+segments get the corridor top, labeled. All other targets remain provisional
+historical.
 
 Cost/tariff scenarios state scope (item / supplier / category), magnitude and
 effective date; pass-through strategies 0% / 50% / 100% and segment-weighted
@@ -255,11 +325,45 @@ segment at or under the threshold recovered within 7 percent, while segments
 above it erred by up to 28 percent. The gate is roughly a 1.5-sigma criterion
 against the +/-15 percent bound, so it is probabilistic rather than a
 guarantee — stated here rather than hidden. The negotiation gap (quote to
-close on won deals) informs the start price, and win-aware optimization
-maximizes (P - C) x Q(P) x P_win(P) only where the segment's elasticity is
-causal-supported and the win curve is estimated.
+close on won deals) informs the start price. Win-aware optimization maximizes
+(P - C) x P_win(P) with deal size held at baseline: ONE volume-response source
+per record, enforced by the function signature. An elasticity estimated from
+realized transactions (PPML on the panel including zeros) already contains
+the extensive margin the win curve models — lost deals ARE the zeros — so
+multiplying Q(P) by P_win(P) would count the same response twice. The
+demand-elasticity path is the separate opportunity optimizer.
 
-## 9. Reproducibility
+## 9. GAAP alignment (ASC mapping)
+
+The engine is a MANAGEMENT view. Where it touches figures an accountant would
+recognize, the mapping is:
+
+- **Net invoiced revenue** (the headline KPI) is invoice revenue after
+  returns and credit memos. It is close to, but not, GAAP revenue: under ASC
+  606 variable consideration (expected rebates, discounts and refunds) is
+  estimated and netted at recognition, while this view nets rebates at the
+  pocket stage and recognizes returns when they occur rather than through a
+  refund-liability estimate (ASC 606-10-55, right of return).
+- **Pocket revenue** approximates GAAP net sales: invoice revenue less
+  customer rebates and freight concessions — consideration payable to a
+  customer (ASC 606-10-32-25) reduces revenue, exactly as rebates do here.
+  The difference is timing: accrued estimates during the period are labeled
+  `estimated` and trued up at settlement.
+- **Product cost** follows the declared cost basis (standard / average /
+  FIFO / LIFO / landed) over receipt layers (ASC 330 inventory); vendor
+  rebates reduce acquisition cost (ASC 705-20 consideration received from a
+  vendor), never customer-facing revenue.
+- **Freight**: billed freight is revenue; actual outbound freight expense is
+  cost-to-serve BELOW gross profit. GAAP permits a shipping-and-handling
+  policy election (ASC 606-10-25-18B treats shipping as fulfillment); many
+  filers carry freight in cost of sales. The management view keeps it below
+  gross profit so product margin and service cost stay separately visible —
+  a stated presentation difference, not a measurement one.
+- **Returns** are recognized when they occur and linked to originals. GAAP
+  books a refund liability and a right-of-return asset at sale; the
+  difference is visible in the books tie-out when one is run.
+
+## 10. Reproducibility
 
 Every run writes a manifest: config and mapping hashes, input file
 fingerprints (sha256), software versions, cleaning decisions, parameters and

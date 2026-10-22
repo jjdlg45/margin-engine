@@ -1427,3 +1427,764 @@ label). **4. The Expected contribution change card** carries its time window
 
 **Checks (exit codes).** ruff 0; format 0; mypy 0; full pytest 0; vitest 0;
 build 0; playwright 0 (108 passed; snapshots regenerated).
+
+---
+## Phase 23.8 — Filters and lookups (2026-10-21)
+
+**1. Names in the data model.** Optional canonical fields - customer_name
+(customers table), item_description / supplier_name / category_name (items
+table) - in the mapping and the bundle schema; absent means IDs only, and the
+UI falls back per value. The generator produces deterministic names on
+dedicated RNG streams (seed+1001..1003: distributor-style accounts, item
+descriptions with size and material, supplier and category line-card names),
+verified not to perturb any other column. Committed sample regenerated (which
+also absorbed the long-pending base_qty 2.6->3.0 drift: the old sample
+predated the phase-17.1 bump); demo world regenerates at export. Display is
+name-first with the ID secondary everywhere (EntityLabel), and search matches
+name or ID.
+
+**2. Shared filter system.** React Aria Components (Radix stays for existing
+primitives): searchable EntityCombobox (type-ahead over names and IDs,
+keyboard navigation, Name/ID lookup toggle, grouped sections), MultiSelect,
+RangeFilter (min/max with presets), and a FilterBar with labeled filters,
+removable chips, Clear all and a result count - all state in the URL
+(useFilterParams). No native select elements remain anywhere.
+
+**3. Pages.** Guidance: the two dropdowns became a filterable pair table
+(customer, item, segment, status multi-select, current price % of list range
+with a "Below 90% of list" preset, gap-to-floor range with a "Below floor"
+preset); row click opens the band chart and explanation; single-pair deep
+links kept. Opportunities: customer, item, evidence and treatment
+multi-selects, gross $ range, % below target range (new pct_below_target on
+the record, derived from the pair's guidance). Customers: name/ID lookup,
+service-flag multi-select, losing-money toggle, returns impact / % excluded /
+order count ranges. Scenarios: searchable combobox grouped Category /
+Supplier with pair counts and display names (scope_label). Waterfall's group
+picker also moved to the combobox.
+
+**4. Verification.** New e2e/filters.spec.ts: every filter alone and
+combined, chip removal, clear all, URL round trips, keyboard-only combobox
+use, name and ID search, range boundaries (inclusive bounds checked at an
+exact pair value) - with every filtered count asserted equal to the bundle's
+own row count (parity). 128/128 Playwright across both widths; axe clean on
+the new components; raw-code scanner clean; bundle 1.35 MB (< 5 MB); initial
+JS ~199 KB gzipped (< 500 KB; the combobox chunk lazy-loads with the filter
+pages). Before/after screenshots of Guidance, Opportunity, Customers and
+Scenarios in both themes ({page}-{theme}-{before238,after238}.png); 40 visual
+snapshots regenerated. ruff, mypy strict and the full Python suite pass.
+One suite iteration surfaced 32 failures with a single cause: the hand-built
+fixture world wrote items.csv without the newly mapped name columns, and the
+mapping contract is strict by design (a declared column must exist). The
+fixture builder now emits the name columns; all 32 recovered without touching
+the loader's fail-closed behavior.
+
+## Phase 23.9 — Live-ready data layer (2026-10-21)
+
+**1. Single data layer.** All pages now fetch through one data client:
+`web/src/lib/api/types.ts` defines the contract (AppData, per-page payloads,
+TablePage with items / total / total_unfiltered / has_more, ApiError carrying
+an HTTP status), `staticAdapter.ts` implements it over the exported JSON
+files (named filters, "field"/"-field" sorting, pagination as pure selection
+- no financial math), and `client.ts` is the one-line swap point for a future
+HTTP adapter. Components use TanStack Query hooks (`lib/queries.ts`):
+useAppData, usePageData, useTableQuery, useGuidanceExplanation. The old
+BundleProvider/useBundle context is deleted; no component reads JSON
+directly, and labels resolve through the app payload. Retries: capped at 2,
+exponential backoff (500 ms · 2^n, max 4 s), never on 4xx; staleTime
+Infinity (static files do not change under a session).
+
+**2. OpenAPI contract.** `docs/api/openapi.yaml` specifies the planned BFF:
+GET /app, GET /pages/{page} (10 pages), GET /tables/{table} with page /
+page_size (max 5000) / sort / URL-encoded JSON filters (vocabulary documented
+per table and implemented identically by the static adapter), and
+GET /tables/guidance/explanations/{customer_id}/{item_id}. README gained a
+"Going live" section describing the swap and the BFF's responsibilities
+(caching keyed on the run manifest hash, rate limiting, pagination,
+server-side computation).
+
+**3. Split export.** `write_bundle` now also writes per-page projections
+(app, overview, waterfall, customers, segments, guidance, sensitivity,
+opportunity, scenarios, methodology, modules) and per-table files
+(tables/guidance with explanations split into tables/guidance_explanations,
+tables/opportunities, tables/customers) - all deterministic, all pure
+projections of the one WebBundle. Demo sizes: largest app file
+tables/guidance.json at 632 KB; every app file is under the 1 MB hard limit.
+tables/guidance.json and tables/guidance_explanations.json (406 KB) exceed
+the 300 KB soft target; splitting further would mean sharding rows across
+files, which the BFF's pagination makes unnecessary - recorded here rather
+than silently accepted. bundle.json (1,351 KB) and schema.json remain as
+tooling/parity artifacts: the app never fetches them (the Playwright
+size test scopes to app files for this reason), parity e2e suites and
+gen-types still read them. The index.html preload now points at app.json +
+overview.json instead of bundle.json, and the Overview provably loads only
+those two (asserted by interception). web/.gitignore now ignores all
+exported data except the committed schema.json.
+
+**4. Loading, error and partial states.** `components/Async.tsx`: Skeleton
+(role=status), ErrorState (role=alert, plain-English message, Retry button
+wired to query.refetch), QuerySection (skeleton while pending, error state on
+failure, children only on complete data - partial data never renders as
+complete), and a Boundary error boundary used per route (App.tsx) and per
+major section. The app shell shows a page-level error only if app.json
+itself fails.
+
+**5. Virtualization.** New `components/VirtualTable.tsx` (TanStack Virtual
+3.10.9): the guidance results table now renders every filtered row
+scrollable but keeps only visible rows in the DOM (spacer rows preserve
+scroll geometry; measureElement handles row-height variance). Combobox
+option lists of 100+ entries are virtualized with React Aria's Virtualizer +
+ListLayout. Two deviations to record honestly: (a) react-aria-components was
+upgraded 1.5.0 → 1.7.0 because 1.5's UNSTABLE_Virtualizer rendered an empty
+zero-height listbox inside a ComboBox popover (probed empirically; 1.7 is
+the first release with the stable Virtualizer, and it works); (b) the
+combobox now filters its options itself (controlled inputValue + items),
+because React Aria's virtualizer needs an explicit list height - controlled
+filtering lets the list be sized exactly (rows × 32 px, capped at 288 px),
+so short filtered lists do not show an empty 288 px popover. The
+virtualization threshold is "100 or more" options rather than "over 100" so
+the demo's 100-item list exercises the virtualized path end to end. The
+opportunity table keeps its 10-row pagination (10 rows rendered - nothing to
+virtualize); the customers table has 40 rows.
+
+**6. Verification.** New e2e/livedata.spec.ts with network interception:
+delayed overview.json shows skeletons then content; a failing waterfall.json
+shows the role=alert error with Retry, and Retry recovers after the
+automatic retries are exhausted; persistent 500 stops at exactly 3 requests
+(1 + 2 retries); a 404 is never retried (1 request); every app data file
+under 1 MB; the virtualized guidance table renders only visible rows (13-20
+of 1,211) while still reporting the full count; the 100-option item combobox
+renders fewer than 50 options in the DOM; the Overview fetches only app.json
++ overview.json. One keyboard-only combobox e2e was flaky under controlled
+filtering (ArrowDown racing the list update on the mobile project); the test
+now waits for the filtered options to be visible before navigating - the
+assertion is unchanged. Python: test_webexport gained test_split_page_files
+(all 15 files present, each under 1 MB, app projections equal the bundle,
+explanations split losslessly), the byte-determinism test now hashes every
+exported file, and the 5 MB size test walks the tables/ subdirectory.
+Guidance-page visual snapshots regenerated (4 guidance + 1 waterfall-light
+within settle tolerance); all other snapshots unchanged.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict 0 (50 files);
+pytest full suite 0 (221 tests, all passed); web: tsc + vite build 0; vitest
+0 (5 tests); Playwright 144/144 passed, exit 0.
+
+## Phase 24 — Logic remediation (2026-10-21, Run 4 branch `run4`)
+
+Fourteen audit items, every change gated by hand-calculable fixtures or
+simulation studies. Engine-wide consequences are reported below with
+before/after numbers from the demo world.
+
+**24.1 Pocket-aware opportunity.** Levels 2 and 3 now live on the pocket
+basis: gross opportunity = invoice gap x (1 - d) x quantity (a raised invoice
+price also raises the rebates and concessions that scale with it); expected
+contribution change uses unit contribution c(P) = P(1 - d) - F - C; the
+interior optimum is P* = (C + F)/(1 - d) x beta/(1 + beta). Price columns are
+renamed to their actual basis (current/proposed_invoice_price_cents,
+gap_invoice_cents). Hand-calc fixtures: d=10% turns a 500c invoice gap into
+450c pocket (gross 9,000c on 20 units; expected change 3,773c at beta=-2);
+F=100c cancels in the gap but not in the levels (3,031c); P* with d=10%,
+F=120c, C=6,000c at beta=-3 lands at 10,200c interior.
+
+**24.2 Missing cost is never zero.** The `fill_null(0)` on unit cost is gone;
+cost-less pairs keep their price-based level 2, are excluded from
+cost-dependent levels, and carry `cost_unavailable` (counted in the bundle:
+n_cost_unavailable). Fixture: null cost -> gross present, expected change and
+optimization refused.
+
+**24.3 Explicit margins and a contribution floor.** Config key renamed to
+`min_pocket_gross_margin` (the old key fails with an actionable error naming
+the rename). Optional `min_contribution_margin` adds a second floor
+((C + K)/(1 - m_c) + F)/(1 - d) with K = the pair's estimated per-unit
+cost-to-serve from config activity rates; guidance reports both floors and
+`binding_floor_basis`. New status `market_reference_below_floor` when the
+segment P50 sits below the binding floor (precedence documented: the pair's
+own below_floor outranks it). Fixtures to the cent (e.g. C=$100, K=$2,
+m_c=4%, d=10% -> pocket contribution floor exactly $106.25, invoice $118.06,
+binding over the $116.96 gross floor).
+
+**24.4 Units and provenance.** Every methodology floor formula now states its
+unit; floor-index comparisons are made only against a present, positive,
+non-stale effective list (`max_list_age_months`, default 24; provenance column
+`list_provenance`); a test proves index-space and dollar-space comparisons
+agree exactly for valid lists, and a stale-list fixture keeps dollar floors
+while refusing the index comparison.
+
+**24.5 Inference under persistent demand.** The generator gained AR(1)
+customer demand shocks (`demand_ar`, preset `persistent_demand` at 0.70, with
+a test showing lag-1 autocorrelation ~0.5+ vs ~0 iid). Two-way clustering
+month x customer (Cameron-Gelbach-Miller: V = V_month + V_customer -
+V_intersection, applied to the sandwich, the AR inversion and the
+leave-one-cluster-out IV jackknife) joined `cluster_level`. Pilot (10 seeds,
+60 segment-estimates): under persistent demand, month-only clustering covers
+78.3% and supplier x month 76.7% - both badly under nominal - while
+month x customer covers 91.7%; on the iid well-identified world month and
+month x customer both cover 93.3%, so two-way gives up nothing. **The shipped
+default is now `cluster_level: month_customer`**; the full 50-simulation
+study per option is recorded in docs/validation.json.
+
+**24.6 Extrapolation guard.** Each segment records its identifying price
+support (5th-95th percentile of instrument-predicted within log-price
+movement, ~ +/-9% on default worlds). Proposed moves outside it get
+`outside_price_support`: no volume response at any evidence status. On the
+new demo world this reclassifies 122 of 660 opportunity records to
+fixed-volume sizing.
+
+**24.7 Causal threshold.** `causal_elasticity_supported` additionally
+requires the Anderson-Rubin set to be bounded (an empty set is called out as
+joint rejection/misspecification, not "unbounded") and no wider than
+`ar_max_width_ratio` (1.5) x the primary interval. Probe on the full-size
+world (seed 7): 2 of 6 segments causal; one segment correctly demoted when a
+chance overidentification rejection emptied its AR set.
+
+**24.8 Zero rows and carried-forward prices.** PPML runs twice (full panel
+with zeros at carried-forward prices, and positive rows only); the gap joins
+the robustness criterion and the per-segment carried-forward share is
+reported (also shown in the UI diagnostics). On the probe world this demoted
+two segments whose zero rows drove the PPML estimate.
+
+**24.9 Misspecified worlds (informational).** New presets
+`heterogeneous_elasticity` (pair betas vary within segment),
+`nonconstant_elasticity` (demand curvature), `competitor_comovement`
+(competitor prices follow the industry cost shocks and shift demand -
+exclusion violated for BOTH instruments in a way overidentification cannot
+see). Recovery and status outcomes recorded in validation.json as
+informational rows; generator tests pin each mechanism.
+
+**24.10 Competitor co-movement.** Optional `market_price_index` reference
+table (category x month) joins the elasticity models as a log control
+(partialled out after the fixed effects); the generator writes it on the
+competitor preset. README and methodology document the limitation: estimates
+likely understate own-price sensitivity, with or without the control.
+
+**24.11 GAAP alignment.** The headline KPI reads "net invoiced revenue"
+everywhere (HTML report, web UI); methodology gained an ASC mapping section
+(606 variable consideration / consideration payable to a customer / right of
+return, 330, 705-20, the shipping-and-handling election) stating where the
+management view differs and why.
+
+**24.12 LIFO.** Fourth costing method (newest layers first), with fixtures:
+exact per-sale COGS, value conservation to the cent, and the timing property
+that a cost change reaches COGS immediately while old layers persist in
+ending inventory. Accepted as a declared mapping cost basis.
+
+**24.13 Opportunity framing.** Conservative level-2 variant (below-P25 pairs
+to P25 only) reported alongside the main level in the bundle, UI and HTML
+report - never summed with it. Win-aware optimization now accepts NO
+elasticity: (P - C) x P_win(P) with deal size at baseline, because an
+elasticity estimated from the panel including zeros already contains the
+extensive margin the win curve models - the signature makes double counting
+impossible, and the methodology documents the overlap.
+
+**24.14 Config hygiene.** The hardcoded `_pair_n >= 6` outlier-exclusion
+reliability threshold moved to `sensitivity.outlier_exclusion_min_pair_lines`.
+
+**Demo world.** Under the stricter criteria the Phase 19.1 demo world
+(40 x 100, seed 42) no longer reaches causal support (0 of 2 segments; its
+expected-change level would read $0). A scan over sizes and seeds found the
+smallest causal-reaching world at **50 x 120, seed 3** (now with the same
+substitution structure as the committed sample, so the cross-price module is
+exercised on the site). New demo: 1,550 guidance pairs, 1 causal + 2 IV
+segments, leakage $3,925,645.31, gross (pocket) $404,500.15, conservative
+$114,784.71, expected change $77,996.86, 122 outside-support and 0
+cost-unavailable records. Old demo for comparison: gross $478,516.90
+(invoice basis - the pocket conversion is most of the drop), expected
+$284,364.28 under the pre-Run-4 causal gate.
+
+**Bundle/table sizes.** The richer guidance rows pushed tables/guidance.json
+past 1 MB; table files now omit null fields and shard into "next"-linked
+chunks under ~700 KB (the static adapter follows the chain and restores the
+contract's nulls; an HTTP adapter would receive paginated BFF responses
+instead, so the API contract is untouched). Round-trip sharding is unit
+tested; the Playwright size test walks the chains.
+
+**Validation studies (docs/validation.json, 26/26 passed, 4,018s).**
+Official 50-simulation persistent-demand coverage per clustering option:
+month 83.3%, supplier x month 82.3% (both badly under nominal, informational
+rows), month x customer 93.3% (shipped default, within 90-98%); the original
+well-identified coverage stays 92.7% under the new default. Elasticity
+recovery unchanged (median 0.019, P90 0.051, worst 0.110 reported);
+weak/invalid/price-constant/sparse gates all hold. Misspecified worlds
+(informational): persistent_demand error 0.021; heterogeneous_elasticity
+0.024 (the segment estimate is the within-segment average, which the engine
+recovers); nonconstant_elasticity 0.320 (the constant-elasticity estimand is
+a local average - reported, not gated); competitor_comovement 0.236 with ZERO
+segments reaching causal support - the AR-set and robustness criteria catch
+what overidentification cannot. KVI recall 96.7%; win-curve worst 4.0%;
+byte-determinism holds; 811,253 lines in 37.0s.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict 0 (50 files);
+pytest full suite 0 (248 tests, all passed); scripts/measure_validation.py
+exit 0 (26/26); web: tsc + vite build 0; vitest 0; Playwright 144/144
+passed, exit 0 (guidance/sensitivity/opportunity snapshots regenerated for
+the new demo world; two e2e selectors updated for the renamed KPI label and
+the new status label - assertions unchanged).
+
+## Phase 25 — Filters, lookups, and names (2026-10-21, Run 4 branch)
+
+Delivered before Run 4 was specified, as phase-23.8 (see that entry): names in
+the data model (25.1 - optional customer_name / item_description /
+supplier_name / category_name with deterministic generator names, name-first
+display, name-or-ID search), the shared React Aria filter system (25.2 -
+combobox with Name/ID toggle, multi-selects, range filters with presets,
+filter bar with chips / Clear all / result count, all state in the URL, no
+native selects), the per-page filter sets (25.3) and the verification suite
+(25.4 - e2e/filters.spec.ts covers each filter alone and combined, chips,
+clear all, URL round trips, keyboard-only use, name and ID search, inclusive
+range boundaries, and parity of every filtered count against the bundle; axe
+and the raw-code scanner run in quality.spec.ts / labels.spec.ts).
+
+Re-verified on the run4 branch after the Phase 24 engine changes (new demo
+world, renamed KPI, new statuses): ruff 0; ruff format 0; mypy strict 0;
+pytest full suite 0 (248 tests); web tsc 0; vitest 0; Playwright 144/144,
+exit 0. No code changes belong to this phase.
+
+## Phase 26 — Live-ready UI data layer (2026-10-21, Run 4 branch)
+
+Substantially delivered before Run 4 as phase-23.9 (one TanStack Query data
+layer, OpenAPI contract in docs/api/openapi.yaml, split per-page/per-table
+files with the Overview loading only its own data, skeleton/error/Retry
+states with capped retries and per-route/per-section boundaries, TanStack
+Virtual for 100+ row tables and combobox lists, network-interception
+Playwright suite). This phase adds the piece 23.9 lacked:
+
+**26.1 Two adapters, env-selected.** New `web/src/lib/api/httpAdapter.ts`
+implements the same DataClient contract against the BFF endpoints (GET /app,
+/pages/{page}, /tables/{table} with page/page_size/sort/URL-encoded JSON
+filters, /tables/guidance/explanations/{customer}/{item}); base URL from
+VITE_API_BASE_URL (default /api). `client.ts` selects by VITE_DATA_SOURCE:
+"http" picks the HTTP adapter, anything else is static, so the hosted demo
+can never silently depend on a server. Vitest covers the query-string builder
+(contract-exact: page, page_size, sort, filters as URL-encoded JSON with
+undefined/null entries dropped) and the env selection both ways. README's
+"Going live" section updated accordingly.
+
+**Latent bug fixed along the way.** React Aria's multi-select listbox clears
+the selection on Escape (its default; RAC 1.7 has no escapeKeyBehavior prop).
+For a filter popover that is destructive - and it surfaced as a
+timing-dependent e2e failure (Escape raced the refetch re-render's focus
+move). MultiSelect now intercepts Escape and closes the popover with the
+selection intact, deterministically. Two e2e selectors were also updated for
+Phase 24's renamed KPI ("net invoiced revenue") and the new
+"Reference below floor" status label (exact-match option selection);
+assertions unchanged.
+
+**Known note.** tables/guidance.json and tables/guidance_explanations.json
+exceed the 300 KB soft target (the 1 MB hard limit holds via null-stripping
+and "next"-linked sharding from Phase 24); further splitting would shard rows
+with no user-visible benefit on static hosting, and the BFF paginates.
+
+**Checks.** Python untouched by this phase (exit codes from the phase-24/25
+cycle stand: ruff 0, format 0, mypy 0, pytest 248 passed exit 0); web: tsc 0;
+vite build 0; vitest 0 (11 tests, 2 files); Playwright 144/144 passed, exit 0.
+
+## Phase 27 — Real-data readiness (2026-10-21, Run 4 branch)
+
+**27.1 Data profiler and mapping assistant.** `margin-engine profile <file>`
+scans a CSV/.xlsx export and reports, per column: type guess, null rate,
+distinct count, detected date formats, and canonical-field candidates each
+with a confidence and a reason; file-level it detects delimiter, encoding,
+decimal separator, sign patterns (parentheses negatives, currency symbols)
+and suspected transaction-type code columns. `margin-engine draft-mapping`
+writes a draft YAML in which every guessed value is marked `# CONFIRM` and
+listed under `unconfirmed_fields` — and `load_mapping` REFUSES to run any
+mapping whose `unconfirmed_fields` list is non-empty, so a person confirms
+each guess by reviewing and deleting its entry. Suggestions never become
+silent decisions. Tests cover detection on messy variants and the refusal.
+
+**27.2 Scale.** The loader gained a direct-polars fast path for UTF-8 CSVs
+(the old path held raw bytes + decoded text + a re-encoded copy at once),
+drops unmapped source columns immediately, and frees the all-string source
+frame before the typed passes; the pipeline releases the classified ledger
+and intermediate frames as soon as they are superseded; optional
+stage-level RSS logging (MARGIN_ENGINE_RSS_LOG=1). Measurement is a
+memory-aware ladder (scripts/measure_scale.py): it checks available memory
+first, projects each next rung's peak from measured rungs, and stops BEFORE
+a rung that would not fit, so it can never OOM the machine. KNOWN GAP
+(hardware): this 13.8 GB laptop had 5.9-6.4 GB available, so the 8 GB
+peak budget could not even be allocated, let alone verified at 10M lines.
+Largest run that fits the machine's 4.9 GB budget: 241,162 lines in 32.1s, peak 2.92 GB (the ladder also measured 811k lines at 6.42 GB peak / 95.6s in an earlier run with more headroom, exceeding that day's budget). Per-stage RSS at 811k lines: ledger
+work reaches 3.4 GB, segmentation adds ~1.2 GB, peak 6.4 GB — the memory is
+structural (several wide line-level frames alive), so the spec's
+DuckDB-backed/streaming refactor remains the path to 10M-under-8GB; it is
+deferred because no result on this machine could verify it. Recorded
+honestly in validation.json with the hardware limits.
+
+**27.3 Books tie-out.** Optional `gl_totals` reference table (month,
+net_sales, cogs, optionally returns). The tie-out compares engine monthly
+totals to the books with absolute and % differences; a month-measure fails
+only when it exceeds BOTH the configured % and cents tolerances
+(reporting.tieout_tolerance_pct/cents). Failing months are flagged, never
+hidden; the report section states the measure definitions (returns
+recognized when they occur; engine COGS covers known-cost lines only, with
+the coverage share printed beside the comparison). Fixtures to the cent.
+
+**27.4 Validation without planted truth.** New
+sensitivity/real_validation.py, on by default (sensitivity.real_data_validation):
+- Temporal backtest: elasticity fit on months 1..T-k, then held-out
+  volume-change prediction error vs a zero-elasticity baseline (within-pair
+  changes, demeaned per test month).
+- Placebo tests: instruments permuted IN TIME within each supplier/category
+  (a derangement, so no unit keeps its series) — the statistic is the
+  reduced form plus the first stage, NOT the 2SLS ratio, which concentrates
+  around OLS when the instrument is irrelevant; and fake price-change dates
+  per pair, which must show no volume response. Cross-unit shuffles were
+  rejected on method: with few units, month demeaning mixes every unit's
+  series into every row's quantity, so another unit's real series stays
+  correlated by construction.
+- Rolling-window stability: per-segment FE-OLS elasticity per window, and
+  the commercial segmentation refit per window with ARI against the
+  full-sample partition.
+All informational, never gating. Exported as four frames, rendered in a
+"Real-data validation" report section; segments above
+sensitivity.real_validation_max_rows run placebos on a seeded pair
+subsample, labeled. On the committed sample: backtest, placebo and
+stability tables all populate. 7 tests on a controlled DGP (planted beta
+-2.0) pin each property.
+
+**27.5 Anonymizer.** `margin-engine anonymize`: customer/item/supplier IDs
+and names (and ship-to/bill-to/parent ids) become salted keyed hashes
+(HMAC-SHA256, truncated, kind-prefixed), so referential integrity holds and
+the same mapping runs on the anonymized copy; `--scale-money` additionally
+scales every mapped money column by a secret salt-derived factor in
+[0.5, 1.5), half-even to cents, so internal reconciliation still holds.
+Salt from --salt-file or MARGIN_ENGINE_ANON_SALT (>= 16 bytes), never
+committed, never in any output or manifest; an ANONYMIZED.md note documents
+what was done without revealing the salt. Tests: determinism, referential
+integrity, salt-sensitivity, scaling consistency, salt never in outputs.
+
+**27.6 Instrument builder.** sensitivity.instrument_source selects where
+the supplier cost instrument comes from: `reference_table` (as before),
+`receipts` (built from purchase history), or `external` (a public series
+mapped to categories via sensitivity.external_index_map, then to suppliers
+by modal category). The receipts index is MIX-CORRECTED: log average
+purchase cost demeaned per item first, then quantity-averaged within
+supplier x month — averaging raw costs across items lets month-to-month
+item-mix shifts swamp the few-percent cost movements (first draft recovered
+planted shocks at r=0.14; the mix-corrected index passes r>0.9). Gaps are
+forward-filled within supplier and labeled. The exclusion-rationale
+requirement is unchanged whichever way the instrument is built.
+
+**27.7 Scenario matrix.** tests/matrix_worlds.py samples worlds
+deterministically across preset (all ten), size, months, missing-cost rate
+(0-50%), returns rate, credit-memo rate, currency mix, ERP format profile
+(plain / semicolon+decimal-comma / windows-1252+currency symbols /
+parentheses negatives / BOM+padding+blank rows / .xlsx) and optional-table
+presence. Invariants per world: reconciliation exact; fail-closed (no
+causal status on weak_instrument, invalid_instrument, price_constant,
+sparse, competitor_comovement — heterogeneous/nonconstant/persistent are
+identifiable-with-caveats per the committed 24.9 results, where the
+recovered estimand is a documented average, so they are not in the
+fail-closed set); byte-identical parquet exports across two runs of the
+same world; identical ledger totals across format profiles; floor and
+cost-increase monotonicity; and no crash (plus three deliberately invalid
+inputs that must raise actionable MappingError/MoneyParseError). Fast tier:
+30 worlds + 3 invalid-input tests in the default suite (~3 minutes). Full
+tier: 300 worlds behind `-m slow` / scripts/run_matrix_full.py, summary in
+validation.json: 300 worlds, 300 passed all invariants, 0 failed, 1,784s.
+(The first full-tier run found 13 of 300 worlds crashing on the
+null-elasticity bug below; after the fix the re-run is clean.)
+
+**Bugs the matrix caught (all fixed, that is its job):**
+1. Margin-driver tree crashed (sklearn, 0 samples) when no price list
+   exists anywhere; it now switches off with a stated reason.
+2. estimate_segment selected z_cost/z_tariff unconditionally and crashed
+   when no instrument data exists; now conditional, status caps at
+   descriptive as designed.
+3. market_index (and the external series value column) ignored the declared
+   decimal separator; comma-decimal reference tables now parse exactly.
+4. Opportunity sizing crashed on worlds where NO segment has an IV estimate
+   (all-null elasticity column gets polars dtype Null, on which pow/abs
+   raise) — found on 13 of 300 full-tier worlds and one fast-tier world;
+   fixed with explicit Float64 casts in sizing.py and tariff.py.
+5. A genuine nondeterminism: opportunities.parquet differed between two
+   runs of the same world in one process — polars evaluated
+   (10000 - bp)/10000 via a divide kernel in one run and a
+   reciprocal-multiply in another, a last-ulp difference. pocket_retention
+   is exact in basis points, so a lossless round(6) at both build sites
+   pins it. (The export-level 10-sig-fig rounding covers solver outputs
+   only; opportunities bypassed it.)
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (56 files); pytest
+full suite 0 (309 tests passed; the slow full-tier marker is deselected
+by default and run via scripts/run_matrix_full.py); matrix fast tier 33/33; matrix full tier
+300/300; scale ladder recorded (KNOWN GAP above). Web untouched by
+this phase (phase-26 exit codes stand: tsc 0, vite build 0, vitest 0,
+Playwright 144/144).
+
+## Phase 28 — Real dataset case study: Online Retail II (2026-10-22, Run 4 branch)
+
+**28.1 Dataset.** UCI "Online Retail II" verified (page, license CC BY 4.0,
+citation, 1,067,371 lines) and recorded in docs/data-sources.md.
+scripts/download_online_retail.py downloads the 43.5 MB zip to the user cache
+dir (never the repo), pins its SHA-256
+(572e36277c2390fbfde10664750731e0a86f55e33470d91919085f0408e67bfb), converts
+the two xlsx sheets to one CSV with a deterministic ROW_ID (the export has no
+stable line key) and a constant CURRENCY=GBP column, and derives customers.csv
+(modal country -> region) and items.csv (modal description) reference tables.
+
+**28.2 Mapping.** config/mappings/online_retail_ii.yaml, drafted from the
+profiler on the real file and confirmed field by field in comments. Two new
+mapping capabilities the dataset demanded, both config not code:
+- `transaction_type: {derive_from_column, prefix_map, default}` — spec 5.2's
+  "configured rule to derive it" (invoice prefix "C" = cancellation ->
+  return); longest prefix wins, loader-enforced.
+- `cost_unavailable: true` — the explicit, reviewed declaration that the
+  source has no cost. The engine still refuses a mapping that merely omits
+  unit_cost; with the declaration, product cost is null on every line and all
+  cost-dependent metrics report cost_unavailable. Nothing is invented.
+
+**Real-data gaps the run exposed (all fixed, with the sample pinning them in
+CI):** sales_observations now also excludes null-customer lines (anonymous /
+guest sales: in the ledger and totals, out of behavior views, share noted);
+blank required keys ("", customer/item) normalize to null instead of forming
+a giant fake key; the invoice becomes the order unit when no order_id is
+mapped (stated proxy; order economics, frequency ABC); the canonical frame
+always carries credit_reason, contract_id and discount_cents (null/0 when
+unmapped) so classification, peer groups and the margin tree never crash on
+minimal mappings; dispersion's family fallback and segmentation/panel item
+joins tolerate an items table with only id + description; the FX converter
+now also converts a net amount DERIVED from an authoritative line-currency
+unit price (it previously converted only mapped fields); and level-2
+opportunity sizing works without a list price by recovering the index
+denominator from the pair's own baseline price (labeled
+`index_fallback_item_median` in a new price_basis column, consistent with
+24.4) instead of silently producing zero records.
+
+**28.3 Run and case study.** Full pipeline on 1,067,371 lines: 152 s end to
+end, peak 4.2 GB, every reconciliation check exact. $30.40M USD net invoiced
+revenue (£19.29M source, kept per line), 19,494 cancellations classified as
+returns, 242,257 anonymous sale lines (14.7% of sale revenue) handled, 67,250
+look-alike duplicate flags (no stable source key -> flagged, never removed),
+11,071 data-quality anomalies vs 65,082 commercial outliers (flags never
+mixed), non-product codes (POST/DOT/M/D/BANK CHARGES) kept and documented.
+4 commercial segments; guidance bands over 481,917 pairs; level-2 gross
+opportunity $698,667 (conservative variant $566,992), all on the labeled
+fallback price basis; expected-change level correctly absent. Elasticity:
+descriptive_elasticity at most, as the spec predicted (no instruments) — and
+the 27.4 no-truth validation argues the case: backtest worse than the
+zero-elasticity baseline out of sample, fake-date placebos 80-100%
+"significant" (the panel violates the no-effect null without any price
+change), rolling elasticities drifting -2.9 -> -1.3. Written up in
+docs/case-study-online-retail.md.
+
+**28.4 Multi-currency.** GBP -> USD at monthly month-end ECB reference rates
+via the new Frankfurter connector (src/margin_engine/connectors/): keyless,
+client-side rate limiter with exponential backoff, JSON cache with
+timestamps, stale-fallback labeled with age, closed historical ranges never
+refetched. A real recorded response (523 trading days) is the committed
+fixture; every connector test runs offline, one live test sits behind the new
+`network` pytest marker (deselected by default along with `slow`).
+
+**28.5 Committed sample.** data/sample_online_retail/ — first 5,000 converted
+lines + matching reference rows + fx table, CC BY 4.0 with attribution and a
+README stating the format changes. tests/test_online_retail_sample.py (7
+tests) pins: exact reconciliation, prefix-derived returns, GBP->USD
+conversion, declared-no-cost behavior, anonymous-customer two-view treatment,
+flagged-never-removed duplicates, and the full end-to-end run with
+index-fallback opportunities and descriptive-capped elasticity.
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (59 files); pytest
+full suite exit 0 (322 tests passed, slow and network markers deselected, including the 30-world matrix fast tier
+re-validating byte-determinism after the canonical-frame additions). Web
+untouched by this phase (phase-26 exit codes stand).
+
+## Phase 29 — External data connectors, free and keyless (2026-10-22, Run 4 branch)
+
+All sources verified before first use and recorded with URLs, terms, limits
+and fixture locations in docs/data-sources.md. Shared connector plumbing
+(src/margin_engine/connectors/base.py): client-side RateLimiter, exponential
+backoff, JSON cache with timestamps, cache-first fetch where a closed
+historical range is NEVER refetched, stale-fallback labeled with its age, and
+actionable ConnectorError messages. Every connector test runs offline from a
+recorded real response; live calls sit behind the `network` pytest marker.
+
+**29.1 FX — Frankfurter (ECB reference rates).** Delivered in Phase 28 for
+the case study; endpoint, terms and the committed fixture (523 trading days
+GBP->USD) documented. Monthly table = month-end reference rate, stated policy.
+
+**29.2 PPI — BLS Public Data API v1.** Verified limits (25 queries/day,
+25 series/query, 10 years/query, keyless) drive the design: one batched POST
+per request, limits enforced client-side with actionable errors, aggressive
+caching. fetch_ppi_series returns (series_id, period, value) monthly rows and
+write_external_cost_series_csv emits the engine's external_cost_series
+reference table for `sensitivity.instrument_source: external` (27.6).
+Fixture: a real response for WPU101 / WPU081 / WPU0638, 2016-2025.
+
+**29.3 Tariffs — USITC HTS.** A free machine-readable endpoint EXISTS and is
+verified: hts.usitc.gov/reststop/exportList (JSON). Two honesty constraints
+baked in and documented: the endpoint serves the current revision only (no
+history), so HTS rates feed pass-through scenarios and never the tariff
+instrument; and compound/specific rates ("2.5c/kg + 4%", "$1.50/kg") are
+kept as raw text with rate_parsed=false, never coerced to a percentage.
+Fixture: 440 rows, HTS 8501-8516.
+
+**29.4 Hybrid demonstration world.** GeneratorConfig.external_cost_paths:
+supplier cost paths come from real series (round-robin, demeaned log levels)
+in place of the simulated AR(1) shocks; demand stays simulated so the planted
+elasticity remains the truth. Generator test pins exact path pass-through and
+the actionable short-path error. scripts/measure_hybrid_world.py
+--external-cost-index runs the study offline from the PPI fixture: **median
+abs elasticity error 0.037 over 6 segments, statuses 4x
+causal_elasticity_supported + 2x iv_estimated_elasticity** (seed 11, default
+scale; series within-window log sd 0.049/0.033/0.003) — the instrument
+pipeline identifies elasticities from genuine 2024-2025 PPI movements.
+Recorded in validation.json as informational.
+
+**Repo fix caught along the way:** data/* in .gitignore silently excluded the
+Phase 28 committed sample (data/sample_online_retail/) from that commit — the
+sample tests would have failed on a clean clone. Exception added; the five
+sample files are committed in this phase.
+
+**Checks.** ruff check 0; ruff format 0; mypy strict 0 (61 files); pytest
+full suite exit 0 (327 tests passed; slow and network markers deselected). Web
+untouched by this phase (phase-26 exit codes stand).
+
+## Phase 30 — Backend-for-frontend API and live mode (2026-10-22, Run 4 branch)
+
+**30.1 Service.** FastAPI app in `api/` implementing docs/api/openapi.yaml
+exactly, mounted under /api (the http adapter's default): /app, /pages/{page},
+/tables/{table} (page, page_size, sort, URL-encoded JSON filters),
+/tables/guidance/explanations/{c}/{i}, plus /health and /version. The filter,
+sort and pagination semantics are a line-for-line port of the static
+adapter's (api/filters.py), including the restored guidance nulls and the
+nulls-first-on-descending sort quirk — interchangeable adapters, provably.
+New dependency group `api` (fastapi, uvicorn, httpx).
+
+**30.2 Storage and caching.** api/store.py: the exported bundle loads into
+DuckDB (pages and tables as versioned documents, replay bookkeeping in a meta
+table) under a content-hash version; the API serves an in-memory snapshot
+swapped atomically on refresh and restorable from DuckDB on restart.
+Responses carry ETag + Last-Modified from the version; If-None-Match returns
+304.
+
+**30.3 Rate limiting.** Inbound token bucket per client (configurable rate
+and burst) returning 429 with Retry-After and a detail body. Outbound:
+refresh jobs go through the Phase 29 connectors (their limiter, cache and
+stale labels); request handlers NEVER call an external source.
+
+**30.4 Live mode with a replay feed.** api/replay.py feeds Online Retail II
+one business day per tick (configurable seconds/day): each tick rebuilds the
+world from every source line dated <= the replayed day, re-runs the engine,
+re-exports the bundle, reloads the store, and only then advances the state —
+idempotent by construction (filtered from source, never appended; a day at or
+before the state is a no-op) and crash-safe (an interrupted tick re-runs).
+The bundle's data_label reads "Historical data replayed (… through <day>;
+not live)". api/refresh.py schedules FX daily, PPI monthly and the replay
+tick as in-process asyncio jobs; every job records a per-section status, and
+a failed refresh marks the section stale with its age instead of breaking
+anything. /api/app gains additive data_as_of + refresh_status fields; the UI
+shell shows "Data as of <day>" and a visible textual stale notice per stale
+section (never color alone).
+
+**30.5 UI in API mode.** VITE_DATA_SOURCE=http against the real API works
+end to end: the vite dev server proxies /api same-origin
+(VITE_API_PROXY_TARGET), and index.html's static-bundle preloads are
+stripped at build time in API mode (they are a static-hosting paint
+optimization the API mode never fetches). New Playwright config
+(playwright.api.config.ts) boots uvicorn + the UI and proves: the Overview
+loads entirely from /api with zero static data-file fetches and no console
+errors; tables paginate server-side; a simulated upstream failure (the exact
+stale payload the API emits) shows the stale-data label; the replay
+data-as-of label renders.
+
+**30.6 One command.** Docker is unavailable on this machine, so the spec's
+documented alternative applies: `uv run python scripts/live_mode.py` starts
+the API (replay on, committed sample by default; --source for the full
+dataset) and the UI in API mode, documented in README "Live mode".
+
+**30.7 Verify.** tests/test_api.py (11 tests, offline): contract tests
+generated from the OpenAPI spec (responses validated against its schemas
+with jsonschema, every enum page/table exercised, 404/400 shapes); parity
+(every API table row equals the exported bundle row field-for-field,
+cents-exact, across pagination); filters and sort; explanations; ETag 304;
+rate-limit 429 with Retry-After; refresh jobs from fixtures with a simulated
+upstream failure marking the section stale; replay idempotency on the
+committed sample (day re-run is a no-op, version unchanged, totals grow only
+by the next day's lines, label says replayed). Plus the 4 API-mode
+Playwright tests above.
+
+**30.8 Deployment (documented, not executed).** docs/deploy-api.md: Render
+free tier (verified from Render's own docs: 750 h/month, 15-min spin-down,
+no persistent disk — consequences for the replay feed stated) and Oracle
+Cloud Always Free (verified 2026-10-22 coverage of the reduced 2 OCPU/12 GB
+A1 limits, caveat to re-check Oracle's docs), with env vars, scheduler
+placement, UI switch and the no-CORS proxy pattern. No accounts created, no
+deploy; the GitHub Pages demo stays static.
+
+**Checks.** ruff check 0; ruff format 0; mypy src+api 0 (69 files); pytest
+full suite exit 0 (339 tests); web: tsc 0, vitest 0 (11 tests), vite build 0,
+Playwright API mode 4/4, Playwright static suite 144/144 after a reviewed
+snapshot update: the header notice now shows the bundle's authoritative
+data_label (required so replay mode can label data as replayed), and the demo
+world's longer label wraps to one extra caption line at 375 px - all 20
+mobile baselines (10 pages x light/dark) re-recorded 17 px taller after
+visual review confirmed clean wrapping; desktop baselines unchanged.
+
+## Phase 31 — Documentation and final report (2026-10-22, Run 4 branch)
+
+**README.** "Running on real data" now leads with the profiler and the
+draft-mapping CONFIRM protocol and documents the honest-absence declarations
+(cost_unavailable, prefix-derived transaction type), the books tie-out, the
+no-planted-truth validation and the anonymizer. New "Case study: Online
+Retail II" section linking docs/case-study-online-retail.md. "Live mode" was
+added in Phase 30 (one-command run, replay feed, connectors, rate limits).
+The validation table was updated from docs/validation.json: persistent-demand
+coverage under the shipped clustering (93.3%, with the rejected alternatives'
+83.3%/82.3% stated as the reason for the default), the 300/300 scenario
+matrix, the hybrid PPI world (error 0.037), the corrected performance figure
+(37.0s), and the scale row recorded as a KNOWN GAP with the hardware limits
+and the honest largest-fitting measurement — not loosened, not hidden. The
+misspecified-world paragraph now lists all five informational presets with
+their errors and why they are not gated. Existing tone kept; no "How it was
+built" section.
+
+**docs/data-sources.md.** Complete for every external source used in Run 4
+(UCI Online Retail II, Frankfurter FX, BLS PPI v1, USITC HTS): URL, license
+or terms, verified limits, what it is used for, fixture location.
+
+**docs/run4-report.md.** The owner's report: every phase with what changed,
+tests added (248 -> 339 plus slow/network tiers), before/after money
+(gross opportunity $478,516.90 invoice-basis -> $404,500.15 pocket;
+expected change $284,364.28 -> $77,996.86 under the stricter causal gate;
+conservative level $114,784.71; case-study level-2 $698,667 on the labeled
+fallback basis), coverage numbers, runtime and memory (1.07M real lines in
+152s / 4.2 GB; scale ladder results), the four known gaps with reasons, and
+the four decisions waiting on the owner (merge, scale follow-up, hosting,
+replay source).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy strict src+api 0;
+pytest full suite exit 0 (339 tests, slow and network tiers deselected). Web untouched by this phase
+(phase-30 exit codes stand: tsc 0, vitest 0, build 0, Playwright 144/144
+static and 4/4 API mode).
+
+Run 4 ends here per spec: final commit on `run4`, no merge, no push.
+
+## Phase 31.1 — CI installs the api group (2026-10-22, Run 4 branch)
+
+Owner-reported CI failure on the run4 PR: tests/test_api.py could not import
+fastapi because CI ran `uv sync --frozen`, which skips the `api` dependency
+group added in Phase 30.
+
+- .github/workflows/ci.yml: sync step is now `uv sync --frozen --all-groups`;
+  type check is now `uv run mypy src api` (CI now type-checks the API like the
+  local phase checks do).
+- Deleted the stale untracked `src/margin_engine/api/` folder (a leftover
+  `__pycache__` from the archived pre-Run-3 build; the real service lives in
+  `api/`).
+- Verifying like CI (fresh clone of run4, frozen sync with all groups, full
+  suite) exposed a second, real gap the dependency fix alone would not have
+  cured: 9 of the 11 API tests hardcoded the bundle at `web/public/data`,
+  which is generated output and rightly not committed — present locally,
+  absent in any fresh clone, so CI would still have failed. tests/test_api.py
+  now takes a module-scoped `bundle` fixture: the local dev copy when present,
+  otherwise the same deterministic demo-world bundle the pages workflow builds
+  (`export-web --demo`), built once into a temp dir. No assertion was changed
+  or weakened; the tests run against the identical bundle either way.
+- Verified both fixture paths: 11/11 locally with the dev bundle (18.7s) and
+  11/11 in a bundle-less clone via the fallback (39.6s, ~20s of it the demo
+  export). Full fresh-clone verification recorded below after the commit it
+  verifies.
+
+**Checks (fresh clone of this commit, CI-style).** `uv sync --frozen
+--all-groups` exit 0; `pytest --collect-only` exit 0; full pytest suite
+exit 0; ruff check 0; ruff format --check 0; mypy src api 0.

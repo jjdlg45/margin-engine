@@ -64,7 +64,7 @@
       "tariff_demand_leak": 0.0,
       "price_noise_sd": 0.03,
       "pair_price_sd": 0.05,
-      "base_qty_log_mean": 2.6,
+      "base_qty_log_mean": 3.0,
       "base_qty_log_sd": 0.7,
       "qty_noise_sd": 0.2,
       "qty_process": "loglinear",
@@ -131,13 +131,13 @@
     "zero_cost_service_lines": 81
   },
   "planted_totals_cents": {
-    "net_cents": 1135071211,
-    "line_rebate_cents": 10809511,
-    "settlement_rebate_cents": 10012751,
-    "freight_concession_cents": 6021706,
-    "freight_expense_cents": 14073461,
-    "billed_freight_cents": 4534674,
-    "vendor_rebate_cents": 3420432
+    "net_cents": 1693016287,
+    "line_rebate_cents": 16119477,
+    "settlement_rebate_cents": 14928398,
+    "freight_concession_cents": 8986193,
+    "freight_expense_cents": 19282854,
+    "billed_freight_cents": 6761080,
+    "vendor_rebate_cents": 5092947
   },
   "n_lines_exported": 10661,
   "n_customers": 30,

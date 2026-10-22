@@ -29,10 +29,12 @@ from margin_engine.manifest.run_manifest import (
     cleaning_decisions_from,
     write_manifest,
 )
+from margin_engine.memlog import rss_log
 from margin_engine.money import cents_col_to_dollars
 from margin_engine.opportunity.sizing import observed_leakage, price_opportunities
 from margin_engine.panel.build import build_panel
 from margin_engine.report.render import render_report
+from margin_engine.report.tieout import TieoutResult, run_tieout
 from margin_engine.segment.trees import (
     TreeResult,
     fit_commercial_segments,
@@ -65,6 +67,7 @@ class FullRunResult:
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
     inventory_identity: pl.DataFrame | None = None
+    tieout: TieoutResult | None = None
     unallocated_settlements: pl.DataFrame | None = None
     library_warnings: list[dict[str, Any]] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
@@ -211,12 +214,14 @@ def run_full(
     t = time.perf_counter()
     res = run_pipeline(data_dir, mapping_path, rules)
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
+    rss_log("pipeline_done")
 
     t = time.perf_counter()
     cts = run_cost_to_serve(res.ledger, rules)
     res.ledger = cts.lines
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
+    rss_log("cost_to_serve")
 
     t = time.perf_counter()
     analysis_obs, h_notes = apply_analysis_level(
@@ -225,6 +230,7 @@ def run_full(
     res.notes.extend(h_notes)
     flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
+    rss_log("dispersion")
 
     t = time.perf_counter()
     df = prepare_segmentation_frame(flagged, res.reference["customers"], res.reference["items"])
@@ -232,29 +238,105 @@ def run_full(
     df = df.join(seg.leaf_assignments, on="source_line_key", how="left")
     margin_tree = fit_margin_driver_tree(df, rules, seed=0)
     timings["segmentation"] = time.perf_counter() - t
+    rss_log("segmentation")
 
     t = time.perf_counter()
-    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"])
+    # Per-unit cost-to-serve K (estimated, from config activity rates) for the
+    # optional contribution floor (24.3): pair totals over covered sale lines.
+    cts_per_unit = (
+        res.ledger.filter(
+            (pl.col("transaction_type") == "sale")
+            & (pl.col("quantity_norm") > 0)
+            & pl.col("activity_cts_cents").is_not_null()
+        )
+        .group_by("customer_id", "item_id")
+        .agg(
+            pl.col("activity_cts_cents").sum().alias("_cts"),
+            pl.col("quantity_norm").sum().alias("_qty"),
+        )
+        .filter(pl.col("_qty") > 0)
+        .with_columns(
+            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents")
+        )
+        .select("customer_id", "item_id", "cts_per_unit_cents")
+        if "activity_cts_cents" in res.ledger.columns
+        else None
+    )
+    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit)
     timings["guidance"] = time.perf_counter() - t
+    rss_log("guidance")
 
     t = time.perf_counter()
+    # Instrument builder (27.6): the supplier cost instrument can come from a
+    # mapped index table, be BUILT from receipt history, or map an external
+    # public series - config decides, the engine never guesses.
+    supplier_idx = res.reference["supplier_cost_index"]
+    src_mode = rules.sensitivity.instrument_source
+    if src_mode == "receipts":
+        from margin_engine.sensitivity.instruments import build_supplier_cost_index
+
+        receipts_ref = res.reference.get("inventory_receipts")
+        items_ref = res.reference.get("items")
+        if receipts_ref is None or items_ref is None:
+            res.notes.append(
+                "instrument_source=receipts but no inventory_receipts/items table: "
+                "supplier cost instrument unavailable (statuses cap accordingly)"
+            )
+            supplier_idx = None
+        else:
+            supplier_idx, inotes = build_supplier_cost_index(receipts_ref, items_ref)
+            res.notes.extend(inotes)
+    elif src_mode == "external":
+        from margin_engine.sensitivity.instruments import external_cost_index
+
+        series_ref = res.reference.get("external_cost_series")
+        items_ref = res.reference.get("items")
+        if series_ref is None or items_ref is None:
+            res.notes.append(
+                "instrument_source=external but no external_cost_series/items table: "
+                "supplier cost instrument unavailable (statuses cap accordingly)"
+            )
+            supplier_idx = None
+        else:
+            supplier_idx, inotes = external_cost_index(
+                series_ref, rules.sensitivity.external_index_map, items_ref
+            )
+            res.notes.extend(inotes)
     panel = build_panel(
         df,
         res.reference["items"],
-        res.reference["supplier_cost_index"],
+        supplier_idx,
         res.reference["tariff_schedule"],
         rules,
+        market_price_index=res.reference.get("market_price_index"),
     )
     timings["panel"] = time.perf_counter() - t
+    rss_log("panel")
 
     t = time.perf_counter()
     sens = run_sensitivity(panel, rules)
     timings["sensitivity"] = time.perf_counter() - t
+    rss_log("sensitivity")
 
     t = time.perf_counter()
     leak = observed_leakage(res.ledger, rules)
     opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
     timings["opportunity"] = time.perf_counter() - t
+    rss_log("opportunity")
+
+    # Validation without planted truth (27.4): temporal backtest, placebos,
+    # rolling-window stability. Informational; never gates a status.
+    real_val = None
+    if rules.sensitivity.real_data_validation:
+        from margin_engine.sensitivity.real_validation import run_real_validation
+
+        t = time.perf_counter()
+        real_val = run_real_validation(panel, df, rules, seed=0)
+        res.notes.extend(real_val.notes)
+        timings["real_data_validation"] = time.perf_counter() - t
+        rss_log("real_data_validation")
+    else:
+        res.notes.append("real-data validation OFF: disabled in config")
 
     # --- optional Run-2 modules: each runs when its input exists, otherwise
     # switches off with a stated reason -------------------------------------
@@ -265,7 +347,7 @@ def run_full(
         from margin_engine.extended.inventory import cost_sales
 
         res.pipeline_cost_basis if hasattr(res, "pipeline_cost_basis") else None
-        method = {"standard": "standard", "average": "average", "fifo": "fifo"}.get(
+        method = {"standard": "standard", "average": "average", "fifo": "fifo", "lifo": "lifo"}.get(
             res.mapping.lines.unit_cost.cost_basis.value if res.mapping.lines.unit_cost else "",
             "average",
         )
@@ -299,6 +381,20 @@ def run_full(
     else:
         res.notes.append("win/loss modeling OFF: no quotes table (or no price list) available")
 
+    # Books tie-out (27.3): runs only when a gl_totals table is mapped.
+    tieout_res = None
+    gl_totals = res.reference.get("gl_totals")
+    if gl_totals is not None:
+        tieout_res = run_tieout(res.ledger, gl_totals, rules)
+        res.notes.extend(tieout_res.notes)
+        res.notes.append(
+            f"books tie-out ran: {tieout_res.n_failing} month-measure(s) outside tolerance"
+            if tieout_res.n_failing
+            else "books tie-out ran: every month within tolerance"
+        )
+    else:
+        res.notes.append("books tie-out OFF: no gl_totals table in the mapping/data")
+
     cross_estimates: pl.DataFrame | None = None
     if res.reference["substitution_groups"] is not None:
         from margin_engine.extended.substitution import estimate_cross_effects
@@ -308,6 +404,7 @@ def run_full(
     else:
         res.notes.append("cross-price estimation OFF: no substitution_groups table available")
     timings["optional_modules"] = time.perf_counter() - t
+    rss_log("optional_modules")
 
     # ---- outputs -----------------------------------------------------------
     t = time.perf_counter()
@@ -330,6 +427,17 @@ def run_full(
         "customer_economics": cts.customer_economics,
         "service_policy_flags": cts.service_flags,
         "reconciliation": res.reconciliation.to_frame(),
+        **({"books_tieout": tieout_res.table} if tieout_res is not None else {}),
+        **(
+            {
+                "real_validation_backtest": real_val.backtest,
+                "real_validation_placebo": real_val.placebo,
+                "real_validation_stability_elasticity": real_val.stability_elasticity,
+                "real_validation_stability_segments": real_val.stability_segments,
+            }
+            if real_val is not None
+            else {}
+        ),
     }
     exports["unallocated_settlements"] = (
         res.unallocated_settlements
@@ -583,6 +691,11 @@ def run_full(
             "gross_total": _fmt_dollars(
                 int(opps["gross_price_opportunity_cents"].sum()) if opps.height else 0
             ),
+            "gross_conservative_total": _fmt_dollars(
+                int(opps["gross_price_opportunity_conservative_cents"].fill_null(0).sum())
+                if opps.height and "gross_price_opportunity_conservative_cents" in opps.columns
+                else 0
+            ),
             "expected_total": _fmt_dollars(
                 int(opps["expected_contribution_change_cents"].fill_null(0).sum())
                 if opps.height
@@ -591,6 +704,45 @@ def run_full(
             "n_records": opps.height,
             "treatment_counts": treatment_counts,
         },
+        "tieout": (
+            {
+                "rows": [
+                    {
+                        **r,
+                        "engine": _fmt_dollars(r["engine_cents"]),
+                        "gl": _fmt_dollars(r["gl_cents"]),
+                        "diff": _fmt_dollars(r["diff_cents"]),
+                    }
+                    for r in tieout_res.table.to_dicts()
+                ],
+                "n_failing": tieout_res.n_failing,
+                "cost_coverage": f"{tieout_res.cost_coverage_share:.1%}",
+            }
+            if tieout_res is not None
+            else None
+        ),
+        "real_validation": (
+            {
+                "backtest": real_val.backtest.to_dicts(),
+                "placebo": real_val.placebo.to_dicts(),
+                "stab_el": (
+                    real_val.stability_elasticity.group_by("segment")
+                    .agg(
+                        pl.len().alias("n_windows"),
+                        pl.col("fe_ols").min().alias("beta_min"),
+                        pl.col("fe_ols").max().alias("beta_max"),
+                        pl.col("fe_ols").std().alias("beta_sd"),
+                    )
+                    .sort("segment")
+                    .to_dicts()
+                    if real_val.stability_elasticity.height
+                    else []
+                ),
+                "stab_seg": real_val.stability_segments.to_dicts(),
+            }
+            if real_val is not None
+            else None
+        ),
     }
     render_report(context, out_dir / "report.html")
     return FullRunResult(
@@ -613,6 +765,7 @@ def run_full(
         cross_estimates=cross_estimates,
         inventory_cogs=inventory_cogs,
         inventory_identity=inventory_identity,
+        tieout=tieout_res,
         unallocated_settlements=exports["unallocated_settlements"],
         library_warnings=lib_warnings,
         manifest=manifest,

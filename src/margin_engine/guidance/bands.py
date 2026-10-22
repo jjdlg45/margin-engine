@@ -5,13 +5,27 @@ on a configurable observation unit (default: one median price per customer x
 item x month). Historical bands are NOT optimal prices and every target/start
 is labeled `provisional_historical` until Phase 7 optimization is supported.
 
-Economic floor (exact integer math, computed at FULL precision and rounded
-exactly once at the end):
-    pocket floor  = C / (1 - m)
-    invoice floor = (C / (1 - m) + F) / (1 - d)
-with C = unit product cost (cents), m = minimum pocket margin, F = fixed
-per-unit post-invoice deductions (cents), d = percentage post-invoice
-deductions (basis points).
+Economic floors (exact integer math, computed at FULL precision and rounded
+exactly once at the end). Units: C, K, F and all floors are cents per
+normalized unit; m, m_c and d are dimensionless rates (held as basis points).
+
+    pocket gross floor         = C / (1 - m)                      [cents/unit]
+    invoice gross floor        = (C / (1 - m) + F) / (1 - d)      [cents/unit]
+    pocket contribution floor  = (C + K) / (1 - m_c)              [cents/unit]
+    invoice contribution floor = ((C + K) / (1 - m_c) + F)/(1 - d)[cents/unit]
+
+with C = unit product cost, m = minimum pocket GROSS margin, m_c = optional
+minimum CONTRIBUTION margin, K = per-unit cost-to-serve (estimated from
+config activity rates and labeled so), F = fixed per-unit post-invoice
+deductions, d = percentage post-invoice deductions. The BINDING invoice floor
+is the larger of the two invoice floors; `invoice_floor_cents` carries it and
+`binding_floor_basis` says which one binds (24.3).
+
+Floor-index comparisons divide the binding invoice floor by the effective
+list price, so they live in index space (dimensionless, same space as
+price_index). They are made only when the pair's list is present, positive
+and not stale; otherwise the pair keeps its dollar floors and the list
+provenance column says why no index comparison was made (24.4).
 
 Rounding is policy (price_guidance.floor_rounding): "ceiling" by default — a
 floor exists to guarantee the minimum margin, and rounding it down would quietly
@@ -20,7 +34,12 @@ deployments that prefer symmetric rounding and accept that property's loss.
 
 Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (corridor infeasible against the floor),
-insufficient_data. Infeasible corridors are flagged, never relabeled.
+market_reference_below_floor (the segment's P50 sits below the binding floor,
+so the historical reference cannot be the target), insufficient_data.
+Infeasible corridors are flagged, never relabeled. Status precedence:
+insufficient_data > insufficient_pricing_headroom > below_floor (the pair's
+own price breaches the floor - the most actionable per-pair fact) >
+market_reference_below_floor > band statuses.
 """
 
 from __future__ import annotations
@@ -41,6 +60,11 @@ STATUS_BELOW_REFERENCE = "below_reference"
 STATUS_IN_BAND = "in_band"
 STATUS_ABOVE_REFERENCE = "above_reference"
 STATUS_NO_HEADROOM = "insufficient_pricing_headroom"
+STATUS_MARKET_BELOW_FLOOR = "market_reference_below_floor"
+
+LIST_PROVENANCE_EFFECTIVE = "effective_list"
+LIST_PROVENANCE_STALE = "stale_list"
+LIST_PROVENANCE_MISSING = "missing_or_zero_list"
 
 FloorRounding = Literal["ceiling", "half_even"]
 
@@ -122,10 +146,19 @@ def build_guidance(
     flagged: pl.DataFrame,
     rules: Rules,
     rebate_programs: pl.DataFrame | None,
+    cts_per_unit: pl.DataFrame | None = None,
 ) -> GuidanceResult:
-    """Per customer x item guidance against segment bands and economic floor."""
+    """Per customer x item guidance against segment bands and economic floors.
+
+    cts_per_unit (optional): customer_id, item_id, cts_per_unit_cents — the
+    pair's estimated per-unit cost-to-serve (K), used for the contribution
+    floor when price_guidance.min_contribution_margin is set.
+    """
     pg = rules.price_guidance
-    min_margin_bp = int(pg.min_pocket_margin * 10_000)
+    min_margin_bp = int(pg.min_pocket_gross_margin * 10_000)
+    contribution_bp = (
+        int(pg.min_contribution_margin * 10_000) if pg.min_contribution_margin is not None else None
+    )
     notes: list[str] = []
 
     bands = segment_bands(flagged, rules)
@@ -150,6 +183,12 @@ def build_guidance(
             .last()
             .alias("unit_cost_f"),
             pl.col("eff_list_cents").drop_nulls().last().alias("eff_list_cents"),
+            pl.col("invoice_date").last().alias("last_sale_date"),
+            (
+                pl.col("list_effective_date").drop_nulls().last()
+                if "list_effective_date" in base.columns
+                else pl.lit(None, dtype=pl.Date)
+            ).alias("list_effective_date"),
             pl.col("contract_id").drop_nulls().last().alias("contract_id"),
             (
                 pl.col("item_role").drop_nulls().first()
@@ -159,6 +198,26 @@ def build_guidance(
         )
         .with_columns(pl.col("unit_cost_f").round(0).cast(pl.Int64).alias("unit_cost_cents"))
         .drop("unit_cost_f")
+    )
+
+    # List provenance (24.4): floor-index comparisons require a present,
+    # positive and non-stale list price; the provenance column states which.
+    has_list = pl.col("eff_list_cents").is_not_null() & (pl.col("eff_list_cents") > 0)
+    if pg.max_list_age_months is not None:
+        n_mo = pg.max_list_age_months
+        stale = (
+            pl.col("list_effective_date").is_not_null()
+            & (pl.col("list_effective_date").dt.offset_by(f"{n_mo}mo") < pl.col("last_sale_date"))
+        ).fill_null(False)
+    else:
+        stale = pl.lit(False)
+    pair = pair.with_columns(
+        pl.when(~has_list)
+        .then(pl.lit(LIST_PROVENANCE_MISSING))
+        .when(stale)
+        .then(pl.lit(LIST_PROVENANCE_STALE))
+        .otherwise(pl.lit(LIST_PROVENANCE_EFFECTIVE))
+        .alias("list_provenance")
     )
 
     # Percentage post-invoice deductions d: the customer's rebate program rate
@@ -197,6 +256,17 @@ def build_guidance(
         pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"),
     )
 
+    # Per-unit cost-to-serve K for the contribution floor (24.3). Estimated
+    # from config activity rates upstream; labeled estimated.
+    if cts_per_unit is not None:
+        pair = pair.join(
+            cts_per_unit.select("customer_id", "item_id", "cts_per_unit_cents"),
+            on=["customer_id", "item_id"],
+            how="left",
+        )
+    else:
+        pair = pair.with_columns(pl.lit(None, dtype=pl.Int64).alias("cts_per_unit_cents"))
+
     rounding = pg.floor_rounding
     pair = pair.with_columns(
         pocket_floor_cents(pl.col("unit_cost_cents"), min_margin_bp, rounding).alias(
@@ -208,9 +278,64 @@ def build_guidance(
             pl.col("fixed_deduction_cents"),
             pl.col("deduction_bp"),
             rounding,
-        ).alias("invoice_floor_cents"),
+        ).alias("invoice_floor_gross_cents"),
+    )
+    if contribution_bp is not None:
+        # Contribution floor on C + K; produced only where K is known, so a
+        # missing cost-to-serve estimate never silently weakens the floor to
+        # the gross-margin one without the basis column saying so.
+        ck = pl.col("unit_cost_cents") + pl.col("cts_per_unit_cents")
+        pair = pair.with_columns(
+            pl.when(pl.col("cts_per_unit_cents").is_not_null())
+            .then(pocket_floor_cents(ck, contribution_bp, rounding))
+            .otherwise(None)
+            .alias("pocket_contribution_floor_cents"),
+            pl.when(pl.col("cts_per_unit_cents").is_not_null())
+            .then(
+                invoice_floor_cents(
+                    ck,
+                    contribution_bp,
+                    pl.col("fixed_deduction_cents"),
+                    pl.col("deduction_bp"),
+                    rounding,
+                )
+            )
+            .otherwise(None)
+            .alias("invoice_contribution_floor_cents"),
+        )
+        if cts_per_unit is None:
+            notes.append(
+                "min_contribution_margin is set but no cost-to-serve estimate is "
+                "available: contribution floors are null, gross-margin floor binds"
+            )
+    else:
+        pair = pair.with_columns(
+            pl.lit(None, dtype=pl.Int64).alias("pocket_contribution_floor_cents"),
+            pl.lit(None, dtype=pl.Int64).alias("invoice_contribution_floor_cents"),
+        )
+    # Binding floor: the larger invoice floor; the basis column names it.
+    # invoice_floor_cents carries the binding floor so every downstream
+    # comparison and opportunity calculation respects both policies.
+    pair = pair.with_columns(
+        pl.max_horizontal("invoice_floor_gross_cents", "invoice_contribution_floor_cents").alias(
+            "invoice_floor_cents"
+        ),
+        pl.when(
+            pl.col("invoice_contribution_floor_cents").is_not_null()
+            & (
+                pl.col("invoice_contribution_floor_cents")
+                > pl.col("invoice_floor_gross_cents").fill_null(0)
+            )
+        )
+        .then(pl.lit("contribution_margin"))
+        .when(pl.col("invoice_floor_gross_cents").is_not_null())
+        .then(pl.lit("pocket_gross_margin"))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("binding_floor_basis"),
     ).with_columns(
-        pl.when(pl.col("eff_list_cents") > 0)
+        # Floor index (dimensionless): binding invoice floor / effective list.
+        # Only with valid, non-stale list provenance (24.4).
+        pl.when(pl.col("list_provenance") == LIST_PROVENANCE_EFFECTIVE)
         .then(pl.col("invoice_floor_cents") / pl.col("eff_list_cents"))
         .otherwise(None)
         .alias("floor_index")
@@ -245,10 +370,15 @@ def build_guidance(
         | (pl.col("n_observations") < pg.min_band_observations)
         | pl.col("current_index").is_null()
     )
-    # Floor comparisons need cost and list; without them only band statuses apply.
+    # Floor comparisons need cost and valid list; without them only band
+    # statuses apply (the dollar floors are still reported).
     has_floor = pl.col("floor_index").is_not_null() & pl.col("unit_cost_cents").is_not_null()
     no_headroom = has_floor & (pl.col("floor_index") > pl.col("band_p75"))
     below_floor = has_floor & (pl.col("current_index") < pl.col("floor_index"))
+    # The segment's historical median sits below the binding floor: the market
+    # reference cannot be the target (24.3). The pair's own breach (below_floor)
+    # outranks it as the more actionable per-pair fact.
+    market_below = has_floor & (pl.col("band_p50") < pl.col("floor_index"))
 
     g = g.with_columns(
         pl.when(insufficient)
@@ -257,6 +387,8 @@ def build_guidance(
         .then(pl.lit(STATUS_NO_HEADROOM))
         .when(below_floor)
         .then(pl.lit(STATUS_BELOW_FLOOR))
+        .when(market_below)
+        .then(pl.lit(STATUS_MARKET_BELOW_FLOOR))
         .when(pl.col("current_index") < pl.col("band_p25"))
         .then(pl.lit(STATUS_BELOW_REFERENCE))
         .when(pl.col("current_index") > pl.col("band_p75"))

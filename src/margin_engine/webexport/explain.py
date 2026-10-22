@@ -57,6 +57,13 @@ def guidance_explanation(row: dict[str, Any]) -> str:
         )
     if status == "in_band":
         return base + " The price sits inside the segment's reference band."
+    if status == "market_reference_below_floor":
+        return (
+            base + f" The segment's historical midpoint sits below the economic floor "
+            f"(an index of {_idx(floor_idx)}), so the market reference cannot be the "
+            "target: pricing to history would earn less than the configured minimum "
+            "margin. The floor is the target instead."
+        )
     if status == "insufficient_pricing_headroom":
         return (
             base + f" The economic floor (an index of {_idx(floor_idx)}) sits at or above "
@@ -81,6 +88,9 @@ def opportunity_summary(row: dict[str, Any]) -> str:
         "expected_change": "causal evidence models the volume response.",
         "sensitivity_range_only": "instrument-level evidence limits the volume "
         "response to a labeled range.",
+        "outside_price_support": "the move exceeds the segment's identified "
+        "price range, so no volume response is modeled.",
+        "cost_unavailable": "no unit cost is known, so cost-dependent figures are not produced.",
     }.get(treatment, "no volume response is modeled.")
     if cur is not None and target is not None and target > 0:
         below = (float(target) - float(cur)) / float(target)
@@ -112,6 +122,17 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
             base + f" The segment's elasticity evidence is {_label(status).lower()}, so "
             "the volume response is shown only as a labeled sensitivity range, not as "
             "a point estimate."
+        )
+    if treatment == "outside_price_support":
+        return (
+            base + " The proposed move lies outside the price variation the "
+            "instruments ever induced in this segment, so the engine refuses to "
+            "extrapolate a volume response - the figure assumes unchanged volume."
+        )
+    if treatment == "cost_unavailable":
+        return (
+            base + " No unit cost is known for this pair, so cost-dependent "
+            "levels are not produced - missing cost is never treated as zero."
         )
     return (
         base + f" The segment's elasticity evidence is {_label(status).lower()}, so no "

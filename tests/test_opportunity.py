@@ -46,13 +46,22 @@ def _guidance(rows: list[dict]) -> pl.DataFrame:
         "eff_list_cents": 10_000,
         "unit_cost_cents": 6_000,
         "invoice_floor_cents": 6_316,
+        "band_p25": 0.92,
         "band_p75": 0.97,
         "contract_protected": False,
+        # Pocket parameters (24.1): percentage deductions d (basis points) and
+        # fixed per-unit deductions F (cents). Zero keeps invoice == pocket.
+        "deduction_bp": 0,
+        "fixed_deduction_cents": 0,
     }
     return pl.DataFrame([{**base, **r} for r in rows])
 
 
-def _sensitivity(status: str = "causal_elasticity_supported", beta: float = -2.0) -> pl.DataFrame:
+def _sensitivity(
+    status: str = "causal_elasticity_supported",
+    beta: float = -2.0,
+    support: tuple[float, float] = (-0.5, 0.5),
+) -> pl.DataFrame:
     return pl.DataFrame(
         [
             {
@@ -61,6 +70,8 @@ def _sensitivity(status: str = "causal_elasticity_supported", beta: float = -2.0
                 "iv_ci_low": beta - 0.2,
                 "iv_ci_high": beta + 0.2,
                 "status": status,
+                "support_log_lo": support[0],
+                "support_log_hi": support[1],
             }
         ]
     )
@@ -72,7 +83,7 @@ def test_gross_price_opportunity_hand_calc() -> None:
     opp = price_opportunities(_guidance([{}]), panel, _sensitivity(), Rules())
     row = opp.to_dicts()[0]
     assert row["baseline_qty"] == 20.0
-    assert row["gap_cents"] == pytest.approx(500.0)
+    assert row["gap_invoice_cents"] == pytest.approx(500.0)
     assert row["gross_price_opportunity_cents"] == 10_000
 
 
@@ -218,6 +229,117 @@ def test_three_levels_never_summed() -> None:
     assert "gross_price_opportunity_cents" in opp.columns
     assert "expected_contribution_change_cents" in opp.columns
     assert not any("total_opportunity" in c for c in opp.columns)
+
+
+def test_pocket_aware_gross_and_contribution_hand_calc() -> None:
+    """24.1: d=10%, F=0. Invoice gap 500c retains 450c pocket per unit.
+    Gross = 20 x 500 x 0.9 = 9000c.
+    Unit contribution c(P) = 0.9P - 6000: c0 = 2100, c1 = 2550.
+    Q1 = 20 x (9500/9000)^-2 = 17.950138...
+    delta = 2550 x 17.950138 - 2100 x 20 = 45772.85 - 42000 = 3773c."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{"deduction_bp": 1_000}]), panel, _sensitivity(), Rules())
+    row = opp.to_dicts()[0]
+    assert row["gross_price_opportunity_cents"] == 9_000
+    assert row["expected_contribution_change_cents"] == pytest.approx(3_773, abs=2)
+    assert row["pocket_retention"] == pytest.approx(0.90)
+
+
+def test_fixed_deduction_cancels_in_gap_not_in_level() -> None:
+    """F cancels out of price GAPS (same F at P0 and P1) but lowers both
+    contribution LEVELS: with F=100c, d=0, delta changes only through Q1.
+    c0 = 9000-100-6000 = 2900; c1 = 9500-100-6000 = 3400.
+    delta = 3400 x 17.950138 - 2900 x 20 = 61030.5 - 58000 = 3030c."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(
+        _guidance([{"fixed_deduction_cents": 100}]), panel, _sensitivity(), Rules()
+    )
+    row = opp.to_dicts()[0]
+    assert row["gross_price_opportunity_cents"] == 10_000  # F cancels in the gap
+    assert row["expected_contribution_change_cents"] == pytest.approx(3_031, abs=2)
+
+
+def test_missing_cost_never_zero() -> None:
+    """24.2: a pair without unit cost keeps its price-based level 2 but is
+    excluded from cost-dependent levels and labeled cost_unavailable."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(
+        _guidance([{"unit_cost_cents": None}]), panel, _sensitivity(), Rules()
+    )
+    row = opp.to_dicts()[0]
+    assert row["volume_treatment"] == "cost_unavailable"
+    assert row["cost_unavailable"] is True
+    assert row["gross_price_opportunity_cents"] == 10_000
+    assert row["expected_contribution_change_cents"] is None
+    assert row["contribution_change_low_cents"] is None
+
+
+def test_outside_price_support_no_volume_response() -> None:
+    """24.6: the proposed move log(9500/9000)=0.054 lies outside a tight
+    identifying range, so even a causal segment gets fixed-volume only."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{}]), panel, _sensitivity(support=(-0.01, 0.01)), Rules())
+    row = opp.to_dicts()[0]
+    assert row["volume_treatment"] == "outside_price_support"
+    assert row["expected_contribution_change_cents"] is None
+    assert row["contribution_change_low_cents"] is None
+    assert row["gross_price_opportunity_cents"] == 10_000
+
+
+def test_conservative_level2_below_p25_to_p25() -> None:
+    """24.13: the conservative variant raises below-P25 pairs to P25 only.
+    current 0.90 < P25 0.92: gap = 0.02 x 10000 = 200c x 20 = 4000c."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{}]), panel, _sensitivity(), Rules())
+    row = opp.to_dicts()[0]
+    assert row["gross_price_opportunity_conservative_cents"] == 4_000
+    # A pair already at or above P25 contributes zero to the conservative level.
+    opp2 = price_opportunities(
+        _guidance([{"current_index": 0.93, "target_index": 0.96}]),
+        panel,
+        _sensitivity(),
+        Rules(),
+    )
+    assert opp2.to_dicts()[0]["gross_price_opportunity_conservative_cents"] == 0
+
+
+def test_optimal_price_pocket_aware() -> None:
+    """24.1: P* = (C + F)/(1 - d) x beta/(1+beta). With d=10%, F=0, C=6000,
+    beta=-2: P* = 6666.67 x 2 = 13333 -> clipped to corridor top 9700."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance([{"deduction_bp": 1_000}])
+    opp = price_opportunities(g, panel, _sensitivity(beta=-2.0), Rules())
+    opp = opp.with_columns(pl.lit(-2.0).alias("elasticity"))
+    out = optimize_targets(opp, g, Rules())
+    row = out.to_dicts()[0]
+    assert row["target_basis"] == "optimized_monopoly_markup_clipped"
+    assert row["optimal_price_cents"] == 9_700
+
+
+def test_optimal_price_interior_pocket_aware() -> None:
+    """Interior optimum: beta=-3 -> P* = (C+F)/(1-d) x 1.5. With C=6000,
+    F=120, d=10%: c_eff = 6800, P* = 10200 -> above corridor top 11640? No:
+    corridor top = 0.97 x 12000 = 11640, floor 6316 -> P* = 10200 interior."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance([{"deduction_bp": 1_000, "fixed_deduction_cents": 120, "eff_list_cents": 12_000}])
+    opp = price_opportunities(g, panel, _sensitivity(beta=-3.0), Rules())
+    opp = opp.with_columns(pl.lit(-3.0).alias("elasticity"))
+    out = optimize_targets(opp, g, Rules())
+    row = out.to_dicts()[0]
+    assert row["target_basis"] == "optimized_monopoly_markup_clipped"
+    assert row["optimal_price_cents"] == 10_200
+
+
+def test_optimize_skips_missing_cost() -> None:
+    """24.2: no cost, no optimization - provisional target kept."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance([{"unit_cost_cents": None}])
+    opp = price_opportunities(g, panel, _sensitivity(), Rules())
+    opp = opp.with_columns(pl.lit(-2.0).alias("elasticity"))
+    out = optimize_targets(opp, g, Rules())
+    row = out.to_dicts()[0]
+    assert row["target_basis"] == "provisional_historical"
+    assert row["optimal_price_cents"] is None
 
 
 def test_observed_leakage_reconciles_to_ledger() -> None:

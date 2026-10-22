@@ -44,6 +44,50 @@ def test_fifo_timing_exact() -> None:
     assert ident["ending_inventory_cents"] == 0
 
 
+def test_lifo_timing_exact() -> None:
+    """24.12: newest layers consumed first. Jan sale precedes the Feb receipt,
+    so it draws the Jan layer; Feb and Mar sales draw newest-first."""
+    receipts, sales = _world()
+    res = cost_sales(receipts, sales, "lifo")
+    cogs = {r["source_line_key"]: r["cogs_cents"] for r in res.per_sale.to_dicts()}
+    # Jan 15: only the Jan layer exists -> 5 x $10 = 5000.
+    # Feb 15: newest first -> 10 x $12 = 12000 (Feb layer consumed entirely).
+    # Mar 15: remaining Jan layer -> 5 x $10 = 5000.
+    assert cogs == {"S1": 5_000, "S2": 12_000, "S3": 5_000}
+    ident = res.identity.to_dicts()[0]
+    assert ident["receipts_value_cents"] == 22_000
+    assert ident["cogs_cents"] + ident["ending_inventory_cents"] == 22_000
+    assert ident["ending_inventory_cents"] == 0
+
+
+def test_lifo_old_layers_persist() -> None:
+    """LIFO ending inventory retains the OLDEST costs: with ongoing receipts,
+    a cost change reaches COGS immediately and old layers sit in inventory."""
+    receipts = pl.DataFrame(
+        {
+            "item_id": ["I1", "I1"],
+            "receipt_date": pl.Series([date(2024, 1, 1), date(2024, 2, 1)], dtype=pl.Date),
+            "quantity": [10, 10],
+            "unit_cost_cents": [1_000, 1_500],
+        }
+    )
+    sales = pl.DataFrame(
+        {
+            "source_line_key": ["S1"],
+            "item_id": ["I1"],
+            "invoice_date": pl.Series([date(2024, 2, 15)], dtype=pl.Date),
+            "quantity": [8.0],
+        }
+    )
+    res = cost_sales(receipts, sales, "lifo")
+    row = res.per_sale.to_dicts()[0]
+    assert row["cogs_cents"] == 8 * 1_500  # new cost hits COGS immediately
+    ident = res.identity.to_dicts()[0]
+    # Ending inventory: 10 x $10 (old layer) + 2 x $15 = 13000.
+    assert ident["ending_inventory_cents"] == 13_000
+    assert ident["cogs_cents"] + ident["ending_inventory_cents"] == 25_000
+
+
 def test_average_timing_exact() -> None:
     receipts, sales = _world()
     res = cost_sales(receipts, sales, "average")

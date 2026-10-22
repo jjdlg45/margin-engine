@@ -169,12 +169,52 @@ def _leakage_components(leak: pl.DataFrame) -> list[LeakageComponent]:
     ]
 
 
+def _name_maps(
+    res: FullRunResult,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
+    """customer, item, supplier and category display names from the mapped
+    reference tables; empty when the export carries IDs only."""
+    cust: dict[str, str] = {}
+    item: dict[str, str] = {}
+    supp: dict[str, str] = {}
+    cat: dict[str, str] = {}
+    customers = res.pipeline.reference.get("customers")
+    if customers is not None and "customer_name" in customers.columns:
+        cust = {
+            r["customer_id"]: r["customer_name"]
+            for r in customers.select("customer_id", "customer_name").to_dicts()
+            if r["customer_name"]
+        }
+    items = res.pipeline.reference.get("items")
+    if items is not None:
+        if "item_description" in items.columns:
+            item = {
+                r["item_id"]: r["item_description"]
+                for r in items.select("item_id", "item_description").to_dicts()
+                if r["item_description"]
+            }
+        if "supplier_name" in items.columns:
+            supp = {
+                r["supplier_id"]: r["supplier_name"]
+                for r in items.select("supplier_id", "supplier_name").unique().to_dicts()
+                if r["supplier_name"]
+            }
+        if "category_name" in items.columns:
+            cat = {
+                r["item_category"]: r["category_name"]
+                for r in items.select("item_category", "category_name").unique().to_dicts()
+                if r["category_name"]
+            }
+    return cust, item, supp, cat
+
+
 def build_bundle(
     res: FullRunResult,
     rules: Rules,
     repo_root: Path,
     data_label: str | None = None,
 ) -> WebBundle:
+    cust_name, item_name, supp_name, cat_name = _name_maps(res)
     ledger = res.pipeline.ledger
     sale = ledger.filter(pl.col("transaction_type") == "sale")
     seg_of_line = res.segments.leaf_assignments
@@ -380,7 +420,9 @@ def build_bundle(
     guidance_pairs = [
         GuidancePair(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             item_id=str(r["item_id"]),
+            item_name=item_name.get(str(r["item_id"])),
             segment=int(r["segment_leaf"]) if r.get("segment_leaf") is not None else None,
             current_index=_r(r.get("current_index")),
             band_p25=_r(r.get("band_p25")),
@@ -389,6 +431,10 @@ def build_bundle(
             floor_index=_r(r.get("floor_index")),
             pocket_floor_cents=r.get("pocket_floor_cents"),
             invoice_floor_cents=r.get("invoice_floor_cents"),
+            invoice_floor_gross_cents=r.get("invoice_floor_gross_cents"),
+            invoice_contribution_floor_cents=r.get("invoice_contribution_floor_cents"),
+            binding_floor_basis=r.get("binding_floor_basis"),
+            list_provenance=r.get("list_provenance"),
             target_index=_r(r.get("target_index")),
             target_label=r.get("target_label"),
             status=str(r.get("guidance_status")),
@@ -431,6 +477,12 @@ def build_bundle(
                 ar_ci_high=_r(r.get("ar_ci_high")),
                 robustness_spread=_r(r.get("robustness_spread")),
                 identifying_coverage=_r(r.get("identifying_coverage")),
+                ar_bounded=r.get("ar_bounded"),
+                support_log_lo=_r(r.get("support_log_lo")),
+                support_log_hi=_r(r.get("support_log_hi")),
+                ppml_positive=_r(r.get("ppml_positive")),
+                carried_forward_share=_r(r.get("carried_forward_share")),
+                market_control_used=bool(r.get("market_control_used") or False),
                 status=str(r["status"]),
                 status_reasons=str(r.get("status_reasons") or ""),
                 naive_vs_iv_note=note,
@@ -450,12 +502,23 @@ def build_bundle(
     top_opps = [
         OpportunityRecord(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             item_id=str(r["item_id"]),
+            item_name=item_name.get(str(r["item_id"])),
             segment=int(r["segment_leaf"]) if r.get("segment_leaf") is not None else None,
             gross_price_opportunity_cents=_i(r["gross_price_opportunity_cents"]),
+            gross_price_opportunity_conservative_cents=r.get(
+                "gross_price_opportunity_conservative_cents"
+            ),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
+            cost_unavailable=bool(r.get("cost_unavailable") or False),
             evidence_status=r.get("evidence_status"),
+            pct_below_target=_r(
+                (float(r["target_index"]) - float(r["current_index"])) / float(r["target_index"])
+            )
+            if r.get("target_index") and r.get("current_index") is not None
+            else None,
             summary=explain.opportunity_summary(r),
             explanation=explain.opportunity_explanation(r),
         )
@@ -479,6 +542,20 @@ def build_bundle(
         leakage_total_cents=_i(leak["total_leakage_cents"].sum()),
         leakage_by_customer=leak_by_customer,
         gross_total_cents=_i(res.opportunities["gross_price_opportunity_cents"].sum())
+        if res.opportunities.height
+        else 0,
+        gross_conservative_total_cents=_i(
+            res.opportunities["gross_price_opportunity_conservative_cents"].fill_null(0).sum()
+        )
+        if res.opportunities.height
+        and "gross_price_opportunity_conservative_cents" in res.opportunities.columns
+        else 0,
+        n_cost_unavailable=_i((res.opportunities["volume_treatment"] == "cost_unavailable").sum())
+        if res.opportunities.height
+        else 0,
+        n_outside_price_support=_i(
+            (res.opportunities["volume_treatment"] == "outside_price_support").sum()
+        )
         if res.opportunities.height
         else 0,
         expected_total_cents=_i(
@@ -514,6 +591,7 @@ def build_bundle(
     customers = [
         CustomerEconomics(
             customer_id=str(r["customer_id"]),
+            customer_name=cust_name.get(str(r["customer_id"])),
             n_orders=_i(r["n_orders"]),
             net_revenue_cents=_i(r["net_cents"]),
             sales_contribution_cents=_i(r["sales_contribution_cents"]),
@@ -549,7 +627,7 @@ def build_bundle(
     economics = EconomicsSection(customers=customers, orders=orders)
 
     # --- scenario grids ------------------------------------------------------------
-    scenario_grids = _scenario_grids(res, rules)
+    scenario_grids = _scenario_grids(res, rules, supp_name, cat_name)
 
     # --- optional modules ------------------------------------------------------------
     optional = _optional_modules(res)
@@ -604,7 +682,14 @@ def build_bundle(
             "Segment {}",
             top_n=50,
         ),
-        waterfall_by_customer=_group_waterfalls(sale, "customer_id", "{}", top_n=200),
+        waterfall_by_customer=[
+            gw.model_copy(
+                update={
+                    "label": f"{cust_name[gw.key]} · {gw.key}" if gw.key in cust_name else gw.label
+                }
+            )
+            for gw in _group_waterfalls(sale, "customer_id", "{}", top_n=200)
+        ],
         leakage_components_overall=_leakage_components(leak),
         dispersion=dispersion,
         segments=segments,
@@ -619,7 +704,12 @@ def build_bundle(
     )
 
 
-def _scenario_grids(res: FullRunResult, rules: Rules) -> list[ScenarioGrid]:
+def _scenario_grids(
+    res: FullRunResult,
+    rules: Rules,
+    supp_name: dict[str, str],
+    cat_name: dict[str, str],
+) -> list[ScenarioGrid]:
     """Pass-through grids (0..100% in 10% steps) for the top categories and
     suppliers by baseline revenue, at a +10% landed-cost shock."""
     from datetime import date
@@ -663,11 +753,13 @@ def _scenario_grids(res: FullRunResult, rules: Rules) -> list[ScenarioGrid]:
             n_pairs = int(grid.select(pl.col("n_pairs").max()).item() or 0) if grid.height else 0
             if n_pairs == 0:
                 continue
+            scope_label = (supp_name if scope == "supplier" else cat_name).get(str(value))
             grids.append(
                 ScenarioGrid(
                     name=shock.name,
                     scope=scope,
                     scope_value=str(value),
+                    scope_label=scope_label,
                     pct_increase=0.10,
                     n_pairs=n_pairs,
                     cogs_timing=timing,
@@ -764,8 +856,182 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
 from margin_engine.webexport.bundle import WinCurve as WinCurveModel  # noqa: E402
 
 
+def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
+    """Per-page projections of the bundle (the static files behind the data
+    client's page endpoints) plus per-table files. Pure projections - every
+    figure still comes from the one WebBundle."""
+    d = bundle.model_dump(mode="json")
+    seg_rules = d["segments"]["rules"]
+    guidance = d["guidance"]
+    opp = d["opportunity"]
+    econ = d["economics"]
+    sens = d["sensitivity"]
+
+    def facet_entities(
+        rows: list[dict[str, object]], id_key: str, name_key: str
+    ) -> list[dict[str, object]]:
+        seen: dict[str, object] = {}
+        for r in rows:
+            rid = str(r[id_key])
+            if rid not in seen:
+                seen[rid] = r.get(name_key)
+        return [{"id": k, "name": v} for k, v in seen.items()]
+
+    seg_names = [
+        {"leaf_id": r["leaf_id"], "display_rank": r["display_rank"], "name": r["name"]}
+        for r in seg_rules
+    ]
+    leak_sorted = sorted(d["leakage_components_overall"], key=lambda c: -int(c["amount_cents"]))
+    pages: dict[str, dict[str, object]] = {
+        "app": {
+            "bundle_version": d["bundle_version"],
+            "engine_version": d["engine_version"],
+            "data_label": d["data_label"],
+            "honest_labels": d["honest_labels"],
+            "labels": d["labels"],
+            "kpis": d["kpis"],
+        },
+        "overview": {
+            "waterfall_overall": d["waterfall_overall"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "leakage_top_component": leak_sorted[0] if leak_sorted else None,
+            "gross_total_cents": opp["gross_total_cents"],
+            "window_label": opp["window_label"],
+            "below_floor_pairs": sum(1 for g in guidance if g["status"] == "below_floor"),
+            "causal_segments": sum(1 for r in sens if r["status"] == "causal_elasticity_supported"),
+            "total_segments": len(sens),
+            "negative_contribution_orders": econ["orders"]["negative_contribution_orders"],
+            "n_library_warnings": len(d["library_warnings"]),
+        },
+        "waterfall": {
+            "overall": d["waterfall_overall"],
+            "by_segment": d["waterfall_by_segment"],
+            "by_customer": d["waterfall_by_customer"],
+            "leakage_components": d["leakage_components_overall"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "window_label": opp["window_label"],
+            "segment_names": seg_names,
+        },
+        "customers": {
+            "orders": econ["orders"],
+            "facets": {
+                "customers": facet_entities(econ["customers"], "customer_id", "customer_name"),
+                "service_flags": sorted({f for c in econ["customers"] for f in c["service_flags"]}),
+            },
+            "waterfall_by_customer": d["waterfall_by_customer"],
+        },
+        "segments": d["segments"],
+        "guidance": {
+            "n_pairs": len(guidance),
+            "facets": {
+                "customers": facet_entities(guidance, "customer_id", "customer_name"),
+                "items": facet_entities(guidance, "item_id", "item_name"),
+                "statuses": sorted({g["status"] for g in guidance}),
+                "segments": seg_names,
+            },
+        },
+        "sensitivity": {"rows": sens, "segment_names": seg_names},
+        "opportunity": {
+            "never_summed_note": opp["never_summed_note"],
+            "window_label": opp["window_label"],
+            "leakage_total_cents": opp["leakage_total_cents"],
+            "gross_total_cents": opp["gross_total_cents"],
+            "gross_conservative_total_cents": opp["gross_conservative_total_cents"],
+            "expected_total_cents": opp["expected_total_cents"],
+            "expected_total_note": opp["expected_total_note"],
+            "n_records": opp["n_records"],
+            "n_cost_unavailable": opp["n_cost_unavailable"],
+            "n_outside_price_support": opp["n_outside_price_support"],
+            "leakage_by_customer": opp["leakage_by_customer"],
+            "facets": {
+                "customers": facet_entities(
+                    opp["top_opportunities"], "customer_id", "customer_name"
+                ),
+                "items": facet_entities(opp["top_opportunities"], "item_id", "item_name"),
+                "evidence": sorted(
+                    {
+                        str(r["evidence_status"] or "insufficient_data")
+                        for r in opp["top_opportunities"]
+                    }
+                ),
+                "treatments": sorted({r["volume_treatment"] for r in opp["top_opportunities"]}),
+            },
+        },
+        "scenarios": {"grids": d["scenario_grids"]},
+        "methodology": {
+            "data_label": d["data_label"],
+            "reconciliation": d["reconciliation"],
+            "residuals": d["residuals"],
+            "unallocated_settlements": d["unallocated_settlements"],
+            "library_warnings": d["library_warnings"],
+            "validation_results": d["validation_results"],
+            "manifest": d["manifest"],
+        },
+        "modules": d["optional_modules"],
+        # Explanations ride a companion file fetched only when a pair is
+        # opened, and null fields are omitted from table rows (absent ==
+        # null to the UI) - keeps the table file itself under the size gate.
+        "tables/guidance": {
+            "items": [
+                {k: v for k, v in g.items() if k != "explanation" and v is not None}
+                for g in guidance
+            ]
+        },
+        "tables/guidance_explanations": {
+            "items": {f"{g['customer_id']}|{g['item_id']}": g["explanation"] for g in guidance}
+        },
+        "tables/opportunities": {"items": opp["top_opportunities"]},
+        "tables/customers": {"items": econ["customers"]},
+    }
+    return pages
+
+
+# Hard per-file limit for app-consumed files is 1 MB; shards aim well below it
+# because the size estimate uses compact per-row dumps while files are written
+# indented (~10% overhead), and growth headroom should remain. Transport detail
+# only: the data client follows the "next" links, and the HTTP adapter never
+# sees shards (the BFF paginates).
+_SHARD_BYTES = 700_000
+
+
+def _shard_table(name: str, data: dict[str, object]) -> list[tuple[str, dict[str, object]]]:
+    """Split a table payload into <= _SHARD_BYTES files chained by "next".
+    Lists shard by element; dicts shard by (already deterministic) key order.
+    Returns [(file name, payload), ...] - a single unchained file when small."""
+    items = data["items"]
+    blob = json.dumps(data, sort_keys=True, indent=1)
+    if len(blob.encode("utf-8")) <= _SHARD_BYTES:
+        return [(name, data)]
+    entries: list[tuple[object, int]] = []
+    if isinstance(items, dict):
+        for k in items:
+            entries.append(((k, items[k]), len(json.dumps({k: items[k]}).encode("utf-8"))))
+    else:
+        assert isinstance(items, list)  # table payloads carry list or dict items
+        for it in items:
+            entries.append((it, len(json.dumps(it).encode("utf-8"))))
+    chunks: list[list[object]] = [[]]
+    size = 0
+    for entry, nbytes in entries:
+        if size + nbytes > _SHARD_BYTES and chunks[-1]:
+            chunks.append([])
+            size = 0
+        chunks[-1].append(entry)
+        size += nbytes
+    out: list[tuple[str, dict[str, object]]] = []
+    for i, chunk in enumerate(chunks):
+        fname = name if i == 0 else f"{name}_{i + 1}"
+        nxt = f"{name}_{i + 2}.json" if i + 1 < len(chunks) else None
+        chunk_items: object = dict(chunk) if isinstance(items, dict) else chunk  # type: ignore[arg-type]
+        out.append((fname, {**data, "items": chunk_items, "next": nxt}))
+    return out
+
+
 def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
-    """Write bundle.json (sorted keys, deterministic) and schema.json."""
+    """Write bundle.json (full model, for tooling and parity tests),
+    schema.json, and the split per-page / per-table files the app consumes -
+    all deterministic (sorted keys, newline-terminated). Oversized table files
+    are sharded into "next"-linked chunks so every app file stays under 1 MB."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = out_dir / "bundle.json"
     schema_path = out_dir / "schema.json"
@@ -773,4 +1039,21 @@ def write_bundle(bundle: WebBundle, out_dir: Path) -> tuple[Path, Path]:
     bundle_path.write_text(payload + "\n", encoding="utf-8", newline="\n")
     schema = json.dumps(WebBundle.model_json_schema(), sort_keys=True, indent=1)
     schema_path.write_text(schema + "\n", encoding="utf-8", newline="\n")
+    # Clear old table shards so a shrinking export leaves no orphan files.
+    tables_dir = out_dir / "tables"
+    if tables_dir.is_dir():
+        for old in tables_dir.glob("*.json"):
+            old.unlink()
+    files: list[tuple[str, dict[str, object]]] = []
+    for name, data in _page_payloads(bundle).items():
+        if name.startswith("tables/"):
+            files.extend(_shard_table(name, data))
+        else:
+            files.append((name, data))
+    for name, data in files:
+        path = out_dir / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, sort_keys=True, indent=1) + "\n", encoding="utf-8", newline="\n"
+        )
     return bundle_path, schema_path

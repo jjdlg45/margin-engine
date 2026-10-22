@@ -18,6 +18,7 @@ from margin_engine.config import Rules
 from margin_engine.ingest.fx import convert_lines, convert_reference_amounts, quarter_end_rates
 from margin_engine.ingest.loader import load_lines, load_reference_table
 from margin_engine.ingest.mapping import MappingError, SourceMapping, load_mapping
+from margin_engine.memlog import rss_log
 from margin_engine.transactions.classify import ClassifiedData, classify, sales_observations
 from margin_engine.waterfall.engine import WaterfallResult, build_waterfall
 from margin_engine.waterfall.reconcile import ReconciliationReport, reconcile
@@ -58,6 +59,9 @@ REFERENCE_TABLES = [
     "inventory_receipts",
     "quotes",
     "substitution_groups",
+    "market_price_index",
+    "gl_totals",
+    "external_cost_series",
 ]
 
 
@@ -65,6 +69,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
     mapping = load_mapping(mapping_path)
     blank_counts: dict[str, int] = {}
     lines = load_lines(data_dir, mapping, blank_counts)
+    rss_log("load_lines")
     ref = {
         name: load_reference_table(data_dir, mapping, name, blank_counts)
         for name in REFERENCE_TABLES
@@ -115,6 +120,8 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
             ).drop("currency", "period", strict=False)
 
     classified: ClassifiedData = classify(lines, rules)
+    rss_log("classify")
+    del lines  # consumed; keep only one wide frame alive at 10M-line scale (27.2)
     wf: WaterfallResult = build_waterfall(
         classified.ledger,
         mapping,
@@ -132,6 +139,10 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         rebate_program_tiers=ref["rebate_program_tiers"],
         tiered_settlements=ref["tiered_settlements"],
     )
+    rss_log("waterfall")
+    # The classified ledger is superseded by the waterfall lines; only the
+    # small duplicate frame and source totals are still needed (27.2).
+    classified.ledger = pl.DataFrame()
     report = reconcile(
         wf.lines,
         classified.removed_duplicates,
@@ -145,8 +156,25 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         tiered_settlements=ref["tiered_settlements"],
     )
     obs = sales_observations(wf.lines)
+    rss_log("observations")
     skipped = [name for name in REFERENCE_TABLES if ref[name] is None]
     notes = list(wf.notes) + fx_res.notes
+    if mapping.lines.order_id is None:
+        notes.append(
+            "no order_id in the mapping: the invoice is used as the order unit "
+            "(order economics, frequency ABC, freight allocation) - a labeled proxy"
+        )
+    anon = wf.lines.filter((pl.col("transaction_type") == "sale") & pl.col("customer_id").is_null())
+    if anon.height:
+        sale_rev = int(
+            wf.lines.filter(pl.col("transaction_type") == "sale")["net_amount_cents"].sum()
+        )
+        share = int(anon["net_amount_cents"].sum()) / sale_rev if sale_rev else 0.0
+        notes.append(
+            f"{anon.height:,} sale line(s) ({share:.1%} of sale revenue) carry no "
+            "customer identity: kept in the ledger and totals, excluded from "
+            "customer-level behavior views (observations, segmentation, panel)"
+        )
     if skipped:
         notes.append(f"reference tables absent (features skipped): {skipped}")
     return PipelineResult(

@@ -70,9 +70,13 @@ def run(
 # Demo world for the hosted site: generated in CI at deploy time, never
 # committed. Scale chosen in Phase 19.1 as the smallest where at least one
 # segment reaches causal-supported elasticity with the bundle under 5 MB.
-DEMO_SEED = 42
-DEMO_CUSTOMERS = 40  # smallest size with >=1 causal-supported segment (Phase 19.1 experiment)
-DEMO_ITEMS = 100
+# Smallest scanned world with >=1 causal-supported segment under the Run 4
+# criteria (AR bounded and <= 1.5x the primary CI, carried-forward robustness
+# gap, identifying-support guard): 50 x 120 at seed 3. The Phase 19.1 world
+# (40 x 100 seed 42) no longer reaches causal with the stricter gates.
+DEMO_SEED = 3
+DEMO_CUSTOMERS = 50
+DEMO_ITEMS = 120
 
 
 @app.command()
@@ -114,6 +118,10 @@ def export_web(
                     seed=DEMO_SEED,
                     n_customers=DEMO_CUSTOMERS,
                     n_items=DEMO_ITEMS,
+                    # Same substitution structure as the committed sample, so
+                    # the cross-price module is exercised on the demo site and
+                    # the world matches the scanned causal-reaching candidate.
+                    n_substitution_groups=4,
                 )
                 world = Path(td) / "world"
                 _generate(cfg, world)
@@ -162,6 +170,94 @@ def validate_config(
     except (ValidationError, ValueError, TypeError) as exc:
         _fail("configuration", exc)
     typer.echo(f"OK: {rules} is valid (schema version {loaded.schema_.version})")
+
+
+@app.command()
+def profile(
+    file: Path = typer.Argument(..., help="CSV or .xlsx export to profile"),  # noqa: B008
+    sheet: str | None = typer.Option(None, "--sheet", help=".xlsx sheet name"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """Profile an export: formats, per-column stats, canonical-field candidates
+    with confidence and reason, suspected transaction-type codes (Run 4, 27.1).
+    Every guess needs human confirmation; nothing here becomes a decision."""
+    import dataclasses
+    import json as _json
+
+    from margin_engine.ingest.mapping import MappingError
+    from margin_engine.ingest.profiler import profile_file, render_profile
+
+    try:
+        result = profile_file(file, sheet)
+    except (MappingError, OSError) as exc:
+        _fail("profiling", exc)
+    if as_json:
+        typer.echo(_json.dumps(dataclasses.asdict(result), indent=1))
+    else:
+        typer.echo(render_profile(result))
+
+
+@app.command()
+def draft_mapping(
+    file: Path = typer.Argument(..., help="CSV or .xlsx export to draft a mapping for"),  # noqa: B008
+    out: Path | None = typer.Option(  # noqa: B008
+        None, "--out", help="Where to write the draft YAML (default: <file>.mapping.yaml)"
+    ),
+    sheet: str | None = typer.Option(None, "--sheet", help=".xlsx sheet name"),
+) -> None:
+    """Write a draft mapping YAML from the profile. Every guessed value is
+    marked # CONFIRM and listed under unconfirmed_fields; the engine refuses
+    to run the mapping until a person empties that list (Run 4, 27.1)."""
+    from margin_engine.ingest.mapping import MappingError
+    from margin_engine.ingest.profiler import draft_mapping as _draft
+    from margin_engine.ingest.profiler import profile_file
+
+    try:
+        result = profile_file(file, sheet)
+    except (MappingError, OSError) as exc:
+        _fail("profiling", exc)
+    target = out if out is not None else file.with_suffix(file.suffix + ".mapping.yaml")
+    target.write_text(_draft(result), encoding="utf-8", newline="\n")
+    typer.echo(f"Draft mapping written to {target}")
+    typer.echo(
+        "It will NOT run as-is: review every '# CONFIRM' line and delete its "
+        "entry from unconfirmed_fields once confirmed."
+    )
+
+
+@app.command()
+def anonymize(
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    out: Path = typer.Option(..., "--out", help="Directory for the anonymized copy"),  # noqa: B008
+    salt_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--salt-file",
+        help="File holding the secret salt (>=16 bytes); else MARGIN_ENGINE_ANON_SALT",
+    ),
+    scale_money: bool = typer.Option(
+        False,
+        "--scale-money",
+        help="Also scale every mapped money column by a secret salt-derived factor",
+    ),
+) -> None:
+    """Anonymize an export (Run 4, 27.5): salted keyed hashes for customer,
+    item and supplier IDs and names; optional secret money scaling. The salt
+    never appears in any output or manifest."""
+    from margin_engine.anonymize import anonymize_export, load_salt
+    from margin_engine.ingest.mapping import MappingError, load_mapping
+
+    try:
+        m = load_mapping(mapping)
+        salt = load_salt(salt_file)
+        counts = anonymize_export(data, m, out, salt, scale_money=scale_money)
+    except MappingError as exc:
+        _fail("anonymization", exc)
+    total = sum(counts.values())
+    typer.echo(f"Anonymized {len(counts)} file(s), {total:,} rows, into {out}")
+    typer.echo("IDs and names are salted keyed hashes; the salt is not recorded anywhere.")
+    if scale_money:
+        typer.echo("Money columns were scaled by a secret factor (internally consistent).")
 
 
 if __name__ == "__main__":

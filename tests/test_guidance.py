@@ -102,6 +102,7 @@ def test_statuses_assigned(guided: tuple[pl.DataFrame, pl.DataFrame]) -> None:
         "below_floor",
         "above_reference",
         "insufficient_pricing_headroom",
+        "market_reference_below_floor",
         "insufficient_data",
     }
     assert statuses <= allowed
@@ -228,6 +229,185 @@ def test_floor_includes_freight_concessions() -> None:
     assert by_cust["CC"]["deduction_bp"] == 200
     # Full precision: (10000/0.95)/0.98 = 10741.13... -> ceiling 10742.
     assert by_cust["CC"]["invoice_floor_cents"] == 10_742
+
+
+def test_contribution_floor_hand_calc() -> None:
+    """24.3: C=$100, K=$2 estimated cost-to-serve, m_c=4%, d=10%, F=0.
+    Pocket contribution floor = (10000+200)/0.96 = 10625 exactly.
+    Invoice contribution floor = 10625/0.90 = 11805.55... -> ceiling 11806.
+    Gross floor at m=5%: 10000/0.95/0.90 = 11695.9... -> ceiling 11696.
+    The contribution floor binds."""
+    rules = Rules.model_validate(
+        {
+            "price_guidance": {
+                "min_band_observations": 1,
+                "min_pocket_gross_margin": "0.05",
+                "min_contribution_margin": "0.04",
+            }
+        }
+    )
+    n = 5
+    df = pl.DataFrame(
+        {
+            "customer_id": ["C1"] * n,
+            "item_id": [f"I{i}" for i in range(n)],
+            "segment_leaf": [1] * n,
+            "price_index": [0.95] * n,
+            "invoice_date": pl.Series([date(2024, 1, 15)] * n, dtype=pl.Date),
+            "quantity_norm": [1.0] * n,
+            "product_cost_cents": [10_000] * n,
+            "eff_list_cents": [20_000] * n,
+            "net_amount_cents": [19_000] * n,
+            "freight_concession_cents": [1_900] * n,  # d = 10%
+            "contract_id": [None] * n,
+            "flag_data_quality_anomaly": [False] * n,
+        }
+    )
+    cts = pl.DataFrame(
+        {
+            "customer_id": ["C1"] * n,
+            "item_id": [f"I{i}" for i in range(n)],
+            "cts_per_unit_cents": [200] * n,
+        }
+    )
+    result = build_guidance(df, rules, None, cts)
+    row = result.guidance.to_dicts()[0]
+    assert row["deduction_bp"] == 1_000
+    assert row["pocket_contribution_floor_cents"] == 10_625
+    assert row["invoice_contribution_floor_cents"] == 11_806
+    assert row["invoice_floor_gross_cents"] == 11_696
+    assert row["invoice_floor_cents"] == 11_806  # binding = contribution
+    assert row["binding_floor_basis"] == "contribution_margin"
+
+
+def test_gross_floor_binds_when_contribution_margin_lower() -> None:
+    """With a tiny contribution margin and tiny K, the gross floor binds."""
+    rules = Rules.model_validate(
+        {
+            "price_guidance": {
+                "min_band_observations": 1,
+                "min_pocket_gross_margin": "0.05",
+                "min_contribution_margin": "0.01",
+            }
+        }
+    )
+    df = pl.DataFrame(
+        {
+            "customer_id": ["C1"],
+            "item_id": ["I1"],
+            "segment_leaf": [1],
+            "price_index": [0.95],
+            "invoice_date": pl.Series([date(2024, 1, 15)], dtype=pl.Date),
+            "quantity_norm": [1.0],
+            "product_cost_cents": [10_000],
+            "eff_list_cents": [20_000],
+            "contract_id": [None],
+            "flag_data_quality_anomaly": [False],
+        }
+    )
+    cts = pl.DataFrame({"customer_id": ["C1"], "item_id": ["I1"], "cts_per_unit_cents": [10]})
+    result = build_guidance(df, rules, None, cts)
+    row = result.guidance.to_dicts()[0]
+    # Gross: 10000/0.95 = 10527 (ceil). Contribution: 10010/0.99 = 10112 (ceil).
+    assert row["invoice_floor_gross_cents"] == 10_527
+    assert row["invoice_contribution_floor_cents"] == 10_112
+    assert row["invoice_floor_cents"] == 10_527
+    assert row["binding_floor_basis"] == "pocket_gross_margin"
+
+
+def test_market_reference_below_floor_status() -> None:
+    """24.3: segment P50 below the binding floor -> the new status, while a
+    pair priced below the floor itself still reports below_floor."""
+    rules = Rules.model_validate({"price_guidance": {"min_band_observations": 1}})
+    n = 30
+    # Band around 0.50 of list; floor index = 5000/0.95/10000 = 0.5264 > P50.
+    df = pl.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n)],
+            "item_id": ["I1"] * n,
+            "segment_leaf": [1] * n,
+            # P25~0.49, P50~0.50, P75~0.55; last pair at 0.54 (above floor).
+            "price_index": [0.49] * 10 + [0.50] * 10 + [0.55] * 9 + [0.54],
+            "invoice_date": pl.Series([date(2024, 1, 15)] * n, dtype=pl.Date),
+            "quantity_norm": [1.0] * n,
+            "product_cost_cents": [5_000] * n,
+            "eff_list_cents": [10_000] * n,
+            "contract_id": [None] * n,
+            "flag_data_quality_anomaly": [False] * n,
+        }
+    )
+    result = build_guidance(df, rules, None)
+    g = result.guidance
+    cn = g.filter(pl.col("customer_id") == "C29").to_dicts()[0]
+    assert cn["guidance_status"] == "market_reference_below_floor"
+    # A pair below the floor itself stays below_floor (higher precedence).
+    below = g.filter(pl.col("current_index") < pl.col("floor_index"))
+    assert below.height > 0
+    assert (below["guidance_status"] == "below_floor").all()
+    # Targets still never below the binding floor.
+    produced = g.filter(pl.col("target_index").is_not_null())
+    assert (produced["target_index"] >= produced["floor_index"]).all()
+
+
+def test_stale_list_excluded_from_floor_index() -> None:
+    """24.4: a list older than max_list_age_months at the last sale keeps its
+    dollar floors but gets no floor-index comparison."""
+    rules = Rules.model_validate(
+        {"price_guidance": {"min_band_observations": 1, "max_list_age_months": 12}}
+    )
+    df = pl.DataFrame(
+        {
+            "customer_id": ["C1", "C2"],
+            "item_id": ["I1", "I1"],
+            "segment_leaf": [1, 1],
+            "price_index": [0.9, 0.9],
+            "invoice_date": pl.Series([date(2025, 6, 15)] * 2, dtype=pl.Date),
+            "quantity_norm": [1.0, 1.0],
+            "product_cost_cents": [5_000, 5_000],
+            "eff_list_cents": [10_000, 10_000],
+            "list_effective_date": pl.Series([date(2023, 1, 1), date(2025, 1, 1)], dtype=pl.Date),
+            "contract_id": [None, None],
+            "flag_data_quality_anomaly": [False, False],
+        }
+    )
+    result = build_guidance(df, rules, None)
+    by_cust = {r["customer_id"]: r for r in result.guidance.to_dicts()}
+    assert by_cust["C1"]["list_provenance"] == "stale_list"
+    assert by_cust["C1"]["floor_index"] is None
+    assert by_cust["C1"]["invoice_floor_cents"] is not None  # dollar floor kept
+    assert by_cust["C2"]["list_provenance"] == "effective_list"
+    assert by_cust["C2"]["floor_index"] is not None
+
+
+def test_index_and_dollar_space_targets_agree() -> None:
+    """24.4: for valid list prices, index-space comparisons equal dollar-space
+    comparisons: floor_index x list == invoice floor exactly (one division)
+    and target_index x list >= invoice floor."""
+    rules = Rules.model_validate({"price_guidance": {"min_band_observations": 1}})
+    n = 12
+    df = pl.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n)],
+            "item_id": ["I1"] * n,
+            "segment_leaf": [1] * n,
+            "price_index": [0.80 + 0.01 * i for i in range(n)],
+            "invoice_date": pl.Series([date(2024, 1, 15)] * n, dtype=pl.Date),
+            "quantity_norm": [1.0] * n,
+            "product_cost_cents": [7_777] * n,
+            "eff_list_cents": [12_345] * n,
+            "contract_id": [None] * n,
+            "flag_data_quality_anomaly": [False] * n,
+        }
+    )
+    result = build_guidance(df, rules, None)
+    for row in result.guidance.to_dicts():
+        if row["floor_index"] is None:
+            continue
+        assert row["floor_index"] * row["eff_list_cents"] == pytest.approx(
+            row["invoice_floor_cents"], abs=1e-6
+        )
+        if row["target_index"] is not None:
+            assert row["target_index"] * row["eff_list_cents"] >= row["invoice_floor_cents"] - 1e-6
 
 
 from fractions import Fraction  # noqa: E402

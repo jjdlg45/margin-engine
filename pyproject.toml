@@ -26,6 +26,11 @@ dependencies = [
 margin-engine = "margin_engine.cli:app"
 
 [dependency-groups]
+api = [
+    "fastapi>=0.159.1",
+    "httpx>=0.28.1",
+    "uvicorn>=0.54.0",
+]
 dev = [
     "ruff>=0.8",
     "mypy>=1.13",
@@ -94,7 +99,11 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not slow and not network'"
+markers = [
+    "slow: full-tier scenario matrix and other long runs (run explicitly with -m slow)",
+    "network: tests that make live external calls (everything else passes offline)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:pandera.*",
     "ignore::FutureWarning",

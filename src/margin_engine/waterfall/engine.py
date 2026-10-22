@@ -98,6 +98,7 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
         return lines.with_columns(
             pl.lit(None, dtype=pl.Int64).alias("eff_list_cents"),
             pl.lit(None, dtype=pl.Int64).alias("gross_list_value_cents"),
+            pl.lit(None, dtype=pl.Date).alias("list_effective_date"),
         )
     pl_sorted = price_list.sort("item_id", "effective_date").with_columns(
         pl.col("list_price_scaled").alias("_eff_list_scaled")
@@ -121,6 +122,9 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
             ),
             1_000_000,
         ).alias("gross_list_value_cents"),
+        # Kept for provenance: guidance excludes floor-index comparisons when
+        # the list in force is stale relative to the invoice date (24.4).
+        pl.col("effective_date").alias("list_effective_date"),
     ).drop("_eff_list_scaled", "effective_date")
 
 
@@ -405,6 +409,11 @@ def build_waterfall(
         pl.col("freight_concession_cents").fill_null(0).alias("freight_concession_cents")
         if "freight_concession_cents" in lines.columns
         else pl.lit(0, dtype=pl.Int64).alias("freight_concession_cents"),
+        # Always present downstream (leakage, margin drivers): no mapped
+        # on-invoice discount means zero declared discount.
+        pl.col("discount_cents").fill_null(0).alias("discount_cents")
+        if "discount_cents" in lines.columns
+        else pl.lit(0, dtype=pl.Int64).alias("discount_cents"),
     )
 
     if rebate_settlements is not None:
@@ -570,20 +579,33 @@ def build_waterfall(
     # --- stage 4: product cost (landed build-up per declared semantics) -----
     uc = mapping.lines.unit_cost
     if uc is None:
-        msg = (
-            "mapping declares no unit_cost; cost-dependent metrics cannot be "
-            "computed. Add a unit_cost entry with cost_basis and inclusion flags."
+        if not mapping.cost_unavailable:
+            msg = (
+                "mapping declares no unit_cost; cost-dependent metrics cannot be "
+                "computed. Add a unit_cost entry with cost_basis and inclusion "
+                "flags — or, if the source genuinely has no cost, declare "
+                "`cost_unavailable: true` in the mapping to state that "
+                "explicitly (28.2). The engine never assumes it."
+            )
+            raise MappingError(msg)
+        # Declared no-cost source: every line's product cost is null, every
+        # cost-dependent metric downstream reports cost_unavailable.
+        notes.append(
+            "mapping declares cost_unavailable: product cost is null on every "
+            "line; margin, floor and contribution outputs report "
+            "cost_unavailable instead of numbers"
         )
-        raise MappingError(msg)
-    # Cost per declared unit basis: line UOM uses raw quantity; base UOM uses
-    # the normalized quantity (e.g. 24 EA -> 2 CS when cost is per case).
-    qty_col = "quantity" if uc.per_uom == "line_uom" else "quantity_norm"
-    qty_scaled = (pl.col(qty_col) * 10_000).round(0).cast(pl.Int64)
-    base_cost = div_half_even_expr(pl.col("unit_cost_scaled") * qty_scaled, 10_000 * 100)
-    lines = lines.with_columns(base_cost.alias("base_cost_cents"))
+        lines = lines.with_columns(pl.lit(None, dtype=pl.Int64).alias("base_cost_cents"))
+    else:
+        # Cost per declared unit basis: line UOM uses raw quantity; base UOM
+        # uses the normalized quantity (e.g. 24 EA -> 2 CS, cost per case).
+        qty_col = "quantity" if uc.per_uom == "line_uom" else "quantity_norm"
+        qty_scaled = (pl.col(qty_col) * 10_000).round(0).cast(pl.Int64)
+        base_cost = div_half_even_expr(pl.col("unit_cost_scaled") * qty_scaled, 10_000 * 100)
+        lines = lines.with_columns(base_cost.alias("base_cost_cents"))
 
     addons = pl.lit(0, dtype=pl.Int64)
-    if landed_cost_components is not None and not uc.includes_inbound_freight:
+    if landed_cost_components is not None and uc is not None and not uc.includes_inbound_freight:
         lc = landed_cost_components.with_columns(
             pl.col("inbound_freight_pu_scaled").cast(pl.Int64),
             pl.col("duty_pu_scaled").cast(pl.Int64),
@@ -609,7 +631,12 @@ def build_waterfall(
     lines = lines.with_columns(addons.alias("landed_addon_cents"))
 
     vendor_adj = pl.lit(0, dtype=pl.Int64)
-    if vendor_rebate_programs is not None and not uc.includes_vendor_rebates and items is not None:
+    if (
+        vendor_rebate_programs is not None
+        and uc is not None
+        and not uc.includes_vendor_rebates
+        and items is not None
+    ):
         if "supplier_id" not in lines.columns:
             lines = lines.join(items.select("item_id", "supplier_id"), on="item_id", how="left")
         vr = vendor_rebate_programs.with_columns(
@@ -632,6 +659,8 @@ def build_waterfall(
             f"basis={uc.cost_basis.value};inbound={'incl' if uc.includes_inbound_freight else 'added'};"
             f"duty={'incl' if uc.includes_duty else 'added'};"
             f"vendor_rebates={'incl' if uc.includes_vendor_rebates else 'netted'}"
+            if uc is not None
+            else "cost_unavailable (declared in the mapping; no cost in the source)"
         ).alias("cost_build_label"),
     )
 

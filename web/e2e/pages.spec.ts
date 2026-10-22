@@ -58,10 +58,15 @@ test("customers page: drill-down shows the customer's bundle figures", async ({ 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/customers");
   const target = bundle.economics.customers[0];
-  await page.getByPlaceholder("Filter customers").fill(target.customer_id);
-  await page.getByRole("button", { name: target.customer_id }).first().click();
+  const input = page.getByRole("combobox", { name: "Customer" });
+  await input.fill(target.customer_id);
+  await page.getByRole("option").first().click();
+  // The row button, not the filter chip (both carry the id in their name).
+  await page.locator("tbody").getByRole("button", { name: new RegExp(target.customer_id) }).first().click();
   await expect(page.locator("h2").first()).toContainText(target.customer_id);
-  await expect(page.getByText(`${dollars(target.net_revenue_cents)} net revenue`)).toBeVisible();
+  await expect(
+    page.getByText(`${dollars(target.net_revenue_cents)} net invoiced revenue`),
+  ).toBeVisible();
 });
 
 test("guidance page: pair lookup shows bundle floors and explanation", async ({ page }) => {
