@@ -276,3 +276,43 @@ def test_demo_history_is_deterministic_and_valid(sample_run: FullRunResult) -> N
         [],
         ["Demo approver"],
     )
+
+
+def test_store_migrates_older_schema(tmp_path: Path) -> None:
+    """A store written before a schema column existed (e.g. uom, Phase 40)
+    reads forward: missing columns come back as nulls, never a crash."""
+    from margin_engine.actions.generate import ACTIONS_SCHEMA
+
+    inputs = _mini_inputs(
+        floor_index=0.5, proposed=9_500, status="below_reference", protected=False
+    )
+    out = generate_actions(service_flags=None, panel=None, rules=RULES, **inputs)
+    store = ActionStore(tmp_path / "old.duckdb")
+    store.seed(out.actions.drop("uom"), out.events)  # simulate the older store
+    migrated = store.actions()
+    assert list(migrated.columns) == list(ACTIONS_SCHEMA)
+    assert migrated["uom"].is_null().all()
+    # merge_new over the migrated store works too.
+    assert store.merge_new(out.actions, out.events) == 0
+
+
+def test_merge_new_into_older_schema_store(tmp_path: Path) -> None:
+    inputs = _mini_inputs(
+        floor_index=0.5, proposed=9_500, status="below_reference", protected=False
+    )
+    out = generate_actions(service_flags=None, panel=None, rules=RULES, **inputs)
+    second = _mini_inputs(
+        floor_index=0.5, proposed=9_600, status="below_reference", protected=False
+    )
+    second["guidance"] = second["guidance"].with_columns(pl.lit("I2").alias("item_id"))
+    second["opportunities"] = second["opportunities"].with_columns(pl.lit("I2").alias("item_id"))
+    out2 = generate_actions(service_flags=None, panel=None, rules=RULES, **second)
+    store = ActionStore(tmp_path / "old2.duckdb")
+    store.seed(out.actions.drop("uom"), out.events)  # older schema on disk
+    added = store.merge_new(out2.actions, out2.events)  # current schema incoming
+    assert added == 1
+    merged = store.actions()
+    assert merged.height == 2
+    from margin_engine.actions.generate import ACTIONS_SCHEMA
+
+    assert list(merged.columns) == list(ACTIONS_SCHEMA)

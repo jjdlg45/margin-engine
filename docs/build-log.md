@@ -2550,3 +2550,23 @@ without state change, real call transitions once, repeat idempotent).
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
 exit 0. Web untouched (the export button lands with the Action center UI,
 Phase 42).
+
+## Phase 40.1 — Post-commit check failure fixed (2026-10-24, Run 5 branch)
+
+The phase-40 commit landed before its background check finished; that check
+then FAILED (recorded here, not hidden): mypy flagged two stale ignore
+comments in cli.py, and the replay idempotency test crashed because merging
+new actions read an action store written BEFORE the uom column existed (the
+default actions_db path had a pre-Phase-40 store on this machine — exactly
+what a real deployment would hit after upgrading).
+
+Fixes: (1) forward migration in ActionStore — a store lacking newly added
+schema columns reads them back as nulls, and merge_new rewrites the on-disk
+table into the current schema before inserting, so an upgrade never crashes
+and never loses review history; two tests cover read-forward and
+merge-into-older-store. (2) The replay API test now isolates its actions_db
+in tmp (hermeticity). (3) The stale ignores removed.
+
+**Checks (after fix).** ruff check 0; ruff format --check 0; mypy src api 0;
+full pytest exit 0. Process note: later phases gate the commit on the check
+exit codes read from the log, not on the task completing.

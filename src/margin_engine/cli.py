@@ -154,9 +154,9 @@ def export_prices(
     s = preview.summary
     typer.echo(f"Price changes to export: {s['n_changes']}")
     typer.echo("Expected impact by basis (never summed across levels):")
-    for basis, cents in dict(s["expected_impact_by_basis_cents"]).items():  # type: ignore[arg-type,call-overload]
+    for basis, cents in dict(s["expected_impact_by_basis_cents"]).items():  # type: ignore[call-overload]
         typer.echo(f"  {basis}: ${int(cents) / 100:,.2f}")
-    for ch in list(s["largest_changes"]):  # type: ignore[arg-type,call-overload]
+    for ch in list(s["largest_changes"]):  # type: ignore[call-overload]
         typer.echo(
             f"  largest: {ch['customer_id']} / {ch['item_id']} "
             f"{ch['change_pct']:+.2f}% (action {ch['action_id']})"

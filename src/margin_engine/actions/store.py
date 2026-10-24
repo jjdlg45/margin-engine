@@ -66,9 +66,15 @@ class ActionStore:
         try:
             if "actions" not in self._tables(con):
                 return pl.DataFrame(schema=ACTIONS_SCHEMA)
-            return _read_table(con, "SELECT * FROM actions").cast(ACTIONS_SCHEMA)  # type: ignore[arg-type]
+            out = _read_table(con, "SELECT * FROM actions")
         finally:
             con.close()
+        # Light forward migration: a store written by an older engine may lack
+        # newly added schema columns (e.g. uom, Phase 40); they read as null.
+        missing = [c for c in ACTIONS_SCHEMA if c not in out.columns]
+        if missing:
+            out = out.with_columns([pl.lit(None).cast(ACTIONS_SCHEMA[c]).alias(c) for c in missing])
+        return out.select(list(ACTIONS_SCHEMA)).cast(ACTIONS_SCHEMA)  # type: ignore[arg-type]
 
     def events(self) -> pl.DataFrame:
         if not self._path.exists():
@@ -101,6 +107,15 @@ class ActionStore:
         new_actions = actions.filter(~pl.col("action_id").is_in(sorted(known)))
         if new_actions.height == 0:
             return 0
+        # An older on-disk table may lack newly added schema columns; rewrite
+        # it in the current (forward-migrated) schema before inserting.
+        con = duckdb.connect(str(self._path))
+        try:
+            cols = {r[1] for r in con.execute("PRAGMA table_info('actions')").fetchall()}
+            if cols != set(ACTIONS_SCHEMA):
+                _load_table(con, "actions", existing)
+        finally:
+            con.close()
         new_ids = set(new_actions["action_id"].to_list())
         new_events = events.filter(pl.col("action_id").is_in(sorted(new_ids)))
         con = duckdb.connect(str(self._path))
