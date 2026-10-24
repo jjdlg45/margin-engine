@@ -49,6 +49,9 @@ export interface AppData {
   /** Live mode only (30.4): per-section refresh status; stale sections are
    * labeled in the shell. */
   refresh_status?: Record<string, RefreshSectionStatus>;
+  /** Live mode only (Phase 43): plain-English drift flags vs the previous
+   * refresh; empty means a comparison ran and found nothing. */
+  drift_flags?: { code: string; message: string }[];
 }
 
 export interface SegmentName {

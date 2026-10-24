@@ -66,6 +66,10 @@ class Settings:
             Path(v) if (v := os.environ.get("MARGIN_API_ACTIONS_SEED")) else None
         )
     )
+    # Drift monitoring (Phase 43): previous-run snapshot + latest flags.
+    drift_dir: Path = field(
+        default_factory=lambda: _env_path("MARGIN_API_DRIFT_DIR", REPO / ".api_state" / "drift")
+    )
     # Policy rules (the price-export template lives under actions.price_export).
     rules_path: Path = field(
         default_factory=lambda: _env_path("MARGIN_API_RULES", REPO / "config" / "rules.yaml")

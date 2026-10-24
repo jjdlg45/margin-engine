@@ -2687,3 +2687,40 @@ re-baselined.
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
 exit 0; tsc 0; vitest 11/11; build 0; Playwright static 169/169 (axe clean,
 snapshots re-baselined); Playwright API mode 9/9.
+
+## Phase 43 — Drift monitoring, live mode (2026-10-24, Run 5 branch)
+
+**Engine (`margin_engine/drift.py`, config section `drift`).** Each refresh
+compares against the previous run: data-quality rates (missing-cost revenue
+share, data-entry anomaly share, commercial-outlier share, reconciliation
+pass), segment assignments (adjusted Rand index over the lines both runs
+share, gated by a minimum shared-line count), per-segment elasticity estimates
+and evidence statuses, and guidance status counts (relative change AND an
+absolute floor so tiny statuses do not flap). Moves beyond the configured
+thresholds become flags with deterministic plain-English sentences through the
+label dictionary ("Segment 2's price sensitivity moved from -1.40 to -0.90
+since the previous refresh."); everything measured lands in a detail payload
+whether flagged or not. A reconciliation regression always flags. DriftStore
+persists the baseline (snapshot JSON + assignments parquet) and the latest
+flags.
+
+**Wiring.** The replay feed refreshes drift after every tick (the engine run
+becomes the new baseline). The API serves GET /api/drift (flags + full
+detail) and adds drift_flags to /api/app; the UI shell shows each flag beside
+the stale-data notices (data-testid drift-flag). The static demo has no
+refresh cycle and carries no flags.
+
+**Tests (7 new, planted shifts).** Elasticity move beyond the threshold fires
+with the exact sentence (and a smaller move stays quiet); a status change
+message uses labels, never raw codes; a genuinely different partition (groups
+collapsing, not a label permutation) fires the ARI flag with the shared-line
+count while identical assignments and too-few-lines stay quiet with the reason
+in the detail; the data-quality threshold is exact at its boundary (float
+noise rounded away) and direction wording is checked; status count changes
+need BOTH the relative and absolute gates; DriftStore baselines on first
+refresh, reports an empty comparison on an identical second run (ARI 1.0),
+and flags a shift planted into the stored baseline; the API serves the flags.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0; tsc 0; vitest 11/11; build 0. (Playwright suites unchanged by this
+phase beyond the passive shell element; full suites ran green in Phase 42.)

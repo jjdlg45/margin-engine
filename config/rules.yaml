@@ -204,3 +204,14 @@ actions:
   leakage_review_min_ratio: 1.5    # customer rate vs segment median
   leakage_review_min_excess_cents: 100000
   max_actions_per_type: 200
+
+# Drift monitoring (Run 5, Phase 43). Each live-mode refresh compares against
+# the previous run; only moves beyond these thresholds are flagged.
+drift:
+  enabled: true
+  ari_warn_below: 0.8            # segment-assignment agreement (adjusted Rand)
+  min_common_lines: 100
+  elasticity_abs_change: 0.3     # absolute move of a segment's IV estimate
+  data_quality_change_pp: 2.0    # data-quality rate change, percentage points
+  status_share_change: 0.2       # guidance status count: relative change...
+  min_status_count_change: 5     # ...AND at least this many pairs

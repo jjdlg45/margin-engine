@@ -105,6 +105,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"status": "no_bundle"}
         return {"status": "ok", "bundle_version": version}
 
+    @app.get("/api/drift")
+    async def drift(request: Request) -> Any:
+        """Latest drift comparison (Phase 43): flags plus the raw numbers
+        behind every comparison, flagged or not."""
+        from margin_engine.drift import DriftStore
+
+        return DriftStore(s.drift_dir).latest()
+
     @app.get("/api/version")
     async def version() -> dict[str, Any]:
         snap = store.snapshot
@@ -127,6 +135,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             replay = snap.refresh_status.get("replay") or {}
             if replay.get("data_as_of"):
                 payload["data_as_of"] = replay["data_as_of"]
+        # Drift flags (Phase 43): plain-English changes vs the previous
+        # refresh; an empty list means a comparison ran and found nothing.
+        from margin_engine.drift import DriftStore
+
+        payload["drift_flags"] = DriftStore(s.drift_dir).latest()["flags"]
         return _cached_json(request, payload)
 
     @app.get("/api/pages/{page}")

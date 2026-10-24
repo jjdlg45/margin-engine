@@ -446,6 +446,30 @@ class ReportingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# drift monitoring (Run 5, Phase 43)
+# ---------------------------------------------------------------------------
+
+
+class DriftConfig(StrictModel):
+    """Live-mode drift thresholds: each refresh compares against the previous
+    run, and only moves beyond these bounds are flagged (plain-English, in the
+    API and UI)."""
+
+    enabled: bool = True
+    # Segment-assignment agreement (adjusted Rand index over shared lines).
+    ari_warn_below: float = Field(default=0.8, ge=0.0, le=1.0)
+    min_common_lines: int = Field(default=100, ge=1)
+    # Absolute move of a segment's IV elasticity estimate.
+    elasticity_abs_change: float = Field(default=0.3, ge=0.0)
+    # Data-quality rate change, in percentage points.
+    data_quality_change_pp: float = Field(default=2.0, ge=0.0)
+    # Guidance status count change: relative share AND an absolute floor so
+    # tiny statuses do not flap.
+    status_share_change: float = Field(default=0.2, ge=0.0)
+    min_status_count_change: int = Field(default=5, ge=1)
+
+
+# ---------------------------------------------------------------------------
 # actions (Run 5, Phase 38)
 # ---------------------------------------------------------------------------
 
@@ -624,6 +648,7 @@ class Rules(StrictModel):
     fiscal: FiscalConfig = FiscalConfig()
     compliance: ComplianceConfig = ComplianceConfig()
     actions: ActionsConfig = ActionsConfig()
+    drift: DriftConfig = DriftConfig()
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 

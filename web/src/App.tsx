@@ -124,6 +124,12 @@ function Shell() {
                 {name.toUpperCase()} data is stale (last refresh {s.refreshed_utc}).
               </span>
             ))}
+          {(app.data?.drift_flags ?? []).map((flag) => (
+            <span key={flag.code} className="text-garnet" data-testid="drift-flag">
+              {" "}
+              {flag.message}
+            </span>
+          ))}
         </p>
       </header>
       <main id="main" className="min-h-[85vh]">

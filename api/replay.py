@@ -118,6 +118,11 @@ class ReplayFeed:
             from margin_engine.actions.store import ActionStore
 
             ActionStore(self.s.actions_db).merge_new(res.actions, res.action_events)
+        # Drift monitoring (Phase 43): compare against the previous refresh,
+        # persist the flags for the API, make this run the new baseline.
+        from margin_engine.drift import DriftStore
+
+        DriftStore(self.s.drift_dir).refresh(res, load_rules(rules_path))
         bundle = build_bundle(
             res,
             load_rules(rules_path),
