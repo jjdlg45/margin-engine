@@ -2570,3 +2570,57 @@ in tmp (hermeticity). (3) The stale ignores removed.
 **Checks (after fix).** ruff check 0; ruff format --check 0; mypy src api 0;
 full pytest exit 0. Process note: later phases gate the commit on the check
 exit codes read from the log, not on the task completing.
+
+## Phase 41 — Results tracking (2026-10-24, Run 5 branch)
+
+**Tracker (`actions/tracking.py`).** After an action is marked implemented it
+is measured over a configurable window (default 90 days each side):
+- Price realization: (P_after - P_before) / (P_new - P_before) on the pair's
+  invoiced prices — 1.0 fully realized, 0 no move, negative eroded further.
+- Volume vs prediction: the treated pair's volume ratio against the median
+  ratio of untreated same-segment pairs with sales in BOTH windows — a
+  difference-in-differences comparison, so general trends never read as price
+  effects. The engine's prediction is the predicted_volume_ratio now stored on
+  every action at generation ((P1/P0)^elasticity for causal-supported volume
+  responses; 1.0 for fixed-volume; null for non-price actions).
+- Margin outcome: pocket margin and contribution, before vs after.
+Every gate fails closed with its reason on the outcome row: window not yet
+elapsed, too few after-window sales (a pair that stopped buying is reported as
+exactly that), too few comparison pairs. The comparison pool comes from the
+full guidance pair-to-segment map, not just the capped actions table.
+`measure_and_record` persists the outcomes table in the action store and moves
+newly measured actions implemented -> measured (who=tracker) exactly once;
+re-running recomputes outcomes and adds no events. New CLI:
+`margin-engine track --actions-db ... --data ... --mapping ...`.
+
+**Calibration.** Prediction error by evidence bucket (causal-supported /
+IV-estimated / fixed-volume from the action's volume treatment): n, median
+absolute volume error in log points, median realization. Below the configured
+minimum of measured actions (default 10) the table says
+"not enough implemented actions yet" instead of any number.
+
+**Synthetic validation (generator + script).** The generator gained planted
+price interventions (`n_price_interventions`, `intervention_month`,
+`intervention_pct`): chosen non-contract pairs' prices rise by the planted
+percentage from the intervention month and demand responds through each pair's
+planted elasticity; ground truth lands in ground_truth/interventions.parquet
+and the truth summary. scripts/measure_tracker.py (recorded in
+validation.json): on well_identified (seed 5, 30 planted +8% interventions),
+21/30 measured and POOLED recovery error |median DiD effect - median planted
+effect| = 0.0394 log points against a 0.10 bound — per-pair 90-day windows
+carry ~0.26 log points of irreducible Poisson noise (reported as information;
+the planted effect itself is ~0.14, which is why calibration aggregates). On
+the sparse preset the tracker measures 0/30 and reports insufficient evidence
+with reasons — fail-closed as required. Both rows carry pass flags and full
+detail.
+
+**Tests (5 new + generator smoke).** Hand realization/DiD fixture (realization
+0.5; a x1.3 market trend with a x0.8 treatment reads as DiD 0.8, not 1.04);
+fail-closed gates with reasons (few controls; window not elapsed); calibration
+minimum-count gating; measure_and_record transitions once and is idempotent;
+the generator plants interventions on non-contract pairs and the price path
+jumps by the planted percentage at the intervention month.
+
+**Checks.** ruff check 0; ruff format --check 0 (after formatting three
+files); mypy src api 0; full pytest exit 0; tracker validation script exit 0
+with both rows passing.

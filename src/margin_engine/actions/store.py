@@ -18,6 +18,7 @@ import polars as pl
 
 from margin_engine.actions.generate import ACTIONS_SCHEMA
 from margin_engine.actions.model import EVENTS_SCHEMA, append_event, empty_events, validate_log
+from margin_engine.actions.tracking import OUTCOMES_SCHEMA
 
 
 def _load_table(con: duckdb.DuckDBPyConnection, name: str, frame: pl.DataFrame) -> None:
@@ -213,6 +214,26 @@ class ActionStore:
                 con.execute("INSERT INTO action_events SELECT * FROM read_parquet(?)", [str(e_pq)])
         finally:
             con.close()
+
+    def save_outcomes(self, outcomes: pl.DataFrame) -> None:
+        """Replace the outcomes table (recomputable from the ledger + log)."""
+        con = duckdb.connect(str(self._path))
+        try:
+            _load_table(con, "action_outcomes", outcomes)
+        finally:
+            con.close()
+
+    def outcomes(self) -> pl.DataFrame:
+        if not self._path.exists():
+            return pl.DataFrame(schema=OUTCOMES_SCHEMA)
+        con = duckdb.connect(str(self._path), read_only=True)
+        try:
+            if "action_outcomes" not in self._tables(con):
+                return pl.DataFrame(schema=OUTCOMES_SCHEMA)
+            out = _read_table(con, "SELECT * FROM action_outcomes ORDER BY action_id")
+        finally:
+            con.close()
+        return out.cast(OUTCOMES_SCHEMA)  # type: ignore[arg-type]
 
     def transition(
         self,

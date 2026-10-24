@@ -438,6 +438,10 @@ def export_ground_truth(
     )
     panel_truth.write_parquet(gt_dir / "panel_truth.parquet")
 
+    # Planted price interventions (Phase 41): ground truth for the tracker.
+    if world.interventions is not None and world.interventions.height:
+        world.interventions.write_parquet(gt_dir / "interventions.parquet")
+
     # Economic truth is computed on the deduped frame: verified-duplicate
     # copies are export artifacts, not additional dollars.
     deduped = lines.unique(subset=["line_key"], keep="first", maintain_order=True)
@@ -518,6 +522,15 @@ def export_ground_truth(
             ),
         },
         "planted_totals_cents": totals,
+        "price_interventions": (
+            {
+                "n_pairs": world.interventions.height,
+                "intervention_month": int(world.interventions["intervention_month"][0]),
+                "pct_increase": float(world.interventions["pct_increase"][0]),
+            }
+            if world.interventions is not None and world.interventions.height
+            else None
+        ),
         "n_lines_exported": lines.height,
         "n_customers": customers.height,
         "planted_small_order_customers": sorted(

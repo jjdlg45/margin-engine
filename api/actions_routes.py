@@ -463,6 +463,7 @@ async def propose(
             "guidance_status": [None],
             "evidence_status": ["manual"],
             "volume_treatment": [None],
+            "predicted_volume_ratio": [None],
             "impact_basis": ["manual_proposal"],
             "expected_impact_cents": [
                 int(body["expected_impact_cents"])

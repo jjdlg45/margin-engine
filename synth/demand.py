@@ -49,6 +49,9 @@ class DemandWorld:
     # Market/competitor price index (n_categories, months), 1.0 when the
     # competitor_comovement mechanism is off (24.9/24.10).
     market_index: np.ndarray | None = None
+    # Planted price interventions (Phase 41): one row per intervened pair with
+    # the intervention month, the price lift and the pair's true elasticity.
+    interventions: pl.DataFrame | None = None
 
 
 def _ar1(rng: np.random.Generator, n_series: int, months: int, sd: float, ar: float) -> np.ndarray:
@@ -298,6 +301,48 @@ def simulate_panel(
     )
     unit_price_cents = np.maximum(unit_price_cents, 1)
 
+    # --- planted price interventions (Phase 41) ---------------------------
+    # From the intervention month on, chosen non-contract pairs' prices rise
+    # by intervention_pct BEFORE demand is drawn, so volumes respond through
+    # the pair's planted elasticity: ground truth for the results tracker.
+    interventions_df: pl.DataFrame | None = None
+    if cfg.n_price_interventions > 0:
+        t0 = (
+            cfg.intervention_month
+            if cfg.intervention_month is not None
+            else max(0, months - 6)
+        )
+        eligible = (
+            pairs.with_row_index("_pos")
+            .filter(
+                pl.col("contract_id").is_null()
+                & (pl.col("start_month") <= max(0, t0 - 6))
+                & (pl.col("end_month") >= months - 1)
+            )
+            .sort(["buy_prob", "customer_id", "item_id"], descending=[True, False, False])
+            .head(cfg.n_price_interventions)
+        )
+        chosen_pos = eligible["_pos"].to_numpy()
+        hit = np.isin(pair_rep, chosen_pos) & (t_tile >= t0)
+        unit_price_cents = np.where(
+            hit,
+            div_round_half_even(
+                np.round(unit_price_cents * (1.0 + cfg.intervention_pct) * 1_0000).astype(
+                    np.int64
+                ),
+                1_0000,
+            ),
+            unit_price_cents,
+        )
+        unit_price_cents = np.maximum(unit_price_cents, 1)
+        interventions_df = eligible.select(
+            "customer_id",
+            "item_id",
+            pl.lit(t0).alias("intervention_month"),
+            pl.lit(cfg.intervention_pct).alias("pct_increase"),
+            pl.col("elasticity").alias("true_elasticity"),
+        )
+
     # --- demand ----------------------------------------------------------
     base_list = items["base_list_cents"].to_numpy()[it]  # P_ref: initial list
     log_p_rel = np.log(np.maximum(unit_price_cents, 1) / base_list)
@@ -401,4 +446,5 @@ def simulate_panel(
         z_tariff=z_tariff,
         demand_shock=u,
         market_index=market_index,
+        interventions=interventions_df,
     )

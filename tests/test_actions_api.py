@@ -51,6 +51,7 @@ def _mk_action(
         "guidance_status": "below_reference",
         "evidence_status": "descriptive_elasticity",
         "volume_treatment": "fixed_volume_only",
+        "predicted_volume_ratio": 1.0,
         "impact_basis": "gross_price_opportunity_fixed_volume",
         "expected_impact_cents": 10_000,
         "current_price_cents": 900,

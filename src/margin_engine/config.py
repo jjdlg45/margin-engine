@@ -495,7 +495,9 @@ class PriceExportConfig(StrictModel):
         }
         missing = required - set(self.headers)
         if missing:
-            msg = f"price_export.headers must name every canonical column; missing {sorted(missing)}"
+            msg = (
+                f"price_export.headers must name every canonical column; missing {sorted(missing)}"
+            )
             raise ValueError(msg)
         if self.decimal_separator == "," and self.delimiter == ",":
             msg = (
@@ -527,6 +529,13 @@ class ActionsConfig(StrictModel):
     # Deterministic cap per action type (largest expected impact first).
     max_actions_per_type: int = Field(default=200, ge=1)
     price_export: PriceExportConfig = PriceExportConfig()
+    # Results tracking (Phase 41): measurement window after implementation,
+    # evidence gates for the difference-in-differences comparison, and the
+    # minimum measured actions before a calibration number is shown.
+    tracking_window_days: int = Field(default=90, ge=1)
+    tracking_min_control_pairs: int = Field(default=5, ge=1)
+    tracking_min_after_sales: int = Field(default=3, ge=1)
+    calibration_min_actions: int = Field(default=10, ge=1)
 
 
 # ---------------------------------------------------------------------------

@@ -140,6 +140,14 @@ class GeneratorConfig(BaseModel):
     start_year: int = 2024
     start_month: int = 1
 
+    # Planted price interventions (Run 5, Phase 41): from intervention_month
+    # on, the chosen non-contract pairs' prices are raised by intervention_pct
+    # and demand responds through the pair's planted elasticity — ground truth
+    # for validating the results tracker. 0 = off.
+    n_price_interventions: int = Field(default=0, ge=0)
+    intervention_month: int | None = None  # default: months - 6
+    intervention_pct: float = Field(default=0.08, gt=-1.0)
+
     # Items per customer assortment (uniform range).
     assortment_min: int = 10
     assortment_max: int = 40

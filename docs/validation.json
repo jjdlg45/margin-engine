@@ -1,5 +1,5 @@
 {
- "generated_utc": "2026-10-24T17:56:16+00:00",
+ "generated_utc": "2026-10-24T21:36:35+00:00",
  "script": "scripts/measure_validation.py",
  "runtime_s": 4018.4,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
@@ -243,6 +243,40 @@
      "bytes_per_line_peak": 11754,
      "bytes_per_line_marginal": 8987,
      "stage_timings_s": "see rungs above"
+    }
+   }
+  },
+  {
+   "check": "Results tracker: planted-intervention recovery",
+   "target": "pooled recovery |median DiD effect - median planted effect| <= 0.1 log points and >= 50% of interventions measured (well_identified, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information)",
+   "achieved": "21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419",
+   "passed": true,
+   "detail": {
+    "n_interventions": 30,
+    "n_measured": 21,
+    "measured_share": 0.7,
+    "pooled_recovery_error_log_points": 0.0394,
+    "per_pair_median_abs_error_log_points": 0.2562,
+    "per_pair_p90_abs_error_log_points": 0.6419,
+    "insufficient_reasons": {
+     "not enough sales around the implementati": 9
+    }
+   }
+  },
+  {
+   "check": "Results tracker: fail-closed on a sparse world",
+   "target": "<= 25% of interventions get a number; the rest report insufficient evidence with reasons (sparse preset, same interventions)",
+   "achieved": "0/30 measured (0%); refusal reasons: {'not enough sales around the implementati': 30}",
+   "passed": true,
+   "detail": {
+    "n_interventions": 30,
+    "n_measured": 0,
+    "measured_share": 0.0,
+    "pooled_recovery_error_log_points": null,
+    "per_pair_median_abs_error_log_points": null,
+    "per_pair_p90_abs_error_log_points": null,
+    "insufficient_reasons": {
+     "not enough sales around the implementati": 30
     }
    }
   }

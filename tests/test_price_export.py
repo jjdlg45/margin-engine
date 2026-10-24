@@ -41,6 +41,7 @@ def _action(aid: str, atype: str = "price_change", **over: Any) -> dict[str, Any
         "guidance_status": "below_reference",
         "evidence_status": "descriptive_elasticity",
         "volume_treatment": "fixed_volume_only",
+        "predicted_volume_ratio": 1.0,
         "impact_basis": "gross_price_opportunity_fixed_volume",
         "expected_impact_cents": 10_000,
         "current_price_cents": 1_000,
@@ -98,7 +99,10 @@ def test_only_approved_price_actions_export(tmp_path: Path) -> None:
     csv_text, rows = build_price_file(store.actions(), store.events(), RULES.actions.price_export)
     assert set(rows["action_id"].to_list()) == {"act_a1", "act_a2", "act_a4"}
     lines = csv_text.strip().split("\n")
-    assert lines[0] == "ACTION_ID,APPROVAL_ID,CUSTOMER,ITEM,UOM,EFFECTIVE_DATE,PREVIOUS_PRICE,NEW_PRICE"
+    assert (
+        lines[0]
+        == "ACTION_ID,APPROVAL_ID,CUSTOMER,ITEM,UOM,EFFECTIVE_DATE,PREVIOUS_PRICE,NEW_PRICE"
+    )
     assert len(lines) == 4
     assert "act_a3" not in csv_text and "act_a5" not in csv_text
     # Every row carries an approval id, dates and both prices.

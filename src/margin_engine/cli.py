@@ -169,6 +169,70 @@ def export_prices(
     typer.echo(f"Actions moved to exported: {result.n_transitioned}")
 
 
+@app.command()
+def track(
+    actions_db: Path = typer.Option(  # noqa: B008
+        ..., "--actions-db", help="Action store (DuckDB) with implemented actions"
+    ),
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None, "--out", help="Also write action_outcomes.csv/.parquet here"
+    ),
+) -> None:
+    """Measure implemented actions against the ledger (Phase 41): price
+    realization, volume vs prediction with an untreated same-segment comparison
+    group (difference-in-differences), margin before vs after. Newly measured
+    actions move implemented -> measured; gates fail closed with reasons."""
+    import tempfile
+
+    from margin_engine.actions.store import ActionStore
+    from margin_engine.actions.tracking import measure_and_record
+    from margin_engine.report.full_run import run_full
+
+    try:
+        loaded = load_rules(rules)
+        with tempfile.TemporaryDirectory() as td:
+            result_full = run_full(data, mapping, rules, Path(td) / "out", validate=False)
+    except MappingError as exc:
+        _fail("mapping", exc)
+    except MoneyParseError as exc:
+        _fail("money parsing", exc)
+    except ValidationError as exc:
+        _fail("configuration", exc)
+    except ReconciliationError as exc:
+        _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
+    store = ActionStore(actions_db)
+    pair_segments = result_full.guidance.select("customer_id", "item_id", "segment_leaf")
+    result = measure_and_record(
+        store, result_full.pipeline.ledger, loaded, pair_segments=pair_segments
+    )
+    for note in result.notes:
+        typer.echo(note)
+    for row in result.calibration.to_dicts():
+        if row["status"] == "not_enough_implemented_actions":
+            typer.echo(
+                f"Calibration: not enough implemented actions yet ({row['n_measured']} measured)"
+            )
+        else:
+            typer.echo(
+                f"Calibration [{row['bucket']}]: n={row['n_measured']}, "
+                f"median |volume error| = {row['median_abs_volume_error_log_points']} "
+                f"log points, median realization = {row['median_realization_pct']}"
+            )
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        result.outcomes.write_parquet(out / "action_outcomes.parquet")
+        result.outcomes.write_csv(out / "action_outcomes.csv")
+        result.calibration.write_csv(out / "action_calibration.csv")
+        typer.echo(f"Outcomes written to {out}")
+
+
 # Demo world for the hosted site: generated in CI at deploy time, never
 # committed. Scale chosen in Phase 19.1 as the smallest where at least one
 # segment reaches causal-supported elasticity with the bundle under 5 MB.

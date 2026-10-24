@@ -59,6 +59,7 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "guidance_status": pl.String,
     "evidence_status": pl.String,
     "volume_treatment": pl.String,
+    "predicted_volume_ratio": pl.Float64,
     "impact_basis": pl.String,
     "expected_impact_cents": pl.Int64,
     "current_price_cents": pl.Int64,
@@ -163,7 +164,10 @@ def _finalize(
 
 
 def _pair_base(
-    guidance: pl.DataFrame, opportunities: pl.DataFrame, ledger: pl.DataFrame
+    guidance: pl.DataFrame,
+    opportunities: pl.DataFrame,
+    ledger: pl.DataFrame,
+    sensitivity: pl.DataFrame,
 ) -> pl.DataFrame:
     """Guidance pairs with their opportunity row (prices, baseline volume,
     impact levels) joined on, plus the pair's normalized selling UOM (for the
@@ -195,6 +199,18 @@ def _pair_base(
         g = g.join(pair_uom, on=["customer_id", "item_id"], how="left", maintain_order="left")
     else:
         g = g.with_columns(pl.lit(None, dtype=pl.String).alias("uom"))
+    if {"segment", "iv"}.issubset(sensitivity.columns):
+        g = g.join(
+            sensitivity.select(
+                pl.col("segment").alias("segment_leaf"),
+                pl.col("iv").cast(pl.Float64).alias("_seg_elasticity"),
+            ),
+            on="segment_leaf",
+            how="left",
+            maintain_order="left",
+        )
+    else:
+        g = g.with_columns(pl.lit(None, dtype=pl.Float64).alias("_seg_elasticity"))
     return g.with_columns(
         pl.when(pl.col("floor_index").is_not_null() & (pl.col("eff_list_cents") > 0))
         .then((pl.col("floor_index") * pl.col("eff_list_cents")).round(0).cast(pl.Int64))
@@ -283,6 +299,7 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("guidance_status"),
         pl.col("evidence_status"),
         pl.lit("fixed_volume_only").alias("volume_treatment"),
+        pl.lit(1.0).alias("predicted_volume_ratio"),
         pl.when(pl.col("expected_impact_cents").is_not_null())
         .then(pl.lit("floor_gap_fixed_volume_pocket"))
         .otherwise(pl.lit("no_recent_volume"))
@@ -379,6 +396,16 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("guidance_status"),
         pl.col("evidence_status"),
         pl.col("volume_treatment"),
+        pl.when(
+            expected
+            & pl.col("_seg_elasticity").is_not_null()
+            & (pl.col("_cur") > 0)
+            & pl.col("_prop").is_not_null()
+        )
+        .then((pl.col("_prop") / pl.col("_cur")).pow(pl.col("_seg_elasticity")))
+        .otherwise(1.0)
+        .round(6)
+        .alias("predicted_volume_ratio"),
         pl.col("impact_basis"),
         pl.col("expected_impact_cents"),
         pl.col("_cur").alias("current_price_cents"),
@@ -432,6 +459,7 @@ def _service_policy_actions(service_flags: pl.DataFrame | None, anchor: dt.date)
         pl.lit(None, dtype=pl.String).alias("guidance_status"),
         pl.lit("estimated").alias("evidence_status"),
         pl.lit("fixed_volume_only").alias("volume_treatment"),
+        pl.lit(None, dtype=pl.Float64).alias("predicted_volume_ratio"),
         pl.lit("contribution_at_stake_estimated").alias("impact_basis"),
         pl.col("expected_impact_cents").cast(pl.Int64),
         pl.lit(None, dtype=pl.Int64).alias("current_price_cents"),
@@ -503,6 +531,7 @@ def _rebate_review_actions(
         pl.lit(None, dtype=pl.String).alias("guidance_status"),
         pl.lit("actual").alias("evidence_status"),
         pl.lit(None, dtype=pl.String).alias("volume_treatment"),
+        pl.lit(None, dtype=pl.Float64).alias("predicted_volume_ratio"),
         pl.lit("observed_leakage_excess").alias("impact_basis"),
         pl.col("expected_impact_cents"),
         pl.lit(None, dtype=pl.Int64).alias("current_price_cents"),
@@ -596,6 +625,7 @@ def _pass_through_actions(
                 "guidance_status": None,
                 "evidence_status": "actual",
                 "volume_treatment": "fixed_volume_only",
+                "predicted_volume_ratio": None,
                 "impact_basis": "cost_recovery_at_chosen_level",
                 "expected_impact_cents": rec,
                 "current_price_cents": None,
@@ -637,7 +667,7 @@ def generate_actions(
     anchor: dt.date = anchor_raw if isinstance(anchor_raw, dt.date) else dt.date(1970, 1, 1)
     created = dt.datetime(anchor.year, anchor.month, anchor.day, tzinfo=dt.UTC)
 
-    base = _pair_base(guidance, opportunities, ledger)
+    base = _pair_base(guidance, opportunities, ledger, sensitivity)
     parts = [
         _below_floor_actions(base, anchor),
         _price_change_actions(base, anchor),
