@@ -33,6 +33,8 @@ export interface Option {
 const ROW_PX = 32;
 const HEADER_PX = 28;
 const MAX_LIST_PX = 288; // matches the previous max-h-72
+const MIN_LIST_PX = 160; // an open list is never a sliver: ~5 rows minimum
+const EMPTY_PX = 40; // room for the "No matches." empty state
 
 export function EntityCombobox({
   label,
@@ -50,6 +52,15 @@ export function EntityCombobox({
   const hasNames = options.some((o) => o.name);
   const [byId, setById] = useState(!hasNames);
   const [inputValue, setInputValue] = useState("");
+  // An external clear (Clear all, chip removal) must not leave stale text in
+  // the input: when the selected value is cleared from outside, reset the
+  // typed text in the same render (state adjustment during render, so the
+  // stale text never paints).
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
+    if (value === null && inputValue !== "") setInputValue("");
+  }
   const display = (o: Option) =>
     byId || !o.name ? `${o.id}${o.name ? ` · ${o.name}` : ""}` : `${o.name} · ${o.id}`;
   const items = useMemo(
@@ -84,6 +95,12 @@ export function EntityCombobox({
     filtered.length * ROW_PX + groups.length * HEADER_PX,
     MAX_LIST_PX,
   );
+  // The open list must be visibly tall wherever the input sits on screen,
+  // even when the overlay positioner computes a collapsed available height
+  // (zero-height open state seen on Linux CI at 375 px). CSS min-height
+  // overrides the positioner's inline max-height; the popover still flips
+  // above the input when the space below is short.
+  const minVisiblePx = filtered.length ? Math.min(listHeight, MIN_LIST_PX) : EMPTY_PX;
 
   const itemClass =
     "flex cursor-pointer items-baseline justify-between gap-3 px-3 py-1.5 text-sm data-[focused]:bg-petrol data-[focused]:text-paper";
@@ -97,7 +114,11 @@ export function EntityCombobox({
   const listBox = groups.length ? (
     <ListBox
       className="overflow-auto"
-      style={virtual ? { height: listHeight } : { maxHeight: MAX_LIST_PX }}
+      style={
+        virtual
+          ? { height: Math.max(listHeight, minVisiblePx) }
+          : { maxHeight: MAX_LIST_PX, minHeight: minVisiblePx }
+      }
       items={groups.map((g) => ({ id: g, opts: filtered.filter((o) => o.group === g) }))}
       renderEmptyState={empty}
     >
@@ -113,7 +134,11 @@ export function EntityCombobox({
   ) : (
     <ListBox
       className="overflow-auto"
-      style={virtual ? { height: listHeight } : { maxHeight: MAX_LIST_PX }}
+      style={
+        virtual
+          ? { height: Math.max(listHeight, minVisiblePx) }
+          : { maxHeight: MAX_LIST_PX, minHeight: minVisiblePx }
+      }
       items={filtered}
       renderEmptyState={empty}
     >
@@ -153,7 +178,10 @@ export function EntityCombobox({
           {"▾"}
         </Button>
       </div>
-      <Popover className="z-20 w-[var(--trigger-width)] rounded-card border hairline bg-card shadow-lg">
+      <Popover
+        className="z-20 w-[var(--trigger-width)] rounded-card border hairline bg-card shadow-lg"
+        style={{ minHeight: minVisiblePx }}
+      >
         {virtual ? <Virtualizer layout={listLayout}>{listBox}</Virtualizer> : listBox}
       </Popover>
     </ComboBox>
