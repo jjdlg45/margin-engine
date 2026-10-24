@@ -3,7 +3,10 @@
  * locally as pure selection - no financial computation. Swapping this file
  * for an HTTP adapter is the whole go-live change (see client.ts). */
 
+import type { ActionRow } from "../../types/bundle";
 import {
+  ActionDetail,
+  ActionsClient,
   ApiError,
   AppData,
   DataClient,
@@ -123,6 +126,61 @@ const FILTERS: Record<TableName, Predicate> = {
     range(num(r.returns_contribution_cents)! / 100, f.returns_min, f.returns_max) &&
     range(num(r.pct_revenue_excluded)! * 100, f.excluded_min, f.excluded_max) &&
     range(num(r.n_orders), f.orders_min, f.orders_max),
+  // Same vocabulary as the API's /actions matcher - the parity tests prove it.
+  actions: (r, f) =>
+    (!list(f.types).length || list(f.types).includes(String(r.action_type))) &&
+    (!list(f.statuses).length || list(f.statuses).includes(String(r.status))) &&
+    (!f.owner || r.owner === f.owner) &&
+    (!list(f.priorities).length || list(f.priorities).includes(String(r.priority))) &&
+    (!list(f.evidence).length ||
+      list(f.evidence).includes(String(r.evidence_status ?? "insufficient_data"))) &&
+    (!f.compliance || Boolean(r.compliance_flags)) &&
+    (!f.customer || r.customer_id === f.customer) &&
+    (!f.item || r.item_id === f.item) &&
+    range(
+      num(r.expected_impact_cents) !== null ? num(r.expected_impact_cents)! / 100 : null,
+      f.impact_min,
+      f.impact_max,
+    ),
+};
+
+const READ_ONLY = () =>
+  Promise.reject(
+    new ApiError("The hosted demo is read-only; the review workflow needs the live API.", 405),
+  );
+
+const staticActions: ActionsClient = {
+  readOnly: true,
+  getUsers: () => Promise.resolve([]),
+  async getDetail(actionId: string): Promise<ActionDetail> {
+    const items = (await fetchTableRows("tables/actions.json")) as unknown as ActionRow[];
+    const row = items.find((r) => r.action_id === actionId);
+    if (!row) throw new ApiError(`unknown action ${actionId}`, 404);
+    return {
+      action: row,
+      status: row.status,
+      events: row.events,
+      edits: [],
+      outcome: row.outcome ?? null,
+    };
+  },
+  async getOutcomes() {
+    const items = (await fetchTableRows("tables/actions.json")) as unknown as ActionRow[];
+    return items
+      .filter((r) => r.outcome)
+      .map((r) => ({
+        action_id: r.action_id,
+        title: r.title,
+        customer_id: r.customer_id,
+        item_id: r.item_id,
+        outcome: r.outcome!,
+      }));
+  },
+  transition: READ_ONLY,
+  bulkApprove: READ_ONLY,
+  edit: READ_ONLY,
+  propose: READ_ONLY,
+  priceExport: READ_ONLY,
 };
 
 function applySort(rows: Row[], sort?: string): Row[] {
@@ -142,6 +200,8 @@ function applySort(rows: Row[], sort?: string): Row[] {
 
 export const staticAdapter: DataClient = {
   getApp: () => fetchJson<AppData>("app.json"),
+
+  actions: staticActions,
 
   getPage: <P extends PageName>(page: P) => fetchJson<PageDataMap[P]>(`${page}.json`),
 

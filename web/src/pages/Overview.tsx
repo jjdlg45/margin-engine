@@ -59,6 +59,22 @@ function findings(o: OverviewData): Finding[] {
       linkLabel: "Customers & orders",
     });
   }
+  if (o.open_actions && o.open_actions.n_actions > 0) {
+    const open =
+      o.open_actions.n_actions -
+      (o.open_actions.by_status.rejected ?? 0) -
+      (o.open_actions.by_status.measured ?? 0);
+    out.push({
+      figure: count(open),
+      text: `open actions await review or implementation${
+        o.open_actions.n_measured > 0
+          ? `; ${count(o.open_actions.n_measured)} already measured against untreated comparison pairs`
+          : ""
+      }.`,
+      to: "/actions",
+      linkLabel: "Action center",
+    });
+  }
   return out.slice(0, 5);
 }
 

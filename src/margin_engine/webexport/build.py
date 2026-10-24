@@ -24,6 +24,12 @@ from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
 from margin_engine.webexport.bundle import (
     BUNDLE_VERSION,
+    ActionEventRow,
+    ActionOutcome,
+    ActionRow,
+    ActionsSection,
+    ActionsSummary,
+    CalibrationRow,
     CrossPriceEstimate,
     CustomerEconomics,
     CustomerLeakage,
@@ -711,6 +717,174 @@ def build_bundle(
         ),
     )
 
+    # --- Action center (Phases 38-42) ---------------------------------------
+    # The static demo ships the generated actions READ-ONLY with a simulated,
+    # lifecycle-valid review history (labeled demo data) and real measured
+    # outcomes computed by the Phase 41 tracker against this bundle's ledger.
+    from margin_engine.actions.demo import simulate_demo_history
+    from margin_engine.actions.model import replay_status
+    from margin_engine.actions.tracking import track_outcomes
+
+    act_frame = res.actions if res.actions is not None else pl.DataFrame()
+    actions_table: list[ActionRow] = []
+    if act_frame.height:
+        demo_events = simulate_demo_history(act_frame)
+        tracked = track_outcomes(
+            act_frame,
+            demo_events,
+            res.pipeline.ledger,
+            rules,
+            pair_segments=res.guidance.select("customer_id", "item_id", "segment_leaf"),
+        )
+        statuses = {r[0]: r[1] for r in replay_status(demo_events).iter_rows()}
+        events_by_action: dict[str, list[ActionEventRow]] = {}
+        for e in demo_events.sort("action_id", "seq").iter_rows(named=True):
+            events_by_action.setdefault(str(e["action_id"]), []).append(
+                ActionEventRow(
+                    seq=int(e["seq"]),
+                    who=str(e["who"]),
+                    at=e["at"].isoformat(),
+                    from_status=e["from_status"],
+                    to_status=str(e["to_status"]),
+                    note=str(e["note"] or ""),
+                )
+            )
+        outcomes_by_action: dict[str, ActionOutcome] = {}
+        for o in tracked.outcomes.iter_rows(named=True):
+            outcomes_by_action[str(o["action_id"])] = ActionOutcome(
+                implemented_on=str(o["implemented_on"]),
+                window_days=int(o["window_days"]),
+                qty_before=o["qty_before"],
+                qty_after=o["qty_after"],
+                price_before_cents=o["price_before_cents"],
+                price_after_cents=o["price_after_cents"],
+                proposed_price_cents=o["proposed_price_cents"],
+                realization_pct=o["realization_pct"],
+                predicted_volume_ratio=o["predicted_volume_ratio"],
+                treated_volume_ratio=o["treated_volume_ratio"],
+                control_volume_ratio=o["control_volume_ratio"],
+                n_control_pairs=int(o["n_control_pairs"] or 0),
+                did_volume_ratio=o["did_volume_ratio"],
+                volume_error_log_points=o["volume_error_log_points"],
+                pocket_margin_before=o["pocket_margin_before"],
+                pocket_margin_after=o["pocket_margin_after"],
+                contribution_before_cents=o["contribution_before_cents"],
+                contribution_after_cents=o["contribution_after_cents"],
+                outcome_status=str(o["outcome_status"]),
+                outcome_reason=str(o["outcome_reason"] or ""),
+            )
+        for a in act_frame.sort(["action_type", "action_id"]).iter_rows(named=True):
+            aid = str(a["action_id"])
+            actions_table.append(
+                ActionRow(
+                    action_id=aid,
+                    action_type=str(a["action_type"]),
+                    title=str(a["title"]),
+                    rationale=str(a["rationale"]),
+                    customer_id=a["customer_id"],
+                    customer_name=cust_name.get(str(a["customer_id"]))
+                    if a["customer_id"]
+                    else None,
+                    item_id=a["item_id"],
+                    item_name=item_name.get(str(a["item_id"])) if a["item_id"] else None,
+                    scope=str(a["scope"]),
+                    uom=a["uom"],
+                    segment=a["segment_leaf"],
+                    guidance_status=a["guidance_status"],
+                    evidence_status=a["evidence_status"],
+                    volume_treatment=a["volume_treatment"],
+                    predicted_volume_ratio=a["predicted_volume_ratio"],
+                    impact_basis=str(a["impact_basis"]),
+                    expected_impact_cents=a["expected_impact_cents"],
+                    current_price_cents=a["current_price_cents"],
+                    proposed_price_cents=a["proposed_price_cents"],
+                    floor_price_cents=a["floor_price_cents"],
+                    priority=str(a["priority"]),
+                    owner=str(a["owner"]),
+                    due_date=str(a["due_date"]) if a["due_date"] is not None else None,
+                    compliance_flags=str(a["compliance_flags"] or ""),
+                    blocked=bool(a["blocked"]),
+                    blocked_reason=a["blocked_reason"],
+                    status=statuses.get(aid, "proposed"),
+                    events=events_by_action.get(aid, []),
+                    outcome=outcomes_by_action.get(aid),
+                )
+            )
+        calibration_rows = [
+            CalibrationRow(
+                bucket=str(c["bucket"]),
+                n_measured=int(c["n_measured"]),
+                median_abs_volume_error_log_points=c["median_abs_volume_error_log_points"],
+                median_realization_pct=c["median_realization_pct"],
+                status=str(c["status"]),
+            )
+            for c in tracked.calibration.iter_rows(named=True)
+        ]
+        measured_rows = [
+            a.outcome for a in actions_table if a.outcome and a.outcome.outcome_status == "measured"
+        ]
+        realizations = sorted(
+            m.realization_pct
+            for m in measured_rows
+            if m is not None and m.realization_pct is not None
+        )
+        by_status_counts: dict[str, int] = {}
+        impact_by_evidence: dict[str, int] = {}
+        impact_by_basis: dict[str, int] = {}
+        for arow in actions_table:
+            by_status_counts[arow.status] = by_status_counts.get(arow.status, 0) + 1
+            ev = arow.evidence_status or "insufficient_data"
+            impact_by_evidence[ev] = impact_by_evidence.get(ev, 0) + int(
+                arow.expected_impact_cents or 0
+            )
+            impact_by_basis[arow.impact_basis] = impact_by_basis.get(arow.impact_basis, 0) + int(
+                arow.expected_impact_cents or 0
+            )
+        actions_section = ActionsSection(
+            read_only=True,
+            demo_history=True,
+            summary=ActionsSummary(
+                n_actions=len(actions_table),
+                by_status=dict(sorted(by_status_counts.items())),
+                impact_by_evidence_cents=dict(sorted(impact_by_evidence.items())),
+                impact_by_basis_cents=dict(sorted(impact_by_basis.items())),
+                n_blocked=sum(1 for a in actions_table if a.blocked),
+                n_compliance_flagged=sum(1 for a in actions_table if a.compliance_flags),
+                n_measured=len(measured_rows),
+                median_realization_pct=(
+                    realizations[len(realizations) // 2] if realizations else None
+                ),
+            ),
+            calibration=calibration_rows,
+            facets={
+                "types": sorted({a.action_type for a in actions_table}),
+                "statuses": sorted({a.status for a in actions_table}),
+                "owners": sorted({a.owner for a in actions_table}),
+                "priorities": sorted({a.priority for a in actions_table}),
+                "evidence": sorted(
+                    {a.evidence_status or "insufficient_data" for a in actions_table}
+                ),
+            },
+            notes=list(tracked.notes),
+        )
+    else:
+        actions_section = ActionsSection(
+            read_only=True,
+            demo_history=True,
+            summary=ActionsSummary(
+                n_actions=0,
+                by_status={},
+                impact_by_evidence_cents={},
+                impact_by_basis_cents={},
+                n_blocked=0,
+                n_compliance_flagged=0,
+                n_measured=0,
+            ),
+            calibration=[],
+            facets={"types": [], "statuses": [], "owners": [], "priorities": [], "evidence": []},
+            notes=["action generation produced no actions for this world"],
+        )
+
     return WebBundle(
         bundle_version=BUNDLE_VERSION,
         engine_version=__version__,
@@ -750,6 +924,8 @@ def build_bundle(
         optional_modules=optional,
         validation_results=validation,
         manifest=manifest,
+        actions=actions_section,
+        actions_table=actions_table,
     )
 
 
@@ -953,6 +1129,9 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
             "total_segments": len(sens),
             "negative_contribution_orders": econ["orders"]["negative_contribution_orders"],
             "n_library_warnings": len(d["library_warnings"]),
+            # Open-actions summary (Phase 42): counts by status, expected
+            # impact by evidence level, latest measured results.
+            "open_actions": d["actions"]["summary"],
         },
         "waterfall": {
             "overall": d["waterfall_overall"],
@@ -1033,6 +1212,8 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         },
         "tables/opportunities": {"items": opp["top_opportunities"]},
         "tables/customers": {"items": econ["customers"]},
+        "actions": d["actions"],
+        "tables/actions": {"items": d["actions_table"]},
     }
     return pages
 

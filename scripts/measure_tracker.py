@@ -227,7 +227,7 @@ def main() -> None:
                 f"pooled recovery |median DiD effect - median planted effect| "
                 f"<= {POOLED_ERROR_BOUND} log points and >= "
                 f"{MIN_MEASURED_SHARE:.0%} of interventions measured "
-                f"(well_identified, seed 5, 30 planted +8% interventions; a "
+                f"(well-identified world, seed 5, 30 planted +8% interventions; a "
                 f"single pair's 90-day window carries ~0.2-0.3 log points of "
                 f"Poisson noise, reported as information)"
             ),

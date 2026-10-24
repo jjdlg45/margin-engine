@@ -228,7 +228,9 @@ def main() -> None:
         and float(best["run_s"]) < TIME_BUDGET_S  # type: ignore[arg-type]
         and float(best["peak_gb"]) < PEAK_BUDGET_GB  # type: ignore[arg-type]
     )
-    stage_str = ", ".join(f"{k} {v}s" for k, v in list(best["stages"].items())[:4])  # type: ignore[union-attr]
+    stage_str = ", ".join(
+        f"{k.replace('_', ' ')} {v}s" for k, v in list(best["stages"].items())[:4]
+    )  # type: ignore[union-attr]
     achieved = (
         f"largest run that fits this machine: {best['lines']:,} lines in "
         f"{best['run_s']}s, peak {best['peak_gb']} GB on {hw}; slowest stages: {stage_str}"

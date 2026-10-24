@@ -532,3 +532,46 @@ def test_cli_export_web(tmp_path: Path) -> None:
     assert (tmp_path / "data" / "bundle.json").exists()
     assert (tmp_path / "data" / "schema.json").exists()
     assert "Guidance pairs:" in result.output
+
+
+def test_actions_bundle_parity_and_validity(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Phase 42: the Action center bundle ties to the engine's actions frame
+    cents-exact (per-basis impact totals, never one summed number), every row
+    traces to a generated action, and the simulated demo history replays to
+    exactly the statuses the rows carry."""
+    from margin_engine.actions.demo import simulate_demo_history
+    from margin_engine.actions.model import replay_status, validate_log
+
+    res, _rules, bundle, out = built
+    assert res.actions is not None
+    engine = res.actions
+
+    assert bundle.actions.summary.n_actions == engine.height
+    assert len(bundle.actions_table) == engine.height
+    assert bundle.actions.read_only is True and bundle.actions.demo_history is True
+
+    by_basis = dict(
+        engine.group_by("impact_basis")
+        .agg(pl.col("expected_impact_cents").fill_null(0).sum())
+        .iter_rows()
+    )
+    assert bundle.actions.summary.impact_by_basis_cents == {
+        k: int(v) for k, v in sorted(by_basis.items())
+    }
+    assert "total" not in bundle.actions.summary.model_dump()
+
+    engine_ids = set(engine["action_id"].to_list())
+    assert {r.action_id for r in bundle.actions_table} == engine_ids
+
+    # The embedded histories replay to the statuses shown on the rows.
+    events = simulate_demo_history(engine)
+    validate_log(events)
+    statuses = {r[0]: r[1] for r in replay_status(events).iter_rows()}
+    for row in bundle.actions_table:
+        assert row.status == statuses[row.action_id]
+
+    # The static page payloads exist and stay within the app size gate.
+    assert (out / "actions.json").exists()
+    assert (out / "tables" / "actions.json").stat().st_size < 1024 * 1024

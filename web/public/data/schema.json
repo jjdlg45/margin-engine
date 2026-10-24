@@ -1,5 +1,706 @@
 {
  "$defs": {
+  "ActionEventRow": {
+   "description": "One append-only lifecycle event (Phase 38); the static demo ships a\nsimulated history, labeled demo data.",
+   "properties": {
+    "at": {
+     "description": "ISO datetime, UTC",
+     "title": "At",
+     "type": "string"
+    },
+    "from_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "From Status"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "seq": {
+     "title": "Seq",
+     "type": "integer"
+    },
+    "to_status": {
+     "title": "To Status",
+     "type": "string"
+    },
+    "who": {
+     "title": "Who",
+     "type": "string"
+    }
+   },
+   "required": [
+    "seq",
+    "who",
+    "at",
+    "from_status",
+    "to_status",
+    "note"
+   ],
+   "title": "ActionEventRow",
+   "type": "object"
+  },
+  "ActionOutcome": {
+   "description": "Measured result of an implemented action (Phase 41). Every gate fails\nclosed: outcome_status insufficient_evidence carries the reason.",
+   "properties": {
+    "contribution_after_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Contribution After Cents"
+    },
+    "contribution_before_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Contribution Before Cents"
+    },
+    "control_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Control Volume Ratio"
+    },
+    "did_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Did Volume Ratio"
+    },
+    "implemented_on": {
+     "title": "Implemented On",
+     "type": "string"
+    },
+    "n_control_pairs": {
+     "title": "N Control Pairs",
+     "type": "integer"
+    },
+    "outcome_reason": {
+     "title": "Outcome Reason",
+     "type": "string"
+    },
+    "outcome_status": {
+     "title": "Outcome Status",
+     "type": "string"
+    },
+    "pocket_margin_after": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Pocket Margin After"
+    },
+    "pocket_margin_before": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Pocket Margin Before"
+    },
+    "predicted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Predicted Volume Ratio"
+    },
+    "price_after_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price After Cents"
+    },
+    "price_before_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price Before Cents"
+    },
+    "proposed_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Proposed Price Cents"
+    },
+    "qty_after": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Qty After"
+    },
+    "qty_before": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Qty Before"
+    },
+    "realization_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Realization Pct"
+    },
+    "treated_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Treated Volume Ratio"
+    },
+    "volume_error_log_points": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Volume Error Log Points"
+    },
+    "window_days": {
+     "title": "Window Days",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "implemented_on",
+    "window_days",
+    "qty_before",
+    "qty_after",
+    "price_before_cents",
+    "price_after_cents",
+    "proposed_price_cents",
+    "realization_pct",
+    "predicted_volume_ratio",
+    "treated_volume_ratio",
+    "control_volume_ratio",
+    "n_control_pairs",
+    "did_volume_ratio",
+    "volume_error_log_points",
+    "pocket_margin_before",
+    "pocket_margin_after",
+    "contribution_before_cents",
+    "contribution_after_cents",
+    "outcome_status",
+    "outcome_reason"
+   ],
+   "title": "ActionOutcome",
+   "type": "object"
+  },
+  "ActionRow": {
+   "description": "One generated action with its derived status, full event history and\noutcome (once measured). Impact levels are per impact_basis and never\nsummed across bases.",
+   "properties": {
+    "action_id": {
+     "title": "Action Id",
+     "type": "string"
+    },
+    "action_type": {
+     "title": "Action Type",
+     "type": "string"
+    },
+    "blocked": {
+     "title": "Blocked",
+     "type": "boolean"
+    },
+    "blocked_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Blocked Reason"
+    },
+    "compliance_flags": {
+     "title": "Compliance Flags",
+     "type": "string"
+    },
+    "current_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Current Price Cents"
+    },
+    "customer_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Customer Id"
+    },
+    "customer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Customer Name"
+    },
+    "due_date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Due Date"
+    },
+    "events": {
+     "items": {
+      "$ref": "#/$defs/ActionEventRow"
+     },
+     "title": "Events",
+     "type": "array"
+    },
+    "evidence_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Evidence Status"
+    },
+    "expected_impact_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Expected Impact Cents"
+    },
+    "floor_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Floor Price Cents"
+    },
+    "guidance_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Guidance Status"
+    },
+    "impact_basis": {
+     "title": "Impact Basis",
+     "type": "string"
+    },
+    "item_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Item Id"
+    },
+    "item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Item Name"
+    },
+    "outcome": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/ActionOutcome"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "owner": {
+     "title": "Owner",
+     "type": "string"
+    },
+    "predicted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Predicted Volume Ratio"
+    },
+    "priority": {
+     "title": "Priority",
+     "type": "string"
+    },
+    "proposed_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Proposed Price Cents"
+    },
+    "rationale": {
+     "title": "Rationale",
+     "type": "string"
+    },
+    "scope": {
+     "title": "Scope",
+     "type": "string"
+    },
+    "segment": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Segment"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "title": {
+     "title": "Title",
+     "type": "string"
+    },
+    "uom": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Uom"
+    },
+    "volume_treatment": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Volume Treatment"
+    }
+   },
+   "required": [
+    "action_id",
+    "action_type",
+    "title",
+    "rationale",
+    "customer_id",
+    "item_id",
+    "scope",
+    "uom",
+    "segment",
+    "guidance_status",
+    "evidence_status",
+    "volume_treatment",
+    "predicted_volume_ratio",
+    "impact_basis",
+    "expected_impact_cents",
+    "current_price_cents",
+    "proposed_price_cents",
+    "floor_price_cents",
+    "priority",
+    "owner",
+    "due_date",
+    "compliance_flags",
+    "blocked",
+    "blocked_reason",
+    "status",
+    "events"
+   ],
+   "title": "ActionRow",
+   "type": "object"
+  },
+  "ActionsSection": {
+   "properties": {
+    "calibration": {
+     "items": {
+      "$ref": "#/$defs/CalibrationRow"
+     },
+     "title": "Calibration",
+     "type": "array"
+    },
+    "demo_history": {
+     "description": "True when the event history is simulated demo data",
+     "title": "Demo History",
+     "type": "boolean"
+    },
+    "facets": {
+     "additionalProperties": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "title": "Facets",
+     "type": "object"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "read_only": {
+     "description": "True in the static demo: the review workflow needs the API",
+     "title": "Read Only",
+     "type": "boolean"
+    },
+    "summary": {
+     "$ref": "#/$defs/ActionsSummary"
+    }
+   },
+   "required": [
+    "read_only",
+    "demo_history",
+    "summary",
+    "calibration",
+    "facets",
+    "notes"
+   ],
+   "title": "ActionsSection",
+   "type": "object"
+  },
+  "ActionsSummary": {
+   "properties": {
+    "by_status": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "By Status",
+     "type": "object"
+    },
+    "impact_by_basis_cents": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "description": "Expected impact per impact basis - bases are different opportunity levels and are NEVER summed into one number",
+     "title": "Impact By Basis Cents",
+     "type": "object"
+    },
+    "impact_by_evidence_cents": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "Impact By Evidence Cents",
+     "type": "object"
+    },
+    "median_realization_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Across measured outcomes; null below the minimum count",
+     "title": "Median Realization Pct"
+    },
+    "n_actions": {
+     "title": "N Actions",
+     "type": "integer"
+    },
+    "n_blocked": {
+     "title": "N Blocked",
+     "type": "integer"
+    },
+    "n_compliance_flagged": {
+     "title": "N Compliance Flagged",
+     "type": "integer"
+    },
+    "n_measured": {
+     "title": "N Measured",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "n_actions",
+    "by_status",
+    "impact_by_evidence_cents",
+    "impact_by_basis_cents",
+    "n_blocked",
+    "n_compliance_flagged",
+    "n_measured"
+   ],
+   "title": "ActionsSummary",
+   "type": "object"
+  },
+  "CalibrationRow": {
+   "description": "Prediction error by evidence bucket; below the configured minimum the\nstatus says not_enough_implemented_actions instead of showing numbers.",
+   "properties": {
+    "bucket": {
+     "title": "Bucket",
+     "type": "string"
+    },
+    "median_abs_volume_error_log_points": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Abs Volume Error Log Points"
+    },
+    "median_realization_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Realization Pct"
+    },
+    "n_measured": {
+     "title": "N Measured",
+     "type": "integer"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "bucket",
+    "n_measured",
+    "median_abs_volume_error_log_points",
+    "median_realization_pct",
+    "status"
+   ],
+   "title": "CalibrationRow",
+   "type": "object"
+  },
   "CrossPriceEstimate": {
    "properties": {
     "cross_elasticity": {
@@ -1999,6 +2700,16 @@
   }
  },
  "properties": {
+  "actions": {
+   "$ref": "#/$defs/ActionsSection"
+  },
+  "actions_table": {
+   "items": {
+    "$ref": "#/$defs/ActionRow"
+   },
+   "title": "Actions Table",
+   "type": "array"
+  },
   "bundle_version": {
    "title": "Bundle Version",
    "type": "string"
@@ -2156,7 +2867,9 @@
   "scenario_grids",
   "optional_modules",
   "validation_results",
-  "manifest"
+  "manifest",
+  "actions",
+  "actions_table"
  ],
  "title": "WebBundle",
  "type": "object"

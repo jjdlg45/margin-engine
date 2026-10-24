@@ -176,7 +176,7 @@
   {
    "check": "Scale (10M-line pipeline)",
    "target": "10M+ lines under 15 minutes and under 8 GB peak memory",
-   "achieved": "largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest_classify_waterfall_reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement.",
+   "achieved": "largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest classify waterfall reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement.",
    "passed": false,
    "rungs": [
     {
@@ -248,7 +248,7 @@
   },
   {
    "check": "Results tracker: planted-intervention recovery",
-   "target": "pooled recovery |median DiD effect - median planted effect| <= 0.1 log points and >= 50% of interventions measured (well_identified, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information)",
+   "target": "pooled recovery |median DiD effect - median planted effect| <= 0.1 log points and >= 50% of interventions measured (well-identified world, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information)",
    "achieved": "21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419",
    "passed": true,
    "detail": {

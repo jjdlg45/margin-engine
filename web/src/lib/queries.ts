@@ -3,6 +3,7 @@
  * kept for the session (static files do not change underneath us). */
 
 import { QueryClient, useQuery } from "@tanstack/react-query";
+import { useEffect, useReducer } from "react";
 import { dataClient } from "./api/client";
 import { ApiError, PageDataMap, PageName, TableName, TableQuery } from "./api/types";
 
@@ -36,6 +37,66 @@ export function useTableQuery<T extends TableName>(table: T, query: TableQuery) 
     queryFn: () => dataClient.queryTable(table, query),
     placeholderData: (prev) => prev,
   });
+}
+
+// ---- Action center (Run 5, Phase 42) ---------------------------------------
+
+export function useActionDetail(actionId: string | null) {
+  return useQuery({
+    queryKey: ["action-detail", actionId],
+    queryFn: () => dataClient.actions.getDetail(actionId!),
+    enabled: Boolean(actionId),
+  });
+}
+
+export function useActionUsers() {
+  return useQuery({
+    queryKey: ["action-users"],
+    queryFn: () => dataClient.actions.getUsers(),
+    enabled: !dataClient.actions.readOnly,
+  });
+}
+
+export function useActionOutcomes() {
+  return useQuery({
+    queryKey: ["action-outcomes"],
+    queryFn: () => dataClient.actions.getOutcomes(),
+  });
+}
+
+/** The working identity for review operations (a configured user name - local
+ * identity, not authentication). Kept in a tiny module store so every
+ * component sees the same choice; localStorage is a per-viewer convenience
+ * only and every access is guarded. */
+let currentUser: string | null = (() => {
+  try {
+    return localStorage.getItem("margin-engine-user");
+  } catch {
+    return null;
+  }
+})();
+const userListeners = new Set<() => void>();
+
+export function useCurrentUser(): [string | null, (u: string | null) => void] {
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const cb = () => force();
+    userListeners.add(cb);
+    return () => {
+      userListeners.delete(cb);
+    };
+  }, []);
+  const set = (u: string | null) => {
+    currentUser = u;
+    try {
+      if (u) localStorage.setItem("margin-engine-user", u);
+      else localStorage.removeItem("margin-engine-user");
+    } catch {
+      /* storage unavailable: the choice still works for this session */
+    }
+    userListeners.forEach((cb) => cb());
+  };
+  return [currentUser, set];
 }
 
 export function useGuidanceExplanation(customerId: string | null, itemId: string | null) {

@@ -109,6 +109,127 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "Estimated",
         "description": "From configured policy rates, not source amounts - labeled wherever used.",
     },
+    # --- action center (Run 5, Phases 38-42) ----------------------------------
+    "price_change": {
+        "label": "Price change",
+        "description": "Raise one customer-item price toward the segment target, never "
+        "below the floor.",
+    },
+    "below_floor_fix": {
+        "label": "Below-floor fix",
+        "description": "This pair is priced below the binding margin floor; raising to the "
+        "floor is the minimum fix.",
+    },
+    "cost_pass_through": {
+        "label": "Cost pass-through",
+        "description": "Recover part of a cost increase at the chosen pass-through level; "
+        "full pass-through is never assumed.",
+    },
+    "service_policy": {
+        "label": "Service policy",
+        "description": "A minimum-order or delivery-frequency change for a customer losing "
+        "money after activity costs - not a price action.",
+    },
+    "rebate_discount_review": {
+        "label": "Rebate and discount review",
+        "description": "This customer's leakage rate sits far above its segment's median; "
+        "the amount shown is the observed excess, never a forecast.",
+    },
+    "proposed": {
+        "label": "Proposed",
+        "description": "Generated or drafted; not yet submitted for review.",
+    },
+    "under_review": {
+        "label": "Under review",
+        "description": "Submitted by an analyst; waiting for an approver's decision.",
+    },
+    "approved": {
+        "label": "Approved",
+        "description": "An approver (never the proposer) accepted it; ready for the price export.",
+    },
+    "rejected": {
+        "label": "Rejected",
+        "description": "An approver declined it; it can be reworked and resubmitted.",
+    },
+    "exported": {
+        "label": "Exported",
+        "description": "Included in an ERP price export; waiting to be implemented.",
+    },
+    "implemented": {
+        "label": "Implemented",
+        "description": "Marked live in the ERP; the tracker measures it after the window.",
+    },
+    "measured": {
+        "label": "Measured",
+        "description": "The outcome window elapsed and the result is measured against an "
+        "untreated comparison group.",
+    },
+    "high": {"label": "High", "description": "Largest expected impact with solid evidence."},
+    "medium": {"label": "Medium", "description": "Meaningful impact or demoted evidence."},
+    "low": {"label": "Low", "description": "Small expected impact or weak volume evidence."},
+    "expected_contribution_change": {
+        "label": "Expected contribution change",
+        "description": "Level 3: contribution at the new price minus today's, with the "
+        "causal-supported volume response - never summed with other levels.",
+    },
+    "gross_price_opportunity_fixed_volume": {
+        "label": "Gross opportunity at unchanged volume",
+        "description": "Level 2: the pocket value of the price gap if volume did not move - "
+        "the evidence does not support predicting a response.",
+    },
+    "floor_gap_fixed_volume_pocket": {
+        "label": "Floor gap at unchanged volume",
+        "description": "The pocket dollars recovered by raising to the floor at today's volume.",
+    },
+    "no_recent_volume": {
+        "label": "No recent volume",
+        "description": "The pair had no baseline-window sales, so no dollar impact is invented.",
+    },
+    "cost_recovery_at_chosen_level": {
+        "label": "Cost recovery at the chosen level",
+        "description": "Dollars of the cost increase recovered at the configured "
+        "pass-through percentage, at unchanged volume.",
+    },
+    "contribution_at_stake_estimated": {
+        "label": "Contribution at stake (estimated)",
+        "description": "The money lost after activity costs; activity rates are config estimates.",
+    },
+    "observed_leakage_excess": {
+        "label": "Observed leakage excess",
+        "description": "Level 1: reconciled dollars above the segment-median leakage rate - "
+        "an accounting fact, never summed with price opportunities.",
+    },
+    "manual_proposal": {
+        "label": "Manual proposal",
+        "description": "Proposed by an analyst, not generated from engine outputs.",
+    },
+    "manual": {
+        "label": "Manual",
+        "description": "Entered by a person; no engine evidence attached.",
+    },
+    "insufficient_evidence": {
+        "label": "Insufficient evidence",
+        "description": "The outcome cannot be measured reliably; the reason is shown "
+        "instead of a number.",
+    },
+    "causal_supported": {
+        "label": "Causal-supported",
+        "description": "Actions whose volume response met every causal criterion.",
+    },
+    "iv_estimated": {
+        "label": "Instrumented estimate",
+        "description": "Actions whose volume evidence was instrumented but not fully "
+        "causal-supported.",
+    },
+    "fixed_volume": {
+        "label": "Fixed volume",
+        "description": "Actions sized at unchanged volume.",
+    },
+    "not_enough_implemented_actions": {
+        "label": "Not enough implemented actions yet",
+        "description": "Calibration appears once enough actions are implemented and "
+        "measured; until then no number is shown.",
+    },
     # --- pricing compliance (Run 5, Phase 37) ---------------------------------
     "rp_review_flag": {
         "label": "Price-discrimination review",

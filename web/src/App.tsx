@@ -19,6 +19,12 @@ const ScenariosPage = lazy(() => import("./pages/ScenariosPage").then((m) => ({ 
 const SegmentsPage = lazy(() => import("./pages/SegmentsPage").then((m) => ({ default: m.SegmentsPage })));
 const SensitivityPage = lazy(() => import("./pages/SensitivityPage").then((m) => ({ default: m.SensitivityPage })));
 const WaterfallPage = lazy(() => import("./pages/WaterfallPage").then((m) => ({ default: m.WaterfallPage })));
+const ActionCenterPage = lazy(() =>
+  import("./pages/ActionCenterPage").then((m) => ({ default: m.ActionCenterPage })),
+);
+const ActionDetailPage = lazy(() =>
+  import("./pages/ActionDetailPage").then((m) => ({ default: m.ActionDetailPage })),
+);
 
 const PAGES = [
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
@@ -27,6 +33,7 @@ const PAGES = [
   { path: "/guidance", label: "Guidance", el: <GuidancePage /> },
   { path: "/sensitivity", label: "Sensitivity", el: <SensitivityPage /> },
   { path: "/opportunity", label: "Opportunity", el: <OpportunityPage /> },
+  { path: "/actions", label: "Action center", el: <ActionCenterPage /> },
   { path: "/scenarios", label: "Scenarios", el: <ScenariosPage /> },
   { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
   { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
@@ -145,6 +152,14 @@ function Shell() {
                   element={<Boundary label={p.label.toLowerCase()}>{p.el}</Boundary>}
                 />
               ))}
+              <Route
+                path="/actions/:actionId"
+                element={
+                  <Boundary label="the action detail">
+                    <ActionDetailPage />
+                  </Boundary>
+                }
+              />
             </Routes>
           </Suspense>
         )}

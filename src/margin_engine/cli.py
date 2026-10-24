@@ -318,6 +318,11 @@ def export_web(
     except FiscalCalendarError as exc:
         _fail("fiscal calendar", exc)
     bundle_path, schema_path = write_bundle(bundle, out)
+    # Action store seeds for API mode (Phase 42): the live BFF merges these at
+    # startup (MARGIN_API_ACTIONS_SEED); the static site never fetches them.
+    if result.actions is not None and result.action_events is not None:
+        result.actions.write_parquet(out / "actions.parquet")
+        result.action_events.write_parquet(out / "action_events.parquet")
     size_kb = bundle_path.stat().st_size / 1024
     typer.echo(f"Bundle: {bundle_path} ({size_kb:,.0f} KB)")
     typer.echo(f"Schema: {schema_path}")

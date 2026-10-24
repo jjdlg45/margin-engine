@@ -2624,3 +2624,66 @@ jumps by the planted percentage at the intervention month.
 **Checks.** ruff check 0; ruff format --check 0 (after formatting three
 files); mypy src api 0; full pytest exit 0; tracker validation script exit 0
 with both rows passing.
+
+## Phase 42 — Action center UI (2026-10-24, Run 5 branch)
+
+**Bundle.** New models (ActionRow with embedded event history and outcome,
+ActionsSection with summary / calibration / facets, ActionOutcome,
+CalibrationRow); the demo world ships 277 actions READ-ONLY with a simulated,
+lifecycle-valid review history (shifted ~140 days before the data's end so
+implemented actions have full measurement windows: 13 outcomes measure for
+real against this bundle's ledger, calibration shows three evidence buckets).
+New files actions.json and tables/actions.json (456 KB, under the 1 MB gate);
+overview.json carries the open-actions summary; export-web also writes
+actions.parquet / action_events.parquet as API-mode seeds (the app never
+fetches them). Label dictionary covers every action type, lifecycle status,
+priority, impact basis, outcome status and calibration bucket.
+
+**Data layer.** The DataClient gains an ActionsClient: page + queue table via
+the standard contracts (static files vs /api/pages/actions + /api/actions,
+which the BFF computes LIVE from its action store), detail with full history,
+outcomes list, and mutations (transition, bulk approve, edit, propose, price
+export). The static adapter is read-only: readOnly=true and every mutation
+rejects with a 405; its queue filter predicate mirrors the API matcher exactly
+(parity-tested). New API endpoints: /api/pages/actions, /api/actions/users
+(configured identities - NOT authentication), /api/actions/outcomes; detail
+now embeds the measured outcome.
+
+**UI.** New Action center page (route /actions, in the primary nav): summary
+cards (counts by status; expected impact BY BASIS, never summed; latest
+results), queue on the shared filter system (type/status/priority/evidence
+multi-selects, owner combobox, compliance-only toggle, impact range; chips,
+clear-all, URL round trip, Showing x of y), and a Results tab with the
+calibration table (or the "not enough implemented actions yet" state) and
+every tracked outcome with its reason. Detail route /actions/:actionId:
+rationale, compliance explanation from the dictionary, evidence deep links
+(guidance band for the pair, segments, sensitivity), append-only history
+(labeled simulated in the demo), edit audit, and the outcome cards
+(realization, DiD volume vs prediction with the control-pair count, margin
+before/after). In API mode the toolbar adds the working-identity picker,
+manual proposals and the price export (downloads the CSV, shows the summary);
+lifecycle buttons apply optimistic status updates that ROLL BACK on failure
+with the API's refusal shown verbatim. Overview gains an open-actions finding
+linking to the page.
+
+**Tests.** pytest: bundle parity (per-basis impact totals tie to the engine
+frame cents-exact, no summed total, ids trace 1:1, embedded histories replay
+to the shown statuses, size gate). Playwright static (12): read-only queue
+with counts matching the bundle, no mutation affordances, filters alone and
+combined with chips/clear-all/URL round trip and bundle parity, impact-range
+boundary, detail (demo-history label, compliance note, guidance deep link, no
+workflow buttons, measured outcome), results view, summary parity. Playwright
+API mode (9 total): full lifecycle through the UI (submit, self-approval
+blocked with the API's wording, approve by a different approver, price export
+download moving the action to exported, implement), reject-rework walk with
+the event log, viewer/analyst role refusals, justification demanded then
+accepted on a flagged action, optimistic rollback on a simulated 500, manual
+proposal appearing in the queue. The raw-code scanner and axe now cover
+/actions (and caught two raw codes the new validation rows had leaked into
+the methodology page - fixed in the scripts and stored rows). All 24 visual
+snapshot diffs from the intended nav/overview changes were reviewed and
+re-baselined.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0; tsc 0; vitest 11/11; build 0; Playwright static 169/169 (axe clean,
+snapshots re-baselined); Playwright API mode 9/9.

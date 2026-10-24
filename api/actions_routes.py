@@ -141,6 +141,94 @@ def _transition(
     return JSONResponse({"action_id": action_id, "status": to_status, "changed": True})
 
 
+@router.get("/api/pages/actions")
+async def actions_page(request: Request) -> Any:
+    """The Action center page payload in API mode, computed LIVE from the
+    action store (same shape as the static bundle's actions.json; read_only
+    false, history real)."""
+    from margin_engine.actions.tracking import _calibration
+    from margin_engine.config import load_rules
+
+    rows = _actions_with_status(_store(request))
+    outcomes = _store(request).outcomes()
+    rules = load_rules(request.app.state.settings.rules_path)
+    by_status: dict[str, int] = {}
+    impact_by_evidence: dict[str, int] = {}
+    impact_by_basis: dict[str, int] = {}
+    for r in rows:
+        by_status[r["status"]] = by_status.get(r["status"], 0) + 1
+        ev = str(r.get("evidence_status") or "insufficient_data")
+        impact_by_evidence[ev] = impact_by_evidence.get(ev, 0) + int(
+            r.get("expected_impact_cents") or 0
+        )
+        basis = str(r.get("impact_basis"))
+        impact_by_basis[basis] = impact_by_basis.get(basis, 0) + int(
+            r.get("expected_impact_cents") or 0
+        )
+    measured = outcomes.filter(pl.col("outcome_status") == "measured")
+    realizations = sorted(measured["realization_pct"].drop_nulls().to_list())
+    calibration = [
+        {
+            "bucket": str(c["bucket"]),
+            "n_measured": int(c["n_measured"]),
+            "median_abs_volume_error_log_points": c["median_abs_volume_error_log_points"],
+            "median_realization_pct": c["median_realization_pct"],
+            "status": str(c["status"]),
+        }
+        for c in _calibration(outcomes, rules).iter_rows(named=True)
+    ]
+    return {
+        "read_only": False,
+        "demo_history": False,
+        "summary": {
+            "n_actions": len(rows),
+            "by_status": dict(sorted(by_status.items())),
+            "impact_by_evidence_cents": dict(sorted(impact_by_evidence.items())),
+            "impact_by_basis_cents": dict(sorted(impact_by_basis.items())),
+            "n_blocked": sum(1 for r in rows if r["blocked"]),
+            "n_compliance_flagged": sum(1 for r in rows if r.get("compliance_flags")),
+            "n_measured": measured.height,
+            "median_realization_pct": (
+                realizations[len(realizations) // 2] if realizations else None
+            ),
+        },
+        "calibration": calibration,
+        "facets": {
+            "types": sorted({str(r["action_type"]) for r in rows}),
+            "statuses": sorted({str(r["status"]) for r in rows}),
+            "owners": sorted({str(r["owner"]) for r in rows}),
+            "priorities": sorted({str(r["priority"]) for r in rows}),
+            "evidence": sorted(
+                {str(r.get("evidence_status") or "insufficient_data") for r in rows}
+            ),
+        },
+        "notes": [],
+    }
+
+
+@router.get("/api/actions/users")
+async def actions_users(request: Request) -> Any:
+    """Configured users and their roles — LOCAL IDENTITY for the demo review
+    flow, explicitly not authentication."""
+    policy = _policy(request)
+    return {
+        "users": [
+            {"name": name, "roles": sorted(roles)} for name, roles in sorted(policy.users.items())
+        ],
+        "note": "Local identity, not authentication; real login belongs to a future hosting phase.",
+    }
+
+
+@router.get("/api/actions/outcomes")
+async def actions_outcomes(request: Request) -> Any:
+    """Measured and insufficient outcomes from the latest tracker run (the
+    `margin-engine track` command persists them)."""
+    rows = _store(request).outcomes().to_dicts()
+    for r in rows:
+        r["implemented_on"] = str(r["implemented_on"])
+    return {"items": rows}
+
+
 @router.get("/api/actions/summary")
 async def actions_summary(request: Request) -> Any:
     rows = _actions_with_status(_store(request))
@@ -181,7 +269,23 @@ async def action_detail(action_id: str, request: Request) -> Any:
     edit_rows = store.edits(action_id).to_dicts()
     for e in edit_rows:
         e["at"] = e["at"].isoformat()
-    return {"action": row, "status": status, "events": ev_rows, "edits": edit_rows}
+    outcome = None
+    orows = store.outcomes().filter(pl.col("action_id") == action_id)
+    if orows.height:
+        outcome = orows.to_dicts()[0]
+        outcome["implemented_on"] = str(outcome["implemented_on"])
+        outcome.pop("action_id", None)
+        outcome.pop("customer_id", None)
+        outcome.pop("item_id", None)
+        outcome.pop("volume_treatment", None)
+        outcome.pop("evidence_status", None)
+    return {
+        "action": row,
+        "status": status,
+        "events": ev_rows,
+        "edits": edit_rows,
+        "outcome": outcome,
+    }
 
 
 @router.get("/api/actions")

@@ -57,6 +57,10 @@ def simulate_demo_history(actions: pl.DataFrame) -> pl.DataFrame:
         born: dt.datetime = row["created_at"]
         if born.tzinfo is None:
             born = born.replace(tzinfo=dt.UTC)
+        # The simulated review starts ~140 days before the data's end so that
+        # implemented actions have a full 90-day measurement window INSIDE the
+        # data - the demo's results view then has real measured outcomes.
+        born = born - dt.timedelta(days=140)
         events = append_event(
             events, aid, who="engine", at=born, to_status="proposed", note="generated (demo data)"
         )

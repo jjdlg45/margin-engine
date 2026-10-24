@@ -18,6 +18,12 @@ export default defineConfig({
       url: "http://127.0.0.1:8321/api/health",
       reuseExistingServer: true,
       timeout: 120_000,
+      env: {
+        // Seed the action store from the exported bundle dir (Phase 42); a
+        // dedicated DB keeps review-state churn out of any real local state.
+        MARGIN_API_ACTIONS_SEED: "web/public/data",
+        MARGIN_API_ACTIONS_DB: ".api_state/e2e-actions.duckdb",
+      },
     },
     {
       command:

@@ -360,6 +360,118 @@ class LabelEntry(BaseModel):
     description: str
 
 
+class ActionEventRow(BaseModel):
+    """One append-only lifecycle event (Phase 38); the static demo ships a
+    simulated history, labeled demo data."""
+
+    seq: int
+    who: str
+    at: str = Field(description="ISO datetime, UTC")
+    from_status: str | None
+    to_status: str
+    note: str
+
+
+class ActionOutcome(BaseModel):
+    """Measured result of an implemented action (Phase 41). Every gate fails
+    closed: outcome_status insufficient_evidence carries the reason."""
+
+    implemented_on: str
+    window_days: int
+    qty_before: float | None
+    qty_after: float | None
+    price_before_cents: int | None
+    price_after_cents: int | None
+    proposed_price_cents: int | None
+    realization_pct: float | None
+    predicted_volume_ratio: float | None
+    treated_volume_ratio: float | None
+    control_volume_ratio: float | None
+    n_control_pairs: int
+    did_volume_ratio: float | None
+    volume_error_log_points: float | None
+    pocket_margin_before: float | None
+    pocket_margin_after: float | None
+    contribution_before_cents: int | None
+    contribution_after_cents: int | None
+    outcome_status: str
+    outcome_reason: str
+
+
+class ActionRow(BaseModel):
+    """One generated action with its derived status, full event history and
+    outcome (once measured). Impact levels are per impact_basis and never
+    summed across bases."""
+
+    action_id: str
+    action_type: str
+    title: str
+    rationale: str
+    customer_id: str | None
+    customer_name: str | None = None
+    item_id: str | None
+    item_name: str | None = None
+    scope: str
+    uom: str | None
+    segment: int | None
+    guidance_status: str | None
+    evidence_status: str | None
+    volume_treatment: str | None
+    predicted_volume_ratio: float | None
+    impact_basis: str
+    expected_impact_cents: int | None
+    current_price_cents: int | None
+    proposed_price_cents: int | None
+    floor_price_cents: int | None
+    priority: str
+    owner: str
+    due_date: str | None
+    compliance_flags: str
+    blocked: bool
+    blocked_reason: str | None
+    status: str
+    events: list[ActionEventRow]
+    outcome: ActionOutcome | None = None
+
+
+class CalibrationRow(BaseModel):
+    """Prediction error by evidence bucket; below the configured minimum the
+    status says not_enough_implemented_actions instead of showing numbers."""
+
+    bucket: str
+    n_measured: int
+    median_abs_volume_error_log_points: float | None
+    median_realization_pct: float | None
+    status: str
+
+
+class ActionsSummary(BaseModel):
+    n_actions: int
+    by_status: dict[str, int]
+    impact_by_evidence_cents: dict[str, int]
+    impact_by_basis_cents: dict[str, int] = Field(
+        description="Expected impact per impact basis - bases are different "
+        "opportunity levels and are NEVER summed into one number"
+    )
+    n_blocked: int
+    n_compliance_flagged: int
+    n_measured: int
+    median_realization_pct: float | None = Field(
+        default=None, description="Across measured outcomes; null below the minimum count"
+    )
+
+
+class ActionsSection(BaseModel):
+    read_only: bool = Field(
+        description="True in the static demo: the review workflow needs the API"
+    )
+    demo_history: bool = Field(description="True when the event history is simulated demo data")
+    summary: ActionsSummary
+    calibration: list[CalibrationRow]
+    facets: dict[str, list[str]]
+    notes: list[str]
+
+
 class WebBundle(BaseModel):
     bundle_version: str
     engine_version: str
@@ -387,3 +499,5 @@ class WebBundle(BaseModel):
     optional_modules: OptionalModules
     validation_results: list[ValidationResult]
     manifest: ManifestInfo
+    actions: ActionsSection
+    actions_table: list[ActionRow]
