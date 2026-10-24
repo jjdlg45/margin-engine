@@ -1,7 +1,8 @@
 /** Evidence-status chip: distinct fill treatment + human label + tooltip with
- * the meaning and the raw code (never color alone; never raw codes in visible
- * text). Grammar: solid = supported, hatched = IV-level, outline =
- * descriptive, dashed = insufficient. */
+ * the plain-English meaning from the label dictionary (never color alone;
+ * never raw codes anywhere a reader can see them, tooltips included).
+ * Grammar: solid = supported, hatched = IV-level, outline = descriptive,
+ * dashed = insufficient. */
 
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useLabels } from "../lib/labels";
@@ -52,8 +53,7 @@ export function StatusChip({ status, reason }: { status: string; reason?: string
           className="z-10 max-w-xs rounded-card bg-ink px-3 py-2 text-caption text-paper shadow-lg"
           sideOffset={4}
         >
-          {tip && <span>{tip} </span>}
-          <span className="font-mono opacity-70">[{status}]</span>
+          <span>{tip || entry.label}</span>
           <Tooltip.Arrow className="fill-ink" />
         </Tooltip.Content>
       </Tooltip.Portal>

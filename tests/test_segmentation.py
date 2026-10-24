@@ -167,9 +167,9 @@ def test_margin_leaf_descriptions_match_conditions(
             assert MERGED_QUALIFIER in r["rule"], (
                 f"internal-node cell {node} lacks the merged-up qualifier"
             )
-            name, desc, note = plain_rule(str(r["rule"]))
-            assert "more specific" in desc or "more specific" in note
-            assert name != "All lines"
+            pr = plain_rule(str(r["rule"]))
+            assert "more specific" in pr.description or "more specific" in pr.note
+            assert pr.name != "All lines"
 
     # Path consistency: every line's decision path includes its assigned node,
     # so the rule's path conditions hold for every line in the cell.

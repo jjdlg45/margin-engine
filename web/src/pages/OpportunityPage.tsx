@@ -230,8 +230,9 @@ export function OpportunityPage() {
                   price, at unchanged volume - a ceiling, not a forecast.
                   {o.gross_conservative_total_cents !== null && (
                     <>
-                      {" "}Conservative variant (below-P25 pairs raised to P25
-                      only): {dollarsShort(o.gross_conservative_total_cents)}.
+                      {" "}Conservative variant (pairs below the 25th
+                      percentile raised to it, nothing more):{" "}
+                      {dollarsShort(o.gross_conservative_total_cents)}.
                     </>
                   )}
                 </p>

@@ -45,7 +45,7 @@
 <table>
   <tr><th>Reconciliation check</th><th>Expected ($)</th><th>Actual ($)</th><th>Allocated ($)</th><th>Residual ($)</th><th>Source total ($)</th><th>Status</th></tr>
   {% for c in reconciliation %}
-  <tr><td>{{ c.check }}</td><td>{{ c.expected }}</td><td>{{ c.actual }}</td>
+  <tr><td title="{{ c.check_desc }}">{{ c.check }}</td><td>{{ c.expected }}</td><td>{{ c.actual }}</td>
       <td>{{ c.allocated }}</td>
       <td>{{ c.residual }}</td>
       <td>{{ c.source_total }}</td>
@@ -66,7 +66,7 @@
 <table>
   <tr><th>Residual</th><th>Amount ($)</th><th>What it is</th><th>Why it is not allocated to lines</th><th>Where it is listed</th></tr>
   {% for r in residuals %}
-  <tr><td title="{{ r.residual_code }}">{{ r.residual }}</td><td>{{ r.amount }}</td>
+  <tr><td title="{{ r.residual_desc }}">{{ r.residual }}</td><td>{{ r.amount }}</td>
       <td style="text-align:left">{{ r.what }}</td>
       <td style="text-align:left">{{ r.why }}</td>
       <td style="text-align:left">{{ r.where }}</td></tr>
@@ -93,8 +93,9 @@
   {% for r in segments.rules %}
   <tr><td>Segment {{ r.display_rank }}</td>
       <td style="text-align:left"><strong>{{ r.name }}</strong><br><span class="muted">{{ r.plain }}</span>
-        <details><summary class="muted">Technical rule</summary>
-          <span class="muted">Leaf {{ r.leaf_id }}. {{ r.technical_note }}</span><br><code>{{ r.rule }}</code></details></td>
+        <details><summary class="muted">How this group is defined</summary>
+          <ul class="muted" style="margin:.3rem 0 .3rem 1.1rem">{% for c in r.conditions %}<li>{{ c }}</li>{% endfor %}</ul>
+          {% if r.technical_note %}<span class="muted">{{ r.technical_note }}</span>{% endif %}</details></td>
       <td>{{ r.n_lines }}</td><td>{{ r.n_customers }}</td><td>{{ r.n_items }}</td><td>{{ "%.3f"|format(r.median_price_index) }}</td></tr>
   {% endfor %}
 </table>
@@ -110,7 +111,7 @@
     <td>{{ "%.3f"|format(s.naive_fe_ols) if s.naive_fe_ols is not none else "-" }}</td>
     <td>{{ "%.0f"|format(s.first_stage_f) if s.first_stage_f is not none else "-" }}</td>
     <td>{{ "%.3f"|format(s.overid_p) if s.overid_p is not none else "-" }}</td>
-    <td><span class="status {{ 'ok' if s.status == 'causal_elasticity_supported' else ('warn' if s.status != 'insufficient_data' else 'bad') }}">{{ s.status_label }}</span></td>
+    <td><span class="status {{ 'ok' if s.status == 'causal_elasticity_supported' else ('warn' if s.status != 'insufficient_data' else 'bad') }}" title="{{ s.status_desc }}">{{ s.status_label }}</span></td>
   </tr>
   {% endfor %}
 </table>
@@ -120,7 +121,7 @@
 <table>
   <tr><th>Status</th><th>Customer-item pairs</th><th>Share</th></tr>
   {% for g in guidance_summary %}
-  <tr><td title="{{ g.status_code }}">{{ g.status }}</td><td>{{ g.n }}</td><td>{{ g.share }}</td></tr>
+  <tr><td title="{{ g.status_desc }}">{{ g.status }}</td><td>{{ g.n }}</td><td>{{ g.share }}</td></tr>
   {% endfor %}
 </table>
 <p class="muted">Targets are {{ guidance_label }} — historical reference points, not optimal prices, until elasticity support allows optimization.</p>
@@ -129,7 +130,7 @@
 <div>
   <span class="kpi"><span class="v">${{ opportunity.leakage_total }}</span>observed leakage (12m)</span>
   <span class="kpi"><span class="v">${{ opportunity.gross_total }}</span>gross price opportunity (pocket)</span>
-  <span class="kpi"><span class="v">${{ opportunity.gross_conservative_total }}</span>conservative variant (below-P25 to P25)</span>
+  <span class="kpi"><span class="v">${{ opportunity.gross_conservative_total }}</span>conservative variant (pairs below the 25th percentile raised to it)</span>
   <span class="kpi"><span class="v">${{ opportunity.expected_total }}</span>expected contribution change (causal only)</span>
 </div>
 <p class="muted">{{ opportunity.n_records }} opportunity records; volume treatment: {{ opportunity.treatment_counts }}</p>
@@ -175,7 +176,7 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
       <td>{{ "%.2f"|format(w.price_coef) if w.price_coef is not none else "-" }}</td>
       <td>{{ "[%.2f, %.2f]"|format(w.ci_low, w.ci_high) if w.ci_low is not none else "-" }}</td>
       <td>{{ "%.1f%%"|format(w.negotiation_gap * 100) if w.negotiation_gap is not none else "-" }}</td>
-      <td><span class="status {{ 'ok' if w.status == 'estimated_win_curve' else ('warn' if w.status == 'insufficient_precision' else 'bad') }}">{{ w.status }}</span></td></tr>
+      <td><span class="status {{ 'ok' if w.status == 'estimated_win_curve' else ('warn' if w.status == 'insufficient_precision' else 'bad') }}" title="{{ w.status_desc }}">{{ w.status_label }}</span></td></tr>
   {% endfor %}
 </table>
 {% endif %}
@@ -187,7 +188,7 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
   <tr><td>{{ c.group_id }}</td><td>{{ c.item_a }}</td><td>{{ c.item_b }}</td>
       <td>{{ "%.2f"|format(c.cross_elasticity) if c.cross_elasticity is not none else "-" }}</td>
       <td>{{ "%.0f"|format(c.min_first_stage_f) if c.min_first_stage_f is not none else "-" }}</td>
-      <td><span class="status {{ 'ok' if 'causal' in c.status else ('warn' if 'iv_' in c.status else 'bad') }}">{{ c.status }}</span></td></tr>
+      <td><span class="status {{ 'ok' if 'causal' in c.status else ('warn' if 'iv_' in c.status else 'bad') }}" title="{{ c.status_desc }}">{{ c.status_label }}</span></td></tr>
   {% endfor %}
 </table>
 <p class="muted">Cross-price estimates exist only within declared substitution groups and only where identified; unsupported cases are labeled with a reason, never estimated.</p>

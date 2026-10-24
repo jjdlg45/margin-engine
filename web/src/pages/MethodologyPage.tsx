@@ -62,7 +62,7 @@ function MethodologyBody({ d }: { d: MethodologyData }) {
             <tbody>
               {d.reconciliation.map((c) => (
                 <tr key={c.check}>
-                  <td className="left" title={c.check}>
+                  <td className="left" title={labels(c.check).description || labels(c.check).label}>
                     {labels(c.check).label}
                   </td>
                   <td>{dollars(c.expected_cents)}</td>

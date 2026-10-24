@@ -1,7 +1,7 @@
-/** Phase 23.5 gate: no raw machine codes in visible text on any page.
- * Scans rendered innerText for snake_case tokens and hyphenated flag codes.
- * Tooltips and collapsed technical-detail expanders are not visible text, so
- * raw codes may live there. The allowlist names intentional technical terms
+/** Phase 23.5 gate, extended: no raw machine codes anywhere a reader can see
+ * them - visible text, title-attribute tooltips, aria labels, or the content
+ * of an opened status tooltip. Raw rule logic lives only in the engine's
+ * CSV/Parquet exports. The allowlist names intentional technical terms
  * (file names, CLI commands, mapping option paths shown as instructions). */
 
 import { expect, test } from "@playwright/test";
@@ -56,8 +56,36 @@ for (const route of ROUTES) {
     await expect(page.locator("h1")).toBeVisible();
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(300);
-    const text = await page.evaluate(() => document.body.innerText);
+    // Visible text, plus every title-attribute tooltip and aria label: a
+    // reader hovers titles and a screen reader speaks aria labels, so raw
+    // codes are just as leaked there as in rendered text.
+    const text = await page.evaluate(() => {
+      const parts = [document.body.innerText];
+      for (const el of document.querySelectorAll("[title]")) {
+        parts.push(el.getAttribute("title") ?? "");
+      }
+      for (const el of document.querySelectorAll("[aria-label]")) {
+        parts.push(el.getAttribute("aria-label") ?? "");
+      }
+      return parts.join("\n");
+    });
     const bad = violations(text);
     expect(bad, `raw codes visible on ${route}: ${bad.join(", ")}`).toHaveLength(0);
   });
 }
+
+test("status tooltips show the plain-English description, never a raw code", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/sensitivity");
+  await expect(page.locator("h1")).toBeVisible();
+  const trigger = page.locator("button:has(.chip)").first();
+  await expect(trigger).toBeVisible();
+  await trigger.hover();
+  const tooltip = page.getByRole("tooltip").first();
+  const content = (await tooltip.textContent()) ?? "";
+  expect(content.trim().length, "tooltip must carry a description").toBeGreaterThan(0);
+  const bad = violations(content);
+  expect(bad, `raw codes in tooltip: ${bad.join(", ")}`).toHaveLength(0);
+  expect(content, "no underscores in tooltip text").not.toContain("_");
+  expect(content, "no bracketed raw code in tooltip text").not.toContain("[");
+});

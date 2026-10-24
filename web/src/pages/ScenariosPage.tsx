@@ -1,6 +1,6 @@
 /** Cost / tariff scenarios: the engine's precomputed pass-through grid with a
- * slider that snaps to grid points. The browser interpolates nothing - every
- * displayed number is one of the eleven exported grid points. */
+ * slider that snaps to grid points (one per 1% of pass-through). The browser
+ * interpolates nothing - every displayed number is an exported grid point. */
 
 import * as Slider from "@radix-ui/react-slider";
 import { useMemo, useState } from "react";
@@ -16,7 +16,11 @@ function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
   const [params, setParams] = useSearchParams();
   const name = params.get("scenario") ?? grids[0]?.name ?? "";
   const grid = useMemo(() => grids.find((g) => g.name === name) ?? grids[0], [grids, name]);
-  const [step, setStep] = useState(5); // index into the 0..100% grid, start at 50%
+  // Index into the 0..100% grid; start at the 50% point whatever the grid's
+  // resolution (the engine exports one point per 1% of pass-through).
+  const [step, setStep] = useState(() =>
+    grids.length ? Math.round((grids[0].points.length - 1) / 2) : 0,
+  );
   if (!grids.length) {
     return (
       <>
@@ -40,10 +44,11 @@ function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
         lede={
           <>
             A +{pct(grid.pct_increase, 0)} landed-cost shock on one scope,
-            passed through to prices at 0-100% in 10% steps - all eleven
-            points precomputed by the engine; the slider snaps between them
-            and full pass-through is never assumed. Contract-protected lines
-            are excluded from pass-through and shown as protected exposure.
+            passed through to prices at any level from 0 to 100% in 1% steps
+            - every point precomputed by the engine; the slider snaps between
+            them and full pass-through is never assumed. Contract-protected
+            lines are excluded from pass-through and shown as protected
+            exposure.
           </>
         }
       />

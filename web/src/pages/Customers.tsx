@@ -140,7 +140,12 @@ function CustomersTable({ d }: { d: CustomersData }) {
         enableSorting: false,
         cell: (c) =>
           c.row.original.service_flags.length ? (
-            <span className="chip chip-hatched" title={c.row.original.service_flags.join(", ")}>
+            <span
+              className="chip chip-hatched"
+              title={c.row.original.service_flags
+                .map((f) => labels(f).description || labels(f).label)
+                .join(" ")}
+            >
               {c.row.original.service_flags.map((f) => labels(f).label).join(", ")}
             </span>
           ) : (
@@ -305,7 +310,11 @@ function CustomerDetail({
                 <span>{dollars(customer.returns_contribution_cents)} returns impact</span>
                 <span>{pct(customer.pct_revenue_excluded)} revenue excluded (cost unknown)</span>
                 {customer.service_flags.map((f) => (
-                  <span key={f} className="chip chip-hatched" title={f}>
+                  <span
+                    key={f}
+                    className="chip chip-hatched"
+                    title={labels(f).description || labels(f).label}
+                  >
                     {labels(f).label}
                   </span>
                 ))}

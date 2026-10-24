@@ -225,6 +225,10 @@ export type Segment3 = number;
 export type IndexDistribution = SegmentIndexStats[];
 export type MarginDriverNote = string;
 /**
+ * Plain-English bullet list of the rule's conditions, covering every branch of a merged segment ('How this group is defined'). Raw rule logic lives only in the CSV/Parquet exports.
+ */
+export type Conditions = string[];
+/**
  * 1-based rank by size; viewers see 'Segment {rank}'
  */
 export type DisplayRank = number;
@@ -233,21 +237,21 @@ export type DisplayRank = number;
  */
 export type LeafId = number;
 export type MeanTarget = number;
+/**
+ * One-line 'what this means' summary generated from the group's own numbers (margin drivers)
+ */
+export type Meaning = string | null;
 export type NCustomers1 = number;
 export type NItems1 = number;
 export type NLines = number;
 /**
- * Short plain-English name derived from the rule
+ * Plain-English name derived from the rule; covers every branch
  */
 export type Name2 = string;
 /**
  * One-sentence description derived from the rule
  */
 export type Plain = string;
-/**
- * Raw tree rule - technical detail, not primary display
- */
-export type Rule = string;
 /**
  * Merge/leaf mechanics for the expander
  */
@@ -586,15 +590,16 @@ export interface SegmentIndexStats {
   segment: Segment3;
 }
 export interface SegmentRule {
+  conditions: Conditions;
   display_rank: DisplayRank;
   leaf_id: LeafId;
   mean_target: MeanTarget;
+  meaning?: Meaning;
   n_customers: NCustomers1;
   n_items: NItems1;
   n_lines: NLines;
   name: Name2;
   plain: Plain;
-  rule: Rule;
   technical_note: TechnicalNote;
 }
 export interface SensitivitySegment {

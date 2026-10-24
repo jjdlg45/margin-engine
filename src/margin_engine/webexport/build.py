@@ -351,24 +351,50 @@ def build_bundle(
     )
 
     # --- segments ------------------------------------------------------------
-    def _rules(tree_rules: list[dict[str, Any]]) -> list[SegmentRule]:
+    def _driver_meaning(mean: float, overall: float) -> str:
+        """One-line 'what this means' for a margin driver, from its numbers."""
+        delta_pts = (mean - overall) * 100
+        if abs(delta_pts) < 0.05:
+            return (
+                f"Lines in this group average a {mean * 100:.1f}% pocket margin, "
+                f"in line with the overall average of {overall * 100:.1f}%."
+            )
+        direction = "above" if delta_pts > 0 else "below"
+        return (
+            f"Lines in this group average a {mean * 100:.1f}% pocket margin, "
+            f"{abs(delta_pts):.1f} points {direction} the overall average of "
+            f"{overall * 100:.1f}%."
+        )
+
+    def _rules(tree_rules: list[dict[str, Any]], *, drivers: bool = False) -> list[SegmentRule]:
         ranked = sorted(tree_rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"])))
         rank_of = {int(r["leaf_id"]): i + 1 for i, r in enumerate(ranked)}
-        return [
-            SegmentRule(
-                leaf_id=int(r["leaf_id"]),
-                display_rank=rank_of[int(r["leaf_id"])],
-                name=plain_rule(str(r["rule"]))[0],
-                plain=plain_rule(str(r["rule"]))[1],
-                technical_note=plain_rule(str(r["rule"]))[2],
-                rule=str(r["rule"]),
-                n_lines=_i(r["n_lines"]),
-                n_customers=_i(r["n_customers"]),
-                n_items=_i(r["n_items"]),
-                mean_target=_r(r.get("mean_target", r.get("median_price_index"))) or 0.0,
+        total_lines = sum(int(r["n_lines"]) for r in tree_rules)
+        overall = (
+            sum(float(r["mean_target"]) * int(r["n_lines"]) for r in tree_rules) / total_lines
+            if drivers and total_lines
+            else 0.0
+        )
+        out = []
+        for r in tree_rules:
+            pr = plain_rule(str(r["rule"]))
+            mean = _r(r.get("mean_target", r.get("median_price_index"))) or 0.0
+            out.append(
+                SegmentRule(
+                    leaf_id=int(r["leaf_id"]),
+                    display_rank=rank_of[int(r["leaf_id"])],
+                    name=pr.name,
+                    plain=pr.description,
+                    conditions=pr.conditions,
+                    technical_note=pr.note,
+                    meaning=_driver_meaning(mean, overall) if drivers else None,
+                    n_lines=_i(r["n_lines"]),
+                    n_customers=_i(r["n_customers"]),
+                    n_items=_i(r["n_items"]),
+                    mean_target=mean,
+                )
             )
-            for r in tree_rules
-        ]
+        return out
 
     idx_dist = [
         SegmentIndexStats(
@@ -395,7 +421,7 @@ def build_bundle(
     ]
     segments = SegmentsSection(
         rules=_rules(res.segments.rules),
-        margin_driver_rules=_rules(res.margin_tree.rules if res.margin_tree else []),
+        margin_driver_rules=_rules(res.margin_tree.rules if res.margin_tree else [], drivers=True),
         margin_driver_note=(
             "Margin-driver leaves are explanatory drivers of pocket margin; they "
             "use discount and cost features and are never segments that justify "
@@ -718,8 +744,10 @@ def _scenario_grids(
     supp_name: dict[str, str],
     cat_name: dict[str, str],
 ) -> list[ScenarioGrid]:
-    """Pass-through grids (0..100% in 10% steps) for the top categories and
-    suppliers by baseline revenue, at a +10% landed-cost shock."""
+    """Pass-through grids (0..100% in 1% steps) for the top categories and
+    suppliers by baseline revenue, at a +10% landed-cost shock. The fine grid
+    lets the UI slider move in 1% steps while every displayed value still
+    comes from the engine."""
     from datetime import date
 
     from margin_engine.extended.inventory import scenario_timing_statement
@@ -757,7 +785,7 @@ def _scenario_grids(
                 pct_increase=0.10,
                 effective=date(2000, 1, 1),  # scenarios apply to the baseline window
             )
-            grid = pass_through_grid(panel, res.guidance, res.sensitivity, shock, rules)
+            grid = pass_through_grid(panel, res.guidance, res.sensitivity, shock, rules, steps=100)
             n_pairs = int(grid.select(pl.col("n_pairs").max()).item() or 0) if grid.height else 0
             if n_pairs == 0:
                 continue

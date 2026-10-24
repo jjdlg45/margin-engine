@@ -96,12 +96,25 @@ test("scenarios page: slider snaps to the exported grid points", async ({ page }
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/scenarios");
   const grid = bundle.scenario_grids[0];
+  // The engine exports one point per 1% of pass-through (0..100%).
+  expect(grid.points.length).toBe(101);
+  expect(grid.points.map((p) => p.pass_through)).toEqual(
+    Array.from({ length: 101 }, (_, k) => k / 100),
+  );
   // Default position is the 50% grid point.
-  await expect(page.getByText(dollars(grid.points[5].recovered_cents)).first()).toBeVisible();
+  const mid = Math.round((grid.points.length - 1) / 2);
+  await expect(page.getByText(dollars(grid.points[mid].recovered_cents)).first()).toBeVisible();
   const slider = page.getByRole("slider");
   await slider.focus();
   await page.keyboard.press("End");
-  await expect(page.getByText(dollars(grid.points[10].recovered_cents)).first()).toBeVisible();
+  await expect(
+    page.getByText(dollars(grid.points[grid.points.length - 1].recovered_cents)).first(),
+  ).toBeVisible();
+  // One arrow step moves exactly one 1% grid point.
+  await page.keyboard.press("ArrowLeft");
+  await expect(
+    page.getByText(dollars(grid.points[grid.points.length - 2].recovered_cents)).first(),
+  ).toBeVisible();
   await page.keyboard.press("Home");
   await expect(page.getByText(dollars(grid.points[0].incremental_cost_cents)).first()).toBeVisible();
 });
