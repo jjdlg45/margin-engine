@@ -691,3 +691,131 @@ Every connector: verify current endpoint, terms, and limits before use and recor
 - `docs/data-sources.md`: every external source with URL, license or terms, rate limits, what it's used for, and fixture location.
 - `docs/run4-report.md`: every phase, what changed, tests added, before/after numbers (opportunity totals, status counts, coverage, runtime and memory), known gaps with reasons, and anything the owner must decide.
 - Final commit on `run4`, then **stop**. Do not merge, do not push.
+
+---
+
+# RUN 5 — Scale, compliance, and the Action center
+
+**Goal:** make the engine handle real ERP volumes, add pricing-law guardrails, and turn findings into decisions a team can act on and track: an action list with owners and status, approvals, an ERP-ready price export, and results tracking that compares what happened against what the engine predicted.
+
+## 0. Run mode and rules
+
+- **Branch:** all work on a new branch `run5` from `main`. Never commit to `main`, never push. The owner pushes and opens a PR; the PR runs CI and the Linux browser gates.
+- **Continuous run** through every phase in order. Stop only on a stop condition.
+- **After every phase:** run the applicable Python checks (ruff, ruff format, mypy src api, full pytest) and web checks (tsc, vitest, build, Playwright); confirm each exit code from the process itself; append a phase report to `docs/build-log.md`; one commit `phase-N: <summary>`.
+- This machine has 14 GB RAM. Run heavy jobs (full test suite, validation script, scale ladder, scenario matrix full tier) as background processes writing to log files; read results from the logs. Keep chat output short.
+- **Verify like CI before the final commit:** fresh clone of `run5` into a temp folder, `uv sync --frozen --all-groups`, full pytest; and the Pages workflow steps (`margin-engine export-web --demo`, `npm ci`, build, `CI=true SKIP_SNAPSHOTS=1 npx playwright test`). Never rely on files that exist only on this machine.
+- **Stop conditions:** a check still fails after 3 fix attempts; an existing validation target fails (report actuals, never loosen); the spec doesn't answer a business-logic question.
+- **Determinism and parity:** every existing export must stay byte-identical across runs, and every UI figure must still trace to engine output. New features get the same treatment.
+- **Language:** everything a viewer reads is plain English through the label dictionary: no raw codes, variable names, abbreviations ("pcts", "P20"), or underscores in text, tooltips, titles, or aria-labels.
+
+## Phase 35 — Scale refactor
+
+Measured problem: about 12 KB of RAM per invoice line (2.92 GB peak at 241k lines); no lazy or streaming processing; 85 ledger columns including 32 duplicate dollar columns; 62 row-wise Python conversions.
+
+- Money stays integer cents inside the engine; `_usd` columns are derived only when writing CSV exports. Drop intermediate columns as soon as a stage finishes.
+- Categorical/enum dtypes for IDs and codes.
+- Polars lazy frames with the streaming engine and `sink_parquet` for ingest, classification, waterfall, and dispersion.
+- Month-partitioned processing for allocations and the waterfall (settlements by period).
+- DuckDB for the heaviest joins and aggregations (spills to disk under memory pressure).
+- Replace row-wise conversions (`to_dicts`, `iter_rows`, `map_elements`) on line-level paths with columnar expressions.
+- Real-data validation behind a `--validate` flag and a separate `margin-engine validate` command.
+- Cache stage outputs keyed by input fingerprint; replay ticks reprocess only new data.
+- **Verify:** all exports byte-identical before and after (determinism and parity tests). Re-run the memory-aware scale ladder; record bytes per line, peak memory and per-stage runtime before and after in validation.json.
+
+## Phase 36 — Fiscal calendars
+
+Configurable fiscal calendar: calendar months (default), 4-4-5, 4-5-4, 5-4-4, or a custom period table. Used for periods, baseline windows, the books tie-out, and every period label in the UI. Fixtures for each calendar type, including year boundaries and 53-week years.
+
+## Phase 37 — Pricing compliance
+
+- Robinson-Patman review flag: customers who are likely competitors (configurable definition, default same industry and region) receiving recommended prices for the same item that differ by more than a configurable threshold get flagged. Show the cost-to-serve difference between them beside the flag as supporting documentation.
+- Public-data-only rule: the market price index control accepts public sources only; document why (antitrust concerns about competitors sharing non-public prices through algorithms).
+- Methodology section "Pricing-law considerations," written as orientation, not legal advice.
+- **Tests:** flag triggers at the threshold boundary; no flag for non-competing customers; cost-to-serve evidence matches the ledger.
+
+## Action center (Phases 38–42)
+
+The engine currently shows findings. These phases turn findings into actions: proposed, reviewed, approved, exported to the ERP, implemented, and then measured.
+
+## Phase 38 — Action model and generation
+
+- **Action types,** generated from engine outputs, each with a plain-English title, rationale, evidence status, and expected dollar impact (using the right opportunity level, never summed across levels):
+  - Price change: customer × item to a proposed price (from guidance and opportunity).
+  - Below-floor fix: pairs priced below the binding floor.
+  - Cost pass-through: from a scenario at a chosen pass-through level.
+  - Service policy: minimum order or delivery-frequency changes for money-losing customers.
+  - Rebate/discount review: customers whose leakage is far above their segment.
+- **Lifecycle:** proposed → under review → approved or rejected → exported → implemented → measured. Each transition is an event in an append-only event log (who, when, from-status, to-status, note). Current status is derived from the log, never edited in place.
+- **Fields:** owner, due date, priority (configurable rules, default by expected impact and evidence), compliance flags, and links to the evidence (guidance band, explanation, segment, elasticity status).
+- **Guardrails:**
+  - No action may propose a price below the binding floor.
+  - Expected volume response only where evidence is causal-supported and inside price support; otherwise fixed-volume, labeled.
+  - Actions on contract-protected lines are blocked, with the reason shown.
+  - Actions with a Robinson-Patman flag require a written justification at approval.
+- **Storage:** DuckDB in API mode. The static demo ships a read-only generated action set with a simulated history.
+- **Tests:** generation is deterministic; every action traces to its source records; guardrails enforced; status always equals the replayed event log.
+
+## Phase 39 — Review and approval (maker-checker)
+
+- Roles: analyst (proposes, edits), approver (approves or rejects), viewer. In local mode, identity is a configured user name, documented clearly as not authentication (real login belongs to a future hosting phase).
+- An approver can't approve their own proposal (separation of duties).
+- Approval records: approver, timestamp, scope, reason; justification required when a compliance flag is present.
+- Bulk approve with per-item guardrail checks; any failing item is rejected with the reason.
+- API endpoints for every transition (FastAPI, OpenAPI updated); idempotent; rate-limited like the rest.
+- **Tests:** self-approval blocked; justification enforced; event log complete; API contract tests.
+
+## Phase 40 — ERP-ready price export
+
+- Export approved price actions as a price file: generic CSV by default, plus a configurable column template (header names, date format, decimal separator, units) so it matches what a given ERP imports.
+- Each row carries effective date, previous price, new price, UOM, approval ID, and action ID.
+- A diff summary (count of changes, total expected impact, largest changes) shown before export and written beside the file.
+- Exporting moves actions to "exported" and logs it. Re-exporting is idempotent.
+- **Tests:** only approved actions export; template variants; round-trip (re-import the file through the engine's own ingest and confirm prices match).
+
+## Phase 41 — Results tracking
+
+The feedback loop, and the engine's route to real-world validation.
+
+- After an action is marked implemented, measure over a configurable window (default 90 days):
+  - Price realization: did the invoiced price actually move to the new price, or did it erode back?
+  - Volume outcome vs. prediction: actual volume against the engine's predicted volume, with a comparison group of similar untreated pairs (same segment, no change) to separate the price effect from general trends (a difference-in-differences comparison).
+  - Margin outcome: pocket margin and contribution before vs. after.
+- Model calibration report: prediction error by evidence status (causal-supported vs. IV-estimated vs. fixed-volume), feeding a "real-world accuracy" table in validation.json and the Methodology page once enough actions are measured. Below a configurable minimum count, show "not enough implemented actions yet" instead of a number.
+- Synthetic validation of the tracker: the generator gains an option to simulate implemented price changes on chosen pairs, with planted true responses afterward. The tracker must recover the planted effect within stated error on the well-identified world, and must report "insufficient evidence" on worlds where it can't. Record in validation.json.
+- **Tests:** realization math fixtures; the comparison-group method on planted data; minimum-count gating.
+
+## Phase 42 — Action center UI
+
+- New "Action center" page:
+  - Queue view: filters for type, status, owner, priority, evidence, compliance flag, and expected impact range (using the shared filter system), with sortable columns and virtualization.
+  - Action detail: plain-English rationale, evidence links (band chart, explanation, segment), compliance flags with explanation, the full event history, and outcome charts once measured.
+  - In API mode: propose, edit, approve, reject, bulk-approve, export, and mark implemented, with loading and error states, optimistic updates rolled back on failure, and clear role-based disabled states.
+  - In the static demo: read-only, with the generated history, labeled as demo data.
+- Overview: an "Open actions" summary (count by status, expected impact by evidence level, latest results).
+- Results view: realized vs. predicted outcomes and the calibration table.
+- **Tests:** Playwright for queue filters, detail, every lifecycle transition in API mode, role restrictions, the self-approval block, export, and the read-only demo; parity of impact totals with the engine; axe and the raw-code scanner on the new pages.
+
+## Phase 43 — Drift monitoring (live mode)
+
+Each refresh compares against the previous run: data-quality rates, segment assignments (adjusted Rand index), elasticity estimates and statuses, and status counts. Changes beyond configurable thresholds are flagged in the API and UI with a plain-English explanation ("Segment 2's price sensitivity moved from −1.4 to −0.9 since last week"). Tests with planted shifts.
+
+## Phase 44 — Supply-chain security
+
+Dependabot configuration for Python, npm, and GitHub Actions. CI steps for pip-audit and `npm audit --audit-level=high`; document how to handle a finding.
+
+## Phase 45 — Container
+
+Dockerfile and compose file for API + UI + scheduler. CI builds the image and runs a smoke test (GitHub-hosted runners have Docker even though this machine doesn't). README "Run with Docker" section.
+
+## Phase 46 — Display polish and rendering tests
+
+- Display names for data values: categorical values from data render with proper capitalization and an acronym list ("OEM", not "oem"; "Construction", not "construction"), configurable in the mapping; raw values stay in exports.
+- Playwright test asserting each guidance, sensitivity, opportunity, and action status renders with its label and plain-English explanation.
+
+## Phase 47 — Documentation and report
+
+- README: Action center (workflow, roles, export, results tracking), fiscal calendars, compliance flag, Docker, scale results; validation table regenerated from validation.json.
+- Methodology: action generation rules, guardrails, the results-tracking method and its limits, pricing-law considerations.
+- `docs/run5-report.md`: every phase, what changed, tests added, before/after numbers (memory and runtime per line, action counts, tracker recovery), known gaps, and decisions waiting on the owner.
+- Final commit on `run5`, then **stop**. Do not merge, do not push.
