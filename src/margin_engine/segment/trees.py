@@ -474,10 +474,11 @@ def _extract_rules_merged(
     for s in stats.sort("median_price_index").to_dicts():
         cell = int(s["_cell"])
         leaf_list = members.get(cell, [cell])
-        clauses = [rule_str(paths[leaf]) for leaf in leaf_list if leaf in paths]
-        rule = " OR ".join(f"({c})" for c in clauses[:6])
-        if len(clauses) > 6:
-            rule += f" OR ... ({len(clauses) - 6} more)"
+        # Every member leaf's conditions stay in the rule (deduplicated, never
+        # truncated): the plain-English name and description must cover every
+        # branch of a merged segment.
+        clauses = list(dict.fromkeys(rule_str(paths[leaf]) for leaf in leaf_list if leaf in paths))
+        rule = " OR ".join(f"({c})" for c in clauses)
         out.append(
             {
                 "leaf_id": cell,

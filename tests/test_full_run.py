@@ -54,10 +54,13 @@ def test_report_renders(full_run: tuple[Path, FullRunResult]) -> None:
         "Reconciliation check",
         "Pocket revenue",
         "Evidence status",
-        "provisional_historical",
+        # The provisional-target statement renders through the label
+        # dictionary: the raw code never reaches a reader.
+        "provisional (historical)",
         "never summed",
     ):
         assert needle in html, needle
+    assert "provisional_historical" not in html
     # Money renders as dollars with cents in every table; no raw-cents headers.
     assert "(cents)" not in html
     import re as _re

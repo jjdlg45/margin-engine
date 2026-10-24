@@ -1,6 +1,7 @@
 /** Display labels come from the app payload's central dictionary (one source
- * of truth shared with the engine's HTML report). Raw codes never appear in
- * visible text - only in tooltips and technical-detail expanders. */
+ * of truth shared with the engine's HTML report). Raw codes never reach a
+ * reader: not in visible text, tooltips or title attributes. Raw rule logic
+ * lives only in the engine's CSV/Parquet exports. */
 
 import { useAppData } from "./queries";
 

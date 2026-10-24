@@ -12,8 +12,9 @@ interface Rule {
   display_rank: number;
   name: string;
   plain: string;
+  conditions: string[];
   technical_note: string;
-  rule: string;
+  meaning?: string | null;
   n_lines: number;
   n_customers: number;
   n_items: number;
@@ -52,12 +53,15 @@ function RuleTable({
               <td className="left max-w-xl">
                 <span className="font-medium">{r.name}</span>
                 <span className="block text-caption secondary">{r.plain}</span>
+                {r.meaning && <span className="block text-caption">{r.meaning}</span>}
                 <details className="text-caption secondary">
-                  <summary>Technical rule</summary>
-                  <span>
-                    Leaf {r.leaf_id}. {r.technical_note}
-                  </span>
-                  <code className="block font-mono">{r.rule}</code>
+                  <summary>How this group is defined</summary>
+                  <ul className="my-1 list-disc pl-5">
+                    {r.conditions.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                  {r.technical_note && <span>{r.technical_note}</span>}
                 </details>
               </td>
               <td>{count(r.n_lines)}</td>
@@ -95,7 +99,7 @@ function SegmentsBody({ s }: { s: SegmentsSection }) {
       </Section>
       <Section
         title="Price-index distribution per segment"
-        lede="P25 / P50 / P75 of the realized price index across the segment's customer-item pairs."
+        lede="Lower quartile, median and upper quartile of the realized price index across the segment's customer-item pairs."
       >
         <ScrollX label="Segment table">
           <table className="max-w-2xl">
@@ -103,9 +107,9 @@ function SegmentsBody({ s }: { s: SegmentsSection }) {
               <tr>
                 <th className="left">Segment</th>
                 <th>Pairs</th>
-                <th>P25 (% of list)</th>
-                <th>P50 (% of list)</th>
-                <th>P75 (% of list)</th>
+                <th>Lower quartile (% of list)</th>
+                <th>Median (% of list)</th>
+                <th>Upper quartile (% of list)</th>
                 <th>Spread</th>
               </tr>
             </thead>
@@ -119,7 +123,7 @@ function SegmentsBody({ s }: { s: SegmentsSection }) {
                     <td>{pctOfList(d.p25)}</td>
                     <td>{pctOfList(d.p50)}</td>
                     <td>{pctOfList(d.p75)}</td>
-                    <td>{(100 * (d.p75 - d.p25)).toFixed(1)} pts</td>
+                    <td>{(100 * (d.p75 - d.p25)).toFixed(1)} points</td>
                   </tr>
                 ))}
             </tbody>

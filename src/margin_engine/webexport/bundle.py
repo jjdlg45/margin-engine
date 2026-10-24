@@ -112,10 +112,19 @@ class DispersionSection(BaseModel):
 class SegmentRule(BaseModel):
     leaf_id: int = Field(description="Tree node id - technical detail only")
     display_rank: int = Field(description="1-based rank by size; viewers see 'Segment {rank}'")
-    name: str = Field(description="Short plain-English name derived from the rule")
+    name: str = Field(description="Plain-English name derived from the rule; covers every branch")
     plain: str = Field(description="One-sentence description derived from the rule")
+    conditions: list[str] = Field(
+        description="Plain-English bullet list of the rule's conditions, covering "
+        "every branch of a merged segment ('How this group is defined'). Raw rule "
+        "logic lives only in the CSV/Parquet exports."
+    )
     technical_note: str = Field(description="Merge/leaf mechanics for the expander")
-    rule: str = Field(description="Raw tree rule - technical detail, not primary display")
+    meaning: str | None = Field(
+        default=None,
+        description="One-line 'what this means' summary generated from the group's "
+        "own numbers (margin drivers)",
+    )
     n_lines: int
     n_customers: int
     n_items: int

@@ -1,12 +1,14 @@
 """Central label dictionary: every machine code that can reach a reader maps
 to a display label and a one-line description. The web bundle embeds this
 dictionary and the HTML report renders through it, so both read the same.
-Raw codes may appear only in tooltips or technical-detail expanders.
+Raw codes never reach a reader - not in visible text, tooltips or title
+attributes; raw rule logic lives only in the CSV/Parquet exports.
 """
 
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 LABELS: dict[str, dict[str, str]] = {
     # --- evidence statuses (sensitivity, cross-price) ------------------------
@@ -330,8 +332,30 @@ _FEATURE_NOUNS: dict[str, str] = {
 
 _VALUE_WORDS: dict[str, str] = {
     "kvi": "key-value",
-    "long_tail": "long-tail",
+    "long_tail": "rarely ordered",
     "strategic_contract": "strategic-contract",
+    "mid": "medium",
+}
+
+# Engine-constructed ordered bands, in level order. A negated condition on one
+# of these is rendered as the INCLUDED levels ("low or medium discounts"),
+# never as a negation ("all discounts except high"). Only engine-constructed
+# features belong here: their level universe is fixed by code, so the
+# complement is always known. Data-driven categoricals keep "all X except ..."
+# because their universe comes from the data.
+_ORDERED_LEVELS: dict[str, list[str]] = {
+    "discount_pct_band": ["low", "mid", "high"],
+    "rebate_rate_band": ["low", "mid", "high"],
+    "cost_ratio_band": ["low", "mid", "high"],
+    "order_size_band": ["small", "medium", "large"],
+    "revenue_abc": ["A", "B", "C"],
+}
+
+# Band features whose plain phrase is not "<levels> <noun>".
+_BAND_PHRASES: dict[str, str] = {
+    "discount_pct_band": "discounts",
+    "rebate_rate_band": "rebate rates",
+    "cost_ratio_band": "cost relative to price",
 }
 
 MERGED_QUALIFIER = "[not assigned to a more specific leaf]"
@@ -349,18 +373,34 @@ def _natural_list(values: list[str], conj: str = "and") -> str:
     return ", ".join(vals[:-1]) + f" {conj} {vals[-1]}"
 
 
-def _phrase(feature: str, values: list[str], negated: bool) -> str:
-    noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
-    if negated:
-        # Exclusions read as "all X except A, B and C".
-        return f"all {noun} except {_natural_list(values)}"
+def _order_values(feature: str, values: list[str]) -> list[str]:
+    order = _ORDERED_LEVELS.get(feature)
+    if order and all(v in order for v in values):
+        return sorted(values, key=order.index)
+    return sorted(values)
+
+
+def _include_phrase(feature: str, values: list[str]) -> str:
+    vals = _natural_list(_order_values(feature, values), "or")
+    if feature in _BAND_PHRASES:
+        return f"{vals} {_BAND_PHRASES[feature]}"
     if feature == "revenue_abc":
-        return f"revenue class {_natural_list(values, 'or')}"
-    if feature in ("order_size_band", "size_band"):
-        return f"{_natural_list(values, 'or')} {noun}"
-    if feature == "item_family":
-        return f"{_natural_list(values, 'or')} {noun}"
-    return f"{_natural_list(values, 'or')} {noun}"
+        return f"revenue class {vals}"
+    noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
+    return f"{vals} {noun}"
+
+
+def _phrase(feature: str, values: list[str], negated: bool) -> str:
+    if not negated:
+        return _include_phrase(feature, values)
+    order = _ORDERED_LEVELS.get(feature)
+    if order and set(values) <= set(order):
+        kept = [lv for lv in order if lv not in values]
+        if kept:
+            return _include_phrase(feature, kept)
+    # Data-driven categories: exclusions read as "all X except A, B and C".
+    noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
+    return f"all {noun} except {_natural_list(sorted(values))}"
 
 
 def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
@@ -401,19 +441,12 @@ def _split_one_hot(cond: str) -> tuple[str, str, bool]:
     return body, "", neg
 
 
-def _feature_words(feature: str) -> tuple[str, str]:
-    """(singular phrase stem, plural for 'all X except') for a feature."""
-    if feature.endswith("_band"):
-        stem = feature.removesuffix("_band").replace("_", " ")
-        return stem, stem + "s"
-    plural = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
-    return feature.replace("_", " "), plural
-
-
 def _one_hot_phrases(conds: list[str]) -> list[str]:
-    """Group one-hot conditions per feature, phrasing exclusions with
-    'except' exactly like the segment rules. An included value subsumes the
-    same feature's exclusions (one-hot categories are mutually exclusive)."""
+    """Group one-hot conditions per feature, rendering each group through the
+    same phrasing as the segment rules: ordered bands always as included
+    levels, data-driven categories excluded with 'except'. An included value
+    subsumes the same feature's exclusions (one-hot categories are mutually
+    exclusive)."""
     included: dict[str, list[str]] = {}
     excluded: dict[str, list[str]] = {}
     order: list[str] = []
@@ -424,12 +457,10 @@ def _one_hot_phrases(conds: list[str]) -> list[str]:
         (excluded if neg else included).setdefault(feat, []).append(val)
     phrases = []
     for feat in order:
-        stem, plural = _feature_words(feat)
         if feat in included:
-            vals = _natural_list(included[feat], "or")
-            phrases.append(f"{vals} {stem}" if feat.endswith("_band") else f"{stem} {vals}")
+            phrases.append(_include_phrase(feat, included[feat]))
         elif feat in excluded:
-            phrases.append(f"all {plural} except {_natural_list(sorted(excluded[feat]))}")
+            phrases.append(_phrase(feat, sorted(excluded[feat]), negated=True))
     return phrases
 
 
@@ -438,10 +469,33 @@ def _cap_first(text: str) -> str:
     return text[:1].upper() + text[1:] if text else text
 
 
-def plain_rule(rule: str) -> tuple[str, str, str]:
-    """(short name, one-sentence description, technical note) derived from a
-    tree rule string - never hand-written. The technical note carries
-    merge/leaf mechanics that belong in expanders, not prose."""
+class PlainRule(NamedTuple):
+    """Reader-facing rendering of one tree rule, derived - never hand-written.
+
+    ``conditions`` is the plain-English bullet list behind "How this group is
+    defined"; ``note`` carries merge/leaf mechanics. The raw rule string stays
+    in the CSV/Parquet exports only.
+    """
+
+    name: str
+    description: str
+    conditions: list[str]
+    note: str
+
+
+_MERGED_BULLET = (
+    "No more specific group exists for these lines: they fell out of groups "
+    "below the reporting minimums."
+)
+
+
+def plain_rule(rule: str) -> PlainRule:
+    """Plain-English name, description and condition bullets for a tree rule.
+
+    A segment merged from several tree leaves (an OR of branch rules) is
+    covered in FULL: the name and the description mention every branch, and
+    the bullets list every branch's conditions - never just the first branch.
+    """
     rule = rule.strip()
     merged_up = MERGED_QUALIFIER in rule
     core = rule.replace(MERGED_QUALIFIER, "").strip()
@@ -453,16 +507,21 @@ def plain_rule(rule: str) -> tuple[str, str, str]:
         )
     if not core or core == "(all lines)":
         if merged_up:
-            return (
+            return PlainRule(
                 "Other lines",
                 "Lines that fell out of leaves too small to report; no more "
                 "specific grouping applies.",
+                [_MERGED_BULLET],
                 note,
             )
-        return "All lines", "Every line; the tree found no split for this leaf.", note
+        return PlainRule(
+            "All lines",
+            "Every line; the tree found no split for this leaf.",
+            ["Every line in the data; the tree found no condition that sets this group apart."],
+            note,
+        )
     clauses = [c.strip(" ()") for c in core.split(" OR ")]
-    parsed = [_parse_clause(c) for c in clauses]
-    parsed = [p for p in parsed if p]
+    parsed = [p for p in (_parse_clause(c) for c in clauses) if p]
     if not parsed:
         # One-hot style rules from the margin tree.
         conds = [
@@ -471,15 +530,30 @@ def plain_rule(rule: str) -> tuple[str, str, str]:
         words = _one_hot_phrases(conds)
         name = _cap_first(" · ".join(words))
         description = _cap_first(" and ".join(words) + ".")
+        bullets = [_cap_first(w) for w in words]
         if merged_up:
             description += " A more specific leaf does not exist for these lines."
-        return name or "All lines", description, note
-    first = parsed[0]
-    name = _cap_first(" · ".join(_phrase(f, v, n) for f, v, n in first[:3]))
-    sentences = [" with ".join(_phrase(f, v, n) for f, v, n in conds) for conds in parsed]
-    description = _cap_first(f"Lines from {sentences[0]}.")
+            bullets.append(_MERGED_BULLET)
+        return PlainRule(name or "All lines", description, bullets, note)
+    sentences = [" with ".join(_phrase(f, v, n) for f, v, n in branch) for branch in parsed]
+    # The name covers every branch (each branch contributes its leading
+    # conditions); the description and bullets carry every branch in full.
+    name_parts: list[str] = []
+    for branch in parsed:
+        part = " with ".join(_phrase(f, v, n) for f, v, n in branch[:3])
+        if part not in name_parts:
+            name_parts.append(part)
+    name = _cap_first(" or ".join(name_parts))
+    description = _cap_first(
+        f"Lines from {sentences[0]}" + "".join(f"; or from {s}" for s in sentences[1:]) + "."
+    )
+    if len(parsed) == 1:
+        bullets = [_cap_first(_phrase(f, v, n)) for f, v, n in parsed[0]]
+    else:
+        bullets = [_cap_first(sentences[0]), *(f"or {s}" for s in sentences[1:])]
     if len(parsed) > 1:
         note = (f"Merged from {len(parsed)} tree leaves. " + note).strip()
     if merged_up:
         description += " A more specific leaf does not exist for these lines."
-    return name, description, note
+        bullets.append(_MERGED_BULLET)
+    return PlainRule(name, description, bullets, note)

@@ -123,8 +123,10 @@ def test_scenario_grid_shape_and_monotonicity(
     _, _, bundle, _ = built
     assert bundle.scenario_grids, "sample should produce scenario grids"
     for grid in bundle.scenario_grids:
+        # One point per 1% of pass-through, so the UI slider moves in 1%
+        # steps while every displayed value still comes from the engine.
         levels = [p.pass_through for p in grid.points]
-        assert levels == [round(k / 10, 1) for k in range(11)]
+        assert levels == [k / 100 for k in range(101)]
         rec = [p.recovered_cents for p in grid.points]
         assert rec[0] == 0
         assert all(b >= a for a, b in itertools.pairwise(rec)), "recovery must not fall"
@@ -220,6 +222,134 @@ def test_margin_titles_use_except_phrasing() -> None:
     assert "except FAM14 and FAM19" in a[0]
     assert "not " not in a[0].lower().replace("not assigned", "")
     assert a[0] != b[0]
+    # Ordered bands phrase as the INCLUDED levels, never as a negation: the
+    # exclusion of low and mid cost bands reads as the one remaining level.
+    assert "high cost relative to price" in a[0]
+    assert "cost ratio" not in a[0]
+
+
+def test_ordered_bands_phrase_as_included_levels() -> None:
+    """Ordered bands always read as included levels ('low or medium
+    discounts'), never negations; no abbreviations or variable names reach
+    the reader ('percent bands' never 'pcts', 'rarely ordered' never
+    'long-tail', 'cost relative to price' never 'cost ratio')."""
+    from margin_engine.labels import plain_rule
+
+    one_hot = plain_rule("NOT discount_pct_band_high AND item_role_long_tail")
+    desc = one_hot.description.lower()
+    assert "low or medium discounts" in desc
+    assert "rarely ordered items" in desc
+    for banned in ("pct", "except", "long-tail", "long_tail"):
+        assert banned not in desc, desc
+    set_rule = plain_rule("(order_size_band NOT IN {large} AND revenue_abc NOT IN {C})")
+    assert "small or medium orders" in set_rule.description
+    assert "revenue class A or B" in set_rule.description
+    assert "except" not in set_rule.description
+
+
+def test_merged_segment_description_covers_every_branch() -> None:
+    """A segment merged from several tree leaves must be covered in full: the
+    name, the description and the condition bullets mention every branch's
+    conditions, never just the first branch."""
+    from margin_engine.labels import _parse_clause, _phrase, plain_rule
+
+    rule = (
+        "(item_role IN {long_tail} AND industry IN {construction, manufacturing}) "
+        "OR (industry IN {oem, retail}) "
+        "OR (channel IN {ecommerce} AND size_band IN {small})"
+    )
+    pr = plain_rule(rule)
+    clauses = [c.strip(" ()") for c in rule.split(" OR ")]
+    assert len(clauses) == 3
+    for clause in clauses:
+        parsed = _parse_clause(clause)
+        assert parsed, clause
+        for feature, values, negated in parsed:
+            phrase = _phrase(feature, values, negated)
+            assert phrase in pr.description, (
+                f"branch condition {phrase!r} missing from description: {pr.description!r}"
+            )
+            assert any(phrase.lower() in b.lower() for b in pr.conditions), (
+                f"branch condition {phrase!r} missing from bullets: {pr.conditions!r}"
+            )
+    # The name covers every branch too (each contributes its leading phrase).
+    for lead in ("rarely ordered items", "oem or retail customers", "ecommerce channels"):
+        assert lead in pr.name.lower(), pr.name
+    assert "Merged from 3 tree leaves" in pr.note
+
+
+def test_bundle_rules_covered_and_raw_rule_only_in_data_exports(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Every fitted rule's plain description covers every branch's conditions,
+    every rule carries plain-English bullets, and the raw rule string stays
+    out of the web bundle (it lives in the CSV/Parquet exports)."""
+    from margin_engine.labels import _parse_clause, _phrase
+    from margin_engine.webexport.bundle import SegmentRule
+
+    res, _, bundle, out = built
+    assert "rule" not in SegmentRule.model_fields
+    assert '"rule"' not in (out / "segments.json").read_text(encoding="utf-8")
+    assert "rule" in pl.DataFrame(res.segments.rules).columns  # data export keeps it
+    by_leaf = {r.leaf_id: r for r in bundle.segments.rules}
+    for raw in res.segments.rules:
+        br = by_leaf[int(raw["leaf_id"])]
+        assert br.conditions, br.name
+        for clause in str(raw["rule"]).replace("(all lines)", "").split(" OR "):
+            for feature, values, negated in _parse_clause(clause.strip(" ()")):
+                assert _phrase(feature, values, negated) in br.plain, (
+                    f"leaf {raw['leaf_id']}: branch condition missing from {br.plain!r}"
+                )
+    for table in (bundle.segments.rules, bundle.segments.margin_driver_rules):
+        for r in table:
+            assert r.conditions, f"{r.name} has no condition bullets"
+
+
+def test_margin_driver_meaning_from_numbers(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Every margin driver carries a one-line 'what this means' summary
+    generated from its own numbers; commercial segments carry none."""
+    _, _, bundle, _ = built
+    drivers = bundle.segments.margin_driver_rules
+    assert drivers
+    for r in drivers:
+        assert r.meaning is not None
+        assert f"{r.mean_target * 100:.1f}% pocket margin" in r.meaning
+        assert "overall average" in r.meaning
+    for r in bundle.segments.rules:
+        assert r.meaning is None
+
+
+def test_grid_levels_match_canonical_scenario_strategies(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Parity across the full 1% grid: the grid's 0%, 50% and 100% points
+    equal the canonical run_cost_scenario strategies cents-exact, so the finer
+    grid is the same math, only evaluated at more levels."""
+    from datetime import date
+
+    from margin_engine.scenarios.tariff import CostShock, run_cost_scenario
+
+    res, rules, bundle, _ = built
+    grid = bundle.scenario_grids[0]
+    shock = CostShock(
+        name=grid.name,
+        scope=grid.scope,
+        scope_value=grid.scope_value,
+        pct_increase=grid.pct_increase,
+        effective=date(2000, 1, 1),
+    )
+    assert res.panel is not None
+    canon = run_cost_scenario(res.panel, res.guidance, res.sensitivity, shock, rules)
+    for strategy, level in (("none", 0.0), ("partial_50", 0.5), ("full", 1.0)):
+        row = canon.filter(pl.col("strategy") == strategy).to_dicts()[0]
+        point = grid.points[round(level * 100)]
+        assert point.pass_through == level
+        assert point.incremental_cost_cents == int(row["incremental_cost_cents"])
+        assert point.recovered_cents == int(row["recovered_cents"])
+        assert point.residual_exposure_cents == int(row["residual_exposure_cents"])
+        assert point.protected_exposure_cents == int(row["protected_exposure_cents"])
 
 
 def test_opportunity_summary_states_driver(

@@ -1289,6 +1289,14 @@
   },
   "SegmentRule": {
    "properties": {
+    "conditions": {
+     "description": "Plain-English bullet list of the rule's conditions, covering every branch of a merged segment ('How this group is defined'). Raw rule logic lives only in the CSV/Parquet exports.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Conditions",
+     "type": "array"
+    },
     "display_rank": {
      "description": "1-based rank by size; viewers see 'Segment {rank}'",
      "title": "Display Rank",
@@ -1303,6 +1311,19 @@
      "title": "Mean Target",
      "type": "number"
     },
+    "meaning": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "One-line 'what this means' summary generated from the group's own numbers (margin drivers)",
+     "title": "Meaning"
+    },
     "n_customers": {
      "title": "N Customers",
      "type": "integer"
@@ -1316,18 +1337,13 @@
      "type": "integer"
     },
     "name": {
-     "description": "Short plain-English name derived from the rule",
+     "description": "Plain-English name derived from the rule; covers every branch",
      "title": "Name",
      "type": "string"
     },
     "plain": {
      "description": "One-sentence description derived from the rule",
      "title": "Plain",
-     "type": "string"
-    },
-    "rule": {
-     "description": "Raw tree rule - technical detail, not primary display",
-     "title": "Rule",
      "type": "string"
     },
     "technical_note": {
@@ -1341,8 +1357,8 @@
     "display_rank",
     "name",
     "plain",
+    "conditions",
     "technical_note",
-    "rule",
     "n_lines",
     "n_customers",
     "n_items",

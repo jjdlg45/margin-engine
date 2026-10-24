@@ -21,8 +21,8 @@ from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
 from margin_engine.extended.hierarchy import apply_analysis_level
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
+from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
-from margin_engine.labels import plain_rule
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.manifest.run_manifest import (
     build_manifest,
@@ -596,7 +596,8 @@ def run_full(
         },
         "reconciliation": [
             {
-                "check": c["check"],
+                "check": label_of(str(c["check"])),
+                "check_desc": describe(str(c["check"])),
                 "expected": _fmt_dollars(c.get("expected_cents")),
                 "actual": _fmt_dollars(c.get("actual_cents")),
                 "allocated": _fmt_dollars(c.get("allocated_cents")),
@@ -609,7 +610,7 @@ def run_full(
         "residuals": [
             {
                 "residual": label_of(k),
-                "residual_code": k,
+                "residual_desc": describe(k),
                 "amount": _fmt_dollars(v),
                 **_RESIDUAL_EXPLANATIONS.get(
                     k,
@@ -640,13 +641,17 @@ def run_full(
             "n_commercial": int(flagged["flag_commercial_pricing_outlier"].sum()),
         },
         "segments": {
+            # The raw rule string is dropped here on purpose: the report shows
+            # the plain-English name, description and condition bullets; raw
+            # rule logic lives only in the CSV/Parquet exports.
             "rules": [
                 {
-                    **r,
+                    **{k: v for k, v in r.items() if k != "rule"},
                     "display_rank": rank,
-                    "name": plain_rule(str(r["rule"]))[0],
-                    "plain": plain_rule(str(r["rule"]))[1],
-                    "technical_note": plain_rule(str(r["rule"]))[2],
+                    "name": plain_rule(str(r["rule"])).name,
+                    "plain": plain_rule(str(r["rule"])).description,
+                    "conditions": plain_rule(str(r["rule"])).conditions,
+                    "technical_note": plain_rule(str(r["rule"])).note,
                 }
                 for rank, r in enumerate(
                     sorted(seg.rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"]))),
@@ -660,17 +665,24 @@ def run_full(
             if seg.recommendation_change_share is not None
             else "-",
         },
-        "sensitivity": [{**r, "status_label": label_of(str(r["status"]))} for r in sens.to_dicts()],
+        "sensitivity": [
+            {
+                **r,
+                "status_label": label_of(str(r["status"])),
+                "status_desc": describe(str(r["status"])),
+            }
+            for r in sens.to_dicts()
+        ],
         "guidance_summary": [
             {
                 "status": label_of(r["guidance_status"]),
-                "status_code": r["guidance_status"],
+                "status_desc": describe(r["guidance_status"]),
                 "n": r["len"],
                 "share": f"{r['share']:.1%}",
             }
             for r in guidance_summary.to_dicts()
         ],
-        "guidance_label": PROVISIONAL_LABEL,
+        "guidance_label": label_of(PROVISIONAL_LABEL).lower(),
         "inventory": (
             {
                 "method": res.mapping.lines.unit_cost.cost_basis.value
@@ -684,8 +696,30 @@ def run_full(
             else None
         ),
         "economics": economics,
-        "win_curves": win_curves.to_dicts() if win_curves is not None else None,
-        "cross_estimates": cross_estimates.to_dicts() if cross_estimates is not None else None,
+        "win_curves": (
+            [
+                {
+                    **r,
+                    "status_label": label_of(str(r["status"])),
+                    "status_desc": describe(str(r["status"])),
+                }
+                for r in win_curves.to_dicts()
+            ]
+            if win_curves is not None
+            else None
+        ),
+        "cross_estimates": (
+            [
+                {
+                    **r,
+                    "status_label": label_of(str(r["status"])),
+                    "status_desc": describe(str(r["status"])),
+                }
+                for r in cross_estimates.to_dicts()
+            ]
+            if cross_estimates is not None
+            else None
+        ),
         "opportunity": {
             "leakage_total": _fmt_dollars(int(leak["total_leakage_cents"].sum())),
             "gross_total": _fmt_dollars(
@@ -702,7 +736,10 @@ def run_full(
                 else 0
             ),
             "n_records": opps.height,
-            "treatment_counts": treatment_counts,
+            "treatment_counts": ", ".join(
+                f"{label_of(str(k))}: {v}" for k, v in sorted(treatment_counts.items())
+            )
+            or "-",
         },
         "tieout": (
             {
