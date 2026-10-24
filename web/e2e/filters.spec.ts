@@ -16,8 +16,18 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function pickFromCombobox(page: import("@playwright/test").Page, label: string, text: string) {
+  // Act like a real user: tap the input, replace any existing text (select
+  // all, then type key by key), and only click an option once the list is
+  // visibly open AND showing a real match - the "No matches." empty state
+  // also carries role=option, so the match assertion is load-bearing.
+  // (fill() injects the value in one step and masked a Linux-only
+  // closed-menu state.)
   const input = page.getByRole("combobox", { name: label });
-  await input.fill(text);
+  await input.click();
+  await input.press("ControlOrMeta+a");
+  await input.pressSequentially(text);
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await expect(page.getByRole("option").first()).toContainText(text);
   await page.getByRole("option").first().click();
 }
 
@@ -88,6 +98,66 @@ test("guidance: name search and ID search find the same pair", async ({ page }) 
   await page.getByRole("button", { name: "Look up by ID" }).first().click();
   await pickFromCombobox(page, "Customer", pair.customer_id);
   await expect(page).toHaveURL(new RegExp(`customer=${pair.customer_id}`));
+});
+
+test("guidance (mobile): name select, clear, toggle to ID, tap and type finds the option", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "dedicated mobile flow");
+  const pair = bundle.guidance.find((g) => g.customer_name)!;
+  await page.goto("/#/guidance");
+  await pickFromCombobox(page, "Customer", pair.customer_name!.slice(0, 12));
+  await expect(page).toHaveURL(/customer=/);
+  await page.getByRole("button", { name: "Clear all" }).click();
+  await page.getByRole("button", { name: "Look up by ID" }).first().click();
+  const input = page.getByRole("combobox", { name: "Customer" });
+  await input.click();
+  await input.pressSequentially(pair.customer_id);
+  await expect(page.getByRole("listbox")).toBeVisible();
+  // A real match, not the "No matches." empty state (which has role=option).
+  await expect(page.getByRole("option").first()).toContainText(pair.customer_id);
+  await page.getByRole("option").first().click();
+  await expect(page).toHaveURL(new RegExp(`customer=${pair.customer_id}`));
+});
+
+test("guidance: external clear resets the combobox text", async ({ page }) => {
+  const pair = bundle.guidance.find((g) => g.customer_name)!;
+  await page.goto("/#/guidance");
+  const input = page.getByRole("combobox", { name: "Customer" });
+  // Clear all resets the typed text, not just the URL.
+  await pickFromCombobox(page, "Customer", pair.customer_name!.slice(0, 12));
+  await expect(page).toHaveURL(/customer=/);
+  await expect(input).not.toHaveValue("");
+  await page.getByRole("button", { name: "Clear all" }).click();
+  await expect(page).not.toHaveURL(/customer=/);
+  await expect(input).toHaveValue("");
+  // Chip removal resets it too.
+  await pickFromCombobox(page, "Customer", pair.customer_name!.slice(0, 12));
+  await expect(input).not.toHaveValue("");
+  await page.getByRole("button", { name: /Remove filter/ }).first().click();
+  await expect(input).toHaveValue("");
+});
+
+test("guidance: open option list has visible height at top of page and after Clear all", async ({
+  page,
+}) => {
+  const pair = bundle.guidance.find((g) => g.customer_name)!;
+  await page.goto("/#/guidance");
+  const input = page.getByRole("combobox", { name: "Customer" });
+  const listbox = page.getByRole("listbox");
+  // At the top of the page.
+  await input.fill(pair.customer_id.slice(0, 5));
+  await expect(listbox).toBeVisible();
+  expect((await listbox.boundingBox())!.height).toBeGreaterThan(0);
+  await expect(page.getByRole("option").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  // After a selection and Clear all (results refetching, layout shifted).
+  await pickFromCombobox(page, "Customer", pair.customer_id);
+  await page.getByRole("button", { name: "Clear all" }).click();
+  await input.fill(pair.customer_id.slice(0, 5));
+  await expect(listbox).toBeVisible();
+  expect((await listbox.boundingBox())!.height).toBeGreaterThan(0);
+  await expect(page.getByRole("option").first()).toBeVisible();
 });
 
 test("guidance: keyboard-only combobox use", async ({ page }) => {

@@ -1,9 +1,9 @@
 # Hosted demo deploy (Run 3, Phase 23).
 #
-# On push to main: run the engine's web export on the fixed-seed demo world,
-# build the static app, run the web quality gates (vitest, Playwright, axe,
-# Lighthouse), and deploy web/dist to GitHub Pages. The Python suite runs in
-# ci.yml; this workflow gates the site itself.
+# The build job (export, build, unit tests, Playwright, Lighthouse) runs on
+# pull requests AND on push to main, so a PR exercises the real Linux browser
+# gates before merge; the deploy job runs only on push to main. The Python
+# suite runs in ci.yml; this workflow gates the site itself.
 #
 # Visual snapshot baselines are platform-specific and committed from the
 # development machine, so the Playwright step here sets SKIP_SNAPSHOTS=1
@@ -17,6 +17,7 @@ name: Deploy demo site
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -24,8 +25,9 @@ permissions:
   pages: write
   id-token: write
 
+# Scoped per ref so PR runs never cancel a main deploy (or each other).
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -67,6 +69,14 @@ jobs:
         env:
           SKIP_SNAPSHOTS: "1"
         run: npx playwright test
+      - name: Upload Playwright debug artifacts (traces, screenshots, videos)
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-test-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Lighthouse gates (performance 90, accessibility 95, best practices 95)
         working-directory: web
         run: |
@@ -80,6 +90,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
