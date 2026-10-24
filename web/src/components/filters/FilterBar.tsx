@@ -14,8 +14,10 @@ export function FilterBar({
   children: React.ReactNode;
   chips: ChipDescriptor[];
   onClearAll: () => void;
-  shown: number;
-  total: number;
+  /** Result counts; undefined while the results query is in flight. The bar
+   * itself stays mounted so in-progress filter interaction is never lost. */
+  shown: number | undefined;
+  total: number | undefined;
   noun: string;
 }) {
   return (
@@ -23,7 +25,9 @@ export function FilterBar({
       <div className="flex flex-wrap items-end gap-x-5 gap-y-3">{children}</div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-caption font-medium">
-          Showing {shown.toLocaleString("en-US")} of {total.toLocaleString("en-US")} {noun}
+          {shown !== undefined && total !== undefined
+            ? `Showing ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} ${noun}`
+            : `Loading ${noun}…`}
         </span>
         {chips.map((c) => (
           <button

@@ -143,42 +143,44 @@ function OpportunityTable({ facets }: { facets: OpportunityData["facets"] }) {
   );
 
   return (
-    <QuerySection query={table} label="top opportunities" lines={8}>
-      {(page) => (
-        <>
-          <FilterBar
-            chips={chips}
-            onClearAll={() => f.clearAll(FILTER_KEYS)}
-            shown={page.total}
-            total={page.total_unfiltered}
-            noun="opportunities"
-          >
-            <EntityCombobox label="Customer" options={facets.customers} value={customer} onChange={(v) => f.set("customer", v)} />
-            <EntityCombobox label="Item" options={facets.items} value={item} onChange={(v) => f.set("item", v)} />
-            <MultiSelect
-              label="Evidence"
-              options={facets.evidence}
-              values={evidences}
-              onChange={(v) => f.setList("evidence", v)}
-              renderOption={(e) => labels(e).label}
-            />
-            <MultiSelect
-              label="Volume treatment"
-              options={facets.treatments}
-              values={treatments}
-              onChange={(v) => f.setList("treatment", v)}
-              renderOption={(t) => labels(t).label}
-            />
-            <RangeFilter label="Gross opportunity" unit="$" range={grossRange} onChange={(r) => f.setRange("gross", r)} />
-            <RangeFilter
-              label="Below target"
-              unit="%"
-              range={belowRange}
-              onChange={(r) => f.setRange("below", r)}
-              presets={[{ label: "More than 10% below", range: { min: 10, max: null } }]}
-            />
-          </FilterBar>
-          {page.items.length ? (
+    <>
+      {/* Filter controls stay mounted across result refetches (see
+          GuidancePage); only the table swaps to a skeleton. */}
+      <FilterBar
+        chips={chips}
+        onClearAll={() => f.clearAll(FILTER_KEYS)}
+        shown={table.data?.total}
+        total={table.data?.total_unfiltered}
+        noun="opportunities"
+      >
+        <EntityCombobox label="Customer" options={facets.customers} value={customer} onChange={(v) => f.set("customer", v)} />
+        <EntityCombobox label="Item" options={facets.items} value={item} onChange={(v) => f.set("item", v)} />
+        <MultiSelect
+          label="Evidence"
+          options={facets.evidence}
+          values={evidences}
+          onChange={(v) => f.setList("evidence", v)}
+          renderOption={(e) => labels(e).label}
+        />
+        <MultiSelect
+          label="Volume treatment"
+          options={facets.treatments}
+          values={treatments}
+          onChange={(v) => f.setList("treatment", v)}
+          renderOption={(t) => labels(t).label}
+        />
+        <RangeFilter label="Gross opportunity" unit="$" range={grossRange} onChange={(r) => f.setRange("gross", r)} />
+        <RangeFilter
+          label="Below target"
+          unit="%"
+          range={belowRange}
+          onChange={(r) => f.setRange("below", r)}
+          presets={[{ label: "More than 10% below", range: { min: 10, max: null } }]}
+        />
+      </FilterBar>
+      <QuerySection query={table} label="top opportunities" lines={8}>
+        {(page) =>
+          page.items.length ? (
             <SortableTable
               data={page.items}
               columns={columns}
@@ -190,10 +192,10 @@ function OpportunityTable({ facets }: { facets: OpportunityData["facets"] }) {
               Every pair is either contract-protected or lacks the data guidance
               needs, so the engine sizes nothing rather than guessing.
             </EmptyState>
-          )}
-        </>
-      )}
-    </QuerySection>
+          )
+        }
+      </QuerySection>
+    </>
   );
 }
 

@@ -152,56 +152,58 @@ function CustomersTable({ d }: { d: CustomersData }) {
   );
 
   return (
-    <QuerySection query={table} label="customer economics" lines={8}>
-      {(page) => (
-        <>
-          <FilterBar
-            chips={chips}
-            onClearAll={() => f.clearAll(FILTER_KEYS)}
-            shown={page.total}
-            total={page.total_unfiltered}
-            noun="customers"
+    <>
+      {/* Filter controls stay mounted across result refetches (see
+          GuidancePage); only the table swaps to a skeleton. */}
+      <FilterBar
+        chips={chips}
+        onClearAll={() => f.clearAll(FILTER_KEYS)}
+        shown={table.data?.total}
+        total={table.data?.total_unfiltered}
+        noun="customers"
+      >
+        <EntityCombobox
+          label="Customer"
+          options={d.facets.customers}
+          value={custFilter}
+          onChange={(v) => f.set("cust", v)}
+        />
+        <MultiSelect
+          label="Service flags"
+          options={d.facets.service_flags}
+          values={flagFilter}
+          onChange={(v) => f.setList("flags", v)}
+          renderOption={(fl) => labels(fl).label}
+        />
+        <div className="flex flex-col gap-1">
+          <span className="text-caption secondary">After cost-to-serve</span>
+          <button
+            type="button"
+            aria-pressed={losing}
+            onClick={() => f.set("losing", losing ? null : "1")}
+            className={
+              losing
+                ? "rounded-badge border border-petrol bg-petrol px-2 py-1 text-sm text-paper"
+                : "rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/70"
+            }
           >
-            <EntityCombobox
-              label="Customer"
-              options={d.facets.customers}
-              value={custFilter}
-              onChange={(v) => f.set("cust", v)}
-            />
-            <MultiSelect
-              label="Service flags"
-              options={d.facets.service_flags}
-              values={flagFilter}
-              onChange={(v) => f.setList("flags", v)}
-              renderOption={(fl) => labels(fl).label}
-            />
-            <div className="flex flex-col gap-1">
-              <span className="text-caption secondary">After cost-to-serve</span>
-              <button
-                type="button"
-                aria-pressed={losing}
-                onClick={() => f.set("losing", losing ? null : "1")}
-                className={
-                  losing
-                    ? "rounded-badge border border-petrol bg-petrol px-2 py-1 text-sm text-paper"
-                    : "rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/70"
-                }
-              >
-                Losing money only
-              </button>
-            </div>
-            <RangeFilter label="Returns impact" unit="$" range={returnsRange} onChange={(r) => f.setRange("returns", r)} />
-            <RangeFilter label="Revenue excluded" unit="%" range={excludedRange} onChange={(r) => f.setRange("excluded", r)} />
-            <RangeFilter label="Orders" range={ordersRange} onChange={(r) => f.setRange("orders", r)} />
-          </FilterBar>
+            Losing money only
+          </button>
+        </div>
+        <RangeFilter label="Returns impact" unit="$" range={returnsRange} onChange={(r) => f.setRange("returns", r)} />
+        <RangeFilter label="Revenue excluded" unit="%" range={excludedRange} onChange={(r) => f.setRange("excluded", r)} />
+        <RangeFilter label="Orders" range={ordersRange} onChange={(r) => f.setRange("orders", r)} />
+      </FilterBar>
+      <QuerySection query={table} label="customer economics" lines={8}>
+        {(page) => (
           <SortableTable
             data={page.items}
             columns={columns}
             initialSort={[{ id: "contribution_after_activity_cents", desc: false }]}
           />
-        </>
-      )}
-    </QuerySection>
+        )}
+      </QuerySection>
+    </>
   );
 }
 
