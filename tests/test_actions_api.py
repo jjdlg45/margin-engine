@@ -46,6 +46,7 @@ def _mk_action(
         "customer_id": "C1",
         "item_id": "I1",
         "scope": "customer_item",
+        "uom": "EA",
         "segment_leaf": 1,
         "guidance_status": "below_reference",
         "evidence_status": "descriptive_elasticity",
@@ -335,3 +336,34 @@ def test_store_log_remains_valid_after_api_drive(client: TestClient, tmp_path: P
     validate_log(events)
     st = replay_status(events)
     assert st.filter(pl.col("action_id") == "act_ddd000000004")["status"][0] == "proposed"
+
+
+def test_price_export_endpoint(client: TestClient) -> None:
+    """Phase 40 over HTTP: dry-run previews, the real call transitions, and a
+    repeat is idempotent. Viewer role refused."""
+    client.post("/api/actions/act_aaa000000001/submit", headers={"X-User": "demo-analyst"})
+    client.post(
+        "/api/actions/act_aaa000000001/approve",
+        headers={"X-User": "demo-approver"},
+        json={"reason": "ok"},
+    )
+    assert (
+        client.post("/api/actions/price-export", headers={"X-User": "demo-viewer"}).status_code
+        == 403
+    )
+    dry = client.post(
+        "/api/actions/price-export", headers={"X-User": "demo-analyst"}, json={"dry_run": True}
+    ).json()
+    assert dry["dry_run"] is True and dry["n_transitioned"] == 0
+    assert dry["summary"]["n_changes"] == 1
+    assert client.get("/api/actions/act_aaa000000001").json()["status"] == "approved"
+    real = client.post(
+        "/api/actions/price-export", headers={"X-User": "demo-analyst"}, json={}
+    ).json()
+    assert real["n_transitioned"] == 1
+    assert real["csv"].startswith("ACTION_ID,")
+    assert client.get("/api/actions/act_aaa000000001").json()["status"] == "exported"
+    again = client.post(
+        "/api/actions/price-export", headers={"X-User": "demo-analyst"}, json={}
+    ).json()
+    assert again["n_transitioned"] == 0 and again["csv"] == real["csv"]

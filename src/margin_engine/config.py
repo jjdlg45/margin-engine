@@ -459,6 +459,53 @@ class ActionPriorityConfig(StrictModel):
     demote_without_causal: bool = True
 
 
+class PriceExportConfig(StrictModel):
+    """ERP-ready price file template (Phase 40). The generic CSV is the
+    default; a deployment overrides header names, date format, decimal
+    separator and price unit to match what its ERP imports."""
+
+    delimiter: str = Field(default=",", min_length=1, max_length=1)
+    decimal_separator: Literal[".", ","] = "."
+    date_format: str = "%Y-%m-%d"
+    price_unit: Literal["dollars", "cents"] = "dollars"
+    headers: dict[str, str] = Field(
+        default_factory=lambda: {
+            "action_id": "ACTION_ID",
+            "approval_id": "APPROVAL_ID",
+            "customer_id": "CUSTOMER",
+            "item_id": "ITEM",
+            "uom": "UOM",
+            "effective_date": "EFFECTIVE_DATE",
+            "previous_price": "PREVIOUS_PRICE",
+            "new_price": "NEW_PRICE",
+        }
+    )
+
+    @model_validator(mode="after")
+    def _headers_complete(self) -> PriceExportConfig:
+        required = {
+            "action_id",
+            "approval_id",
+            "customer_id",
+            "item_id",
+            "uom",
+            "effective_date",
+            "previous_price",
+            "new_price",
+        }
+        missing = required - set(self.headers)
+        if missing:
+            msg = f"price_export.headers must name every canonical column; missing {sorted(missing)}"
+            raise ValueError(msg)
+        if self.decimal_separator == "," and self.delimiter == ",":
+            msg = (
+                "price_export: a comma decimal separator needs a non-comma "
+                "delimiter (e.g. ';'), or the file is unparseable"
+            )
+            raise ValueError(msg)
+        return self
+
+
 class ActionsConfig(StrictModel):
     """Action generation (Phase 38). Dates are anchored to the data's last
     invoice date so generation is deterministic for a given world."""
@@ -479,6 +526,7 @@ class ActionsConfig(StrictModel):
     leakage_review_min_excess_cents: int = Field(default=100_000, ge=0)
     # Deterministic cap per action type (largest expected impact first).
     max_actions_per_type: int = Field(default=200, ge=1)
+    price_export: PriceExportConfig = PriceExportConfig()
 
 
 # ---------------------------------------------------------------------------

@@ -296,6 +296,36 @@ paths:
         "403": { $ref: "#/components/responses/PolicyError" }
         "409": { $ref: "#/components/responses/PolicyError" }
 
+  /actions/price-export:
+    post:
+      summary: Build the ERP-ready price file from approved price actions
+      description: >
+        Returns the diff summary (count, expected impact BY BASIS - never
+        summed across opportunity levels, largest changes) and the CSV text in
+        the configured template. dry_run previews without changing state;
+        otherwise every still-approved price action moves to exported (logged).
+        Re-exporting is idempotent - the identical file, no repeated events.
+      parameters: [{ $ref: "#/components/parameters/XUser" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { dry_run: { type: boolean, default: false } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, csv, n_transitioned, dry_run]
+                properties:
+                  summary: { type: object }
+                  csv: { type: string }
+                  n_transitioned: { type: integer }
+                  dry_run: { type: boolean }
+        "403": { $ref: "#/components/responses/PolicyError" }
+
   /actions/bulk-approve:
     post:
       summary: Bulk approve with per-item guardrail checks

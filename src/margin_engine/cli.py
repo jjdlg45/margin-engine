@@ -123,6 +123,52 @@ def validate(
         typer.echo(f"  validation runtime: {secs:.1f}s")
 
 
+@app.command()
+def export_prices(
+    actions_db: Path = typer.Option(  # noqa: B008
+        ..., "--actions-db", help="Action store (DuckDB) holding reviewed actions"
+    ),
+    out: Path = typer.Option(Path("prices.csv"), "--out", help="Price file to write"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"),
+        "--rules",
+        help="Policy rules YAML (actions.price_export template)",
+    ),
+    who: str = typer.Option("cli", "--who", help="Recorded in the exported transition events"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the diff summary without writing or changing state"
+    ),
+) -> None:
+    """Export approved price actions as an ERP-ready price file (Phase 40).
+    The diff summary prints BEFORE the file is written; re-exporting is
+    idempotent (identical file, no repeated transitions)."""
+    from margin_engine.actions.export import export_price_file
+    from margin_engine.actions.store import ActionStore
+
+    try:
+        loaded = load_rules(rules)
+    except (ValidationError, ValueError, TypeError) as exc:
+        _fail("configuration", exc)
+    store = ActionStore(actions_db)
+    preview = export_price_file(store, loaded, None, who=who, dry_run=True)
+    s = preview.summary
+    typer.echo(f"Price changes to export: {s['n_changes']}")
+    typer.echo("Expected impact by basis (never summed across levels):")
+    for basis, cents in dict(s["expected_impact_by_basis_cents"]).items():  # type: ignore[arg-type,call-overload]
+        typer.echo(f"  {basis}: ${int(cents) / 100:,.2f}")
+    for ch in list(s["largest_changes"]):  # type: ignore[arg-type,call-overload]
+        typer.echo(
+            f"  largest: {ch['customer_id']} / {ch['item_id']} "
+            f"{ch['change_pct']:+.2f}% (action {ch['action_id']})"
+        )
+    if dry_run:
+        typer.echo("Dry run: nothing written, no state changed.")
+        return
+    result = export_price_file(store, loaded, out, who=who)
+    typer.echo(f"Wrote {out} and {out.name}.summary.json beside it")
+    typer.echo(f"Actions moved to exported: {result.n_transitioned}")
+
+
 # Demo world for the hosted site: generated in CI at deploy time, never
 # committed. Scale chosen in Phase 19.1 as the smallest where at least one
 # segment reaches causal-supported elasticity with the bundle under 5 MB.

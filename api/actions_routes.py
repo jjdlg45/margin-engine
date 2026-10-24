@@ -326,6 +326,37 @@ async def bulk_approve(
     return {"results": results}
 
 
+@router.post("/api/actions/price-export")
+async def price_export(
+    request: Request, body: dict[str, Any] | None = None, x_user: str | None = Header(default=None)
+) -> Any:
+    """Build the ERP price file from approved price actions (Phase 40). The
+    response carries the diff summary and the CSV text (the UI offers it as a
+    download); dry_run previews without changing state. Idempotent: the file
+    always holds every approved-or-exported price action, and only
+    still-approved ones transition."""
+    if not x_user:
+        return _err(400, "missing_user", "send X-User (local identity, not authentication)")
+    store = _store(request)
+    policy = _policy(request)
+    try:
+        policy.require_role(x_user, "analyst")
+    except ReviewError as exc:
+        return _err(_REVIEW_HTTP.get(exc.code, 400), exc.code, str(exc))
+    from margin_engine.actions.export import export_price_file
+    from margin_engine.config import load_rules
+
+    rules = load_rules(request.app.state.settings.rules_path)
+    dry_run = bool((body or {}).get("dry_run", False))
+    result = export_price_file(store, rules, None, who=x_user, dry_run=dry_run)
+    return {
+        "summary": result.summary,
+        "csv": result.csv_text,
+        "n_transitioned": result.n_transitioned,
+        "dry_run": dry_run,
+    }
+
+
 @router.patch("/api/actions/{action_id}")
 async def edit_action(
     action_id: str,
@@ -427,6 +458,7 @@ async def propose(
             "customer_id": [str(customer_id) if customer_id else None],
             "item_id": [str(item_id) if item_id else None],
             "scope": ["manual"],
+            "uom": [None],
             "segment_leaf": [None],
             "guidance_status": [None],
             "evidence_status": ["manual"],

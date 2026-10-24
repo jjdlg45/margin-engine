@@ -54,6 +54,7 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "customer_id": pl.String,
     "item_id": pl.String,
     "scope": pl.String,
+    "uom": pl.String,
     "segment_leaf": pl.Int64,
     "guidance_status": pl.String,
     "evidence_status": pl.String,
@@ -161,10 +162,21 @@ def _finalize(
     return out.sort(["action_type", "action_id"]).select(list(ACTIONS_SCHEMA))
 
 
-def _pair_base(guidance: pl.DataFrame, opportunities: pl.DataFrame) -> pl.DataFrame:
+def _pair_base(
+    guidance: pl.DataFrame, opportunities: pl.DataFrame, ledger: pl.DataFrame
+) -> pl.DataFrame:
     """Guidance pairs with their opportunity row (prices, baseline volume,
-    impact levels) joined on. Floor price in cents from the floor index and the
-    pair's effective list (the engine compares in index space; 24.4)."""
+    impact levels) joined on, plus the pair's normalized selling UOM (for the
+    ERP price export, Phase 40). Floor price in cents from the floor index and
+    the pair's effective list (the engine compares in index space; 24.4)."""
+    if "uom_norm" in ledger.columns:
+        pair_uom = (
+            ledger.filter(pl.col("transaction_type") == "sale")
+            .group_by("customer_id", "item_id")
+            .agg(pl.col("uom_norm").drop_nulls().cast(pl.String).mode().sort().first().alias("uom"))
+        )
+    else:
+        pair_uom = None
     opp_cols = [
         "customer_id",
         "item_id",
@@ -179,6 +191,10 @@ def _pair_base(guidance: pl.DataFrame, opportunities: pl.DataFrame) -> pl.DataFr
     ]
     opp = opportunities.select([c for c in opp_cols if c in opportunities.columns])
     g = guidance.join(opp, on=["customer_id", "item_id"], how="left", maintain_order="left")
+    if pair_uom is not None:
+        g = g.join(pair_uom, on=["customer_id", "item_id"], how="left", maintain_order="left")
+    else:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("uom"))
     return g.with_columns(
         pl.when(pl.col("floor_index").is_not_null() & (pl.col("eff_list_cents") > 0))
         .then((pl.col("floor_index") * pl.col("eff_list_cents")).round(0).cast(pl.Int64))
@@ -262,6 +278,7 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("customer_id"),
         pl.col("item_id"),
         pl.lit("customer_item").alias("scope"),
+        pl.col("uom"),
         pl.col("segment_leaf").cast(pl.Int64),
         pl.col("guidance_status"),
         pl.col("evidence_status"),
@@ -357,6 +374,7 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("customer_id"),
         pl.col("item_id"),
         pl.lit("customer_item").alias("scope"),
+        pl.col("uom"),
         pl.col("segment_leaf").cast(pl.Int64),
         pl.col("guidance_status"),
         pl.col("evidence_status"),
@@ -409,6 +427,7 @@ def _service_policy_actions(service_flags: pl.DataFrame | None, anchor: dt.date)
         pl.col("customer_id"),
         pl.lit(None, dtype=pl.String).alias("item_id"),
         pl.lit("customer").alias("scope"),
+        pl.lit(None, dtype=pl.String).alias("uom"),
         pl.lit(None, dtype=pl.Int64).alias("segment_leaf"),
         pl.lit(None, dtype=pl.String).alias("guidance_status"),
         pl.lit("estimated").alias("evidence_status"),
@@ -479,6 +498,7 @@ def _rebate_review_actions(
         pl.col("customer_id"),
         pl.lit(None, dtype=pl.String).alias("item_id"),
         pl.lit("customer").alias("scope"),
+        pl.lit(None, dtype=pl.String).alias("uom"),
         pl.col("segment_leaf").cast(pl.Int64),
         pl.lit(None, dtype=pl.String).alias("guidance_status"),
         pl.lit("actual").alias("evidence_status"),
@@ -571,6 +591,7 @@ def _pass_through_actions(
                 "customer_id": None,
                 "item_id": None,
                 "scope": f"{scope}:{value}",
+                "uom": None,
                 "segment_leaf": None,
                 "guidance_status": None,
                 "evidence_status": "actual",
@@ -616,7 +637,7 @@ def generate_actions(
     anchor: dt.date = anchor_raw if isinstance(anchor_raw, dt.date) else dt.date(1970, 1, 1)
     created = dt.datetime(anchor.year, anchor.month, anchor.day, tzinfo=dt.UTC)
 
-    base = _pair_base(guidance, opportunities)
+    base = _pair_base(guidance, opportunities, ledger)
     parts = [
         _below_floor_actions(base, anchor),
         _price_change_actions(base, anchor),

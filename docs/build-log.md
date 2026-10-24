@@ -2509,3 +2509,44 @@ log stays validate_log-clean after an HTTP-driven lifecycle.
 
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
 full pytest exit 0. Web untouched (Action center UI is Phase 42).
+
+## Phase 40 — ERP-ready price export (2026-10-24, Run 5 branch)
+
+**Export (`actions/export.py` + `actions.price_export` config).** Approved
+price actions (price_change, below_floor_fix) become an ERP-importable price
+file. Generic CSV by default; a deployment overrides header names, date
+format, decimal separator, delimiter and price unit (dollars/cents) — a comma
+decimal with a comma delimiter is refused at config time. Every row carries
+effective date (the action's due date), previous price, new price, UOM (now
+captured per pair at generation: the pair's modal normalized selling unit),
+approval id (derived deterministically from the approving event) and action
+id. The diff summary — count, expected impact BY BASIS (opportunity levels are
+never summed into one number), largest changes — is shown before export (CLI
+prints it first; the API returns it on dry_run) and written beside the file
+(<out>.summary.json).
+
+**Idempotency.** The file always contains every approved-or-already-exported
+price action, deterministically formatted, so re-exporting rewrites the
+identical bytes; only actions still in 'approved' receive the exported
+transition (logged with who), so no event repeats. Non-price actions
+(service policy, rebate review, pass-through) never appear in the price file
+regardless of status.
+
+**Surfaces.** CLI `margin-engine export-prices --actions-db ... --out ...
+[--dry-run]`; API POST /api/actions/price-export (analyst role; returns
+summary + CSV text for the UI download; dry_run previews). OpenAPI updated.
+
+**Tests (7 new).** Only approved price actions export (proposed, blocked-type
+and non-price approved actions excluded); transitions logged once with
+identical bytes on re-export; template variants (semicolon + comma-decimal +
+d.m.Y headers in another language; cents unit; invalid template refused);
+summary per-basis totals with no cross-level "total"; round-trip through the
+engine's OWN ingest for both the default and the comma-decimal template (the
+test, playing the ERP, adds a QTY=1 column; mapping over the exported file;
+every re-imported price equals the exported new price to the cent, dates
+survive the format); the HTTP endpoint (viewer refused, dry-run previews
+without state change, real call transitions once, repeat idempotent).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0. Web untouched (the export button lands with the Action center UI,
+Phase 42).
