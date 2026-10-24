@@ -2312,3 +2312,49 @@ validate command). Byte-identity: sample 46/46, world42 44/44, demo engine
 exports 46/46 identical. Web checks on this phase's final state: tsc exit 0;
 vitest exit 0 (11/11); production build exit 0; Playwright
 (CI=true SKIP_SNAPSHOTS=1) exit 0, 151/151.
+
+## Phase 36 — Fiscal calendars (2026-10-24, Run 5 branch)
+
+Configurable fiscal calendar in `margin_engine/fiscal.py` + a `fiscal` config
+section: calendar_months (default), 4-4-5 / 4-5-4 / 5-4-4 week calendars, or a
+custom period table (new optional reference table `fiscal_periods`:
+period_label, start_date, end_date, optional quarter_label).
+
+**Semantics.** One calendar drives every ANALYTIC period: the sensitivity
+panel's period index and labels, peer-group quarters, the guidance observation
+unit, baseline windows (leakage, opportunity levels 2-3 via the panel index,
+the web bundle's pair revenue window), period counts (customer economics
+orders-per-period, bundle months_covered), the books tie-out, and
+rolling-window stability in real-data validation. Data-declared periods stay
+data-defined on purpose: rebate settlement periods, landed-cost months and FX
+rate months come from the source tables and are not reinterpreted.
+Week calendars follow the retail convention: a fiscal year is the 52/53 weeks
+ending on the configured weekday nearest the last day of the configured
+year-end month; a 53rd week extends the year's final period; labels are
+"FY2026 P03" / "FY2026 Q1". Custom tables are validated (no overlaps; a date
+outside every period is an actionable error; a missing quarter_label falls
+back to the period label, stated in the run notes). Under a non-month
+calendar, monthly instrument / market-index tables join by the calendar month
+containing each fiscal period's start — an approximation stated in the run
+notes, never silent. The default-calendar expressions are the engine's
+historical ones, so every export stays byte-identical (verified).
+
+**Tests (11 new).** Nearest-weekday year ends; period lengths and contiguous
+boundaries for all three week patterns; a 53-week year found programmatically
+with its extended final period; year-boundary attach (FY2023 P12 ->
+FY2024 P01 across 2023-12-30/31); custom-table attach, overlap/missing-table/
+date-outside errors, quarter fallback note; books tie-out exact on a custom
+calendar and a wrong GL figure flagged; full pipeline on the sample world
+under 4-4-5 (reconciliation exact, FY-form quarters in peer groups, FY-form
+panel periods, calendar note present).
+
+**Verification.** Sample exports byte-identical under the default calendar
+(46/46). Demo bundle differs only in intended ways: the new rules hash (the
+fiscal config section), fiscal_periods listed among absent reference tables,
+and the Phase 35 scale row refresh. Known presentation gap deferred to Phase
+46: run notes show raw reference-table names (e.g. fiscal_periods); route
+through the label dictionary there.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0 (all green, slow/network deselected). Web code untouched; bundle parity
+covered by the pytest webexport suite.

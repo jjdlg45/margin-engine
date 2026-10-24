@@ -26,6 +26,7 @@ import numpy as np
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar
 from margin_engine.sensitivity.estimate import (
     STATUS_CAUSAL,
     STATUS_IV,
@@ -465,6 +466,7 @@ def rolling_stability(
     panel: pl.DataFrame,
     seg_frame: pl.DataFrame,
     rules: Rules,
+    fiscal: FiscalCalendar | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame, list[str]]:
     """Elasticity (naive FE-OLS, cheap and always defined) per segment per
     rolling window, plus the commercial segmentation refit per window with ARI
@@ -533,8 +535,20 @@ def rolling_stability(
 
         # Segmentation stability: refit on the window's lines, compare with ARI.
         if "invoice_date" in seg_frame.columns and "segment_leaf" in seg_frame.columns:
-            m_idx = pl.col("invoice_date").dt.year() * 12 + pl.col("invoice_date").dt.month()
-            win_lines = seg_frame.filter((m_idx >= lo) & (m_idx <= hi))
+            # The window bounds are panel period indexes: map the lines with
+            # the same fiscal calendar (Phase 36; default = year*12+month).
+            if fiscal is None or fiscal.is_calendar_months:
+                win_lines = seg_frame.filter(
+                    (
+                        pl.col("invoice_date").dt.year() * 12 + pl.col("invoice_date").dt.month()
+                    ).is_between(lo, hi)
+                )
+            else:
+                win_lines = (
+                    fiscal.attach(seg_frame, "invoice_date", idx="_fp_idx")
+                    .filter(pl.col("_fp_idx").is_between(lo, hi))
+                    .drop("_fp_idx")
+                )
             try:
                 win_fit = fit_commercial_segments(win_lines, rules, seed=0)
                 joined = (
@@ -579,11 +593,12 @@ def run_real_validation(
     seg_frame: pl.DataFrame,
     rules: Rules,
     seed: int = 0,
+    fiscal: FiscalCalendar | None = None,
 ) -> RealValidationResult:
     notes: list[str] = []
     bt, n1 = backtest_elasticity(panel, rules)
     pb, n2 = placebo_tests(panel, rules, seed)
-    st_el, st_seg, n3 = rolling_stability(panel, seg_frame, rules)
+    st_el, st_seg, n3 = rolling_stability(panel, seg_frame, rules, fiscal)
     notes.extend(n1 + n2 + n3)
     return RealValidationResult(
         backtest=bt,

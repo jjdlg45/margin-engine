@@ -17,6 +17,7 @@ import polars as pl
 
 from margin_engine import __version__
 from margin_engine.config import Rules
+from margin_engine.fiscal import build_calendar
 from margin_engine.labels import LABELS, plain_rule, render_text
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
@@ -231,7 +232,15 @@ def build_bundle(
     pocket_gp = _i(cost_known["pocket_gp_cents"].sum())
     returns = ledger.filter(pl.col("transaction_type") == "return")
     returns_cents = _i(returns["net_amount_cents"].sum())
-    months = int(sale.select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique()).item())
+    # Periods covered, in the configured fiscal calendar (Phase 36; the
+    # default calendar counts calendar months exactly as before).
+    _cal = res.fiscal if res.fiscal is not None else build_calendar(rules.fiscal)
+    if _cal.is_calendar_months:
+        months = int(sale.select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique()).item())
+    else:
+        months = int(
+            _cal.attach(sale, "invoice_date", period="_fp").select(pl.col("_fp").n_unique()).item()
+        )
     kpis = SummaryKpis(
         n_ledger_lines=ledger.height,
         n_sales_observations=res.pipeline.observations.height,
@@ -435,10 +444,16 @@ def build_bundle(
     # --- guidance (all pairs, with explanations and annual revenue) ----------
     max_date = sale["invoice_date"].max()
     window = rules.opportunity.baseline_window_months
-    pair_rev = (
-        sale.filter(pl.col("invoice_date") >= pl.lit(max_date).dt.offset_by(f"-{window}mo"))
-        .group_by("customer_id", "item_id")
-        .agg(pl.col("net_amount_cents").sum().alias("annual_net_revenue_cents"))
+    if _cal.is_calendar_months:
+        recent = sale.filter(
+            pl.col("invoice_date") >= pl.lit(max_date).dt.offset_by(f"-{window}mo")
+        )
+    else:
+        recent = _cal.attach(sale, "invoice_date", idx="_fp_idx")
+        max_fp = int(recent["_fp_idx"].max() or 0)  # type: ignore[arg-type]
+        recent = recent.filter(pl.col("_fp_idx") > max_fp - window).drop("_fp_idx")
+    pair_rev = recent.group_by("customer_id", "item_id").agg(
+        pl.col("net_amount_cents").sum().alias("annual_net_revenue_cents")
     )
     gdf = res.guidance.join(pair_rev, on=["customer_id", "item_id"], how="left").sort(
         ["customer_id", "item_id"]

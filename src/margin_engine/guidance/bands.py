@@ -50,6 +50,7 @@ from typing import Literal
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.money import div_half_even_expr
 
 PROVISIONAL_LABEL = "provisional_historical"
@@ -113,9 +114,12 @@ class GuidanceResult:
     notes: list[str]
 
 
-def band_observations(flagged: pl.DataFrame, rules: Rules) -> pl.DataFrame:
+def band_observations(
+    flagged: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> pl.DataFrame:
     """Observation unit for bands. Data-quality anomalies are excluded (they are
-    entry errors, not prices); commercial outliers stay (they happened)."""
+    entry errors, not prices); commercial outliers stay (they happened). The
+    per-period unit follows the configured fiscal calendar (Phase 36)."""
     obs = flagged.filter(
         ~pl.col("flag_data_quality_anomaly")
         & pl.col("price_index").is_not_null()
@@ -124,16 +128,20 @@ def band_observations(flagged: pl.DataFrame, rules: Rules) -> pl.DataFrame:
     )
     if rules.price_guidance.observation_unit == "line":
         return obs.select("segment_leaf", "customer_id", "item_id", "price_index")
+    if fiscal is None:
+        fiscal = build_calendar(rules.fiscal)
     return (
-        obs.with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("_month"))
+        fiscal.attach(obs, "invoice_date", period="_month")
         .group_by("segment_leaf", "customer_id", "item_id", "_month")
         .agg(pl.col("price_index").median().alias("price_index"))
     )
 
 
-def segment_bands(flagged: pl.DataFrame, rules: Rules) -> pl.DataFrame:
+def segment_bands(
+    flagged: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> pl.DataFrame:
     p_lo, p_mid, p_hi = rules.price_guidance.band_percentiles
-    obs = band_observations(flagged, rules)
+    obs = band_observations(flagged, rules, fiscal)
     return obs.group_by("segment_leaf").agg(
         pl.len().alias("n_observations"),
         pl.col("price_index").quantile(p_lo).alias("band_p25"),
@@ -147,6 +155,7 @@ def build_guidance(
     rules: Rules,
     rebate_programs: pl.DataFrame | None,
     cts_per_unit: pl.DataFrame | None = None,
+    fiscal: FiscalCalendar | None = None,
 ) -> GuidanceResult:
     """Per customer x item guidance against segment bands and economic floors.
 
@@ -161,7 +170,7 @@ def build_guidance(
     )
     notes: list[str] = []
 
-    bands = segment_bands(flagged, rules)
+    bands = segment_bands(flagged, rules, fiscal)
 
     # Pair position: median index over the pair's history; unit economics from
     # the most recent sale line with known cost and list.

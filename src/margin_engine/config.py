@@ -446,6 +446,34 @@ class ReportingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# fiscal calendar (Run 5, Phase 36)
+# ---------------------------------------------------------------------------
+
+
+class FiscalConfig(StrictModel):
+    """Fiscal calendar for the engine's ANALYTIC periods: the sensitivity
+    panel, peer-group quarters, the guidance observation unit, baseline
+    windows, period counts and the books tie-out. Data-declared periods
+    (rebate settlement periods, landed-cost months, FX rate months) always
+    follow the source data and are untouched by this setting.
+
+    calendar_months (default) reproduces the engine's historical behavior
+    exactly. The week-based calendars (4-4-5 / 4-5-4 / 5-4-4) define a fiscal
+    year as the 52 or 53 weeks ending on `year_end_weekday` nearest to the
+    last day of `year_end_month` (the retail-calendar convention); in a
+    53-week year the extra week extends the year's final period. `custom`
+    takes an explicit period table (reference table `fiscal_periods` in the
+    mapping: period_label, start_date, end_date, optional quarter_label).
+    """
+
+    calendar: Literal["calendar_months", "4-4-5", "4-5-4", "5-4-4", "custom"] = "calendar_months"
+    year_end_month: int = Field(default=12, ge=1, le=12)
+    year_end_weekday: Literal[
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+    ] = "saturday"
+
+
+# ---------------------------------------------------------------------------
 # root
 # ---------------------------------------------------------------------------
 
@@ -469,6 +497,7 @@ class Rules(StrictModel):
     opportunity: OpportunityConfig = OpportunityConfig()
     tariff_scenarios: TariffScenariosConfig = TariffScenariosConfig()
     reporting: ReportingConfig = ReportingConfig()
+    fiscal: FiscalConfig = FiscalConfig()
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 

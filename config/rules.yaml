@@ -156,3 +156,17 @@ reporting:
   # (the cents floor keeps tiny months from failing on rounding pennies).
   tieout_tolerance_pct: 0.5
   tieout_tolerance_cents: 100
+
+# Fiscal calendar (Run 5, Phase 36). Drives the engine's ANALYTIC periods:
+# panel periods, peer-group quarters, the guidance observation unit, baseline
+# windows, period counts and the books tie-out. Data-declared periods
+# (settlements, landed cost months, FX months) always follow the source data.
+# calendar: calendar_months (default) | 4-4-5 | 4-5-4 | 5-4-4 | custom
+# Week calendars: the fiscal year is the 52/53 weeks ending on
+# year_end_weekday nearest the last day of year_end_month; a 53rd week extends
+# the year's final period. calendar: custom needs a fiscal_periods reference
+# table in the mapping (period_label, start_date, end_date, quarter_label).
+fiscal:
+  calendar: calendar_months
+  year_end_month: 12
+  year_end_weekday: saturday

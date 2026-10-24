@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from margin_engine import __version__
 from margin_engine.config import load_rules
+from margin_engine.fiscal import FiscalCalendarError
 from margin_engine.ingest.mapping import MappingError
 from margin_engine.money import MoneyParseError
 from margin_engine.waterfall.reconcile import ReconciliationError
@@ -72,6 +73,8 @@ def run(
         _fail("configuration", exc)
     except ReconciliationError as exc:
         _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
     typer.echo(f"Ledger lines: {result.pipeline.ledger.height}")
     typer.echo(f"Reconciliation: {'PASS' if result.pipeline.reconciliation.all_pass else 'FAIL'}")
     for stage, secs in result.timings.items():
@@ -104,6 +107,8 @@ def validate(
         _fail("configuration", exc)
     except ReconciliationError as exc:
         _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
     typer.echo("Real-data validation (no planted truth; informational, never gates a status):")
     for name in (
         "real_validation_backtest",
@@ -200,6 +205,8 @@ def export_web(
         _fail("configuration", exc)
     except ReconciliationError as exc:
         _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
     bundle_path, schema_path = write_bundle(bundle, out)
     size_kb = bundle_path.stat().st_size / 1024
     typer.echo(f"Bundle: {bundle_path} ({size_kb:,.0f} KB)")

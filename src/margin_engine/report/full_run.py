@@ -20,6 +20,7 @@ from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
 from margin_engine.extended.hierarchy import apply_analysis_level
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
@@ -71,6 +72,7 @@ class FullRunResult:
     unallocated_settlements: pl.DataFrame | None = None
     library_warnings: list[dict[str, Any]] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
+    fiscal: FiscalCalendar | None = None  # the calendar in force (Phase 36)
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -224,8 +226,22 @@ def run_full(
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
     rss_log("pipeline_done")
 
+    # Fiscal calendar (Phase 36): one calendar drives every ANALYTIC period —
+    # panel periods, peer-group quarters, the guidance observation unit,
+    # baseline windows, period counts, the books tie-out. Data-declared
+    # periods (settlements, landed cost, FX months) stay data-defined.
+    fiscal = build_calendar(rules.fiscal, res.reference.get("fiscal_periods"))
+    res.notes.extend(fiscal.notes)
+    if not fiscal.is_calendar_months:
+        res.notes.append(
+            f"fiscal calendar '{fiscal.kind}' in force: analytic periods, "
+            "quarters and baseline windows follow it; monthly instrument and "
+            "market-index tables join by the calendar month containing each "
+            "fiscal period's start (approximation, stated here)"
+        )
+
     t = time.perf_counter()
-    cts = run_cost_to_serve(res.ledger, rules)
+    cts = run_cost_to_serve(res.ledger, rules, fiscal)
     res.ledger = cts.lines
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
@@ -236,7 +252,7 @@ def run_full(
         res.observations, res.reference["customers"], rules
     )
     res.notes.extend(h_notes)
-    flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules)
+    flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules, fiscal)
     del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
@@ -271,7 +287,7 @@ def run_full(
         if "activity_cts_cents" in res.ledger.columns
         else None
     )
-    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit)
+    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit, fiscal)
     timings["guidance"] = time.perf_counter() - t
     rss_log("guidance")
 
@@ -318,6 +334,7 @@ def run_full(
         res.reference["tariff_schedule"],
         rules,
         market_price_index=res.reference.get("market_price_index"),
+        fiscal=fiscal,
     )
     timings["panel"] = time.perf_counter() - t
     rss_log("panel")
@@ -328,7 +345,7 @@ def run_full(
     rss_log("sensitivity")
 
     t = time.perf_counter()
-    leak = observed_leakage(res.ledger, rules)
+    leak = observed_leakage(res.ledger, rules, fiscal)
     opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
     timings["opportunity"] = time.perf_counter() - t
     rss_log("opportunity")
@@ -341,7 +358,7 @@ def run_full(
         from margin_engine.sensitivity.real_validation import run_real_validation
 
         t = time.perf_counter()
-        real_val = run_real_validation(panel, df, rules, seed=0)
+        real_val = run_real_validation(panel, df, rules, seed=0, fiscal=fiscal)
         res.notes.extend(real_val.notes)
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
@@ -400,7 +417,7 @@ def run_full(
     tieout_res = None
     gl_totals = res.reference.get("gl_totals")
     if gl_totals is not None:
-        tieout_res = run_tieout(res.ledger, gl_totals, rules)
+        tieout_res = run_tieout(res.ledger, gl_totals, rules, fiscal)
         res.notes.extend(tieout_res.notes)
         res.notes.append(
             f"books tie-out ran: {tieout_res.n_failing} month-measure(s) outside tolerance"
@@ -847,4 +864,5 @@ def run_full(
         unallocated_settlements=exports["unallocated_settlements"],
         library_warnings=lib_warnings,
         manifest=manifest,
+        fiscal=fiscal,
     )

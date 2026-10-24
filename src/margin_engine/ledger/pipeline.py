@@ -104,6 +104,7 @@ REFERENCE_TABLES = [
     "market_price_index",
     "gl_totals",
     "external_cost_series",
+    "fiscal_periods",
 ]
 
 

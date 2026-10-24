@@ -20,6 +20,7 @@ import numpy as np
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 
 
 def month_index(col: str = "invoice_date") -> pl.Expr:
@@ -33,14 +34,33 @@ def build_panel(
     tariff_schedule: pl.DataFrame | None,
     rules: Rules,
     market_price_index: pl.DataFrame | None = None,
+    fiscal: FiscalCalendar | None = None,
 ) -> pl.DataFrame:
-    """Returns one row per (customer, item, month) with qty (including true
-    zeros), log price, instruments, and cluster columns."""
+    """Returns one row per (customer, item, period) with qty (including true
+    zeros), log price, instruments, and cluster columns. The period follows the
+    configured fiscal calendar (Phase 36); month_idx is the consecutive fiscal
+    period index and reproduces the historical year*12+month under the default
+    calendar. Monthly instrument and market-index tables join by their own
+    data months under the default calendar; under a week-based or custom
+    calendar they join by the calendar month containing each fiscal period's
+    start (a documented approximation, noted by the caller)."""
+    if fiscal is None:
+        fiscal = build_calendar(rules.fiscal)
     lookback = rules.sensitivity.active_assortment_lookback_months
 
-    sales = observations.filter(
-        (pl.col("quantity_norm") > 0) & (pl.col("net_amount_cents") > 0)
-    ).with_columns(month_index())
+    sales = observations.filter((pl.col("quantity_norm") > 0) & (pl.col("net_amount_cents") > 0))
+    if fiscal.is_calendar_months:
+        sales = sales.with_columns(month_index())
+    else:
+        sales = fiscal.attach(sales, "invoice_date", idx="month_idx")
+    period_map: pl.DataFrame | None = None
+    if not fiscal.is_calendar_months and sales.height:
+        d = sales["invoice_date"]
+        period_map = fiscal.index_table(d.min(), d.max()).select(  # type: ignore[arg-type]
+            pl.col("period_idx").alias("month_idx"),
+            pl.col("period"),
+            pl.col("start").dt.strftime("%Y-%m").alias("_cal_period"),
+        )
     if "flag_data_quality_anomaly" in sales.columns:
         # Entry errors are not prices; a x10 line would be a massive leverage
         # point in the within-pair regression.
@@ -143,18 +163,25 @@ def build_panel(
         ]
         if len(cols) > 1:
             panel = panel.join(items.select(cols), on="item_id", how="left")
-    year = (pl.col("month_idx") - 1) // 12
-    mon = (pl.col("month_idx") - 1) % 12 + 1
-    panel = panel.with_columns(
-        (year.cast(pl.String) + "-" + mon.cast(pl.String).str.zfill(2)).alias("period")
-    )
+    if period_map is None:
+        year = (pl.col("month_idx") - 1) // 12
+        mon = (pl.col("month_idx") - 1) % 12 + 1
+        panel = panel.with_columns(
+            (year.cast(pl.String) + "-" + mon.cast(pl.String).str.zfill(2)).alias("period")
+        )
+        # Monthly instrument tables carry data months; under the default
+        # calendar the panel period IS that month.
+        join_key = "period"
+    else:
+        panel = panel.join(period_map, on="month_idx", how="left", maintain_order="left")
+        join_key = "_cal_period"
     if supplier_cost_index is not None:
         sci = supplier_cost_index.with_columns(
             pl.col("cost_idx").cast(pl.Float64).log().alias("z_cost")
         )
         panel = panel.join(
-            sci.select("supplier_id", "period", "z_cost"),
-            on=["supplier_id", "period"],
+            sci.select("supplier_id", pl.col("period").alias(join_key), "z_cost"),
+            on=["supplier_id", join_key],
             how="left",
         )
     if tariff_schedule is not None:
@@ -162,8 +189,8 @@ def build_panel(
             (1 + pl.col("duty_pct").cast(pl.Float64) / 100).log().alias("z_tariff")
         )
         panel = panel.join(
-            ts.select("item_category", "period", "z_tariff"),
-            on=["item_category", "period"],
+            ts.select("item_category", pl.col("period").alias(join_key), "z_tariff"),
+            on=["item_category", join_key],
             how="left",
         )
     # Optional market / competitor price index (24.10): a log control in the
@@ -175,8 +202,8 @@ def build_panel(
             pl.col("market_index").cast(pl.Float64).log().alias("log_mkt")
         )
         panel = panel.join(
-            mpi.select("item_category", "period", "log_mkt"),
-            on=["item_category", "period"],
+            mpi.select("item_category", pl.col("period").alias(join_key), "log_mkt"),
+            on=["item_category", join_key],
             how="left",
         )
 
@@ -198,4 +225,6 @@ def build_panel(
         pl.col("segment_leaf_pair").alias("segment_leaf"),
         pl.col("contract_id_pair").alias("contract_id"),
     )
-    return panel.drop("_buy_m", "_last_buy_before", "first_m", "last_m")
+    return panel.drop(
+        "_buy_m", "_last_buy_before", "first_m", "last_m", "_cal_period", strict=False
+    )

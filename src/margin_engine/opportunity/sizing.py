@@ -40,6 +40,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar
 from margin_engine.sensitivity.estimate import STATUS_CAUSAL, STATUS_IV
 
 TREATMENT_EXPECTED = "expected_change"
@@ -56,14 +57,27 @@ class OpportunityResult:
     notes: list[str]
 
 
-def observed_leakage(ledger: pl.DataFrame, rules: Rules) -> pl.DataFrame:
-    """Level 1: where the dollars went, reconciled. Baseline window only."""
+def observed_leakage(
+    ledger: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> pl.DataFrame:
+    """Level 1: where the dollars went, reconciled. Baseline window only.
+
+    Default calendar: the historical rolling window (max date minus N calendar
+    months). A fiscal calendar (Phase 36) uses the last N fiscal periods
+    instead, aligned to period boundaries."""
     window = rules.opportunity.baseline_window_months
-    max_date = ledger["invoice_date"].max()
-    cutoff = pl.lit(max_date).dt.offset_by(f"-{window}mo")
-    sales = ledger.filter(
-        (pl.col("transaction_type") == "sale") & (pl.col("invoice_date") >= cutoff)
-    )
+    if fiscal is None or fiscal.is_calendar_months:
+        max_date = ledger["invoice_date"].max()
+        cutoff = pl.lit(max_date).dt.offset_by(f"-{window}mo")
+        sales = ledger.filter(
+            (pl.col("transaction_type") == "sale") & (pl.col("invoice_date") >= cutoff)
+        )
+    else:
+        sales = fiscal.attach(
+            ledger.filter(pl.col("transaction_type") == "sale"), "invoice_date", idx="_fp_idx"
+        )
+        max_idx = int(sales["_fp_idx"].max() or 0)  # type: ignore[arg-type]
+        sales = sales.filter(pl.col("_fp_idx") > max_idx - window).drop("_fp_idx")
     return (
         sales.group_by("customer_id")
         .agg(

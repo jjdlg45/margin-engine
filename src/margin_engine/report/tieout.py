@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 
 
 @dataclass
@@ -32,10 +33,13 @@ class TieoutResult:
     notes: list[str]
 
 
-def _monthly(ledger: pl.DataFrame) -> pl.DataFrame:
+def _monthly(ledger: pl.DataFrame, fiscal: FiscalCalendar) -> pl.DataFrame:
+    """Engine totals per fiscal period (Phase 36). gl_totals' month labels must
+    use the same calendar: %Y-%m under the default, the configured period
+    labels otherwise."""
     sale_ret = ledger.filter(pl.col("transaction_type").is_in(["sale", "return"]))
     return (
-        sale_ret.with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("month"))
+        fiscal.attach(sale_ret, "invoice_date", period="month")
         .group_by("month")
         .agg(
             pl.col("net_amount_cents").sum().alias("net_sales_engine"),
@@ -50,9 +54,17 @@ def _monthly(ledger: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def run_tieout(ledger: pl.DataFrame, gl_totals: pl.DataFrame, rules: Rules) -> TieoutResult:
-    """gl_totals: month (YYYY-MM), net_sales_cents, cogs_cents, optionally
+def run_tieout(
+    ledger: pl.DataFrame,
+    gl_totals: pl.DataFrame,
+    rules: Rules,
+    fiscal: FiscalCalendar | None = None,
+) -> TieoutResult:
+    """gl_totals: month (period label in the configured fiscal calendar;
+    YYYY-MM under the default), net_sales_cents, cogs_cents, optionally
     returns_cents - canonical columns from the mapping loader."""
+    if fiscal is None:
+        fiscal = build_calendar(rules.fiscal)
     tol_pct = rules.reporting.tieout_tolerance_pct
     tol_cents = rules.reporting.tieout_tolerance_cents
     notes: list[str] = []
@@ -73,7 +85,7 @@ def run_tieout(ledger: pl.DataFrame, gl_totals: pl.DataFrame, rules: Rules) -> T
             "revenue); a GL books full COGS, so part of any COGS gap is coverage"
         )
 
-    engine = _monthly(ledger)
+    engine = _monthly(ledger, fiscal)
     measures = [("net_sales", "net_sales_engine", "net_sales_cents")]
     if "cogs_cents" in gl_totals.columns:
         measures.append(("cogs", "cogs_engine", "cogs_cents"))
