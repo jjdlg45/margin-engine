@@ -191,107 +191,108 @@ function GuidanceBody({ facets }: { facets: GuidanceData["facets"] }) {
 
   return (
     <>
+      {/* The filter controls live outside the results QuerySection: a result
+          refetch must never unmount the bar (it would drop combobox state
+          mid-interaction); only the results below swap to a skeleton. */}
+      <FilterBar
+        chips={chips}
+        onClearAll={() => f.clearAll(FILTER_KEYS)}
+        shown={table.data?.total}
+        total={table.data?.total_unfiltered}
+        noun="pairs"
+      >
+        <EntityCombobox label="Customer" options={facets.customers} value={customer} onChange={(v) => f.set("customer", v)} />
+        <EntityCombobox label="Item" options={facets.items} value={item} onChange={(v) => f.set("item", v)} />
+        <MultiSelect
+          label="Guidance status"
+          options={facets.statuses}
+          values={statuses}
+          onChange={(v) => f.setList("status", v)}
+          renderOption={(s) => labels(s).label}
+        />
+        <MultiSelect
+          label="Segment"
+          options={segOptions.map((r) => String(r.leaf_id))}
+          values={segments}
+          onChange={(v) => f.setList("segment", v)}
+          renderOption={(leaf) => {
+            const r = segOptions.find((x) => String(x.leaf_id) === leaf);
+            return r ? `Segment ${r.display_rank}` : leaf;
+          }}
+        />
+        <RangeFilter
+          label="Current price"
+          unit="% of list"
+          range={polRange}
+          onChange={(r) => f.setRange("pol", r)}
+          presets={[{ label: "Below 90% of list", range: { min: null, max: 90 } }]}
+        />
+        <RangeFilter
+          label="Gap to floor"
+          unit="pts"
+          range={gapRange}
+          onChange={(r) => f.setRange("gap", r)}
+          presets={[{ label: "Below floor", range: { min: null, max: 0 } }]}
+        />
+      </FilterBar>
+
+      {customer && item && (
+        <PairDetail
+          customer={customer}
+          item={item}
+          segments={facets.segments}
+          onBack={() => f.set("item", null)}
+        />
+      )}
+
       <QuerySection query={table} label="guidance results" lines={8}>
-        {(page) => (
-          <>
-            <FilterBar
-              chips={chips}
-              onClearAll={() => f.clearAll(FILTER_KEYS)}
-              shown={page.total}
-              total={page.total_unfiltered}
-              noun="pairs"
-            >
-              <EntityCombobox label="Customer" options={facets.customers} value={customer} onChange={(v) => f.set("customer", v)} />
-              <EntityCombobox label="Item" options={facets.items} value={item} onChange={(v) => f.set("item", v)} />
-              <MultiSelect
-                label="Guidance status"
-                options={facets.statuses}
-                values={statuses}
-                onChange={(v) => f.setList("status", v)}
-                renderOption={(s) => labels(s).label}
-              />
-              <MultiSelect
-                label="Segment"
-                options={segOptions.map((r) => String(r.leaf_id))}
-                values={segments}
-                onChange={(v) => f.setList("segment", v)}
-                renderOption={(leaf) => {
-                  const r = segOptions.find((x) => String(x.leaf_id) === leaf);
-                  return r ? `Segment ${r.display_rank}` : leaf;
-                }}
-              />
-              <RangeFilter
-                label="Current price"
-                unit="% of list"
-                range={polRange}
-                onChange={(r) => f.setRange("pol", r)}
-                presets={[{ label: "Below 90% of list", range: { min: null, max: 90 } }]}
-              />
-              <RangeFilter
-                label="Gap to floor"
-                unit="pts"
-                range={gapRange}
-                onChange={(r) => f.setRange("gap", r)}
-                presets={[{ label: "Below floor", range: { min: null, max: 0 } }]}
-              />
-            </FilterBar>
-
-            {customer && item && (
-              <PairDetail
-                customer={customer}
-                item={item}
-                segments={facets.segments}
-                onBack={() => f.set("item", null)}
-              />
-            )}
-
-            {page.items.length ? (
-              <VirtualTable
-                rows={page.items}
-                label="Guidance pairs table"
-                head={
-                  <tr>
-                    <th className="left">Customer</th>
-                    <th className="left">Item</th>
-                    <th className="left">Segment</th>
-                    <th>Current price (% of list)</th>
-                    <th>Gap to floor (pts)</th>
-                    <th className="left">Status</th>
-                  </tr>
-                }
-                renderRow={(g) => (
-                  <>
-                    <td className="left whitespace-nowrap">
-                      <EntityLabel name={g.customer_name} id={g.customer_id} />
-                    </td>
-                    <td className="left whitespace-nowrap">
-                      <button
-                        className="cursor-pointer border-0 bg-transparent p-0 text-left text-petrol underline-offset-4 hover:underline"
-                        onClick={() => {
-                          f.set("customer", g.customer_id);
-                          f.set("item", g.item_id);
-                        }}
-                      >
-                        <EntityLabel name={g.item_name} id={g.item_id} />
-                      </button>
-                    </td>
-                    <td className="left">{segmentName(facets.segments, g.segment) ?? "—"}</td>
-                    <td>{pctOfList(g.current_index)}</td>
-                    <td>{gapToFloor(g) !== null ? gapToFloor(g)!.toFixed(1) : "—"}</td>
-                    <td className="left">
-                      <StatusChip status={g.status} />
-                    </td>
-                  </>
-                )}
-              />
-            ) : (
-              <EmptyState title="No pairs match these filters">
-                Loosen or clear a filter. Pairs without enough comparable history
-                report insufficient data rather than a band position.
-              </EmptyState>
-            )}
-          </>
-        )}
+        {(page) =>
+          page.items.length ? (
+            <VirtualTable
+              rows={page.items}
+              label="Guidance pairs table"
+              head={
+                <tr>
+                  <th className="left">Customer</th>
+                  <th className="left">Item</th>
+                  <th className="left">Segment</th>
+                  <th>Current price (% of list)</th>
+                  <th>Gap to floor (pts)</th>
+                  <th className="left">Status</th>
+                </tr>
+              }
+              renderRow={(g) => (
+                <>
+                  <td className="left whitespace-nowrap">
+                    <EntityLabel name={g.customer_name} id={g.customer_id} />
+                  </td>
+                  <td className="left whitespace-nowrap">
+                    <button
+                      className="cursor-pointer border-0 bg-transparent p-0 text-left text-petrol underline-offset-4 hover:underline"
+                      onClick={() => {
+                        f.set("customer", g.customer_id);
+                        f.set("item", g.item_id);
+                      }}
+                    >
+                      <EntityLabel name={g.item_name} id={g.item_id} />
+                    </button>
+                  </td>
+                  <td className="left">{segmentName(facets.segments, g.segment) ?? "—"}</td>
+                  <td>{pctOfList(g.current_index)}</td>
+                  <td>{gapToFloor(g) !== null ? gapToFloor(g)!.toFixed(1) : "—"}</td>
+                  <td className="left">
+                    <StatusChip status={g.status} />
+                  </td>
+                </>
+              )}
+            />
+          ) : (
+            <EmptyState title="No pairs match these filters">
+              Loosen or clear a filter. Pairs without enough comparable history
+              report insufficient data rather than a band position.
+            </EmptyState>
+          )
+        }
       </QuerySection>
     </>
   );

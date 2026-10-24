@@ -17,7 +17,7 @@ import polars as pl
 
 from margin_engine import __version__
 from margin_engine.config import Rules
-from margin_engine.labels import LABELS, plain_rule
+from margin_engine.labels import LABELS, plain_rule, render_text
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
@@ -634,8 +634,16 @@ def build_bundle(
 
     # --- validation results + manifest ----------------------------------------------
     vr_path = repo_root / "docs" / "validation.json"
+    # validation.json is written for maintainers and may carry machine codes
+    # (preset names, cluster options, status counts); render them through the
+    # label dictionary so no raw code reaches the page.
     validation = [
-        ValidationResult(**row)
+        ValidationResult(
+            check=render_text(str(row["check"])),
+            target=render_text(str(row["target"])),
+            achieved=render_text(str(row["achieved"])),
+            passed=bool(row["passed"]),
+        )
         for row in json.loads(vr_path.read_text(encoding="utf-8"))["results"]
     ]
     m = res.manifest

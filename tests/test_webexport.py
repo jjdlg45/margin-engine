@@ -248,6 +248,31 @@ def test_opportunity_summary_states_driver(
     assert checked > 0
 
 
+def test_validation_rows_carry_no_raw_codes(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """validation.json is written for maintainers; the bundle renders its text
+    through the label dictionary, so no known machine code reaches the page
+    raw (the deploy gate caught month_customer, persistent_demand, status
+    counts and more leaking onto /methodology). Unknown codes stay raw on
+    purpose so the web suite's raw-code gate fails loudly instead of the
+    export prettifying them silently."""
+    from margin_engine.labels import LABELS, render_text
+
+    _, _, bundle, _ = built
+    snake = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+    for row in bundle.validation_results:
+        for text in (row.check, row.target, row.achieved):
+            leaked = [t for t in snake.findall(text) if t in LABELS]
+            assert not leaked, f"raw codes in validation row {row.check!r}: {leaked}"
+    assert render_text("cluster=month_customer") == "cluster=month × customer"  # noqa: RUF001
+    assert (
+        render_text("statuses {causal_elasticity_supported: 8}")
+        == "statuses {Causal, supported: 8}"
+    )
+    assert render_text("a_code_without_a_label") == "a_code_without_a_label"
+
+
 def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
     rules_path = _fast_rules(tmp_path)
     hashes = []

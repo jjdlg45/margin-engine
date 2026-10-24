@@ -6,6 +6,8 @@ Raw codes may appear only in tooltips or technical-detail expanders.
 
 from __future__ import annotations
 
+import re
+
 LABELS: dict[str, dict[str, str]] = {
     # --- evidence statuses (sensitivity, cross-price) ------------------------
     "causal_elasticity_supported": {
@@ -232,6 +234,45 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "Pocket revenue minus product cost minus cost-to-serve equals "
         "contribution on covered lines.",
     },
+    # --- validation-world presets and method options (rendered inline in the
+    # --- validation results table, so their labels read mid-sentence) -----------
+    "persistent_demand": {
+        "label": "persistent demand",
+        "description": "Validation world where customer demand shocks persist across months "
+        "(AR(1)) instead of arriving independently.",
+    },
+    "heterogeneous_elasticity": {
+        "label": "heterogeneous elasticity",
+        "description": "Misspecified validation world where the true elasticity varies "
+        "across pairs within a segment; the recovered figure is a weighted average, "
+        "not the planted value.",
+    },
+    "nonconstant_elasticity": {
+        "label": "non-constant elasticity",
+        "description": "Misspecified validation world where elasticity changes with the "
+        "size of the price move, so no single constant elasticity exists.",
+    },
+    "competitor_comovement": {
+        "label": "competitor co-movement",
+        "description": "Misspecified validation world where competitor prices move with "
+        "the same cost shocks as the instrument; estimates understate own-price "
+        "sensitivity.",
+    },
+    "month_customer": {
+        "label": "month × customer",  # noqa: RUF001
+        "description": "Two-way clustering of standard errors by calendar month and by "
+        "customer (the shipped default).",
+    },
+    "supplier_month": {
+        "label": "supplier × month",  # noqa: RUF001
+        "description": "Standard errors clustered at the level where the cost instrument "
+        "varies: supplier by month.",
+    },
+    "real_data_validation": {
+        "label": "real-data validation",
+        "description": "The no-planted-truth checks (temporal backtest, placebo tests, "
+        "rolling stability) run as a pipeline stage.",
+    },
     # --- statuses used by the report/UI for reconciliation ---------------------
     "reconciled": {
         "label": "Reconciled",
@@ -242,6 +283,20 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "At least one reconciliation check did not tie to source totals.",
     },
 }
+
+
+_CODE_TOKEN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+
+
+def render_text(text: str) -> str:
+    """Replace every known machine code in free text with its display label,
+    so strings written for maintainers (validation.json) never reach a reader
+    raw. Unknown snake_case tokens are left untouched ON PURPOSE: the web
+    suite's raw-code gate must fail loudly on a new code so it gets a label
+    here, rather than being prettified silently."""
+    return _CODE_TOKEN.sub(
+        lambda m: LABELS[m.group(0)]["label"] if m.group(0) in LABELS else m.group(0), text
+    )
 
 
 def label(code: str) -> str:
