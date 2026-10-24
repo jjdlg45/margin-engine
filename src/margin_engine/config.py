@@ -446,6 +446,37 @@ class ReportingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# pricing compliance (Run 5, Phase 37)
+# ---------------------------------------------------------------------------
+
+
+class RobinsonPatmanConfig(StrictModel):
+    """Review flag for price discrimination exposure: customers who are likely
+    COMPETITORS of each other (same values on `competitor_attributes`, default
+    industry + region) receiving recommended prices for the SAME item that
+    differ by more than the threshold. The flag is a review prompt with the
+    cost-to-serve difference shown as supporting documentation (cost
+    justification is a recognized defense) — orientation, not legal advice.
+    """
+
+    enabled: bool = True
+    competitor_attributes: tuple[str, ...] = ("industry", "region")
+    # Relative difference between the two recommended prices, in percent;
+    # strictly-greater-than fires the flag.
+    price_difference_threshold_pct: float = Field(default=5.0, ge=0)
+
+
+class ComplianceConfig(StrictModel):
+    robinson_patman: RobinsonPatmanConfig = RobinsonPatmanConfig()
+    # The market/competitor price index control is accepted from PUBLIC
+    # sources only (the mapping must declare public_source: true): feeding
+    # competitors' non-public prices through a pricing algorithm raises
+    # antitrust concerns, so the engine refuses the control rather than
+    # assume. Documented in docs/methodology.md (Pricing-law considerations).
+    market_index_public_source_required: bool = True
+
+
+# ---------------------------------------------------------------------------
 # fiscal calendar (Run 5, Phase 36)
 # ---------------------------------------------------------------------------
 
@@ -498,6 +529,7 @@ class Rules(StrictModel):
     tariff_scenarios: TariffScenariosConfig = TariffScenariosConfig()
     reporting: ReportingConfig = ReportingConfig()
     fiscal: FiscalConfig = FiscalConfig()
+    compliance: ComplianceConfig = ComplianceConfig()
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 

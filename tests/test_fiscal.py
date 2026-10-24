@@ -32,9 +32,7 @@ SATURDAY = 5
 
 def test_calendar_months_matches_legacy_expressions() -> None:
     cal = build_calendar(FiscalConfig())
-    df = pl.DataFrame(
-        {"d": [dt.date(2024, 1, 1), dt.date(2024, 3, 31), dt.date(2025, 12, 15)]}
-    )
+    df = pl.DataFrame({"d": [dt.date(2024, 1, 1), dt.date(2024, 3, 31), dt.date(2025, 12, 15)]})
     out = cal.attach(df, "d", idx="idx", period="period", quarter="quarter")
     assert out["idx"].to_list() == [2024 * 12 + 1, 2024 * 12 + 3, 2025 * 12 + 12]
     assert out["period"].to_list() == ["2024-01", "2024-03", "2025-12"]

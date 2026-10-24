@@ -2358,3 +2358,48 @@ through the label dictionary there.
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
 exit 0 (all green, slow/network deselected). Web code untouched; bundle parity
 covered by the pytest webexport suite.
+
+## Phase 37 — Pricing compliance (2026-10-24, Run 5 branch)
+
+**Robinson-Patman review flag** (`margin_engine/compliance.py`, config section
+`compliance.robinson_patman`). Customers who are likely competitors of each
+other — same values on the configured attributes, default industry + region —
+whose recommended prices for the SAME item sit more than the configured
+threshold apart (relative %, strictly greater; default 5%) are flagged for
+review. Beside every flag the engine shows the cost-to-serve difference
+between the two customers for that item (the first number a cost-justification
+review needs), taken from the same pair-level per-unit activity costs the
+contribution floor uses. Outputs: a new `compliance_robinson_patman` export
+(one row per flagged competitor pair x item with both prices, the difference,
+and both cost-to-serve figures) and an `rp_review_flag` column on guidance
+(which flows onto opportunity records — Phase 38 actions will require a
+written justification at approval). Pairs with no usable list price cannot be
+price-compared and are excluded with a stated note; a missing customers table
+or missing attributes switch the flag off with the reason stated — never
+silently. Labels added to the dictionary so no raw code reaches a reader.
+
+**Public-data-only rule.** The market/competitor price index is accepted as an
+elasticity control only when the mapping declares `public_source: true` for
+it; otherwise the control is switched off with a note naming the reason
+(competitors sharing non-public prices through pricing algorithms raises
+antitrust concerns). Config: `compliance.market_index_public_source_required`
+(default true). The synthetic mapping declares its simulated index public
+(PPI-style published series), so synthetic-world behavior is unchanged.
+
+**Methodology.** New section 11, "Pricing-law considerations": Robinson-Patman
+orientation (like grade and quality, competing buyers, cost-justification and
+meeting-competition defenses, why the cost-to-serve difference is shown),
+algorithmic pricing / information sharing (why public-only), and what the
+engine never does. Written as orientation, explicitly not legal advice.
+
+**Tests (5 new).** Threshold boundary (exactly 5.00% apart: no flag; 5.01%:
+flagged); no flag for non-competing customers (different region, 100% apart);
+cost-to-serve evidence equals the ledger-derived per-unit figures on a
+hand-built mini-ledger; disabled/missing-attribute paths fail closed with
+stated notes; market-index gate end-to-end on the sample world (undeclared
+source -> control refused with the stated note; declared public -> used).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0. Guidance and opportunities exports gain the rp_review_flag column and
+the new compliance export (intended feature change; run-to-run determinism
+and bundle parity suites all green). Web code untouched.

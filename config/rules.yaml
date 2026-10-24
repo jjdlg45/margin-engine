@@ -170,3 +170,19 @@ fiscal:
   calendar: calendar_months
   year_end_month: 12
   year_end_weekday: saturday
+
+# Pricing compliance (Run 5, Phase 37). Orientation, not legal advice; see
+# docs/methodology.md, "Pricing-law considerations".
+compliance:
+  robinson_patman:
+    enabled: true
+    # Customers are treated as likely competitors when these customer
+    # attributes match; recommended prices for the same item more than the
+    # threshold apart (relative %, strictly greater) get a review flag with
+    # the cost-to-serve difference attached as supporting documentation.
+    competitor_attributes: [industry, region]
+    price_difference_threshold_pct: 5.0
+  # The market/competitor price index control is accepted only when the
+  # mapping declares public_source: true for it (antitrust: competitors
+  # sharing non-public prices through algorithms).
+  market_index_public_source_required: true

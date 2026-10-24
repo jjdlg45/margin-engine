@@ -16,6 +16,7 @@ from typing import Any
 
 import polars as pl
 
+from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
@@ -161,6 +162,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "segment_rules": ["leaf_id"],
     "margin_driver_rules": ["leaf_id"],
     "guidance": ["customer_id", "item_id"],
+    "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
     "sensitivity": ["segment"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
@@ -288,10 +290,35 @@ def run_full(
         else None
     )
     guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit, fiscal)
+    # Pricing compliance (Phase 37): Robinson-Patman review flag on competitor
+    # pairs, with cost-to-serve differences as supporting documentation.
+    compliance_res = run_robinson_patman(
+        guidance_res.guidance, res.reference["customers"], cts_per_unit, rules
+    )
+    res.notes.extend(compliance_res.notes)
+    guidance_res.guidance = guidance_res.guidance.join(
+        compliance_res.flags, on=["customer_id", "item_id"], how="left", maintain_order="left"
+    ).with_columns(pl.col("rp_review_flag").fill_null(value=False))
     timings["guidance"] = time.perf_counter() - t
     rss_log("guidance")
 
     t = time.perf_counter()
+    # Public-data-only rule (Phase 37): the market/competitor price index is
+    # accepted as an elasticity control only when the mapping declares its
+    # source PUBLIC. Algorithmic use of competitors' non-public prices raises
+    # antitrust concerns; the engine refuses the control rather than assume.
+    market_idx = res.reference.get("market_price_index")
+    if market_idx is not None and rules.compliance.market_index_public_source_required:
+        mpi_spec = res.mapping.reference_tables.get("market_price_index")
+        if mpi_spec is None or mpi_spec.public_source is not True:
+            market_idx = None
+            res.notes.append(
+                "market price index NOT used as an elasticity control: the "
+                "mapping does not declare public_source: true for it. Only "
+                "public sources are accepted (sharing competitors' non-public "
+                "prices through a pricing algorithm raises antitrust concerns; "
+                "see docs/methodology.md, Pricing-law considerations)"
+            )
     # Instrument builder (27.6): the supplier cost instrument can come from a
     # mapped index table, be BUILT from receipt history, or map an external
     # public series - config decides, the engine never guesses.
@@ -333,7 +360,7 @@ def run_full(
         supplier_idx,
         res.reference["tariff_schedule"],
         rules,
-        market_price_index=res.reference.get("market_price_index"),
+        market_price_index=market_idx,
         fiscal=fiscal,
     )
     timings["panel"] = time.perf_counter() - t
@@ -451,6 +478,7 @@ def run_full(
         "segment_rules": pl.DataFrame(seg.rules),
         "margin_driver_rules": pl.DataFrame(margin_tree.rules),
         "guidance": guidance_res.guidance,
+        "compliance_robinson_patman": compliance_res.detail,
         "sensitivity": sens,
         "opportunities": opps,
         "leakage": leak,

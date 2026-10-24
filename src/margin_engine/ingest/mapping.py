@@ -197,6 +197,11 @@ class ReferenceTable(StrictModel):
     date_format: str | None = None
     # For .xlsx files: sheet name or zero-based index (default: first sheet).
     sheet: str | int | None = None
+    # Phase 37: the market_price_index table must declare its source PUBLIC
+    # (true) to be used as an elasticity control; anything else and the engine
+    # refuses the control (algorithmic sharing of competitors' non-public
+    # prices raises antitrust concerns). Ignored for other tables.
+    public_source: bool | None = None
 
 
 class SourceMapping(StrictModel):

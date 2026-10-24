@@ -109,6 +109,19 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "Estimated",
         "description": "From configured policy rates, not source amounts - labeled wherever used.",
     },
+    # --- pricing compliance (Run 5, Phase 37) ---------------------------------
+    "rp_review_flag": {
+        "label": "Price-discrimination review",
+        "description": "Two likely competitors (same industry and region by default) carry "
+        "recommended prices for the same item further apart than the configured "
+        "threshold. A review prompt with the cost-to-serve difference attached, "
+        "not a conclusion; approval requires a written justification.",
+    },
+    "cts_difference_cents": {
+        "label": "Cost-to-serve difference",
+        "description": "The difference in per-unit cost to serve between the two flagged "
+        "customers - the first number a cost-justification review needs.",
+    },
     # --- volume treatments (opportunity) ----------------------------------------
     "expected_change": {
         "label": "Volume modeled",

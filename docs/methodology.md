@@ -369,3 +369,39 @@ Every run writes a manifest: config and mapping hashes, input file
 fingerprints (sha256), software versions, cleaning decisions, parameters and
 stage timings. The DuckDB store keeps both views and the audit trail keyed by
 source line key.
+
+## 11. Pricing-law considerations
+
+Orientation for reviewers, not legal advice. Pricing decisions at scale touch
+several bodies of law, and the engine's job is to surface the facts a counsel
+or compliance reviewer would ask for — never to conclude.
+
+**Price discrimination (Robinson-Patman Act).** Selling commodities of like
+grade and quality to competing buyers at different prices can be unlawful when
+it may harm competition. Recognized defenses include cost justification (the
+price difference reflects differences in the cost of serving the two buyers)
+and meeting competition. The engine raises a *review flag* when two customers
+who are likely competitors of each other — by default, same industry and same
+region, configurable in `compliance.robinson_patman` — carry recommended
+prices for the same item more than a configured threshold apart. Beside every
+flag it shows the cost-to-serve difference between the two customers for that
+item, because that is the first number a cost-justification review needs. The
+flag marks a question, not a violation: whether the customers actually compete,
+whether the goods are of like grade and quality, and whether a defense applies
+are judgments the engine cannot make. Actions on flagged pairs require a
+written justification at approval (Phase 38 guardrail).
+
+**Algorithmic pricing and information sharing (Sherman Act section 1).**
+Recent enforcement and litigation treat pricing algorithms fed with
+competitors' non-public data as potential facilitators of price coordination,
+even without an explicit agreement. For that reason the engine accepts a
+market/competitor price index as an elasticity control **only from public
+sources**: the mapping must declare `public_source: true` for the
+market_price_index table, and anything else switches the control off with a
+stated note (`compliance.market_index_public_source_required`). Public indexes
+(e.g. producer price indexes) carry no such concern.
+
+**What the engine never does.** It never ingests competitor transaction data,
+never recommends coordinating prices with competitors, and never silences a
+compliance flag: a flagged action can be approved, but only with a recorded
+written justification.
