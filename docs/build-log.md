@@ -2188,3 +2188,127 @@ group added in Phase 30.
 **Checks (fresh clone of this commit, CI-style).** `uv sync --frozen
 --all-groups` exit 0; `pytest --collect-only` exit 0; full pytest suite
 exit 0; ruff check 0; ruff format --check 0; mypy src api 0.
+
+## Phase 35 — Scale refactor (2026-10-24, Run 5 branch)
+
+Goal: cut the engine's RAM per invoice line and runtime without moving a single
+exported byte. The byte-identity bar was enforced mechanically: every CSV and
+parquet export was hashed on three inputs (committed sample; default-size
+well-identified world, seed 42; the demo world, seed 3) before the refactor,
+and re-hashed after every sub-change. All three stayed byte-identical through
+every change below (sample 46 files, world42 44 files, demo 46 files — the demo
+compared old-code vs new-code in back-to-back runs under matched conditions).
+
+**What changed**
+
+- Real-data validation (temporal backtest, placebos, rolling stability) moved
+  behind `run --validate` and a new `margin-engine validate` command. It was
+  63% of the default run's wall time (20.2s of 32.1s at 241k lines). Library
+  callers keep the config switch; `export-web` still includes it, so the demo
+  bundle is unchanged. The skip is stated in the run notes, never silent.
+- Ingest is a lazy streaming scan (`scan_csv` + streaming collect). All
+  validation — blank rows, unparseable money, over-precise decimals, bad
+  dates, undeclared transaction codes — runs as one aggregation pass over the
+  scan; the raw all-string frame never fully materializes. Offending-row
+  samples are fetched by a second targeted scan only on the error path.
+  Messages are unchanged. .xlsx and non-UTF-8 files keep the eager reader
+  (their decoders are in-memory anyway) behind the same lazy interface.
+- The waterfall no longer splits the full-width ledger into sale/other copies
+  per allocation. Each allocation (returns, kits, billed charges, settlement
+  rebates, tiered rebates, price credits, freight, claims) is computed on a
+  narrow projection (row id, group key, driver), gathered into one frame, and
+  joined back in a single pass; stage math is pure column expressions. Because
+  source_line_key can collide (collisions are kept and flagged), the join key
+  is a run-scoped row id. Column order is reproduced exactly and guarded by a
+  defensive check. The ledger's row order changed (allocations no longer
+  reorder rows); exports were already key-sorted at write time and every float
+  aggregation downstream sorts first, so all hashes held — verified, not
+  assumed.
+- 24 low-cardinality code/status columns (transaction type, statuses, UOMs,
+  currency, channel, program/contract ids, the ~60-byte cost_build_label and
+  so on) are Categorical in memory; only true ID columns stay String. Exports
+  cast back to String, so every file keeps its schema and bytes.
+- Exports are written one frame at a time: the write-ready copy (String cast,
+  natural sort, solver rounding) exists only while its file is written. CSVs
+  stream via sink_csv with the _usd conversion applied in the same lazy pass —
+  dollars exist only at the CSV boundary, cents everywhere inside.
+- The DuckDB store reuses the parquet files the export loop just wrote for its
+  largest tables, derives sales_observations as a SQL filter of the loaded
+  ledger instead of re-serializing the frame, and runs under
+  `SET memory_limit='1GB'` so loads spill to disk rather than balloon the
+  process.
+- Row-wise Python on line-level paths: inventory costing (the one genuinely
+  per-sale-line Python loop; it is inherently sequential — FIFO/LIFO layers
+  are stateful) now accumulates typed column arrays instead of a dict per
+  line. The remaining to_dicts/iter_rows sites are group- or leaf-level
+  (verified individually) or report/bundle serialization.
+- Stage cache keyed by input fingerprint (`margin_engine/cache.py`): sha256 of
+  the exact input bytes + mapping bytes + engine version; a hit can only
+  return what the same code would recompute. Wired as `run --cache-dir` and
+  into the replay feed, which now parses its source exactly once (on-disk
+  cache, survives restarts) and filters the canonical frame per tick. The
+  analytic stages still recompute per tick by design: duplicate detection,
+  settlement allocation and the panel are global, so partial reprocessing
+  would change answers. Tests cover roundtrip, torn writes, key sensitivity,
+  a poisoned-loader hit path, and the replay single-parse guarantee.
+- `run_full` frees the two consumed wide intermediates (pre-dispersion
+  observations, the segmentation frame) as soon as their consumers finish.
+- Scale ladder methodology: world generation moved to a subprocess (the
+  target describes the pipeline on an existing export; the generator's
+  allocator-retained memory inflated every rung), and the ladder now measures
+  a second rung before projecting whenever rung 1 used under half the budget —
+  the one-point ratio projection overestimates (most of rung 1's peak is the
+  fixed interpreter + libraries floor) and had ended the ladder spuriously.
+
+**Measured results (same machine, 13.8 GB RAM, ~5.2-5.4 GB available)**
+
+At the 300x500 rung, 241,162 lines, default run:
+- Runtime 32.1s -> 13.0s (2.5x; with validation included it is ~27s vs 32.1s).
+- Peak RSS 2.92 GB -> 2.64 GB. Peak bytes/line 13,001 -> 11,754; marginal
+  bytes/line between rungs 9,972 -> 8,987. Recorded in validation.json under
+  the scale row (phase35_before_after).
+- Remaining peak consumers, from per-stage RSS profiling at this rung: the
+  DuckDB store load (~2.6 GB segment peak), the export writes (~2.4), the
+  sensitivity solvers (~2.2), streaming ingest transient (~2.2) — all over a
+  ~1.3-1.5 GB Python + libraries + allocator floor that dominates the
+  peak-per-line figure at these sizes. Run-to-run RSS noise on this shared
+  machine is plus or minus 0.1-0.2 GB.
+
+**Known gaps / decisions**
+
+- The 10M-line / 8 GB / 15 min target (27.2) remains a KNOWN GAP on this
+  hardware, as recorded since Run 4: the ladder stops after 241k lines inside
+  a ~4.2 GB budget. The honest extrapolation at ~9 KB marginal bytes/line says
+  a full-featured 10M-line synthetic world would not fit 8 GB even elsewhere;
+  the measured real-data run (1.07M lines, 4.2 GB, fewer active features) is
+  the closer guide. The remaining lever — spilling the ledger to parquet
+  between stages and scanning with per-stage projections (sink_parquet
+  end-to-end) — changes the FullRunResult contract that the web export, API
+  and report all consume, and is logged here as the next scale step rather
+  than half-done in this phase.
+- The spec bullet "DuckDB for the heaviest joins and aggregations": DuckDB is
+  used for the store (bounded memory, spill-to-disk) and the observations
+  derivation. The analytic joins stay in Polars: per-stage profiling shows
+  they are not the peak, and moving them would risk the byte-identity bar for
+  no measured gain.
+- Month-partitioned allocation processing is subsumed by the narrow-projection
+  allocations (an allocation now touches only its group keys and driver, never
+  the full-width ledger); no separate calendar partitioning was needed to
+  clear the measured peaks, and settlement groups already partition by period
+  inside the allocation keys.
+- Pre-existing finding, documented while verifying: the demo web bundle is not
+  byte-stable across separate sessions even on unchanged code — iterative
+  solver outputs (PPML/IRLS) can move in the last ulp with environment
+  conditions, and one value sitting on a 10-significant-digit rounding
+  boundary flips its printed form. Old-code-vs-old-code runs differed in four
+  bundle files; old-vs-new differed in exactly one such value. Engine CSV and
+  parquet exports are immune (solver exports round to 10 significant digits).
+  Logged as an observation for possible later hardening; no target loosened.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0 (all green, slow/network tiers deselected; new tests:
+cache roundtrip/keys/hit-identity, replay single-parse, --validate flag and
+validate command). Byte-identity: sample 46/46, world42 44/44, demo engine
+exports 46/46 identical. Web checks on this phase's final state: tsc exit 0;
+vitest exit 0 (11/11); production build exit 0; Playwright
+(CI=true SKIP_SNAPSHOTS=1) exit 0, 151/151.

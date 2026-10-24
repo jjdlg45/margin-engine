@@ -59,18 +59,32 @@ def cost_sales(
     if method not in ("standard", "average", "fifo", "lifo"):
         msg = f"unknown costing method '{method}'"
         raise ValueError(msg)
-    rows: list[dict[str, object]] = []
+    # Line-level outputs accumulate into typed column lists, not dicts (Phase
+    # 35): at real volumes a dict per sale line is most of this module's RAM.
+    out_keys: list[str] = []
+    out_items: list[str] = []
+    out_cogs: list[int] = []
+    out_flags: list[str] = []
     identity_rows: list[dict[str, object]] = []
     r_by_item = {k: v for (k,), v in receipts.group_by(["item_id"])}
     s_by_item = {k: v for (k,), v in sales.group_by(["item_id"])}
     for item, s in sorted(s_by_item.items(), key=lambda kv: str(kv[0])):
         r = r_by_item.get(item)
-        events: list[tuple[object, int, str, dict[str, object]]] = []
+        # Events carry (date, order, kind, source_line_key, quantity, unit_cost).
+        events: list[tuple[object, int, str, str | None, float, int]] = []
         if r is not None:
-            for row in r.sort("receipt_date").to_dicts():
-                events.append((row["receipt_date"], 0, "receipt", row))
-        for row in s.sort("invoice_date", "source_line_key").to_dicts():
-            events.append((row["invoice_date"], 1, "sale", row))
+            for rdate, rqty, rcost in (
+                r.sort("receipt_date")
+                .select("receipt_date", "quantity", "unit_cost_cents")
+                .iter_rows()
+            ):
+                events.append((rdate, 0, "receipt", None, float(rqty), int(rcost)))
+        for sdate, skey, sqty in (
+            s.sort("invoice_date", "source_line_key")
+            .select("invoice_date", "source_line_key", "quantity")
+            .iter_rows()
+        ):
+            events.append((sdate, 1, "sale", skey, float(sqty), 0))
         events.sort(key=lambda e: (e[0], e[1]))
 
         layers: deque[tuple[int, int]] = deque()  # (qty, unit_cost_cents)
@@ -80,10 +94,10 @@ def cost_sales(
         cogs_total = 0
         last_cost = 0
         std = (standard_cost or {}).get(str(item))
-        for _, _, kind, row in events:
+        for _, _, kind, skey, ev_qty, ev_cost in events:
             if kind == "receipt":
-                q = int(row["quantity"])  # type: ignore[call-overload]
-                c = int(row["unit_cost_cents"])  # type: ignore[call-overload]
+                q = int(ev_qty)
+                c = ev_cost
                 if std is None:
                     std = c  # standard defaults to the first receipt cost
                 layers.append((q, c))
@@ -92,7 +106,7 @@ def cost_sales(
                 receipts_value += q * c
                 last_cost = c
                 continue
-            q = round(float(row["quantity"]))  # type: ignore[arg-type]
+            q = round(ev_qty)
             flag = ""
             if method == "standard":
                 cogs = q * int(std if std is not None else last_cost)
@@ -136,15 +150,10 @@ def cost_sales(
                     cogs += remaining * last_cost
                     flag = "insufficient_receipts"
             cogs_total += cogs
-            rows.append(
-                {
-                    "source_line_key": row["source_line_key"],
-                    "item_id": item,
-                    "method": method,
-                    "cogs_cents": cogs,
-                    "cogs_flag": flag,
-                }
-            )
+            out_keys.append(str(skey))
+            out_items.append(str(item))
+            out_cogs.append(cogs)
+            out_flags.append(flag)
         ending = value_on_hand if method in ("average", "fifo", "lifo") else None
         identity_rows.append(
             {
@@ -155,7 +164,23 @@ def cost_sales(
                 "ending_inventory_cents": ending,
             }
         )
-    return CostingResult(per_sale=pl.DataFrame(rows), identity=pl.DataFrame(identity_rows))
+    per_sale = pl.DataFrame(
+        {
+            "source_line_key": out_keys,
+            "item_id": out_items,
+            "method": [method] * len(out_keys),
+            "cogs_cents": out_cogs,
+            "cogs_flag": out_flags,
+        },
+        schema={
+            "source_line_key": pl.String,
+            "item_id": pl.String,
+            "method": pl.String,
+            "cogs_cents": pl.Int64,
+            "cogs_flag": pl.String,
+        },
+    )
+    return CostingResult(per_sale=per_sale, identity=pl.DataFrame(identity_rows))
 
 
 def scenario_timing_statement(method: str, cost_pool: str) -> str:

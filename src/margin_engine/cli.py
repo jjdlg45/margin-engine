@@ -45,12 +45,25 @@ def run(
         Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
     ),
     out: Path = typer.Option(Path("output"), "--out", help="Output directory"),  # noqa: B008
+    validate: bool = typer.Option(
+        False,
+        "--validate",
+        help="Also run the real-data validation suite (temporal backtest, "
+        "placebos, rolling-window stability); off by default because it "
+        "dominates runtime (Phase 35)",
+    ),
+    cache_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--cache-dir",
+        help="Directory for the fingerprint-keyed parse cache: re-running on "
+        "unchanged input skips re-parsing the export (Phase 35)",
+    ),
 ) -> None:
     """Run the full pipeline: ingest -> waterfall -> analytics -> report."""
     from margin_engine.report.full_run import run_full
 
     try:
-        result = run_full(data, mapping, rules, out)
+        result = run_full(data, mapping, rules, out, validate=validate, cache_dir=cache_dir)
     except MappingError as exc:
         _fail("mapping", exc)
     except MoneyParseError as exc:
@@ -65,6 +78,44 @@ def run(
         typer.echo(f"  {stage}: {secs:.1f}s")
     typer.echo(f"Report: {out / 'report.html'}")
     typer.echo(f"Manifest: {out / 'run_manifest.json'}")
+
+
+@app.command()
+def validate(
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
+    ),
+    out: Path = typer.Option(Path("output"), "--out", help="Output directory"),  # noqa: B008
+) -> None:
+    """Run the real-data validation suite (temporal backtest, placebo tests,
+    rolling-window stability) and write its exports. Equivalent to
+    `run --validate`; exists so routine runs stay fast (Phase 35)."""
+    from margin_engine.report.full_run import run_full
+
+    try:
+        result = run_full(data, mapping, rules, out, validate=True)
+    except MappingError as exc:
+        _fail("mapping", exc)
+    except MoneyParseError as exc:
+        _fail("money parsing", exc)
+    except ValidationError as exc:
+        _fail("configuration", exc)
+    except ReconciliationError as exc:
+        _fail("reconciliation", exc)
+    typer.echo("Real-data validation (no planted truth; informational, never gates a status):")
+    for name in (
+        "real_validation_backtest",
+        "real_validation_placebo",
+        "real_validation_stability_elasticity",
+        "real_validation_stability_segments",
+    ):
+        path = out / f"{name}.csv"
+        typer.echo(f"  {name}: {path if path.exists() else 'not produced'}")
+    secs = result.timings.get("real_data_validation")
+    if secs is not None:
+        typer.echo(f"  validation runtime: {secs:.1f}s")
 
 
 # Demo world for the hosted site: generated in CI at deploy time, never

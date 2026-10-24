@@ -199,7 +199,15 @@ def run_full(
     mapping_path: Path,
     rules_path: Path,
     out_dir: Path,
+    *,
+    validate: bool | None = None,
+    lines: pl.DataFrame | None = None,
+    cache_dir: Path | None = None,
 ) -> FullRunResult:
+    """Run the pipeline. `validate=None` follows the config switch
+    (sensitivity.real_data_validation); an explicit bool overrides it — the CLI
+    `run` command passes False unless --validate is given. `lines` and
+    `cache_dir` pass through to run_pipeline (Phase 35)."""
     rules = load_rules(rules_path)
     timings: dict[str, float] = {}
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -212,7 +220,7 @@ def run_full(
     warnings.simplefilter("always")
 
     t = time.perf_counter()
-    res = run_pipeline(data_dir, mapping_path, rules)
+    res = run_pipeline(data_dir, mapping_path, rules, lines=lines, cache_dir=cache_dir)
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
     rss_log("pipeline_done")
 
@@ -229,6 +237,7 @@ def run_full(
     )
     res.notes.extend(h_notes)
     flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules)
+    del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
 
@@ -327,7 +336,8 @@ def run_full(
     # Validation without planted truth (27.4): temporal backtest, placebos,
     # rolling-window stability. Informational; never gates a status.
     real_val = None
-    if rules.sensitivity.real_data_validation:
+    do_validate = rules.sensitivity.real_data_validation if validate is None else validate
+    if do_validate:
         from margin_engine.sensitivity.real_validation import run_real_validation
 
         t = time.perf_counter()
@@ -336,7 +346,12 @@ def run_full(
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
     else:
-        res.notes.append("real-data validation OFF: disabled in config")
+        res.notes.append(
+            "real-data validation OFF: disabled in config"
+            if validate is None
+            else "real-data validation OFF: run with --validate or use the "
+            "validate command to include it"
+        )
 
     # --- optional Run-2 modules: each runs when its input exists, otherwise
     # switches off with a stated reason -------------------------------------
@@ -405,6 +420,9 @@ def run_full(
         res.notes.append("cross-price estimation OFF: no substitution_groups table available")
     timings["optional_modules"] = time.perf_counter() - t
     rss_log("optional_modules")
+    # The segmentation frame is consumed; only its leaf assignments, guidance,
+    # the panel and `flagged` live on (Phase 35: one fewer wide line-level frame).
+    del df
 
     # ---- outputs -----------------------------------------------------------
     t = time.perf_counter()
@@ -439,7 +457,7 @@ def run_full(
             else {}
         ),
     }
-    exports["unallocated_settlements"] = (
+    unalloc_frame = (
         res.unallocated_settlements
         if res.unallocated_settlements is not None
         else pl.DataFrame(
@@ -451,29 +469,50 @@ def run_full(
             }
         )
     )
-    exports = {
-        name: _round_solver_outputs(name, _natural_sort(name, frame))
-        for name, frame in exports.items()
-    }
-    for fmt in rules.reporting.output_formats:
-        if fmt == "parquet":
-            for name, frame in exports.items():
-                frame.write_parquet(out_dir / f"{name}.parquet")
-        elif fmt == "csv":
-            for name, frame in exports.items():
-                csv_frame = frame
-                for col, dtype in frame.schema.items():
-                    if col.endswith("_cents") and dtype == pl.Int64:
-                        csv_frame = csv_frame.with_columns(
-                            cents_col_to_dollars(col).alias(col.replace("_cents", "_usd"))
-                        ).drop(col)
+    # Kept in its export (sorted) form: the report and the web bundle iterate
+    # its rows in file order.
+    unalloc_sorted = _natural_sort("unallocated_settlements", unalloc_frame)
+    exports["unallocated_settlements"] = unalloc_sorted
+    # One export at a time (Phase 35): the write-ready copy — categorical code
+    # columns back to plain String (every file keeps its pre-refactor schema,
+    # bytes included), natural sort, solver rounding — exists only while that
+    # file is being written, never as a second full set of frames.
+    formats = list(rules.reporting.output_formats)
+    prewritten: dict[str, Path] = {}
+    for name, frame in exports.items():
+        out = _round_solver_outputs(
+            name, _natural_sort(name, frame.with_columns(pl.col(pl.Categorical).cast(pl.String)))
+        )
+        for fmt in formats:
+            if fmt == "parquet":
+                out.write_parquet(out_dir / f"{name}.parquet")
+                prewritten[name] = out_dir / f"{name}.parquet"
+            elif fmt == "csv":
+                # _usd columns are derived only here, at the CSV boundary; the
+                # engine carries integer cents throughout. One lazy pass
+                # streams the converted frame to disk instead of holding a
+                # converted copy in memory.
+                cents_cols = [
+                    col
+                    for col, dtype in out.schema.items()
+                    if col.endswith("_cents") and dtype == pl.Int64
+                ]
+                lf = out.lazy()
+                if cents_cols:
+                    lf = lf.with_columns(
+                        cents_col_to_dollars(c).alias(c.replace("_cents", "_usd"))
+                        for c in cents_cols
+                    ).drop(cents_cols)
                 try:
-                    csv_frame.write_csv(out_dir / f"{name}.csv")
+                    lf.sink_csv(out_dir / f"{name}.csv")
                 except pl.exceptions.PolarsError:
-                    csv_frame.with_columns(pl.col(pl.Date).cast(pl.String)).write_csv(
+                    lf.with_columns(pl.col(pl.Date).cast(pl.String)).sink_csv(
                         out_dir / f"{name}.csv"
                     )
-    store_duckdb(res, out_dir / "engine.duckdb")
+        del out
+    rss_log("export_files_written")
+    store_duckdb(res, out_dir / "engine.duckdb", prewritten=prewritten)
+    rss_log("duckdb_stored")
     timings["exports"] = time.perf_counter() - t
 
     # ---- manifest -----------------------------------------------------------
@@ -781,7 +820,9 @@ def run_full(
             else None
         ),
     }
+    rss_log("report_context_built")
     render_report(context, out_dir / "report.html")
+    rss_log("report_rendered")
     return FullRunResult(
         pipeline=res,
         flagged=flagged,
