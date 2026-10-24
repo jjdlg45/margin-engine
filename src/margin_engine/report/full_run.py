@@ -16,6 +16,7 @@ from typing import Any
 
 import polars as pl
 
+from margin_engine.actions.generate import generate_actions
 from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
@@ -74,6 +75,8 @@ class FullRunResult:
     library_warnings: list[dict[str, Any]] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
     fiscal: FiscalCalendar | None = None  # the calendar in force (Phase 36)
+    actions: pl.DataFrame | None = None  # generated action proposals (Phase 38)
+    action_events: pl.DataFrame | None = None  # their birth event log (Phase 38)
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -163,6 +166,8 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "margin_driver_rules": ["leaf_id"],
     "guidance": ["customer_id", "item_id"],
     "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
+    "actions": ["action_type", "action_id"],
+    "action_events": ["action_id", "seq"],
     "sensitivity": ["segment"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
@@ -468,6 +473,21 @@ def run_full(
     # the panel and `flagged` live on (Phase 35: one fewer wide line-level frame).
     del df
 
+    # ---- actions (Phase 38): findings become proposed actions ---------------
+    t = time.perf_counter()
+    actions_res = generate_actions(
+        ledger=res.ledger,
+        guidance=guidance_res.guidance,
+        opportunities=opps,
+        leakage=leak,
+        service_flags=cts.service_flags,
+        sensitivity=sens,
+        panel=panel,
+        rules=rules,
+    )
+    res.notes.extend(actions_res.notes)
+    timings["actions"] = time.perf_counter() - t
+
     # ---- outputs -----------------------------------------------------------
     t = time.perf_counter()
     exports: dict[str, pl.DataFrame] = {
@@ -479,6 +499,8 @@ def run_full(
         "margin_driver_rules": pl.DataFrame(margin_tree.rules),
         "guidance": guidance_res.guidance,
         "compliance_robinson_patman": compliance_res.detail,
+        "actions": actions_res.actions,
+        "action_events": actions_res.events,
         "sensitivity": sens,
         "opportunities": opps,
         "leakage": leak,
@@ -893,4 +915,6 @@ def run_full(
         library_warnings=lib_warnings,
         manifest=manifest,
         fiscal=fiscal,
+        actions=actions_res.actions,
+        action_events=actions_res.events,
     )

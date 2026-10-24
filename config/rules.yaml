@@ -186,3 +186,21 @@ compliance:
   # mapping declares public_source: true for it (antitrust: competitors
   # sharing non-public prices through algorithms).
   market_index_public_source_required: true
+
+# Action generation (Run 5, Phase 38). Dates anchor to the data's last invoice
+# date, so a given world always generates identical actions.
+actions:
+  enabled: true
+  default_owner: unassigned
+  priority:
+    high_impact_cents: 500000      # >= $5,000 expected impact
+    medium_impact_cents: 50000     # >= $500
+    demote_without_causal: true    # non-causal volume evidence drops one level
+  due_days_high: 14
+  due_days_medium: 30
+  due_days_low: 60
+  pass_through_level: 0.5          # never assume full pass-through
+  max_pass_through_scenarios: 2
+  leakage_review_min_ratio: 1.5    # customer rate vs segment median
+  leakage_review_min_excess_cents: 100000
+  max_actions_per_type: 200

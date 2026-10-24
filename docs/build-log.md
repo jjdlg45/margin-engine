@@ -2403,3 +2403,61 @@ source -> control refused with the stated note; declared public -> used).
 exit 0. Guidance and opportunities exports gain the rp_review_flag column and
 the new compliance export (intended feature change; run-to-run determinism
 and bundle parity suites all green). Web code untouched.
+
+## Phase 38 — Action model and generation (2026-10-24, Run 5 branch)
+
+New package `margin_engine/actions/` turns findings into proposed actions.
+
+**Model (`model.py`).** Lifecycle proposed -> under review -> approved |
+rejected -> exported -> implemented -> measured (rejected can be reworked to
+proposed). Every transition is an event in an append-only log (who, when,
+from-status, to-status, note); current status is DERIVED by replaying the log,
+never edited in place. `append_event` validates each transition against the
+table; `validate_log` proves a whole log is a legal walk (dense seq from 0,
+every from-status equals the prior to-status) and catches in-place tampering.
+
+**Generation (`generate.py`).** Five action types from engine outputs, each
+with a plain-English title and rationale whose every number comes from those
+outputs, and an expected impact at the RIGHT opportunity level, never summed
+across levels: price_change (level 3 when the volume response is
+causal-supported and inside price support, otherwise level 2 fixed-volume,
+labeled); below_floor_fix (raise to the binding floor at fixed volume, pocket
+dollars; pairs with no baseline volume state that instead of inventing a
+number); cost_pass_through (recovered cost at the configured level — default
+50%, never full — on the top category and supplier scenarios, via the same
+scenario grid the demo uses); service_policy (contribution at stake after
+activity costs, labeled estimated); rebate_discount_review (level-1 leakage in
+excess of the customer's segment-median rate, with ratio and absolute-dollar
+gates). Priority defaults by impact and evidence (non-causal demotes one
+level); owner, due dates (anchored to the data's last invoice date) and
+per-type caps are config (`actions` section in rules.yaml). Guardrails:
+an unblocked proposal below the binding floor raises (never clamped silently);
+contract-protected pairs generate BLOCKED actions with the reason shown and
+never become price changes; the Robinson-Patman flag travels with the action.
+Generation is deterministic: content-hash ids, dates from the data anchor.
+Sample world: 288 actions (73 below-floor, 200 price changes at the per-type
+cap, 2 pass-through, 3 service policy, 10 rebate reviews; 11 carry RP flags).
+
+**Storage (`store.py`).** DuckDB persistence for API mode (Phase 39): seed is
+idempotent (a seeded store refuses a silent reseed), transitions go through
+append_event's validation, reads replay the log. Parquet handoff, no pyarrow.
+
+**Demo history (`demo.py`).** The static demo ships read-only actions with a
+simulated review history: deterministic (id-hash buckets), lifecycle-valid,
+blocked actions never advance, approvals of flagged actions carry a written
+justification, and the simulated approver is never the proposer.
+
+**Engine exports.** `actions` and `action_events` join the standard exports
+(sorted, deterministic), and run_full returns both for the web export and API.
+
+**Tests (9 new).** Determinism (frame-equal double generation, unique ids);
+traceability of every action to its source records (guidance pairs, service
+flags, leakage customers, scenario scopes; below-floor count ties to guidance);
+volume-evidence labeling; RP flag carried exactly; floor guardrail raises on a
+constructed violation; contract-protected blocked with reason and no price
+action; full lifecycle replay + refusal of skipped/terminal/tampered walks;
+store seed idempotency + persisted transitions + store-boundary enforcement;
+demo history determinism and validity.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0. Web untouched (the Action center UI is Phase 42).

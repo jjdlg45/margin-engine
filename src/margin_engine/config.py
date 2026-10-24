@@ -446,6 +446,42 @@ class ReportingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# actions (Run 5, Phase 38)
+# ---------------------------------------------------------------------------
+
+
+class ActionPriorityConfig(StrictModel):
+    """Default priority rule: by expected dollar impact, demoted one level when
+    the volume evidence is not causal-supported (configurable)."""
+
+    high_impact_cents: int = Field(default=500_000, ge=0)
+    medium_impact_cents: int = Field(default=50_000, ge=0)
+    demote_without_causal: bool = True
+
+
+class ActionsConfig(StrictModel):
+    """Action generation (Phase 38). Dates are anchored to the data's last
+    invoice date so generation is deterministic for a given world."""
+
+    enabled: bool = True
+    default_owner: str = "unassigned"
+    priority: ActionPriorityConfig = ActionPriorityConfig()
+    due_days_high: int = Field(default=14, ge=0)
+    due_days_medium: int = Field(default=30, ge=0)
+    due_days_low: int = Field(default=60, ge=0)
+    # Cost pass-through actions: the chosen level applied to the auto-selected
+    # top scenarios (never assumed full pass-through).
+    pass_through_level: float = Field(default=0.5, ge=0.0, le=1.0)
+    max_pass_through_scenarios: int = Field(default=2, ge=0)
+    # Rebate/discount review: a customer's leakage rate must exceed BOTH the
+    # ratio to its segment's median rate and the absolute excess-dollar floor.
+    leakage_review_min_ratio: float = Field(default=1.5, ge=1.0)
+    leakage_review_min_excess_cents: int = Field(default=100_000, ge=0)
+    # Deterministic cap per action type (largest expected impact first).
+    max_actions_per_type: int = Field(default=200, ge=1)
+
+
+# ---------------------------------------------------------------------------
 # pricing compliance (Run 5, Phase 37)
 # ---------------------------------------------------------------------------
 
@@ -530,6 +566,7 @@ class Rules(StrictModel):
     reporting: ReportingConfig = ReportingConfig()
     fiscal: FiscalConfig = FiscalConfig()
     compliance: ComplianceConfig = ComplianceConfig()
+    actions: ActionsConfig = ActionsConfig()
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
