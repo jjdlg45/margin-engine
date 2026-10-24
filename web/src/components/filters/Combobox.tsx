@@ -5,14 +5,14 @@
  * own options), so option lists of 100 or more are virtualized with an exact
  * height - only visible options exist in the DOM. */
 
-import { useMemo, useState } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Button,
   Collection,
   ComboBox,
+  ComboBoxStateContext,
   Header,
   Input,
-  Label,
   ListBox,
   ListBoxItem,
   ListBoxSection,
@@ -28,6 +28,21 @@ export interface Option {
   group?: string;
   /** Optional right-aligned hint, e.g. a pair count. */
   hint?: string;
+}
+
+/** Opens the menu whenever the typed text changes, however focus arrived
+ * (touch, programmatic, or focus that was already inside the combobox).
+ * menuTrigger="focus" alone missed exactly that case on Linux CI: with focus
+ * retained inside the group, typing left the menu closed. */
+function OpenOnInputChange({ text }: { text: string }) {
+  const state = useContext(ComboBoxStateContext);
+  const prev = useRef(text);
+  useEffect(() => {
+    if (prev.current === text) return;
+    prev.current = text;
+    if (state && state.isFocused && !state.isOpen) state.open(null, "input");
+  }, [text, state]);
+  return null;
 }
 
 const ROW_PX = 32;
@@ -52,6 +67,8 @@ export function EntityCombobox({
   const hasNames = options.some((o) => o.name);
   const [byId, setById] = useState(!hasNames);
   const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const labelId = useId();
   // An external clear (Clear all, chip removal) must not leave stale text in
   // the input: when the selected value is cleared from outside, reset the
   // typed text in the same render (state adjustment during render, so the
@@ -147,21 +164,24 @@ export function EntityCombobox({
   );
 
   return (
-    <ComboBox
-      className="flex flex-col gap-1"
-      selectedKey={value}
-      onSelectionChange={(k) => onChange(k === null ? null : String(k))}
-      inputValue={inputValue}
-      onInputChange={setInputValue}
-      menuTrigger="focus"
-      allowsEmptyCollection
-    >
+    <div className="flex flex-col gap-1">
+      {/* The lookup-mode toggle lives OUTSIDE the ComboBox so clicking it can
+          never change the combobox's internal focus/open state (the Linux CI
+          trace showed typing after an inside toggle leaving the menu closed). */}
       <div className="flex items-center gap-2">
-        <Label className="text-caption secondary">{label}</Label>
+        <span id={labelId} className="text-caption secondary">
+          {label}
+        </span>
         {hasNames && (
           <button
             type="button"
-            onClick={() => setById(!byId)}
+            onClick={() => {
+              // Keep the typed text and re-filter in the new mode; returning
+              // focus to the input reopens the menu instead of leaving it
+              // closed after the toggle click.
+              setById(!byId);
+              inputRef.current?.focus();
+            }}
             className="rounded-badge border hairline bg-card px-1.5 py-0.5 text-caption secondary hover:text-ink"
             aria-label={`Look up by ${byId ? "name" : "ID"}`}
           >
@@ -169,21 +189,34 @@ export function EntityCombobox({
           </button>
         )}
       </div>
-      <div className="flex w-72 max-w-full items-stretch">
-        <Input
-          placeholder={placeholder ?? (selected ? selected.text : "Type to search…")}
-          className="w-full rounded-l-badge border hairline bg-card px-2 py-1 text-sm text-ink/[0.87]"
-        />
-        <Button className="rounded-r-badge border hairline border-l-0 bg-card px-2 text-ink/70">
-          {"▾"}
-        </Button>
-      </div>
-      <Popover
-        className="z-20 w-[var(--trigger-width)] rounded-card border hairline bg-card shadow-lg"
-        style={{ minHeight: minVisiblePx }}
+      <ComboBox
+        aria-labelledby={labelId}
+        className="flex flex-col"
+        selectedKey={value}
+        onSelectionChange={(k) => onChange(k === null ? null : String(k))}
+        inputValue={inputValue}
+        onInputChange={setInputValue}
+        menuTrigger="focus"
+        allowsEmptyCollection
       >
-        {virtual ? <Virtualizer layout={listLayout}>{listBox}</Virtualizer> : listBox}
-      </Popover>
-    </ComboBox>
+        <OpenOnInputChange text={inputValue} />
+        <div className="flex w-72 max-w-full items-stretch">
+          <Input
+            ref={inputRef}
+            placeholder={placeholder ?? (selected ? selected.text : "Type to search…")}
+            className="w-full rounded-l-badge border hairline bg-card px-2 py-1 text-sm text-ink/[0.87]"
+          />
+          <Button className="rounded-r-badge border hairline border-l-0 bg-card px-2 text-ink/70">
+            {"▾"}
+          </Button>
+        </div>
+        <Popover
+          className="z-20 w-[var(--trigger-width)] rounded-card border hairline bg-card shadow-lg"
+          style={{ minHeight: minVisiblePx }}
+        >
+          {virtual ? <Virtualizer layout={listLayout}>{listBox}</Virtualizer> : listBox}
+        </Popover>
+      </ComboBox>
+    </div>
   );
 }
