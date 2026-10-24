@@ -103,7 +103,231 @@ paths:
                   explanation: { type: string }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # --- Action center (Run 5, Phase 39) --------------------------------------
+  # Identity: every mutating request carries X-User, a CONFIGURED user name
+  # (api settings users spec). This is local identity, NOT authentication;
+  # real login belongs to a future hosting phase. Roles: analyst (proposes,
+  # edits, submits, exports, marks implemented), approver (approves/rejects),
+  # viewer (reads only). All endpoints are rate-limited like the rest.
+
+  /actions:
+    get:
+      summary: Paginated, filterable action queue (with derived status)
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 50 }
+        - name: sort
+          in: query
+          schema: { type: string }
+        - name: filters
+          in: query
+          description: >
+            URL-encoded JSON object. Keys - types[], statuses[], priorities[],
+            evidence[], owner, customer, item, compliance (bool: only flagged),
+            impact_min/impact_max (dollars).
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TablePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      summary: Manually propose an action (analyst)
+      description: >
+        Price-type proposals are guardrail-checked against the binding floor on
+        record for the pair; a pair with no floor on record is refused (422).
+      parameters: [{ $ref: "#/components/parameters/XUser" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposeAction" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [action_id, status]
+                properties:
+                  action_id: { type: string }
+                  status: { type: string }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "422": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/summary:
+    get:
+      summary: Open-actions summary (counts by status, impact by evidence)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionsSummary" }
+
+  /actions/{action_id}:
+    get:
+      summary: One action with its full event history and edit audit
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Edit an action (analyst; pre-approval statuses only)
+      description: >
+        Editable fields: owner, due_date, title, rationale,
+        proposed_price_cents (never below the binding floor). Every edit is
+        recorded in the append-only edit audit.
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [action_id, changed_fields]
+                properties:
+                  action_id: { type: string }
+                  changed_fields: { type: array, items: { type: string } }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+        "422": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/{action_id}/submit:
+    post:
+      summary: Submit for review (analyst; proposed -> under review)
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { note: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TransitionResult" }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/{action_id}/approve:
+    post:
+      summary: Approve (approver; never the proposer/submitter)
+      description: >
+        A written justification (reason) is REQUIRED when the action carries a
+        compliance flag. Approving an already-approved action returns
+        changed=false (idempotent).
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { reason: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TransitionResult" }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+        "422": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/{action_id}/reject:
+    post:
+      summary: Reject (approver)
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { reason: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TransitionResult" }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/{action_id}/rework:
+    post:
+      summary: Rework a rejected action (analyst; rejected -> proposed)
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { note: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TransitionResult" }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/{action_id}/implement:
+    post:
+      summary: Mark implemented (analyst; exported -> implemented)
+      parameters:
+        - { name: action_id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { note: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TransitionResult" }
+        "403": { $ref: "#/components/responses/PolicyError" }
+        "409": { $ref: "#/components/responses/PolicyError" }
+
+  /actions/bulk-approve:
+    post:
+      summary: Bulk approve with per-item guardrail checks
+      description: >
+        Items that fail a check are REFUSED with the reason (their status is
+        untouched - refusing to approve is not a human rejection); items
+        already approved report outcome "unchanged".
+      parameters: [{ $ref: "#/components/parameters/XUser" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action_ids]
+              properties:
+                action_ids: { type: array, items: { type: string } }
+                reason: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkApproveResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
 components:
+  parameters:
+    XUser:
+      name: X-User
+      in: header
+      required: true
+      description: Configured user name (local identity, NOT authentication).
+      schema: { type: string }
   schemas:
     AppData:
       type: object
@@ -132,6 +356,67 @@ components:
         page: { type: integer }
         page_size: { type: integer }
         has_more: { type: boolean }
+    ActionsSummary:
+      type: object
+      required: [n_actions, by_status, impact_by_evidence_cents, n_blocked, n_compliance_flagged]
+      properties:
+        n_actions: { type: integer }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        impact_by_evidence_cents:
+          type: object
+          additionalProperties: { type: integer }
+        n_blocked: { type: integer }
+        n_compliance_flagged: { type: integer }
+    ActionDetail:
+      type: object
+      required: [action, status, events, edits]
+      properties:
+        action: { type: object }
+        status: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            required: [action_id, seq, who, at, to_status]
+            properties:
+              action_id: { type: string }
+              seq: { type: integer }
+              who: { type: string }
+              at: { type: string }
+              from_status: { type: [string, "null"] }
+              to_status: { type: string }
+              note: { type: string }
+        edits: { type: array, items: { type: object } }
+    ProposeAction:
+      type: object
+      required: [action_type, title, rationale]
+      properties:
+        action_type:
+          type: string
+          enum: [price_change, below_floor_fix, cost_pass_through, service_policy, rebate_discount_review]
+        title: { type: string }
+        rationale: { type: string }
+        customer_id: { type: string }
+        item_id: { type: string }
+        proposed_price_cents: { type: integer }
+        expected_impact_cents: { type: integer }
+        priority: { type: string, enum: [high, medium, low] }
+        owner: { type: string }
+    BulkApproveResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [action_id, outcome, reason]
+            properties:
+              action_id: { type: string }
+              outcome: { type: string, enum: [approved, unchanged, refused] }
+              reason: { type: string }
   responses:
     NotFound:
       description: Unknown page, table or pair
@@ -147,3 +432,27 @@ components:
           schema:
             type: object
             properties: { detail: { type: string } }
+    TransitionResult:
+      description: The transition happened (changed) or was already in effect
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [action_id, status, changed]
+            properties:
+              action_id: { type: string }
+              status: { type: string }
+              changed: { type: boolean }
+    PolicyError:
+      description: >
+        A review-policy or lifecycle refusal; code names the rule
+        (role_denied, self_approval, justification_required, blocked,
+        below_floor, floor_unknown, status_not_editable, invalid_transition).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, detail]
+            properties:
+              code: { type: string }
+              detail: { type: string }

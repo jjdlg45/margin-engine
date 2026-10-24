@@ -112,6 +112,12 @@ class ReplayFeed:
         # still written above so the run manifest fingerprints real input files.
         lines = self._canonical_lines().filter(pl.col("invoice_date") <= _date.fromisoformat(day))
         res = run_full(work, self.s.replay_mapping, rules_path, out_dir, lines=lines)
+        # New engine-generated actions merge into the action store without
+        # touching existing actions or their review history (Phase 39).
+        if res.actions is not None and res.action_events is not None and res.actions.height:
+            from margin_engine.actions.store import ActionStore
+
+            ActionStore(self.s.actions_db).merge_new(res.actions, res.action_events)
         bundle = build_bundle(
             res,
             load_rules(rules_path),

@@ -50,6 +50,29 @@ class Settings:
     replay_work_dir: Path = field(
         default_factory=lambda: _env_path("MARGIN_API_REPLAY_WORK", REPO / ".api_state" / "replay")
     )
+    # Action center (Phase 39). users: local IDENTITY spec (name:role[+role],
+    # comma-separated) — explicitly NOT authentication; real login belongs to a
+    # future hosting phase. Clients send X-User with a configured name.
+    actions_db: Path = field(
+        default_factory=lambda: _env_path(
+            "MARGIN_API_ACTIONS_DB", REPO / ".api_state" / "actions.duckdb"
+        )
+    )
+    # Directory holding engine exports (actions.parquet, action_events.parquet)
+    # to seed/merge the action store from at startup; empty = bundle_dir's
+    # sibling engine output is not assumed, nothing is seeded.
+    actions_seed_dir: Path | None = field(
+        default_factory=lambda: (
+            Path(v) if (v := os.environ.get("MARGIN_API_ACTIONS_SEED")) else None
+        )
+    )
+    users_spec: str = field(
+        default_factory=lambda: os.environ.get(
+            "MARGIN_API_USERS",
+            "demo-analyst:analyst,demo-approver:approver,"
+            "demo-lead:analyst+approver,demo-viewer:viewer",
+        )
+    )
     # Scheduled connector refreshes (seconds; defaults: FX daily, PPI monthly).
     fx_refresh_s: float = field(
         default_factory=lambda: float(os.environ.get("MARGIN_API_FX_REFRESH_S", str(24 * 3600)))

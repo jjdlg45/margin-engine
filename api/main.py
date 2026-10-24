@@ -15,11 +15,14 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from api.actions_routes import router as actions_router
 from api.filters import paginate
 from api.ratelimit import TokenBucketLimiter
 from api.refresh import RefreshScheduler
 from api.settings import Settings
 from api.store import PAGES, TABLES, BundleStore
+from margin_engine.actions.review import ReviewPolicy
+from margin_engine.actions.store import ActionStore
 
 log = logging.getLogger("margin_api")
 
@@ -30,6 +33,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     s = settings or Settings()
     store = BundleStore(s.db_path)
     scheduler = RefreshScheduler(s, store)
+    action_store = ActionStore(s.actions_db)
+    review_policy = ReviewPolicy.from_spec(s.users_spec)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -42,6 +47,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.info("bundle restored from DuckDB (version %s)", store.snapshot.version)
         else:
             log.warning("no bundle found in %s or DuckDB", s.bundle_dir)
+        # Action store seed (Phase 39): merge engine-generated actions without
+        # ever touching existing actions or their review history.
+        if s.actions_seed_dir is not None:
+            import polars as pl
+
+            a_pq = s.actions_seed_dir / "actions.parquet"
+            e_pq = s.actions_seed_dir / "action_events.parquet"
+            if a_pq.exists() and e_pq.exists():
+                added = action_store.merge_new(pl.read_parquet(a_pq), pl.read_parquet(e_pq))
+                log.info("action store: %d new action(s) merged from %s", added, s.actions_seed_dir)
+            else:
+                log.warning("actions seed dir %s has no actions exports", s.actions_seed_dir)
         scheduler.start(asyncio.get_running_loop())
         yield
         scheduler.stop()
@@ -51,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.store = store
     app.state.scheduler = scheduler
     app.state.settings = s
+    app.state.action_store = action_store
+    app.state.review_policy = review_policy
+    app.include_router(actions_router)
 
     @app.middleware("http")
     async def rate_limit(request: Request, call_next: Any) -> Response:

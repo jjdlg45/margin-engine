@@ -2461,3 +2461,51 @@ demo history determinism and validity.
 
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
 full pytest exit 0. Web untouched (the Action center UI is Phase 42).
+
+## Phase 39 — Review and approval, maker-checker (2026-10-24, Run 5 branch)
+
+**Policy layer (`actions/review.py`).** Roles analyst / approver / viewer (a
+user may hold several, e.g. demo-lead:analyst+approver); identity in local
+mode is a configured user name sent as X-User — documented everywhere as NOT
+authentication (real login belongs to a future hosting phase). Enforced:
+role gates per transition; separation of duties (an approver cannot approve an
+action they proposed or submitted); a written justification is required to
+approve a compliance-flagged action; blocked actions never advance; 'measured'
+belongs to the results tracker, never to a user. Edits are whitelisted
+(owner, due date, title, rationale, proposed price), allowed only before
+approval, refused on blocked actions, and a price edit below the binding floor
+is refused — every edit lands in an append-only audit table.
+
+**Store additions.** merge_new (a fresh engine run adds new actions without
+ever touching existing actions or their review history — the replay feed now
+merges after every tick), apply_edit (audited), add_action (manual proposals),
+guarded empty-DB reads.
+
+**API (`api/actions_routes.py`).** Queue (paginated/filterable/sortable, with
+derived status; TablePage contract shape), summary (counts by status, impact
+by evidence, blocked and flagged counts), detail (action + full event history
++ edit audit), and one endpoint per transition: submit, approve, reject,
+rework, implement, plus bulk-approve, PATCH edit and POST propose. Bulk
+approve applies per-item guardrail checks: failing items are REFUSED with the
+reason and their status untouched (refusing to approve is not a human
+rejection — that reading of "rejected with the reason" is recorded here);
+already-approved items report "unchanged". Every endpoint is idempotent
+(repeating an effective transition returns changed=false) and sits behind the
+same rate-limit middleware as the rest. Manual price proposals are checked
+against the floor on record for the pair; a pair with no floor on record is
+refused rather than guessed. OpenAPI (docs/api/openapi.yaml) gains every
+path, the X-User parameter, and the ActionsSummary / ActionDetail /
+ProposeAction / BulkApproveResult / TransitionResult / PolicyError schemas.
+
+**Tests (8 new, HTTP-driven).** Contract paths present + queue/summary/bulk
+shapes validated against the OpenAPI schemas; viewer and analyst role refusals;
+self-approval blocked (403 self_approval); justification enforced on a flagged
+approval (422 then 200 with reason); blocked action refused at submit;
+bulk-approve mixed outcomes (unchanged / refused / approved / unknown) with
+statuses untouched on refusals; edits audited, floor-guarded, role-guarded and
+frozen after approval; manual proposals (below floor refused, unknown floor
+refused, valid one lands with the proposer's birth event); the store's event
+log stays validate_log-clean after an HTTP-driven lifecycle.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0. Web untouched (Action center UI is Phase 42).
