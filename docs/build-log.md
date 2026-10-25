@@ -2828,3 +2828,52 @@ a real keyboard user behaves — press again — with the a11y assertions kept.
 exit 0 (incl. the two phrasing tests that caught the band-level overreach);
 tsc 0; build 0; Playwright static 179 passed + 1 intentional skip (segments
 snapshots re-baselined for the casing change); rendering spec 10/10.
+
+## Phase 47 — Documentation and report (2026-10-24, Run 5 branch)
+
+**README.** "What it produces" gains the Action center and Robinson-Patman
+rows, the fiscal-calendar sentence and LIFO; a new "Action center" section
+covers generation with guardrails, the maker-checker workflow and roles
+(identity explicitly not authentication), the ERP price export, and results
+tracking with the measured tracker numbers; the validation table adds the two
+results-tracker rows and refreshes the scale row from validation.json (241k
+lines 13.0s / 2.64 GB after the Phase 35 refactor, was 32.1s / 2.92 GB;
+marginal ~9.0 KB/line, was ~10.0; still a KNOWN GAP against the 10M target,
+stated with the honest extrapolation). The Docker section already landed in
+Phase 45; pricing-law in methodology section 11 (Phase 37).
+
+**Methodology.** New section 12 "Action center": the five generation rules
+with their impact bases (never summed across types), the enforced guardrails,
+the maker-checker lifecycle with the append-only replayed event log, the
+idempotent price export, and the results-tracking method with its limits
+stated plainly (per-pair 90-day Poisson noise ~0.2-0.3 log points means pooled
+calibration is the meaningful read; parallel-trends assumption; measured
+outcomes are a selected sample).
+
+**Report.** docs/run5-report.md: headline before/after numbers (runtime,
+peak memory and bytes/line; 288 sample / 277 demo actions with 13 measured
+outcomes; tracker pooled recovery 0.039 vs the 0.10 bound and 0/30 fail-closed
+on sparse), a per-phase summary of phases 35-47 including the Phase 40.1
+process failure, known gaps with reasons (10M target, demo-bundle solver
+noise, five accepted npm moderates, Docker CI-only, per-action volume noise),
+and the decisions waiting on the owner (merge, scale roadmap, Tailwind 4 /
+react-router 7 migrations, replay flag, real login).
+
+**Format fix.** ruff format (0.17.0, from the Phase 44 lock upgrade) wanted
+synth/demand.py rejoined on two statements; applied mechanically, no semantic
+change (the fresh-clone full pytest below ran on the reformatted file).
+
+**Verification like CI (per the Run 5 spec, before this final commit).**
+Fresh clone of run5 into a temp folder with this phase's four changed files
+copied in (docs plus the format fix — the exact final tree), then:
+uv sync --frozen --all-groups exit 0 (124 packages); full pytest exit 0;
+margin-engine export-web --demo exit 0 (bundle 2,613 KB, 1,550 guidance
+pairs, 8 scenario grids); npm ci exit 0; production build exit 0 (largest
+chunks 259 KB ui / 376 KB recharts, gzip 82 / 104 KB);
+CI=true SKIP_SNAPSHOTS=1 npx playwright test exit 0 — 179 passed,
+1 intentional skip. Working-tree gates: ruff check 0; ruff format --check 0;
+mypy src api 0 (strict); tsc 0; vitest 11/11. API-mode Playwright last ran
+green in Phase 44 (9/9); this phase changed only docs and formatting.
+
+Run 5 is complete. Final commit on run5; not merged, not pushed — the owner
+reviews, pushes and opens the PR.

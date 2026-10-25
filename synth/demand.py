@@ -307,11 +307,7 @@ def simulate_panel(
     # the pair's planted elasticity: ground truth for the results tracker.
     interventions_df: pl.DataFrame | None = None
     if cfg.n_price_interventions > 0:
-        t0 = (
-            cfg.intervention_month
-            if cfg.intervention_month is not None
-            else max(0, months - 6)
-        )
+        t0 = cfg.intervention_month if cfg.intervention_month is not None else max(0, months - 6)
         eligible = (
             pairs.with_row_index("_pos")
             .filter(
@@ -327,9 +323,7 @@ def simulate_panel(
         unit_price_cents = np.where(
             hit,
             div_round_half_even(
-                np.round(unit_price_cents * (1.0 + cfg.intervention_pct) * 1_0000).astype(
-                    np.int64
-                ),
+                np.round(unit_price_cents * (1.0 + cfg.intervention_pct) * 1_0000).astype(np.int64),
                 1_0000,
             ),
             unit_price_cents,
