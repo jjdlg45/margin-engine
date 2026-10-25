@@ -2724,3 +2724,42 @@ and flags a shift planted into the stored baseline; the API serves the flags.
 **Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
 exit 0; tsc 0; vitest 11/11; build 0. (Playwright suites unchanged by this
 phase beyond the passive shell element; full suites ran green in Phase 42.)
+
+## Phase 44 — Supply-chain security (2026-10-24, Run 5 branch)
+
+**Dependabot** (`.github/dependabot.yml`): weekly update PRs for uv (repo
+root), npm (web/) and GitHub Actions; minors and patches grouped, majors
+individual.
+
+**CI audits** (ci.yml): pip-audit over the exact locked Python set
+(`uv export --frozen --all-groups`, failing on ANY known vulnerability) and
+`npm audit --audit-level=high` in web/ (high or critical fails the build).
+
+**Findings handled now, not deferred** — adding the gates surfaced real
+vulnerabilities, fixed per the process the new docs/security.md documents:
+- Python: pillow 12.3.0 -> 13.0.0 (8 CVEs), virtualenv 21.14.7 -> 21.14.13
+  (7 CVEs), filelock 4.1.1 -> 4.2.4 (4 CVEs, surfaced by the re-audit).
+  pip-audit now reports no known vulnerabilities; full pytest green.
+- npm: react-router-dom 6.28.0 -> 6.30.6 (high XSS/open-redirect fixes within
+  v6), postcss 8.4.49 -> 8.5.31 (highs), @playwright/test 1.49.1 -> 1.55.1
+  (high: unverified browser downloads), vitest 2.1.8 -> 5.0.5 (the tinypool
+  prototype-pollution-to-RCE criticals and @vitest/mocker highs are fixed only
+  past the 2.x line), vite 5.4.11 -> 7.3.7 with @vitejs/plugin-react 5.1.4
+  (esbuild dev-server advisory; `vite@latest` was tried first and REVERTED:
+  the rolldown-based line rejects this config's object manualChunks — a
+  worked example of "majors only with the full gates"). npm audit at the high
+  gate is clean; 5 moderates remain, each reviewed and recorded in
+  docs/security.md (tailwind-3 chain: fix is a Tailwind 4 migration, parser
+  runs only at build time on our own CSS; react-router v6 variants fixed only
+  in v7) — accepted in writing, never silenced, and an escalation to high
+  re-breaks CI.
+
+**docs/security.md**: what runs automatically and the finding-handling
+process (read the advisory against actual use, smallest compatible upgrade,
+re-run audits like CI, record in the build log, written acceptance when no
+fix exists, never disable an audit step).
+
+**Checks.** ruff 0 / format 0 / mypy 0 unchanged; full pytest exit 0 on the
+upgraded lock; tsc 0; vitest 11/11 on vitest 5; build 0 on vite 7; Playwright
+static 169/169 (no snapshot drift under Playwright 1.55); Playwright API mode
+9/9; pip-audit clean; npm audit high-gate clean; both workflow YAMLs parse.

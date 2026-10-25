@@ -23,3 +23,15 @@ jobs:
         run: uv run mypy src api
       - name: Tests
         run: uv run pytest --cov --cov-report=term
+      # Supply-chain audits (Run 5, Phase 44). pip-audit checks the exact
+      # locked set; npm audit fails on high or critical. docs/security.md
+      # documents how to handle a finding.
+      - name: Audit Python dependencies (pip-audit)
+        run: |
+          uv export --frozen --all-groups --format requirements-txt             --no-emit-project --output-file requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt --disable-pip
+      - name: Audit npm dependencies (high and critical fail)
+        working-directory: web
+        run: |
+          npm ci
+          npm audit --audit-level=high
