@@ -35,7 +35,6 @@ import psutil
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from synth.config import GeneratorConfig, Preset  # noqa: E402
 
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
 RULES = REPO / "config" / "rules.yaml"
@@ -93,22 +92,35 @@ class PeakRss:
 
 
 def run_rung(n_customers: int, n_items: int) -> dict[str, object]:
-    from synth.generate import generate
+    import subprocess
 
     from margin_engine.report.full_run import run_full
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        cfg = GeneratorConfig.for_preset(
-            Preset.WELL_IDENTIFIED, seed=1, n_customers=n_customers, n_items=n_items
+        # The world is generated in a SUBPROCESS (Phase 35): the target
+        # describes the pipeline's peak on an existing export, and the
+        # generator's allocator-retained memory (hundreds of MB at the larger
+        # rungs) otherwise inflates every measured peak.
+        gen_code = (
+            f"import sys; sys.path.insert(0, {str(REPO)!r})\n"
+            f"from pathlib import Path\n"
+            f"from synth.config import GeneratorConfig, Preset\n"
+            f"from synth.generate import generate\n"
+            f"cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=1, "
+            f"n_customers={n_customers}, n_items={n_items})\n"
+            f"generate(cfg, Path({str(tmp / 'world')!r}))\n"
         )
         t_gen = time.perf_counter()
-        generate(cfg, tmp / "world")
+        subprocess.run([sys.executable, "-c", gen_code], check=True)
         gen_s = time.perf_counter() - t_gen
         gc.collect()
         with PeakRss() as peak:
             t0 = time.perf_counter()
-            res = run_full(tmp / "world" / "erp", MAPPING, RULES, tmp / "out")
+            # validate=False measures what `margin-engine run` executes by
+            # default since Phase 35 (real-data validation moved behind
+            # --validate / the validate command).
+            res = run_full(tmp / "world" / "erp", MAPPING, RULES, tmp / "out", validate=False)
             elapsed = time.perf_counter() - t0
         lines = res.pipeline.ledger.height
         stages = {k: round(v, 1) for k, v in sorted(res.timings.items(), key=lambda kv: -kv[1])}
@@ -168,6 +180,14 @@ def main() -> None:
                 l2, p2 = int(last["lines"]), float(last["peak_gb"])  # type: ignore[call-overload, arg-type]
                 slope = (p2 - p1) / max(l2 - l1, 1)
                 projected_gb = (p2 + slope * (proj_lines - l2)) * PROJECTION_FACTOR
+            elif float(last["peak_gb"]) <= budget / 2:  # type: ignore[arg-type]
+                # One measured rung and plenty of headroom: measure rung 2 so
+                # the linear fit (which needs two points) can take over. Rung 2
+                # is ~1.6x rung 1's lines, so peak <= budget/2 keeps it safe
+                # even under superlinear growth; the pure ratio guess from one
+                # point badly overestimates (most of rung 1's peak is the fixed
+                # interpreter/libs baseline) and used to end the ladder here.
+                projected_gb = 0.0
             else:
                 projected_gb = float(last["peak_gb"]) * lines_scale * PROJECTION_FACTOR  # type: ignore[arg-type]
             if projected_gb > budget:
@@ -208,7 +228,9 @@ def main() -> None:
         and float(best["run_s"]) < TIME_BUDGET_S  # type: ignore[arg-type]
         and float(best["peak_gb"]) < PEAK_BUDGET_GB  # type: ignore[arg-type]
     )
-    stage_str = ", ".join(f"{k} {v}s" for k, v in list(best["stages"].items())[:4])  # type: ignore[union-attr]
+    stage_str = ", ".join(
+        f"{k.replace('_', ' ')} {v}s" for k, v in list(best["stages"].items())[:4]
+    )  # type: ignore[union-attr]
     achieved = (
         f"largest run that fits this machine: {best['lines']:,} lines in "
         f"{best['run_s']}s, peak {best['peak_gb']} GB on {hw}; slowest stages: {stage_str}"

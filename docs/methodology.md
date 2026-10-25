@@ -369,3 +369,146 @@ Every run writes a manifest: config and mapping hashes, input file
 fingerprints (sha256), software versions, cleaning decisions, parameters and
 stage timings. The DuckDB store keeps both views and the audit trail keyed by
 source line key.
+
+## 11. Pricing-law considerations
+
+Orientation for reviewers, not legal advice. Pricing decisions at scale touch
+several bodies of law, and the engine's job is to surface the facts a counsel
+or compliance reviewer would ask for — never to conclude.
+
+**Price discrimination (Robinson-Patman Act).** Selling commodities of like
+grade and quality to competing buyers at different prices can be unlawful when
+it may harm competition. Recognized defenses include cost justification (the
+price difference reflects differences in the cost of serving the two buyers)
+and meeting competition. The engine raises a *review flag* when two customers
+who are likely competitors of each other — by default, same industry and same
+region, configurable in `compliance.robinson_patman` — carry recommended
+prices for the same item more than a configured threshold apart. Beside every
+flag it shows the cost-to-serve difference between the two customers for that
+item, because that is the first number a cost-justification review needs. The
+flag marks a question, not a violation: whether the customers actually compete,
+whether the goods are of like grade and quality, and whether a defense applies
+are judgments the engine cannot make. Actions on flagged pairs require a
+written justification at approval (Phase 38 guardrail).
+
+**Algorithmic pricing and information sharing (Sherman Act section 1).**
+Recent enforcement and litigation treat pricing algorithms fed with
+competitors' non-public data as potential facilitators of price coordination,
+even without an explicit agreement. For that reason the engine accepts a
+market/competitor price index as an elasticity control **only from public
+sources**: the mapping must declare `public_source: true` for the
+market_price_index table, and anything else switches the control off with a
+stated note (`compliance.market_index_public_source_required`). Public indexes
+(e.g. producer price indexes) carry no such concern.
+
+**What the engine never does.** It never ingests competitor transaction data,
+never recommends coordinating prices with competitors, and never silences a
+compliance flag: a flagged action can be approved, but only with a recorded
+written justification.
+
+## 12. Action center
+
+### Action generation
+
+Engine findings become proposed actions deterministically (content-hash ids;
+dates anchored to the data's last invoice date, so the same world always
+generates the same actions). Five types, each with a plain-English title and
+rationale whose every number comes from the engine's outputs, and an expected
+dollar impact at the *right* opportunity level for its type. Impact bases are
+never summed across types — the three opportunity levels answer different
+questions (section 8), and an action list that added them would be claiming a
+total that does not exist.
+
+| Action type | Expected-impact basis |
+|---|---|
+| Price change | Level 3 (expected contribution change) when the volume response is causal-supported **and** the move sits inside the segment's identifying price support; otherwise level 2 (gross price opportunity) at fixed volume, labeled |
+| Below-floor fix | Raise to the binding floor at fixed volume, in pocket dollars (conservative by construction); a pair with no baseline volume states that instead of inventing a number |
+| Cost pass-through | Recovered cost at the configured pass-through level (default 50%, never full) from the same scenario grid the report uses |
+| Service-policy review | Contribution at stake after activity costs, labeled estimated (activity rates are config estimates) |
+| Rebate / discount review | Level-1 observed leakage in excess of the customer's segment-median leakage rate, with ratio and absolute-dollar gates |
+
+Guardrails are enforced at generation, not documented as advice: an unblocked
+proposal below the binding floor raises an error (never clamped silently);
+contract-protected pairs generate *blocked* actions with the reason shown and
+can never become price changes; the Robinson-Patman review flag (section 11)
+travels with the action; priority defaults by impact and evidence, with a
+non-causal evidence status demoting one level.
+
+### Review workflow (maker-checker)
+
+Lifecycle: proposed → under review → approved | rejected → exported →
+implemented → measured, with rejected actions reworkable back to proposed.
+Every transition is an event in an append-only log (who, when, from-status,
+to-status, note); the current status is **derived by replaying the log**,
+never edited in place, and a stored log is re-validated as a legal walk, which
+catches in-place tampering.
+
+Roles: analyst (proposes, edits, submits, exports, marks implemented),
+approver (approves or rejects), viewer (reads only); a user may hold several.
+Separation of duties: an approver cannot approve an action they proposed or
+submitted. Approving a compliance-flagged action requires a written
+justification, recorded with the event. Edits are whitelisted (owner, due
+date, title, rationale, proposed price), allowed only before approval, refused
+on blocked actions, floor-checked, and every edit lands in an append-only
+audit table. "Measured" belongs to the results tracker, never to a user.
+Identity in local mode is a configured user name the client sends with each
+request — explicitly **not** authentication; the policy layer is the same once
+real login exists.
+
+### ERP price export
+
+Approved price actions (price change, below-floor fix — the types that carry a
+proposed price) become an ERP-importable price file: generic CSV by default,
+with header names, date format, decimal separator, delimiter and price unit
+configurable per deployment. Every row carries the effective date, previous
+price, new price, UOM, approval id and action id. The export is idempotent:
+the file always contains every approved-or-already-exported price action,
+deterministically formatted, so re-exporting rewrites identical bytes; only
+actions still in "approved" receive the exported transition, so no event is
+logged twice. The diff summary shown before export reports expected impact by
+basis — never one summed total. A round-trip test re-imports the exported file
+through the engine's own ingest and matches every price to the cent.
+
+### Results tracking and its limits
+
+After an action is marked implemented, the tracker measures it over a
+configurable window (default 90 days on each side of the implementation date):
+
+- **Price realization** = (P_after − P_before) / (P_new − P_before) on the
+  pair's invoiced prices: 1.0 fully realized, 0 no move, negative eroded
+  further. This is the strongest per-action signal, because it is directly
+  observable.
+- **Volume against prediction.** The treated pair's volume ratio
+  (after/before) is compared to the median ratio of untreated same-segment
+  pairs with sales in both windows — a difference-in-differences design, so a
+  market-wide trend never reads as a price effect. The prediction is the
+  `predicted_volume_ratio` stored on the action **at generation time**
+  ((P1/P0)^elasticity for causal-supported volume responses, 1.0 for
+  fixed-volume actions), so the engine is graded on what it claimed when the
+  action was proposed, not on a number chosen after the fact.
+- **Margin outcome**: pocket margin and contribution, before vs after.
+
+Every gate fails closed with its reason on the outcome row: window not yet
+elapsed, too few after-window sales (a pair that stopped buying is reported as
+exactly that), too few comparison pairs. Calibration — prediction error by
+evidence bucket (causal-supported / IV-estimated / fixed-volume) — appears
+only once a configured minimum of actions is measured; below it the table says
+"not enough implemented actions yet" instead of any number.
+
+**Limits, stated plainly.**
+
+- A single pair's 90-day window carries roughly 0.2–0.3 log points of Poisson
+  noise, which usually exceeds the planted effect of a realistic price change.
+  Per-action volume verdicts are therefore weak evidence; the *pooled*
+  comparison is the meaningful read. On a synthetic world with 30 planted +8%
+  interventions the pooled recovery error is 0.039 log points while the
+  per-pair median absolute error is 0.26 — both reported in
+  `docs/validation.json`.
+- The difference-in-differences comparison assumes untreated same-segment
+  pairs carry the treated pair's counterfactual trend (parallel trends). A
+  shock specific to the treated customer biases the measured effect, in either
+  direction.
+- Only implemented actions are measured, and which proposals get implemented
+  is a human choice — measured outcomes are a selected sample, not a random
+  one, so calibration describes the actions that were taken, not all actions
+  the engine could propose.

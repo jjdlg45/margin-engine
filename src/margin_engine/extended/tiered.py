@@ -7,6 +7,10 @@ retrospective settlement row exists for the customer-year, the settled amount
 is allocated over that year's lines (largest remainder, signed weights) and
 the waterfall USES the actual — status `actual`; the accrual stays visible and
 the true-up (actual - accrued) is reported. Measured in reporting currency.
+
+Phase 35: computed on a narrow projection (row id, customer, date, net,
+transaction type) and joined back by the caller, instead of splitting the
+full-width ledger. Values are identical to the pre-refactor path.
 """
 
 from __future__ import annotations
@@ -16,30 +20,42 @@ import polars as pl
 from margin_engine.money import div_half_even_expr
 from margin_engine.waterfall.allocate import allocate_exact
 
-ZERO_COLS = [
-    pl.lit(0, dtype=pl.Int64).alias("tiered_accrued_cents"),
-    pl.lit(0, dtype=pl.Int64).alias("tiered_actual_alloc_cents"),
-    pl.lit(0, dtype=pl.Int64).alias("tiered_rebate_used_cents"),
-    pl.lit(None, dtype=pl.String).alias("tiered_rebate_status"),
-    pl.lit(0, dtype=pl.Int64).alias("tiered_rate_bp"),
+# Output columns in ledger order; rows outside the tiered basis default to
+# zero cents / null status (the caller fills them after the join).
+TIERED_COLS = [
+    "tiered_accrued_cents",
+    "tiered_actual_alloc_cents",
+    "tiered_rebate_used_cents",
+    "tiered_rebate_status",
+    "tiered_rate_bp",
 ]
 
 
-def apply_tiered_rebates(
+def tiered_rebate_columns(
     lines: pl.DataFrame,
     rebate_programs: pl.DataFrame | None,
     tiers: pl.DataFrame | None,
     settlements: pl.DataFrame | None,
     notes: list[str],
     residuals: dict[str, int],
-) -> pl.DataFrame:
+    *,
+    row_col: str,
+) -> pl.DataFrame | None:
+    """Narrow tiered-rebate computation.
+
+    `lines` carries row_col, source_line_key, customer_id, invoice_date,
+    net_amount_cents and transaction_type. Returns (row_col, *TIERED_COLS) for
+    the basis rows, or None when the feature does not apply (no programs, no
+    tiers, no tiered customers, or an empty basis) — the caller then uses the
+    all-default columns.
+    """
     if rebate_programs is None or tiers is None:
-        return lines.with_columns(ZERO_COLS)
+        return None
     tiered_cust = rebate_programs.filter(pl.col("program_kind") == "tiered").select(
         "customer_id", pl.col("rebate_program_id").alias("_pgm")
     )
     if tiered_cust.height == 0:
-        return lines.with_columns(ZERO_COLS)
+        return None
 
     in_basis = (
         pl.col("transaction_type").is_in(["sale", "return"])
@@ -47,9 +63,8 @@ def apply_tiered_rebates(
         & pl.col("customer_id").is_in(tiered_cust["customer_id"].implode())
     )
     basis = lines.filter(in_basis)
-    other = lines.filter(~in_basis).with_columns(ZERO_COLS)
     if basis.height == 0:
-        return lines.with_columns(ZERO_COLS)
+        return None
 
     # Cumulative calendar-year net per customer, deterministic ordering.
     basis = (
@@ -137,5 +152,4 @@ def apply_tiered_rebates(
         settled_lines["tiered_accrued_cents"].sum()
     )
     residuals["tiered_true_up_cents"] = true_up
-    basis = basis.drop("_year", "_cum", "_pgm", "rate_bp", "_settled")
-    return pl.concat([other, basis], how="diagonal_relaxed")
+    return basis.select(row_col, *TIERED_COLS)

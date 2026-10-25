@@ -38,6 +38,48 @@ class PipelineResult:
     blank_rows_dropped: dict[str, int] = field(default_factory=dict)
 
 
+# Low-cardinality code and status columns carried on every ledger line. Stored
+# as Categorical in memory (Phase 35): the dictionary replaces a per-row string
+# copy — the long cost_build_label alone is ~60 bytes a line — while polars 2
+# keeps comparisons, group-bys, sorts and concat_str lexically identical.
+# Exports cast back to String, so every file is byte-identical to before.
+CODE_COLUMNS = [
+    "transaction_type",
+    "return_reason",
+    "credit_class",
+    "credit_reason",
+    "kit_role",
+    "cost_build_label",
+    "uom",
+    "base_uom",
+    "uom_norm",
+    "currency",
+    "channel",
+    "sales_rep_id",
+    "rebate_program_id",
+    "contract_id",
+    "supplier_id",
+    "inbound_freight_per_unit",
+    "duty_per_unit",
+    "return_recovery_status",
+    "return_freight_exp_status",
+    "return_handling_status",
+    "billed_charge_status",
+    "rebate_settlement_status",
+    "tiered_rebate_status",
+    "freight_expense_status",
+]
+
+
+def _compact_codes(frame: pl.DataFrame) -> pl.DataFrame:
+    casts = [
+        pl.col(c).cast(pl.Categorical)
+        for c in CODE_COLUMNS
+        if c in frame.columns and frame.schema[c] == pl.String
+    ]
+    return frame.with_columns(casts) if casts else frame
+
+
 REFERENCE_TABLES = [
     "price_list",
     "uom_conversions",
@@ -62,13 +104,41 @@ REFERENCE_TABLES = [
     "market_price_index",
     "gl_totals",
     "external_cost_series",
+    "fiscal_periods",
 ]
 
 
-def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineResult:
+def run_pipeline(
+    data_dir: Path,
+    mapping_path: Path,
+    rules: Rules,
+    *,
+    lines: pl.DataFrame | None = None,
+    cache_dir: Path | None = None,
+) -> PipelineResult:
+    """`lines` lets a caller hand in an already-canonical lines frame (the
+    replay feed filters a cached parse instead of re-parsing every tick);
+    `cache_dir` enables the fingerprint-keyed parse cache (Phase 35). Both off
+    by default; results are identical either way."""
     mapping = load_mapping(mapping_path)
     blank_counts: dict[str, int] = {}
-    lines = load_lines(data_dir, mapping, blank_counts)
+    if lines is None and cache_dir is not None:
+        from margin_engine.cache import StageCache, fingerprint_file
+
+        cache = StageCache(cache_dir)
+        key = cache.key(
+            "canonical_lines",
+            [fingerprint_file(data_dir / mapping.lines_file), fingerprint_file(mapping_path)],
+        )
+        lines = cache.get(key)
+        if lines is None:
+            lines = load_lines(data_dir, mapping, blank_counts)
+            cache.put(key, lines, meta=blank_counts)
+        else:
+            blank_counts.update(cache.get_meta(key) or {})
+            rss_log("load_lines_cache_hit")
+    if lines is None:
+        lines = load_lines(data_dir, mapping, blank_counts)
     rss_log("load_lines")
     ref = {
         name: load_reference_table(data_dir, mapping, name, blank_counts)
@@ -140,6 +210,7 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
         tiered_settlements=ref["tiered_settlements"],
     )
     rss_log("waterfall")
+    wf.lines = _compact_codes(wf.lines)
     # The classified ledger is superseded by the waterfall lines; only the
     # small duplicate frame and source totals are still needed (27.2).
     classified.ledger = pl.DataFrame()
@@ -190,17 +261,32 @@ def run_pipeline(data_dir: Path, mapping_path: Path, rules: Rules) -> PipelineRe
     )
 
 
-def store_duckdb(result: PipelineResult, db_path: Path) -> None:
+def store_duckdb(
+    result: PipelineResult, db_path: Path, prewritten: dict[str, Path] | None = None
+) -> None:
     """Persist both views and the audit trail. source_line_key ties every row
-    in every table back to the original export line."""
+    in every table back to the original export line.
+
+    `prewritten` maps export names to parquet files the caller already wrote
+    (Phase 35): the largest tables load straight from those files instead of
+    being serialized a second time. Table names stay the same either way."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    pre = prewritten or {}
     con = duckdb.connect(str(db_path))
     try:
+        # Bounded working memory: DuckDB spills to disk under pressure instead
+        # of ballooning the engine process at the largest table loads (Phase 35).
+        con.execute("SET memory_limit='1GB'")
         frames: dict[str, pl.DataFrame] = {
             "financial_ledger": result.ledger,
             "sales_observations": result.observations,
             "removed_duplicates": result.removed_duplicates,
             "reconciliation_report": result.reconciliation.to_frame(),
+        }
+        # Export-name -> store-name for tables that can reuse written parquet.
+        reusable = {
+            "financial_ledger": "financial_ledger",
+            "reconciliation": "reconciliation_report",
         }
         for name, ref_df in result.reference.items():
             if ref_df is not None:
@@ -211,12 +297,32 @@ def store_duckdb(result: PipelineResult, db_path: Path) -> None:
                 "amount_cents": list(result.reconciliation.residuals.values()),
             }
         )
+        done: set[str] = set()
+        for export_name, table in reusable.items():
+            path = pre.get(export_name)
+            if path is not None and path.exists():
+                con.execute(
+                    f'CREATE OR REPLACE TABLE "{table}" AS SELECT * FROM read_parquet(?)',
+                    [str(path)],
+                )
+                done.add(table)
+        if "financial_ledger" in done:
+            # The observations view is a pure row filter of the ledger (5.4):
+            # derive it inside DuckDB from the table just loaded instead of
+            # serializing the frame a second time.
+            con.execute(
+                'CREATE OR REPLACE TABLE "sales_observations" AS '
+                'SELECT * FROM "financial_ledger" '
+                "WHERE transaction_type = 'sale' AND quantity > 0 "
+                "AND net_amount_cents > 0 AND customer_id IS NOT NULL"
+            )
+            done.add("sales_observations")
         # Hand frames to DuckDB via parquet files (polars-native writer), not
         # arrow registration: pyarrow can be unavailable in locked-down
         # environments and parquet keeps the exact Int64 cents types.
         with tempfile.TemporaryDirectory() as td:
             for name, df in frames.items():
-                if not df.columns:
+                if name in done or not df.columns:
                     continue
                 pq = Path(td) / f"{name}.parquet"
                 df.write_parquet(pq)

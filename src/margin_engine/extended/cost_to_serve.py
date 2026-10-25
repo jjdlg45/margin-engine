@@ -26,6 +26,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar
 
 
 @dataclass
@@ -173,12 +174,22 @@ def order_economics(lines: pl.DataFrame) -> pl.DataFrame:
     return _with_coverage(out)
 
 
-def customer_economics(lines: pl.DataFrame) -> pl.DataFrame:
-    months = (
-        lines.filter(pl.col("transaction_type") == "sale")
-        .select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique())
-        .item()
-    )
+def customer_economics(lines: pl.DataFrame, fiscal: FiscalCalendar | None = None) -> pl.DataFrame:
+    # Months (default calendar) or fiscal periods (Phase 36) with sales:
+    # the denominator of orders_per_month.
+    if fiscal is None or fiscal.is_calendar_months:
+        months = (
+            lines.filter(pl.col("transaction_type") == "sale")
+            .select(pl.col("invoice_date").dt.strftime("%Y-%m").n_unique())
+            .item()
+        )
+    else:
+        sale_lines = lines.filter(pl.col("transaction_type") == "sale")
+        months = (
+            fiscal.attach(sale_lines, "invoice_date", period="_fp")
+            .select(pl.col("_fp").n_unique())
+            .item()
+        )
     months = max(int(months or 1), 1)
     base = lines.filter(pl.col("transaction_type").is_in(["sale", "return"]))
     out = (
@@ -222,7 +233,9 @@ def service_policy_flags(customers_econ: pl.DataFrame, rules: Rules) -> pl.DataF
     )
 
 
-def run_cost_to_serve(lines: pl.DataFrame, rules: Rules) -> CostToServeResult:
+def run_cost_to_serve(
+    lines: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> CostToServeResult:
     if "order_id" not in lines.columns:
         # Real exports often carry no order number (Online Retail II). The
         # invoice is the natural order proxy - one document, one shipment -
@@ -237,7 +250,7 @@ def run_cost_to_serve(lines: pl.DataFrame, rules: Rules) -> CostToServeResult:
     lines, notes = apply_activity_costs(lines, rules)
     notes = lines_proxy_note + notes
     orders = order_economics(lines)
-    cust = customer_economics(lines)
+    cust = customer_economics(lines, fiscal)
     flags = service_policy_flags(cust, rules)
     return CostToServeResult(
         lines=lines,

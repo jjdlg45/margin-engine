@@ -1,5 +1,6 @@
-import "@fontsource-variable/ibm-plex-sans";
-import "@fontsource/ibm-plex-mono/400.css";
+// Fonts are self-hosted and preloaded from index.html (public/fonts/) so they
+// are ready at first paint; importing them here bundled them behind the JS,
+// and the late swap reflowed the page (layout shift).
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";

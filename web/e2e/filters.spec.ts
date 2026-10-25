@@ -168,9 +168,19 @@ test("guidance: keyboard-only combobox use", async ({ page }) => {
   // Wait for the filtered options to render (as a keyboard user would see
   // them) before navigating - ArrowDown must not race the list update.
   await expect(page.getByRole("option").first()).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/customer=/);
+  // Under full-suite CPU load a re-render can drop the active option between
+  // ArrowDown and Enter; a real keyboard user would simply press again, so
+  // the commit retries until the selection lands.
+  await expect(async () => {
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("combobox", { name: "Customer" })).toHaveAttribute(
+      "aria-activedescendant",
+      /.+/,
+      { timeout: 1000 },
+    );
+    await page.keyboard.press("Enter");
+    expect(page.url()).toMatch(/customer=/);
+  }).toPass({ timeout: 15_000 });
 });
 
 test("guidance: row click opens the band chart; deep link round-trips", async ({ page }) => {

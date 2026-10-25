@@ -109,6 +109,140 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "Estimated",
         "description": "From configured policy rates, not source amounts - labeled wherever used.",
     },
+    # --- action center (Run 5, Phases 38-42) ----------------------------------
+    "price_change": {
+        "label": "Price change",
+        "description": "Raise one customer-item price toward the segment target, never "
+        "below the floor.",
+    },
+    "below_floor_fix": {
+        "label": "Below-floor fix",
+        "description": "This pair is priced below the binding margin floor; raising to the "
+        "floor is the minimum fix.",
+    },
+    "cost_pass_through": {
+        "label": "Cost pass-through",
+        "description": "Recover part of a cost increase at the chosen pass-through level; "
+        "full pass-through is never assumed.",
+    },
+    "service_policy": {
+        "label": "Service policy",
+        "description": "A minimum-order or delivery-frequency change for a customer losing "
+        "money after activity costs - not a price action.",
+    },
+    "rebate_discount_review": {
+        "label": "Rebate and discount review",
+        "description": "This customer's leakage rate sits far above its segment's median; "
+        "the amount shown is the observed excess, never a forecast.",
+    },
+    "proposed": {
+        "label": "Proposed",
+        "description": "Generated or drafted; not yet submitted for review.",
+    },
+    "under_review": {
+        "label": "Under review",
+        "description": "Submitted by an analyst; waiting for an approver's decision.",
+    },
+    "approved": {
+        "label": "Approved",
+        "description": "An approver (never the proposer) accepted it; ready for the price export.",
+    },
+    "rejected": {
+        "label": "Rejected",
+        "description": "An approver declined it; it can be reworked and resubmitted.",
+    },
+    "exported": {
+        "label": "Exported",
+        "description": "Included in an ERP price export; waiting to be implemented.",
+    },
+    "implemented": {
+        "label": "Implemented",
+        "description": "Marked live in the ERP; the tracker measures it after the window.",
+    },
+    "measured": {
+        "label": "Measured",
+        "description": "The outcome window elapsed and the result is measured against an "
+        "untreated comparison group.",
+    },
+    "high": {"label": "High", "description": "Largest expected impact with solid evidence."},
+    "medium": {"label": "Medium", "description": "Meaningful impact or demoted evidence."},
+    "low": {"label": "Low", "description": "Small expected impact or weak volume evidence."},
+    "expected_contribution_change": {
+        "label": "Expected contribution change",
+        "description": "Level 3: contribution at the new price minus today's, with the "
+        "causal-supported volume response - never summed with other levels.",
+    },
+    "gross_price_opportunity_fixed_volume": {
+        "label": "Gross opportunity at unchanged volume",
+        "description": "Level 2: the pocket value of the price gap if volume did not move - "
+        "the evidence does not support predicting a response.",
+    },
+    "floor_gap_fixed_volume_pocket": {
+        "label": "Floor gap at unchanged volume",
+        "description": "The pocket dollars recovered by raising to the floor at today's volume.",
+    },
+    "no_recent_volume": {
+        "label": "No recent volume",
+        "description": "The pair had no baseline-window sales, so no dollar impact is invented.",
+    },
+    "cost_recovery_at_chosen_level": {
+        "label": "Cost recovery at the chosen level",
+        "description": "Dollars of the cost increase recovered at the configured "
+        "pass-through percentage, at unchanged volume.",
+    },
+    "contribution_at_stake_estimated": {
+        "label": "Contribution at stake (estimated)",
+        "description": "The money lost after activity costs; activity rates are config estimates.",
+    },
+    "observed_leakage_excess": {
+        "label": "Observed leakage excess",
+        "description": "Level 1: reconciled dollars above the segment-median leakage rate - "
+        "an accounting fact, never summed with price opportunities.",
+    },
+    "manual_proposal": {
+        "label": "Manual proposal",
+        "description": "Proposed by an analyst, not generated from engine outputs.",
+    },
+    "manual": {
+        "label": "Manual",
+        "description": "Entered by a person; no engine evidence attached.",
+    },
+    "insufficient_evidence": {
+        "label": "Insufficient evidence",
+        "description": "The outcome cannot be measured reliably; the reason is shown "
+        "instead of a number.",
+    },
+    "causal_supported": {
+        "label": "Causal-supported",
+        "description": "Actions whose volume response met every causal criterion.",
+    },
+    "iv_estimated": {
+        "label": "Instrumented estimate",
+        "description": "Actions whose volume evidence was instrumented but not fully "
+        "causal-supported.",
+    },
+    "fixed_volume": {
+        "label": "Fixed volume",
+        "description": "Actions sized at unchanged volume.",
+    },
+    "not_enough_implemented_actions": {
+        "label": "Not enough implemented actions yet",
+        "description": "Calibration appears once enough actions are implemented and "
+        "measured; until then no number is shown.",
+    },
+    # --- pricing compliance (Run 5, Phase 37) ---------------------------------
+    "rp_review_flag": {
+        "label": "Price-discrimination review",
+        "description": "Two likely competitors (same industry and region by default) carry "
+        "recommended prices for the same item further apart than the configured "
+        "threshold. A review prompt with the cost-to-serve difference attached, "
+        "not a conclusion; approval requires a written justification.",
+    },
+    "cts_difference_cents": {
+        "label": "Cost-to-serve difference",
+        "description": "The difference in per-unit cost to serve between the two flagged "
+        "customers - the first number a cost-justification review needs.",
+    },
     # --- volume treatments (opportunity) ----------------------------------------
     "expected_change": {
         "label": "Volume modeled",
@@ -361,13 +495,36 @@ _BAND_PHRASES: dict[str, str] = {
 MERGED_QUALIFIER = "[not assigned to a more specific leaf]"
 
 
-def _nice_value(v: str) -> str:
+def display_value(v: str, acronyms: frozenset[str] = frozenset()) -> str:
+    """Display form of a categorical DATA value (Phase 46): each word
+    capitalized, acronyms (from the mapping's display.acronyms list) fully
+    upper-cased. Raw values stay raw in every CSV/Parquet export."""
+    upper = {a.upper() for a in acronyms}
+    words = v.replace("_", " ").split(" ")
+    out = [w.upper() if w.upper() in upper else (w[:1].upper() + w[1:]) for w in words if w]
+    return " ".join(out)
+
+
+def _nice_value(v: str, acronyms: frozenset[str] = frozenset(), *, plain: bool = False) -> str:
     v = v.strip()
-    return _VALUE_WORDS.get(v, v.replace("_", " "))
+    # Engine-constructed descriptor words and band levels keep their sentence
+    # case (plain=True); actual DATA values render through display_value
+    # (Phase 46): capitalized words, declared acronyms upper-case.
+    if v in _VALUE_WORDS:
+        return _VALUE_WORDS[v]
+    if plain:
+        return v.replace("_", " ")
+    return display_value(v, acronyms)
 
 
-def _natural_list(values: list[str], conj: str = "and") -> str:
-    vals = [_nice_value(v) for v in values]
+def _natural_list(
+    values: list[str],
+    conj: str = "and",
+    acronyms: frozenset[str] = frozenset(),
+    *,
+    plain: bool = False,
+) -> str:
+    vals = [_nice_value(v, acronyms, plain=plain) for v in values]
     if len(vals) == 1:
         return vals[0]
     return ", ".join(vals[:-1]) + f" {conj} {vals[-1]}"
@@ -380,8 +537,10 @@ def _order_values(feature: str, values: list[str]) -> list[str]:
     return sorted(values)
 
 
-def _include_phrase(feature: str, values: list[str]) -> str:
-    vals = _natural_list(_order_values(feature, values), "or")
+def _include_phrase(feature: str, values: list[str], acronyms: frozenset[str] = frozenset()) -> str:
+    # Engine-constructed ordered bands are sentence words, not data values.
+    plain = feature in _ORDERED_LEVELS
+    vals = _natural_list(_order_values(feature, values), "or", acronyms, plain=plain)
     if feature in _BAND_PHRASES:
         return f"{vals} {_BAND_PHRASES[feature]}"
     if feature == "revenue_abc":
@@ -390,17 +549,20 @@ def _include_phrase(feature: str, values: list[str]) -> str:
     return f"{vals} {noun}"
 
 
-def _phrase(feature: str, values: list[str], negated: bool) -> str:
+def _phrase(
+    feature: str, values: list[str], negated: bool, acronyms: frozenset[str] = frozenset()
+) -> str:
     if not negated:
-        return _include_phrase(feature, values)
+        return _include_phrase(feature, values, acronyms)
     order = _ORDERED_LEVELS.get(feature)
     if order and set(values) <= set(order):
         kept = [lv for lv in order if lv not in values]
         if kept:
-            return _include_phrase(feature, kept)
+            return _include_phrase(feature, kept, acronyms)
     # Data-driven categories: exclusions read as "all X except A, B and C".
     noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
-    return f"all {noun} except {_natural_list(sorted(values))}"
+    plain = feature in _ORDERED_LEVELS
+    return f"all {noun} except {_natural_list(sorted(values), acronyms=acronyms, plain=plain)}"
 
 
 def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
@@ -441,7 +603,7 @@ def _split_one_hot(cond: str) -> tuple[str, str, bool]:
     return body, "", neg
 
 
-def _one_hot_phrases(conds: list[str]) -> list[str]:
+def _one_hot_phrases(conds: list[str], acronyms: frozenset[str] = frozenset()) -> list[str]:
     """Group one-hot conditions per feature, rendering each group through the
     same phrasing as the segment rules: ordered bands always as included
     levels, data-driven categories excluded with 'except'. An included value
@@ -458,9 +620,9 @@ def _one_hot_phrases(conds: list[str]) -> list[str]:
     phrases = []
     for feat in order:
         if feat in included:
-            phrases.append(_include_phrase(feat, included[feat]))
+            phrases.append(_include_phrase(feat, included[feat], acronyms))
         elif feat in excluded:
-            phrases.append(_phrase(feat, sorted(excluded[feat]), negated=True))
+            phrases.append(_phrase(feat, sorted(excluded[feat]), negated=True, acronyms=acronyms))
     return phrases
 
 
@@ -489,7 +651,7 @@ _MERGED_BULLET = (
 )
 
 
-def plain_rule(rule: str) -> PlainRule:
+def plain_rule(rule: str, acronyms: frozenset[str] = frozenset()) -> PlainRule:
     """Plain-English name, description and condition bullets for a tree rule.
 
     A segment merged from several tree leaves (an OR of branch rules) is
@@ -527,7 +689,7 @@ def plain_rule(rule: str) -> PlainRule:
         conds = [
             c.strip() for c in core.replace("(", "").replace(")", "").split(" AND ") if c.strip()
         ]
-        words = _one_hot_phrases(conds)
+        words = _one_hot_phrases(conds, acronyms)
         name = _cap_first(" · ".join(words))
         description = _cap_first(" and ".join(words) + ".")
         bullets = [_cap_first(w) for w in words]
@@ -535,12 +697,14 @@ def plain_rule(rule: str) -> PlainRule:
             description += " A more specific leaf does not exist for these lines."
             bullets.append(_MERGED_BULLET)
         return PlainRule(name or "All lines", description, bullets, note)
-    sentences = [" with ".join(_phrase(f, v, n) for f, v, n in branch) for branch in parsed]
+    sentences = [
+        " with ".join(_phrase(f, v, n, acronyms) for f, v, n in branch) for branch in parsed
+    ]
     # The name covers every branch (each branch contributes its leading
     # conditions); the description and bullets carry every branch in full.
     name_parts: list[str] = []
     for branch in parsed:
-        part = " with ".join(_phrase(f, v, n) for f, v, n in branch[:3])
+        part = " with ".join(_phrase(f, v, n, acronyms) for f, v, n in branch[:3])
         if part not in name_parts:
             name_parts.append(part)
     name = _cap_first(" or ".join(name_parts))
@@ -548,7 +712,7 @@ def plain_rule(rule: str) -> PlainRule:
         f"Lines from {sentences[0]}" + "".join(f"; or from {s}" for s in sentences[1:]) + "."
     )
     if len(parsed) == 1:
-        bullets = [_cap_first(_phrase(f, v, n)) for f, v, n in parsed[0]]
+        bullets = [_cap_first(_phrase(f, v, n, acronyms)) for f, v, n in parsed[0]]
     else:
         bullets = [_cap_first(sentences[0]), *(f"or {s}" for s in sentences[1:])]
     if len(parsed) > 1:

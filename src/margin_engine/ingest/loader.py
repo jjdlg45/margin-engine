@@ -20,7 +20,9 @@ from margin_engine.ingest.mapping import (
     TransactionTypeDerived,
 )
 from margin_engine.money import (
-    assert_parse_ok,
+    PARSE_SCALE,
+    MoneyParseError,
+    normalize_money_expr,
     parse_money_expr,
     scaled_to_cents,
 )
@@ -215,25 +217,119 @@ def _require_columns(df: pl.DataFrame, cols: list[str], file_label: str) -> None
         raise MappingError(msg)
 
 
+def _scan_lines(
+    path: Path, opts: InputOptions, sheet: str | int | None
+) -> tuple[pl.LazyFrame, int | None]:
+    """Lazy all-string view of the lines file (Phase 35).
+
+    UTF-8 CSV scans lazily (the raw string frame never fully materializes;
+    validation runs as streaming aggregations). .xlsx and non-UTF-8 files take
+    the eager `read_table` path — those readers decode in memory anyway — and
+    return a .lazy() view with blanks already dropped and counted.
+    Returns (lazy frame, n_blank_rows) where n_blank is None when the blank
+    filter still has to run lazily (the UTF-8 CSV path).
+    """
+    is_utf8 = opts.encoding.lower().replace("_", "-") in ("utf-8", "utf8")
+    if path.suffix.lower() == ".xlsx" or not is_utf8:
+        frame, n_blank = read_table(path, opts, sheet)
+        return frame.lazy(), n_blank
+    try:
+        lf = pl.scan_csv(path, infer_schema=False, separator=opts.delimiter, quote_char='"')
+        names = lf.collect_schema().names()
+    except pl.exceptions.ComputeError as exc:
+        if "utf" in str(exc).lower() or "invalid" in str(exc).lower():
+            msg = (
+                f"{path}: cannot decode as '{opts.encoding}' ({exc}). The "
+                f"file is probably in another encoding (Windows exports "
+                f"are often windows-1252); set input.encoding in the mapping."
+            )
+            raise MappingError(msg) from exc
+        msg = (
+            f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+            f"delimited CSV ({exc}). Check input.delimiter and "
+            f"input.encoding in the mapping."
+        )
+        raise MappingError(msg) from exc
+    except Exception as exc:
+        msg = (
+            f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+            f"delimited CSV ({exc}). Check input.delimiter and "
+            f"input.encoding in the mapping."
+        )
+        raise MappingError(msg) from exc
+    # A UTF-8 BOM, if present, must not leak into the first header.
+    if names and names[0].startswith("﻿"):
+        lf = lf.rename({names[0]: names[0].lstrip("﻿")})
+        names = [names[0].lstrip("﻿"), *names[1:]]
+    if opts.trim_whitespace:
+        lf = lf.rename({c: c.strip() for c in names})
+        lf = lf.with_columns(pl.col(pl.String).str.strip_chars())
+        names = [c.strip() for c in names]
+    # Wrong-delimiter signature: one parsed column whose name holds another
+    # delimiter. Named fix instead of a confusing failure later.
+    if len(names) == 1:
+        head = names[0]
+        for cand in (",", ";", "\t", "|"):
+            if cand != opts.delimiter and cand in head:
+                msg = (
+                    f"{path}: parsed as a single column with "
+                    f"{_DELIM_NAMES[opts.delimiter]} as the delimiter, but the "
+                    f"header contains {_DELIM_NAMES[cand]} - the file is likely "
+                    f"{_DELIM_NAMES[cand]}-delimited. Set input.delimiter: "
+                    f"'{cand}' in the mapping."
+                )
+                raise MappingError(msg)
+    return lf, None
+
+
+def _collect(
+    lf: pl.LazyFrame, path: Path, opts: InputOptions, *, streaming: bool = False
+) -> pl.DataFrame:
+    """Collect with scan errors translated to the same actionable messages the
+    eager reader produced (a lazy CSV scan surfaces decode errors here)."""
+    try:
+        return lf.collect(engine="streaming") if streaming else lf.collect()
+    except pl.exceptions.ComputeError as exc:
+        if "utf" in str(exc).lower() or "invalid" in str(exc).lower():
+            msg = (
+                f"{path}: cannot decode as '{opts.encoding}' ({exc}). The "
+                f"file is probably in another encoding (Windows exports "
+                f"are often windows-1252); set input.encoding in the mapping."
+            )
+            raise MappingError(msg) from exc
+        msg = (
+            f"{path}: could not be parsed as {_DELIM_NAMES[opts.delimiter]}-"
+            f"delimited CSV ({exc}). Check input.delimiter and "
+            f"input.encoding in the mapping."
+        )
+        raise MappingError(msg) from exc
+
+
 def load_lines(
     data_dir: Path,
     mapping: SourceMapping,
     blank_counts: dict[str, int] | None = None,
 ) -> pl.DataFrame:
     """Load invoice lines into the canonical schema (money in Int64 cents).
-    Dropped blank-row counts are recorded per file into blank_counts."""
+    Dropped blank-row counts are recorded per file into blank_counts.
+
+    Phase 35: the source is consumed as a lazy scan with streaming collection —
+    validation (blank rows, unparseable money or dates, undeclared transaction
+    codes) runs as aggregations over the scan, and only the typed canonical
+    frame is ever materialized. Values, column order and error messages are
+    identical to the eager loader this replaces.
+    """
     path = data_dir / mapping.lines_file
     if not path.exists():
         msg = f"lines file not found: {path}"
         raise MappingError(msg)
     opts, sep = mapping.effective_input(mapping.lines_input)
-    raw, n_blank = read_table(path, opts, mapping.lines_sheet)
-    if blank_counts is not None and n_blank:
-        blank_counts[mapping.lines_file] = n_blank
+    lf, n_blank_eager = _scan_lines(path, opts, mapping.lines_sheet)
     lm = mapping.lines
     syms = opts.currency_symbols
     negf = opts.negative_format
 
+    names = lf.collect_schema().names()
     declared: list[str] = []
     for f in type(lm).model_fields:
         spec = getattr(lm, f)
@@ -241,80 +337,30 @@ def load_lines(
             declared.append(
                 spec.derive_from_column if isinstance(spec, TransactionTypeDerived) else spec.column
             )
-    _require_columns(raw, declared, str(path))
-    # Unmapped source columns are never read again: dropping them here keeps a
-    # wide real-world export from costing memory for columns nobody declared.
-    raw = raw.select(list(dict.fromkeys(declared)))
-
-    out = raw.select(
-        pl.col(lm.source_line_key.column).alias("source_line_key"),
-        pl.col(lm.invoice_id.column).alias("invoice_id"),
-        pl.col(lm.invoice_date.column)
-        .str.to_date(lm.invoice_date.format, strict=False)
-        .alias("invoice_date"),
-        # Blank identity is missing identity, never a key of its own: real
-        # exports carry anonymous/guest sales (28.3), and an "" customer would
-        # otherwise aggregate into one giant fake account.
-        pl.col(lm.customer_id.column).replace("", None).alias("customer_id"),
-        pl.col(lm.item_id.column).replace("", None).alias("item_id"),
-        (
-            pl.col(lm.quantity.column)
-            .str.replace_all(".", "", literal=True)
-            .str.replace_all(",", ".", literal=True)
-            if sep == ","
-            else pl.col(lm.quantity.column)
-        )
-        .cast(pl.Float64, strict=False)
-        .alias("quantity"),
-    )
-    # Unparseable dates are a data error, reported actionably with line keys.
-    bad_dates = out.filter(pl.col("invoice_date").is_null())
-    if bad_dates.height:
-        keys = bad_dates["source_line_key"].head(10).to_list()
+    missing_cols = [c for c in declared if c not in names]
+    if missing_cols:
         msg = (
-            f"{path}: {bad_dates.height} invoice_date value(s) do not match declared "
-            f"format '{lm.invoice_date.format}'. Offending line keys (up to 10): {keys}"
+            f"{path}: mapped column(s) {missing_cols} not found in the file. "
+            f"Available columns: {names}. Fix the mapping or the export."
         )
         raise MappingError(msg)
 
-    extra: list[pl.Expr] = []
-    if lm.uom is not None:
-        extra.append(pl.col(lm.uom.column).alias("uom"))
-    if lm.order_id is not None:
-        extra.append(pl.col(lm.order_id.column).alias("order_id"))
+    # Fully blank rows are dropped regardless of trim_whitespace: blankness is
+    # judged after trimming (on every column) even when values keep padding.
+    if n_blank_eager is None:
+        blank = pl.all_horizontal(pl.all().cast(pl.String).str.strip_chars().fill_null("").eq(""))
+        n_blank = int(_collect(lf.select(blank.sum().alias("n")), path, opts)["n"].item() or 0)
+        if n_blank:
+            lf = lf.filter(~blank)
     else:
-        # Real exports often carry no order number: the invoice is the natural
-        # order proxy (one document, one shipment). Stated in the run notes.
-        extra.append(pl.col(lm.invoice_id.column).alias("order_id"))
-    for key_field in (
-        "credit_reason",
-        "original_invoice_ref",
-        "sales_rep_id",
-        "channel",
-        "rebate_program_id",
-        "contract_id",
-        "currency",
-        "kit_parent_id",
-    ):
-        spec = getattr(lm, key_field)
-        if spec is not None:
-            extra.append(pl.col(spec.column).replace("", None).alias(key_field))
-        elif key_field in ("credit_reason", "contract_id"):
-            # Always present in the canonical frame: downstream stages read
-            # them (credit classification; contract regime in peer groups,
-            # segmentation, guidance and the panel), and a mapping without
-            # the column must not crash - null means "none declared".
-            extra.append(pl.lit(None, dtype=pl.String).alias(key_field))
-    if lm.transaction_type is not None:
-        txn_src = (
-            lm.transaction_type.derive_from_column
-            if isinstance(lm.transaction_type, TransactionTypeDerived)
-            else lm.transaction_type.column
-        )
-        extra.append(pl.col(txn_src).alias("_txn_raw"))
-    out = pl.concat([out, raw.select(extra)], how="horizontal")
+        n_blank = n_blank_eager
+    if blank_counts is not None and n_blank:
+        blank_counts[mapping.lines_file] = n_blank
 
-    # --- money fields, digit-exact ---------------------------------------
+    # --- validation pass: one streaming scan computes every bad-value count ---
+    date_expr = pl.col(lm.invoice_date.column).str.to_date(lm.invoice_date.format, strict=False)
+    checks: list[pl.Expr] = [date_expr.is_null().sum().alias("_bad_dates")]
+
     money_raw: list[tuple[str, str, str]] = []  # (canonical, source col, cents col)
     if lm.net_amount is not None:
         money_raw.append(("net_amount", lm.net_amount.column, "net_amount_cents"))
@@ -338,178 +384,233 @@ def load_lines(
                 "return_freight_billed_cents",
             )
         )
-
-    scaled_cols = {}
-    for _canon, src, cents in money_raw:
-        scaled_name = f"_{cents}_scaled"
-        scaled_cols[scaled_name] = (src, cents)
-    parsed = raw.select(
-        [
-            parse_money_expr(src, sep, syms, negf).alias(name)
-            for name, (src, _) in scaled_cols.items()
-        ]
-    )
-    check = pl.concat([raw, parsed], how="horizontal")
-    for name, (src, _) in scaled_cols.items():
-        assert_parse_ok(
-            check,
-            src,
-            name,
-            str(path),
-            sep,
-            lm.source_line_key.column,
-            currency_symbols=syms,
-            negative_format=negf,
-        )
-    out = pl.concat(
-        [
-            out,
-            parsed.select(
-                [
-                    scaled_to_cents(pl.col(name)).alias(cents)
-                    for name, (_, cents) in scaled_cols.items()
-                ]
-            ),
-        ],
-        how="horizontal",
-    )
-
-    # Unit price and list price: per-unit values at parse scale (ten-thousandths).
+    # Per-unit price columns at parse scale join the same validation pass.
+    scaled_specs: list[tuple[str, str]] = []  # (source col, output scaled col)
     if lm.unit_price is not None:
-        up = raw.select(
-            parse_money_expr(lm.unit_price.column, sep, syms, negf).alias("unit_price_scaled")
-        )
-        assert_parse_ok(
-            pl.concat([raw, up], how="horizontal"),
-            lm.unit_price.column,
-            "unit_price_scaled",
-            str(path),
-            sep,
-            lm.source_line_key.column,
-            currency_symbols=syms,
-            negative_format=negf,
-        )
-        out = pl.concat([out, up], how="horizontal")
-        if lm.net_amount is None and lm.unit_price.authoritative:
-            # net = quantity x unit price, half-even to cents, integer math.
-            qty_scaled = raw.select(
-                parse_money_expr(lm.quantity.column, sep, syms, negf).alias("_q")
-            )["_q"]
-            out = (
-                out.with_columns(pl.Series("_q_scaled", qty_scaled))
-                .with_columns(
-                    scaled_to_cents(
-                        (pl.col("_q_scaled") * pl.col("unit_price_scaled")).floordiv(10_000)
-                    ).alias("net_amount_cents")
-                )
-                .drop("_q_scaled")
-            )
+        scaled_specs.append((lm.unit_price.column, "unit_price_scaled"))
     if lm.list_price is not None:
-        lp = raw.select(
-            parse_money_expr(lm.list_price.column, sep, syms, negf).alias("list_price_scaled")
-        )
-        assert_parse_ok(
-            pl.concat([raw, lp], how="horizontal"),
-            lm.list_price.column,
-            "list_price_scaled",
-            str(path),
-            sep,
-            lm.source_line_key.column,
-            currency_symbols=syms,
-            negative_format=negf,
-        )
-        out = pl.concat([out, lp], how="horizontal")
-
+        scaled_specs.append((lm.list_price.column, "list_price_scaled"))
     if lm.unit_cost is not None:
-        uc = raw.select(
-            parse_money_expr(lm.unit_cost.column, sep, syms, negf).alias("unit_cost_scaled")
-        )
-        assert_parse_ok(
-            pl.concat([raw, uc], how="horizontal"),
-            lm.unit_cost.column,
-            "unit_cost_scaled",
-            str(path),
-            sep,
-            lm.source_line_key.column,
-            currency_symbols=syms,
-            negative_format=negf,
-        )
-        out = pl.concat([out, uc], how="horizontal")
-        del raw  # last use of the all-string source frame; free it before
-        # the remaining typed-column passes (27.2 memory headroom)
-        if lm.unit_cost.missing_as == "zero_is_missing":
-            out = out.with_columns(
-                pl.when(pl.col("unit_cost_scaled") == 0)
-                .then(None)
-                .otherwise(pl.col("unit_cost_scaled"))
-                .alias("unit_cost_scaled")
-            )
-    else:
-        out = out.with_columns(pl.lit(None, dtype=pl.Int64).alias("unit_cost_scaled"))
+        scaled_specs.append((lm.unit_cost.column, "unit_cost_scaled"))
 
-    # --- transaction type --------------------------------------------------
-    if isinstance(lm.transaction_type, TransactionTypeDerived):
-        # Configured derivation rule (5.2): longest matching prefix wins; no
-        # match (or a null key) takes the declared default. Build the when-
-        # chain shortest-first so the longest prefix ends up outermost.
-        derived = lm.transaction_type
-        expr: pl.Expr = pl.lit(derived.default)
-        for prefix, typ in sorted(derived.prefix_map.items(), key=lambda kv: len(kv[0])):
-            expr = (
-                pl.when(pl.col("_txn_raw").str.starts_with(prefix))
-                .then(pl.lit(typ))
-                .otherwise(expr)
-            )
-        out = out.with_columns(expr.alias("transaction_type")).drop("_txn_raw")
-    elif lm.transaction_type is not None:
-        code_map = lm.transaction_type.code_map
-        unknown = out.filter(
-            ~pl.col("_txn_raw").is_in(list(code_map.keys())) & pl.col("_txn_raw").is_not_null()
+    money_srcs = [src for _, src, _ in money_raw] + [src for src, _ in scaled_specs]
+    for i, src in enumerate(money_srcs):
+        parsed = parse_money_expr(src, sep, syms, negf)
+        nonempty = pl.col(src).cast(pl.String).str.strip_chars().fill_null("").ne("")
+        checks.append((nonempty & parsed.is_null()).sum().alias(f"_bad_money_{i}"))
+        normalized = normalize_money_expr(pl.col(src), sep, syms, negf)
+        too_precise = (
+            normalized.str.split_exact(".", 1)
+            .struct.field("field_1")
+            .fill_null("")
+            .str.len_chars()
+            .gt(PARSE_SCALE)
         )
-        if unknown.height:
-            codes = unknown["_txn_raw"].unique().head(10).to_list()
-            msg = (
-                f"{path}: transaction codes {codes} not declared in the mapping's "
-                f"code_map {code_map}. Declare every code; the engine never guesses."
-            )
-            raise MappingError(msg)
-        out = out.with_columns(
-            pl.col("_txn_raw").replace_strict(code_map, default=None).alias("transaction_type")
-        ).drop("_txn_raw")
-    else:
+        checks.append(too_precise.sum().alias(f"_too_precise_{i}"))
+
+    txn_spec = lm.transaction_type
+    if txn_spec is None:
         msg = (
             f"mapping '{mapping.source_system}' declares no transaction_type and no "
             f"derivation rule; cannot classify sales vs returns vs credits. "
             f"Add a transaction_type entry with a code_map."
         )
         raise MappingError(msg)
-
-    # Normalize credit reasons through the declared map (unmapped reasons kept raw).
-    if mapping.credit_reason_map and "credit_reason" in out.columns:
-        out = out.with_columns(
-            pl.col("credit_reason").replace(mapping.credit_reason_map).alias("credit_reason")
+    code_map: dict[str, str] | None = None
+    if not isinstance(txn_spec, TransactionTypeDerived):
+        code_map = dict(txn_spec.code_map)
+        txn_col = txn_spec.column
+        checks.append(
+            (~pl.col(txn_col).is_in(list(txn_spec.code_map.keys())) & pl.col(txn_col).is_not_null())
+            .sum()
+            .alias("_bad_codes")
         )
-    # Canonical return reason on return lines, from the declared map.
-    if "credit_reason" in out.columns:
+
+    counts = _collect(lf.select(checks), path, opts, streaming=True).row(0, named=True)
+
+    def _offenders(cond: pl.Expr, col: str) -> pl.DataFrame:
+        return _collect(lf.filter(cond).select(pl.col(col)).head(10), path, opts)
+
+    key_src = lm.source_line_key.column
+    if counts["_bad_dates"]:
+        keys = _offenders(date_expr.is_null(), key_src)[key_src].to_list()
+        msg = (
+            f"{path}: {counts['_bad_dates']} invoice_date value(s) do not match declared "
+            f"format '{lm.invoice_date.format}'. Offending line keys (up to 10): {keys}"
+        )
+        raise MappingError(msg)
+    for i, src in enumerate(money_srcs):
+        parsed = parse_money_expr(src, sep, syms, negf)
+        nonempty = pl.col(src).cast(pl.String).str.strip_chars().fill_null("").ne("")
+        bad_cond = nonempty & parsed.is_null()
+        if counts[f"_bad_money_{i}"]:
+            sample = _offenders(bad_cond, src)[src].head(5).to_list()
+            keys = _offenders(bad_cond, key_src)[key_src].to_list()
+            msg = (
+                f"{path}: column '{src}' has {counts[f'_bad_money_{i}']} unparseable money "
+                f"value(s), e.g. {sample}. Likely causes: a currency symbol not listed "
+                f"in the mapping's input.currency_symbols, parentheses negatives without "
+                f"input.negative_format: parentheses, or the wrong decimal_separator."
+                f" Offending line keys (up to 10): {keys}."
+            )
+            raise MoneyParseError(msg)
+        if counts[f"_too_precise_{i}"]:
+            normalized = normalize_money_expr(pl.col(src), sep, syms, negf)
+            too_precise = (
+                normalized.str.split_exact(".", 1)
+                .struct.field("field_1")
+                .fill_null("")
+                .str.len_chars()
+                .gt(PARSE_SCALE)
+            )
+            keys = _offenders(too_precise, key_src)[key_src].to_list()
+            msg = (
+                f"{path}: column '{src}' has values with more than "
+                f"{PARSE_SCALE} decimal places; refusing to truncate money."
+                f" Offending line keys (up to 10): {keys}."
+            )
+            raise MoneyParseError(msg)
+    if (
+        code_map is not None
+        and not isinstance(txn_spec, TransactionTypeDerived)
+        and counts.get("_bad_codes")
+    ):
+        txn_col = txn_spec.column
+        bad_cond = ~pl.col(txn_col).is_in(list(code_map.keys())) & pl.col(txn_col).is_not_null()
+        codes_df = _collect(
+            lf.filter(bad_cond).select(pl.col(txn_col).alias("_c")).unique().sort("_c").head(10),
+            path,
+            opts,
+        )
+        codes = codes_df["_c"].to_list()
+        msg = (
+            f"{path}: transaction codes {codes} not declared in the mapping's "
+            f"code_map {code_map}. Declare every code; the engine never guesses."
+        )
+        raise MappingError(msg)
+
+    # --- the canonical frame: one ordered select, streamed into memory --------
+    exprs: list[pl.Expr] = [
+        pl.col(lm.source_line_key.column).alias("source_line_key"),
+        pl.col(lm.invoice_id.column).alias("invoice_id"),
+        date_expr.alias("invoice_date"),
+        # Blank identity is missing identity, never a key of its own: real
+        # exports carry anonymous/guest sales (28.3), and an "" customer would
+        # otherwise aggregate into one giant fake account.
+        pl.col(lm.customer_id.column).replace("", None).alias("customer_id"),
+        pl.col(lm.item_id.column).replace("", None).alias("item_id"),
+        (
+            pl.col(lm.quantity.column)
+            .str.replace_all(".", "", literal=True)
+            .str.replace_all(",", ".", literal=True)
+            if sep == ","
+            else pl.col(lm.quantity.column)
+        )
+        .cast(pl.Float64, strict=False)
+        .alias("quantity"),
+    ]
+    if lm.uom is not None:
+        exprs.append(pl.col(lm.uom.column).alias("uom"))
+    if lm.order_id is not None:
+        exprs.append(pl.col(lm.order_id.column).alias("order_id"))
+    else:
+        # Real exports often carry no order number: the invoice is the natural
+        # order proxy (one document, one shipment). Stated in the run notes.
+        exprs.append(pl.col(lm.invoice_id.column).alias("order_id"))
+    for key_field in (
+        "credit_reason",
+        "original_invoice_ref",
+        "sales_rep_id",
+        "channel",
+        "rebate_program_id",
+        "contract_id",
+        "currency",
+        "kit_parent_id",
+    ):
+        spec = getattr(lm, key_field)
+        if spec is not None:
+            e = pl.col(spec.column).replace("", None)
+            if key_field == "credit_reason" and mapping.credit_reason_map:
+                # Normalize credit reasons through the declared map (unmapped
+                # reasons kept raw).
+                e = e.replace(mapping.credit_reason_map)
+            exprs.append(e.alias(key_field))
+        elif key_field in ("credit_reason", "contract_id"):
+            # Always present in the canonical frame: downstream stages read
+            # them (credit classification; contract regime in peer groups,
+            # segmentation, guidance and the panel), and a mapping without
+            # the column must not crash - null means "none declared".
+            exprs.append(pl.lit(None, dtype=pl.String).alias(key_field))
+
+    # --- money fields, digit-exact ---------------------------------------
+    for _canon, src, cents in money_raw:
+        exprs.append(scaled_to_cents(parse_money_expr(src, sep, syms, negf)).alias(cents))
+
+    # Unit price and list price: per-unit values at parse scale (ten-thousandths).
+    if lm.unit_price is not None:
+        exprs.append(
+            parse_money_expr(lm.unit_price.column, sep, syms, negf).alias("unit_price_scaled")
+        )
+        if lm.net_amount is None and lm.unit_price.authoritative:
+            # net = quantity x unit price, half-even to cents, integer math.
+            exprs.append(
+                scaled_to_cents(
+                    (
+                        parse_money_expr(lm.quantity.column, sep, syms, negf)
+                        * parse_money_expr(lm.unit_price.column, sep, syms, negf)
+                    ).floordiv(10_000)
+                ).alias("net_amount_cents")
+            )
+    if lm.list_price is not None:
+        exprs.append(
+            parse_money_expr(lm.list_price.column, sep, syms, negf).alias("list_price_scaled")
+        )
+    if lm.unit_cost is not None:
+        uc_expr = parse_money_expr(lm.unit_cost.column, sep, syms, negf)
+        if lm.unit_cost.missing_as == "zero_is_missing":
+            uc_expr = pl.when(uc_expr == 0).then(None).otherwise(uc_expr)
+        exprs.append(uc_expr.alias("unit_cost_scaled"))
+    else:
+        exprs.append(pl.lit(None, dtype=pl.Int64).alias("unit_cost_scaled"))
+
+    # --- transaction type --------------------------------------------------
+    if isinstance(txn_spec, TransactionTypeDerived):
+        # Configured derivation rule (5.2): longest matching prefix wins; no
+        # match (or a null key) takes the declared default. Build the when-
+        # chain shortest-first so the longest prefix ends up outermost.
+        txn_expr: pl.Expr = pl.lit(txn_spec.default)
+        for prefix, typ in sorted(txn_spec.prefix_map.items(), key=lambda kv: len(kv[0])):
+            txn_expr = (
+                pl.when(pl.col(txn_spec.derive_from_column).str.starts_with(prefix))
+                .then(pl.lit(typ))
+                .otherwise(txn_expr)
+            )
+    else:
+        txn_expr = pl.col(txn_spec.column).replace_strict(txn_spec.code_map, default=None)
+    exprs.append(txn_expr.alias("transaction_type"))
+
+    # Canonical return reason on return lines, from the declared map. The
+    # credit_reason expression mirrors the canonical column built above.
+    reason_spec = lm.credit_reason
+    if reason_spec is not None:
+        reason_src = pl.col(reason_spec.column).replace("", None)
+        if mapping.credit_reason_map:
+            reason_src = reason_src.replace(mapping.credit_reason_map)
         canonical_return = (
-            pl.col("credit_reason").replace_strict(mapping.return_reason_map, default="unspecified")
+            reason_src.replace_strict(mapping.return_reason_map, default="unspecified")
             if mapping.return_reason_map
             else pl.lit("unspecified")
         )
-        out = out.with_columns(
-            pl.when(pl.col("transaction_type") == "return")
-            .then(canonical_return)
-            .otherwise(None)
-            .alias("return_reason")
-        )
     else:
-        out = out.with_columns(
-            pl.when(pl.col("transaction_type") == "return")
-            .then(pl.lit("unspecified"))
-            .otherwise(pl.lit(None, dtype=pl.String))
-            .alias("return_reason")
-        )
-    return out
+        canonical_return = pl.lit("unspecified")
+    exprs.append(
+        pl.when(txn_expr == "return")
+        .then(canonical_return)
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("return_reason")
+    )
+
+    return _collect(lf.select(exprs), path, opts, streaming=True)
 
 
 def load_reference_table(

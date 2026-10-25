@@ -27,6 +27,7 @@ class ReplayFeed:
         self.s = settings
         self.store = store
         self._source_lines: pl.DataFrame | None = None
+        self._canonical: pl.DataFrame | None = None
 
     def _lines(self) -> pl.DataFrame:
         if self._source_lines is None:
@@ -34,6 +35,32 @@ class ReplayFeed:
                 self.s.replay_source_dir / LINES_FILE, infer_schema=False
             )
         return self._source_lines
+
+    def _canonical_lines(self) -> pl.DataFrame:
+        """The full source parsed ONCE into the canonical schema, cached on
+        disk keyed by the exact source and mapping bytes (Phase 35). A tick
+        then filters this frame instead of re-parsing every replayed day."""
+        if self._canonical is not None:
+            return self._canonical
+        from margin_engine.cache import StageCache, fingerprint_file
+        from margin_engine.ingest.loader import load_lines
+        from margin_engine.ingest.mapping import load_mapping
+
+        cache = StageCache(self.s.replay_work_dir / "cache")
+        key = cache.key(
+            "replay_canonical_lines",
+            [
+                fingerprint_file(self.s.replay_source_dir / LINES_FILE),
+                fingerprint_file(self.s.replay_mapping),
+            ],
+        )
+        cached = cache.get(key)
+        if cached is None:
+            mapping = load_mapping(self.s.replay_mapping)
+            cached = load_lines(self.s.replay_source_dir, mapping)
+            cache.put(key, cached)
+        self._canonical = cached
+        return cached
 
     def available_days(self) -> list[str]:
         return sorted(self._lines()["InvoiceDate"].unique().to_list())
@@ -72,13 +99,30 @@ class ReplayFeed:
             if src.exists():
                 shutil.copy(src, work / f)
 
+        from datetime import date as _date
+
         from margin_engine.config import load_rules
         from margin_engine.report.full_run import run_full
         from margin_engine.webexport.build import build_bundle, write_bundle
 
         rules_path = REPO / "config" / "rules.yaml"
         out_dir = self.s.replay_work_dir / "engine_out"
-        res = run_full(work, self.s.replay_mapping, rules_path, out_dir)
+        # Only new data is parsed (Phase 35): the canonical source is cached by
+        # fingerprint, and the tick's world is a filter of it. The world CSV is
+        # still written above so the run manifest fingerprints real input files.
+        lines = self._canonical_lines().filter(pl.col("invoice_date") <= _date.fromisoformat(day))
+        res = run_full(work, self.s.replay_mapping, rules_path, out_dir, lines=lines)
+        # New engine-generated actions merge into the action store without
+        # touching existing actions or their review history (Phase 39).
+        if res.actions is not None and res.action_events is not None and res.actions.height:
+            from margin_engine.actions.store import ActionStore
+
+            ActionStore(self.s.actions_db).merge_new(res.actions, res.action_events)
+        # Drift monitoring (Phase 43): compare against the previous refresh,
+        # persist the flags for the API, make this run the new baseline.
+        from margin_engine.drift import DriftStore
+
+        DriftStore(self.s.drift_dir).refresh(res, load_rules(rules_path))
         bundle = build_bundle(
             res,
             load_rules(rules_path),

@@ -16,10 +16,13 @@ from typing import Any
 
 import polars as pl
 
+from margin_engine.actions.generate import generate_actions
+from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
 from margin_engine.extended.hierarchy import apply_analysis_level
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
@@ -71,6 +74,9 @@ class FullRunResult:
     unallocated_settlements: pl.DataFrame | None = None
     library_warnings: list[dict[str, Any]] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
+    fiscal: FiscalCalendar | None = None  # the calendar in force (Phase 36)
+    actions: pl.DataFrame | None = None  # generated action proposals (Phase 38)
+    action_events: pl.DataFrame | None = None  # their birth event log (Phase 38)
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -159,6 +165,9 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "segment_rules": ["leaf_id"],
     "margin_driver_rules": ["leaf_id"],
     "guidance": ["customer_id", "item_id"],
+    "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
+    "actions": ["action_type", "action_id"],
+    "action_events": ["action_id", "seq"],
     "sensitivity": ["segment"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
@@ -199,7 +208,15 @@ def run_full(
     mapping_path: Path,
     rules_path: Path,
     out_dir: Path,
+    *,
+    validate: bool | None = None,
+    lines: pl.DataFrame | None = None,
+    cache_dir: Path | None = None,
 ) -> FullRunResult:
+    """Run the pipeline. `validate=None` follows the config switch
+    (sensitivity.real_data_validation); an explicit bool overrides it — the CLI
+    `run` command passes False unless --validate is given. `lines` and
+    `cache_dir` pass through to run_pipeline (Phase 35)."""
     rules = load_rules(rules_path)
     timings: dict[str, float] = {}
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -212,12 +229,26 @@ def run_full(
     warnings.simplefilter("always")
 
     t = time.perf_counter()
-    res = run_pipeline(data_dir, mapping_path, rules)
+    res = run_pipeline(data_dir, mapping_path, rules, lines=lines, cache_dir=cache_dir)
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
     rss_log("pipeline_done")
 
+    # Fiscal calendar (Phase 36): one calendar drives every ANALYTIC period —
+    # panel periods, peer-group quarters, the guidance observation unit,
+    # baseline windows, period counts, the books tie-out. Data-declared
+    # periods (settlements, landed cost, FX months) stay data-defined.
+    fiscal = build_calendar(rules.fiscal, res.reference.get("fiscal_periods"))
+    res.notes.extend(fiscal.notes)
+    if not fiscal.is_calendar_months:
+        res.notes.append(
+            f"fiscal calendar '{fiscal.kind}' in force: analytic periods, "
+            "quarters and baseline windows follow it; monthly instrument and "
+            "market-index tables join by the calendar month containing each "
+            "fiscal period's start (approximation, stated here)"
+        )
+
     t = time.perf_counter()
-    cts = run_cost_to_serve(res.ledger, rules)
+    cts = run_cost_to_serve(res.ledger, rules, fiscal)
     res.ledger = cts.lines
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
@@ -228,7 +259,8 @@ def run_full(
         res.observations, res.reference["customers"], rules
     )
     res.notes.extend(h_notes)
-    flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules)
+    flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules, fiscal)
+    del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
 
@@ -262,11 +294,36 @@ def run_full(
         if "activity_cts_cents" in res.ledger.columns
         else None
     )
-    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit)
+    guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit, fiscal)
+    # Pricing compliance (Phase 37): Robinson-Patman review flag on competitor
+    # pairs, with cost-to-serve differences as supporting documentation.
+    compliance_res = run_robinson_patman(
+        guidance_res.guidance, res.reference["customers"], cts_per_unit, rules
+    )
+    res.notes.extend(compliance_res.notes)
+    guidance_res.guidance = guidance_res.guidance.join(
+        compliance_res.flags, on=["customer_id", "item_id"], how="left", maintain_order="left"
+    ).with_columns(pl.col("rp_review_flag").fill_null(value=False))
     timings["guidance"] = time.perf_counter() - t
     rss_log("guidance")
 
     t = time.perf_counter()
+    # Public-data-only rule (Phase 37): the market/competitor price index is
+    # accepted as an elasticity control only when the mapping declares its
+    # source PUBLIC. Algorithmic use of competitors' non-public prices raises
+    # antitrust concerns; the engine refuses the control rather than assume.
+    market_idx = res.reference.get("market_price_index")
+    if market_idx is not None and rules.compliance.market_index_public_source_required:
+        mpi_spec = res.mapping.reference_tables.get("market_price_index")
+        if mpi_spec is None or mpi_spec.public_source is not True:
+            market_idx = None
+            res.notes.append(
+                "market price index NOT used as an elasticity control: the "
+                "mapping does not declare public_source: true for it. Only "
+                "public sources are accepted (sharing competitors' non-public "
+                "prices through a pricing algorithm raises antitrust concerns; "
+                "see docs/methodology.md, Pricing-law considerations)"
+            )
     # Instrument builder (27.6): the supplier cost instrument can come from a
     # mapped index table, be BUILT from receipt history, or map an external
     # public series - config decides, the engine never guesses.
@@ -308,7 +365,8 @@ def run_full(
         supplier_idx,
         res.reference["tariff_schedule"],
         rules,
-        market_price_index=res.reference.get("market_price_index"),
+        market_price_index=market_idx,
+        fiscal=fiscal,
     )
     timings["panel"] = time.perf_counter() - t
     rss_log("panel")
@@ -319,7 +377,7 @@ def run_full(
     rss_log("sensitivity")
 
     t = time.perf_counter()
-    leak = observed_leakage(res.ledger, rules)
+    leak = observed_leakage(res.ledger, rules, fiscal)
     opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
     timings["opportunity"] = time.perf_counter() - t
     rss_log("opportunity")
@@ -327,16 +385,22 @@ def run_full(
     # Validation without planted truth (27.4): temporal backtest, placebos,
     # rolling-window stability. Informational; never gates a status.
     real_val = None
-    if rules.sensitivity.real_data_validation:
+    do_validate = rules.sensitivity.real_data_validation if validate is None else validate
+    if do_validate:
         from margin_engine.sensitivity.real_validation import run_real_validation
 
         t = time.perf_counter()
-        real_val = run_real_validation(panel, df, rules, seed=0)
+        real_val = run_real_validation(panel, df, rules, seed=0, fiscal=fiscal)
         res.notes.extend(real_val.notes)
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
     else:
-        res.notes.append("real-data validation OFF: disabled in config")
+        res.notes.append(
+            "real-data validation OFF: disabled in config"
+            if validate is None
+            else "real-data validation OFF: run with --validate or use the "
+            "validate command to include it"
+        )
 
     # --- optional Run-2 modules: each runs when its input exists, otherwise
     # switches off with a stated reason -------------------------------------
@@ -385,7 +449,7 @@ def run_full(
     tieout_res = None
     gl_totals = res.reference.get("gl_totals")
     if gl_totals is not None:
-        tieout_res = run_tieout(res.ledger, gl_totals, rules)
+        tieout_res = run_tieout(res.ledger, gl_totals, rules, fiscal)
         res.notes.extend(tieout_res.notes)
         res.notes.append(
             f"books tie-out ran: {tieout_res.n_failing} month-measure(s) outside tolerance"
@@ -405,6 +469,24 @@ def run_full(
         res.notes.append("cross-price estimation OFF: no substitution_groups table available")
     timings["optional_modules"] = time.perf_counter() - t
     rss_log("optional_modules")
+    # The segmentation frame is consumed; only its leaf assignments, guidance,
+    # the panel and `flagged` live on (Phase 35: one fewer wide line-level frame).
+    del df
+
+    # ---- actions (Phase 38): findings become proposed actions ---------------
+    t = time.perf_counter()
+    actions_res = generate_actions(
+        ledger=res.ledger,
+        guidance=guidance_res.guidance,
+        opportunities=opps,
+        leakage=leak,
+        service_flags=cts.service_flags,
+        sensitivity=sens,
+        panel=panel,
+        rules=rules,
+    )
+    res.notes.extend(actions_res.notes)
+    timings["actions"] = time.perf_counter() - t
 
     # ---- outputs -----------------------------------------------------------
     t = time.perf_counter()
@@ -416,6 +498,9 @@ def run_full(
         "segment_rules": pl.DataFrame(seg.rules),
         "margin_driver_rules": pl.DataFrame(margin_tree.rules),
         "guidance": guidance_res.guidance,
+        "compliance_robinson_patman": compliance_res.detail,
+        "actions": actions_res.actions,
+        "action_events": actions_res.events,
         "sensitivity": sens,
         "opportunities": opps,
         "leakage": leak,
@@ -439,7 +524,7 @@ def run_full(
             else {}
         ),
     }
-    exports["unallocated_settlements"] = (
+    unalloc_frame = (
         res.unallocated_settlements
         if res.unallocated_settlements is not None
         else pl.DataFrame(
@@ -451,29 +536,50 @@ def run_full(
             }
         )
     )
-    exports = {
-        name: _round_solver_outputs(name, _natural_sort(name, frame))
-        for name, frame in exports.items()
-    }
-    for fmt in rules.reporting.output_formats:
-        if fmt == "parquet":
-            for name, frame in exports.items():
-                frame.write_parquet(out_dir / f"{name}.parquet")
-        elif fmt == "csv":
-            for name, frame in exports.items():
-                csv_frame = frame
-                for col, dtype in frame.schema.items():
-                    if col.endswith("_cents") and dtype == pl.Int64:
-                        csv_frame = csv_frame.with_columns(
-                            cents_col_to_dollars(col).alias(col.replace("_cents", "_usd"))
-                        ).drop(col)
+    # Kept in its export (sorted) form: the report and the web bundle iterate
+    # its rows in file order.
+    unalloc_sorted = _natural_sort("unallocated_settlements", unalloc_frame)
+    exports["unallocated_settlements"] = unalloc_sorted
+    # One export at a time (Phase 35): the write-ready copy — categorical code
+    # columns back to plain String (every file keeps its pre-refactor schema,
+    # bytes included), natural sort, solver rounding — exists only while that
+    # file is being written, never as a second full set of frames.
+    formats = list(rules.reporting.output_formats)
+    prewritten: dict[str, Path] = {}
+    for name, frame in exports.items():
+        out = _round_solver_outputs(
+            name, _natural_sort(name, frame.with_columns(pl.col(pl.Categorical).cast(pl.String)))
+        )
+        for fmt in formats:
+            if fmt == "parquet":
+                out.write_parquet(out_dir / f"{name}.parquet")
+                prewritten[name] = out_dir / f"{name}.parquet"
+            elif fmt == "csv":
+                # _usd columns are derived only here, at the CSV boundary; the
+                # engine carries integer cents throughout. One lazy pass
+                # streams the converted frame to disk instead of holding a
+                # converted copy in memory.
+                cents_cols = [
+                    col
+                    for col, dtype in out.schema.items()
+                    if col.endswith("_cents") and dtype == pl.Int64
+                ]
+                lf = out.lazy()
+                if cents_cols:
+                    lf = lf.with_columns(
+                        cents_col_to_dollars(c).alias(c.replace("_cents", "_usd"))
+                        for c in cents_cols
+                    ).drop(cents_cols)
                 try:
-                    csv_frame.write_csv(out_dir / f"{name}.csv")
+                    lf.sink_csv(out_dir / f"{name}.csv")
                 except pl.exceptions.PolarsError:
-                    csv_frame.with_columns(pl.col(pl.Date).cast(pl.String)).write_csv(
+                    lf.with_columns(pl.col(pl.Date).cast(pl.String)).sink_csv(
                         out_dir / f"{name}.csv"
                     )
-    store_duckdb(res, out_dir / "engine.duckdb")
+        del out
+    rss_log("export_files_written")
+    store_duckdb(res, out_dir / "engine.duckdb", prewritten=prewritten)
+    rss_log("duckdb_stored")
     timings["exports"] = time.perf_counter() - t
 
     # ---- manifest -----------------------------------------------------------
@@ -497,6 +603,8 @@ def run_full(
     write_manifest(manifest, out_dir)
 
     # ---- report --------------------------------------------------------------
+    # Display casing for data values (Phase 46): acronyms from the mapping.
+    _acronyms = frozenset(res.mapping.display.acronyms)
     sale = res.ledger.filter(pl.col("transaction_type") == "sale")
     net_rev = int(sale["net_amount_cents"].sum())
     missing_cost_rev = int(sale.filter(pl.col("flag_missing_cost"))["net_amount_cents"].sum())
@@ -648,10 +756,10 @@ def run_full(
                 {
                     **{k: v for k, v in r.items() if k != "rule"},
                     "display_rank": rank,
-                    "name": plain_rule(str(r["rule"])).name,
-                    "plain": plain_rule(str(r["rule"])).description,
-                    "conditions": plain_rule(str(r["rule"])).conditions,
-                    "technical_note": plain_rule(str(r["rule"])).note,
+                    "name": plain_rule(str(r["rule"]), _acronyms).name,
+                    "plain": plain_rule(str(r["rule"]), _acronyms).description,
+                    "conditions": plain_rule(str(r["rule"]), _acronyms).conditions,
+                    "technical_note": plain_rule(str(r["rule"]), _acronyms).note,
                 }
                 for rank, r in enumerate(
                     sorted(seg.rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"]))),
@@ -781,7 +889,9 @@ def run_full(
             else None
         ),
     }
+    rss_log("report_context_built")
     render_report(context, out_dir / "report.html")
+    rss_log("report_rendered")
     return FullRunResult(
         pipeline=res,
         flagged=flagged,
@@ -806,4 +916,7 @@ def run_full(
         unallocated_settlements=exports["unallocated_settlements"],
         library_warnings=lib_warnings,
         manifest=manifest,
+        fiscal=fiscal,
+        actions=actions_res.actions,
+        action_events=actions_res.events,
     )

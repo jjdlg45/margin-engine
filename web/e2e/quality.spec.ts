@@ -19,6 +19,7 @@ const ROUTES = [
   "/guidance",
   "/sensitivity",
   "/opportunity",
+  "/actions",
   "/scenarios",
   "/modules",
   "/methodology",

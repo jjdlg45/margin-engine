@@ -12,6 +12,14 @@ Stages per line, all Int64 cents:
 Every allocated amount carries a *_status column: actual | allocated | estimated.
 Nothing is forced: when an amount cannot be attributed, it stays as a visible
 residual in the reconciliation report instead of being smeared over lines.
+
+Memory layout (Phase 35): each allocation is computed on a NARROW projection
+(row id, group key, driver) instead of splitting the full-width ledger into
+sale/other copies and re-concatenating. The narrow results are gathered into
+one frame keyed by a unique row id (source_line_key can collide — collisions
+are kept and flagged, so it is not a join key) and joined back in a single
+pass; stage arithmetic is pure column expressions. The output columns, their
+order, and every allocated cent are identical to the pre-refactor engine.
 """
 
 from __future__ import annotations
@@ -21,10 +29,12 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from margin_engine.config import Rules
-from margin_engine.extended.tiered import apply_tiered_rebates
+from margin_engine.extended.tiered import TIERED_COLS, tiered_rebate_columns
 from margin_engine.ingest.mapping import MappingError, SourceMapping
 from margin_engine.money import div_half_even_expr
 from margin_engine.waterfall.allocate import allocate_exact
+
+_ROW = "_wf_row_id"
 
 
 @dataclass
@@ -128,15 +138,27 @@ def effective_list(lines: pl.DataFrame, price_list: pl.DataFrame | None) -> pl.D
     ).drop("_eff_list_scaled", "effective_date")
 
 
-def _return_economics(
-    lines: pl.DataFrame,
+# Return-economics output columns, in ledger order (values then statuses).
+_RETURN_COLS = [
+    "return_recovery_cents",
+    "return_handling_cents",
+    "return_freight_exp_cents",
+    "return_recovery_status",
+    "return_freight_exp_status",
+    "return_handling_status",
+]
+
+
+def _return_columns(
+    rets: pl.DataFrame,
     mapping: SourceMapping,
     rules: Rules,
     return_freight_log: pl.DataFrame | None,
     notes: list[str],
     residuals: dict[str, int],
 ) -> pl.DataFrame:
-    """Return recovery revenue and return costs (phase-8.2).
+    """Return recovery revenue and return costs (phase-8.2), computed on the
+    narrow return-rows projection.
 
     Recovery (restocking fee + return freight billed to the customer) is
     ACTUAL when the export maps the columns, otherwise ESTIMATED from the
@@ -147,27 +169,6 @@ def _return_economics(
     expense go to cost-to-serve; recovery adds to pocket revenue.
     """
     rc = rules.returns
-    is_ret = pl.col("transaction_type") == "return"
-    for col in ("restocking_fee_cents", "return_freight_billed_cents"):
-        if col not in lines.columns:
-            lines = lines.with_columns(pl.lit(None, dtype=pl.Int64).alias(col))
-    if "return_reason" not in lines.columns:
-        lines = lines.with_columns(
-            pl.when(is_ret).then(pl.lit("unspecified")).otherwise(None).alias("return_reason")
-        )
-    zero_cols = [
-        pl.lit(0, dtype=pl.Int64).alias("return_recovery_cents"),
-        pl.lit(0, dtype=pl.Int64).alias("return_handling_cents"),
-        pl.lit(0, dtype=pl.Int64).alias("return_freight_exp_cents"),
-        pl.lit(None, dtype=pl.String).alias("return_recovery_status"),
-        pl.lit(None, dtype=pl.String).alias("return_freight_exp_status"),
-        pl.lit(None, dtype=pl.String).alias("return_handling_status"),
-    ]
-    rets = lines.filter(is_ret)
-    if rets.height == 0:
-        return lines.with_columns(zero_cols)
-    other = lines.filter(~is_ret).with_columns(zero_cols)
-
     fee_bp_map = {
         reason: int(policy.restocking_fee_pct * 10_000)
         for reason, policy in rc.reason_policies.items()
@@ -260,30 +261,16 @@ def _return_economics(
             "restocking fee / return freight billed not in the export: return "
             "recovery estimated from the reason policy (labeled estimated)"
         )
-    return pl.concat([other, rets], how="diagonal_relaxed")
+    return rets.select(_ROW, *_RETURN_COLS)
 
 
-def _kit_allocation(
-    lines: pl.DataFrame, notes: list[str], residuals: dict[str, int]
-) -> pl.DataFrame:
-    """Kit revenue allocation (Phase 12): within each (invoice, kit id) group,
-    the priced parent line's revenue is reallocated to the zero-priced
-    component lines by relative standalone price (effective list x normalized
-    quantity), largest-remainder. The reallocation sums to zero per kit, so
-    nothing is created or lost; kit_role labels parent vs component."""
-    if "kit_parent_id" not in lines.columns:
-        return lines.with_columns(
-            pl.lit(0, dtype=pl.Int64).alias("kit_revenue_realloc_cents"),
-            pl.lit(None, dtype=pl.String).alias("kit_role"),
-        )
-    in_kit = pl.col("kit_parent_id").is_not_null() & (pl.col("transaction_type") == "sale")
-    kits = lines.filter(in_kit)
-    other = lines.filter(~in_kit).with_columns(
-        pl.lit(0, dtype=pl.Int64).alias("kit_revenue_realloc_cents"),
-        pl.lit(None, dtype=pl.String).alias("kit_role"),
-    )
-    if kits.height == 0:
-        return other
+def _kit_columns(kits: pl.DataFrame, notes: list[str], residuals: dict[str, int]) -> pl.DataFrame:
+    """Kit revenue allocation (Phase 12) on the narrow kit-rows projection:
+    within each (invoice, kit id) group, the priced parent line's revenue is
+    reallocated to the zero-priced component lines by relative standalone
+    price (effective list x normalized quantity), largest-remainder. The
+    reallocation sums to zero per kit, so nothing is created or lost;
+    kit_role labels parent vs component."""
     kits = kits.with_columns(
         (pl.col("invoice_id") + "|" + pl.col("kit_parent_id")).alias("_kit_key"),
         (pl.col("net_amount_cents") > 0).alias("_is_parent"),
@@ -319,8 +306,11 @@ def _kit_allocation(
         .alias("kit_revenue_realloc_cents")
     )
     out = pl.concat(
-        [other, parent.drop("_is_parent", "_kit_key"), comp.drop("_is_parent", "_kit_key")],
-        how="diagonal_relaxed",
+        [
+            parent.select(_ROW, "kit_revenue_realloc_cents", "kit_role"),
+            comp.select(_ROW, "kit_revenue_realloc_cents", "kit_role"),
+        ],
+        how="vertical",
     )
     residuals["kit_realloc_net_cents"] = int(out["kit_revenue_realloc_cents"].sum())
     if residuals["kit_realloc_net_cents"] != 0:
@@ -354,43 +344,336 @@ def build_waterfall(
         notes.append("no price_list reference: gross list stage labeled incomplete")
 
     sale = pl.col("transaction_type") == "sale"
-    lines = _return_economics(lines, mapping, rules, return_freight_log, notes, residuals)
-    lines = _kit_allocation(lines, notes, residuals)
+    is_ret = pl.col("transaction_type") == "return"
 
-    # --- stage 2: invoice revenue = net + allocated billed charges ----------
-    if order_charges is not None and "order_id" in lines.columns:
-        charges = order_charges.group_by("order_id").agg(
-            pl.col("amount_cents").sum().alias("charge_cents")
+    # Ensure the return-economics input columns exist (same positions as the
+    # pre-refactor engine: appended here when the mapping does not carry them).
+    for col in ("restocking_fee_cents", "return_freight_billed_cents"):
+        if col not in lines.columns:
+            lines = lines.with_columns(pl.lit(None, dtype=pl.Int64).alias(col))
+    if "return_reason" not in lines.columns:
+        lines = lines.with_columns(
+            pl.when(is_ret).then(pl.lit("unspecified")).otherwise(None).alias("return_reason")
         )
-        # Allocate by net amount share across the order's sale lines.
-        sale_lines = lines.filter(sale)
-        other = lines.filter(~sale)
-        sale_lines = allocate_exact(
-            sale_lines,
-            charges.rename({"charge_cents": "amount_cents_grp"}),
+
+    # Unique row id: source_line_key is NOT unique (key collisions are kept and
+    # flagged), so narrow allocation results join back on this instead.
+    lines = lines.with_columns(pl.int_range(pl.len(), dtype=pl.Int64).alias(_ROW))
+    col_order: list[str] = [c for c in lines.columns if c != _ROW]
+
+    # Narrow per-allocation results accumulate here, keyed by row id.
+    extra = lines.select(_ROW)
+
+    def attach(narrow: pl.DataFrame) -> None:
+        nonlocal extra
+        extra = extra.join(narrow, on=_ROW, how="left", maintain_order="left")
+
+    # --- return economics ---------------------------------------------------
+    rets = lines.filter(is_ret).select(
+        _ROW,
+        "source_line_key",
+        "invoice_id",
+        "net_amount_cents",
+        "quantity",
+        "return_reason",
+        "restocking_fee_cents",
+        "return_freight_billed_cents",
+    )
+    if rets.height:
+        attach(_return_columns(rets, mapping, rules, return_freight_log, notes, residuals))
+    col_order.extend(_RETURN_COLS)
+
+    # --- kit allocation -------------------------------------------------------
+    if "kit_parent_id" in lines.columns:
+        in_kit = pl.col("kit_parent_id").is_not_null() & sale
+        kits = lines.filter(in_kit).select(
+            _ROW,
+            "source_line_key",
+            "invoice_id",
+            "kit_parent_id",
+            "net_amount_cents",
+            "eff_list_cents",
+            "quantity_norm",
+        )
+        if kits.height:
+            attach(_kit_columns(kits, notes, residuals))
+    col_order.extend(["kit_revenue_realloc_cents", "kit_role"])
+
+    # --- stage 2: billed charges ---------------------------------------------
+    billed_ran = order_charges is not None and "order_id" in lines.columns
+    if billed_ran and order_charges is not None:
+        charges = order_charges.group_by("order_id").agg(
+            pl.col("amount_cents").sum().alias("amount_cents_grp")
+        )
+        sl = lines.filter(sale).select(_ROW, "source_line_key", "order_id", "net_amount_cents")
+        sl = allocate_exact(
+            sl,
+            charges,
             "order_id",
             "amount_cents_grp",
             "net_amount_cents",
             "billed_charge_alloc_cents",
         )
-        lines = pl.concat(
-            [
-                sale_lines.with_columns(pl.lit("allocated").alias("billed_charge_status")),
-                other.with_columns(
-                    pl.lit(0, dtype=pl.Int64).alias("billed_charge_alloc_cents"),
-                    pl.lit(None, dtype=pl.String).alias("billed_charge_status"),
-                ),
-            ],
-            how="vertical_relaxed",
-        )
+        attach(sl.select(_ROW, "billed_charge_alloc_cents"))
         total_charges = int(order_charges["amount_cents"].sum())
-        allocated = int(lines["billed_charge_alloc_cents"].fill_null(0).sum())
+        allocated = int(sl["billed_charge_alloc_cents"].sum())
         residuals["billed_charges_unallocated_cents"] = total_charges - allocated
-    else:
-        lines = lines.with_columns(
-            pl.lit(0, dtype=pl.Int64).alias("billed_charge_alloc_cents"),
-            pl.lit(None, dtype=pl.String).alias("billed_charge_status"),
+    col_order.extend(["billed_charge_alloc_cents", "billed_charge_status"])
+    col_order.append("invoice_revenue_cents")
+    col_order.append("rebate_actual_cents")
+    if "freight_concession_cents" not in lines.columns:
+        col_order.append("freight_concession_cents")
+    if "discount_cents" not in lines.columns:
+        col_order.append("discount_cents")
+
+    # --- stage 3: settlement rebates -------------------------------------------
+    # Allocation group: customer x quarter (settlement period) x program.
+    unallocated_settlements: pl.DataFrame | None = None
+    if rebate_settlements is not None:
+        in_basis = (sale | is_ret) & (pl.col("net_amount_cents") != 0)
+        bs = lines.filter(in_basis).select(
+            _ROW, "source_line_key", "customer_id", "invoice_date", "net_amount_cents"
         )
+        bs = bs.with_columns(
+            (
+                pl.col("customer_id")
+                + "|"
+                + pl.col("invoice_date").dt.year().cast(pl.String)
+                + "-Q"
+                + pl.col("invoice_date").dt.quarter().cast(pl.String)
+            ).alias("_settle_key")
+        )
+        settle = (
+            rebate_settlements.with_columns(
+                (pl.col("customer_id") + "|" + pl.col("period")).alias("_settle_key")
+            )
+            .group_by("_settle_key")
+            .agg(pl.col("amount_cents").sum())
+        )
+        # Settlements accrue on sales net of returns: allocate over both, with
+        # signed weights so return lines carry negative rebate shares.
+        bs = allocate_exact(
+            bs,
+            settle,
+            "_settle_key",
+            "amount_cents",
+            "net_amount_cents",
+            "rebate_settlement_alloc_cents",
+            signed_driver=True,
+        )
+        # A settlement is allocated whenever its group's total signed weight is
+        # nonzero (return-only groups allocate too). Residual arises ONLY when
+        # no lines match the group (or the signed total is exactly zero); those
+        # settlements are listed individually for the report.
+        alloc_by_group = dict(
+            bs.group_by("_settle_key")
+            .agg(pl.col("rebate_settlement_alloc_cents").sum())
+            .iter_rows()
+        )
+        unallocated = (
+            rebate_settlements.with_columns(
+                (pl.col("customer_id") + "|" + pl.col("period")).alias("_settle_key")
+            )
+            .with_columns(
+                pl.col("_settle_key")
+                .replace_strict(alloc_by_group, default=0, return_dtype=pl.Int64)
+                .alias("_allocated")
+            )
+            .filter((pl.col("_allocated") == 0) & (pl.col("amount_cents") != 0))
+            .drop("_settle_key", "_allocated")
+        )
+        unallocated_settlements = unallocated
+        attach(bs.select(_ROW, "rebate_settlement_alloc_cents"))
+        total_settle = int(rebate_settlements["amount_cents"].sum())
+        alloc_settle = int(bs["rebate_settlement_alloc_cents"].sum())
+        residuals["settlement_rebates_unallocated_cents"] = total_settle - alloc_settle
+        if total_settle - alloc_settle:
+            notes.append(
+                f"{unallocated.height} settlement row(s) have no matching lines in "
+                f"their customer-period group; kept as visible residual"
+            )
+    col_order.extend(["rebate_settlement_alloc_cents", "rebate_settlement_status"])
+
+    # Tiered retrospective rebates: accruals during the period (estimated),
+    # settled customer-years trued up to actual; the waterfall uses whichever
+    # is labeled in tiered_rebate_status.
+    tiered_narrow = tiered_rebate_columns(
+        lines.select(
+            _ROW,
+            "source_line_key",
+            "customer_id",
+            "invoice_date",
+            "net_amount_cents",
+            "transaction_type",
+        ),
+        rebate_programs,
+        rebate_program_tiers,
+        tiered_settlements,
+        notes,
+        residuals,
+        row_col=_ROW,
+    )
+    if tiered_narrow is not None:
+        attach(tiered_narrow)
+    col_order.extend(TIERED_COLS)
+
+    # Price credits: allocate each credit's amount over its original invoice's
+    # sale lines by net share. A credit dollar counts exactly once: attributed
+    # credits zero out on the credit row; unattributable credits keep their own
+    # pocket effect and appear in the residual report.
+    sale_invoice_ids = lines.filter(sale).select(pl.col("invoice_id").unique())
+    # A mapping without original_invoice_ref cannot link credits to sales:
+    # treat every ref as null (credit keeps its own pocket effect, residual).
+    ref_expr = (
+        pl.col("original_invoice_ref")
+        if "original_invoice_ref" in lines.columns
+        else pl.lit(None, dtype=pl.String).alias("original_invoice_ref")
+    )
+    credits = lines.filter(pl.col("credit_class") == "price_credit").select(
+        pl.col("net_amount_cents"), ref_expr
+    )
+    if credits.height:
+        linkable = credits.filter(
+            pl.col("original_invoice_ref").is_in(sale_invoice_ids["invoice_id"].implode())
+        )
+        credit_by_inv = (
+            linkable.group_by("original_invoice_ref")
+            .agg(pl.col("net_amount_cents").sum().alias("credit_cents"))
+            .rename({"original_invoice_ref": "invoice_id"})
+        )
+        sl = lines.filter(sale).select(_ROW, "source_line_key", "invoice_id", "net_amount_cents")
+        sl = allocate_exact(
+            sl,
+            credit_by_inv,
+            "invoice_id",
+            "credit_cents",
+            "net_amount_cents",
+            "price_credit_alloc_cents",
+        )
+        attach(sl.select(_ROW, "price_credit_alloc_cents"))
+        credit_attributed_expr = (pl.col("credit_class") == "price_credit") & ref_expr.is_in(
+            sale_invoice_ids["invoice_id"].implode()
+        )
+        total_price_credit = int(credits["net_amount_cents"].sum())
+        attributed_credit = int(linkable["net_amount_cents"].sum())
+        residuals["price_credits_unattributed_cents"] = total_price_credit - attributed_credit
+    else:
+        credit_attributed_expr = pl.lit(False)
+    col_order.extend(["price_credit_alloc_cents", "credit_attributed"])
+    col_order.append("pocket_revenue_cents")
+
+    # --- stage 6 allocations, computed narrow here so one join carries all ----
+    # (their columns slot in after pocket_gp_cents; the final select orders them)
+    freight_ran = freight_log is not None and "order_id" in lines.columns
+    line_weight_added = False
+    if freight_ran and freight_log is not None:
+        # Weight driver preferred (spec allocation priority); fall back to net.
+        if items is not None and "weight" in items.columns and "line_weight" not in lines.columns:
+            lines = (
+                lines.join(
+                    items.select("item_id", pl.col("weight").alias("_wt")),
+                    on="item_id",
+                    how="left",
+                    maintain_order="left",
+                )
+                .with_columns(
+                    (pl.col("_wt").fill_null(0) * pl.col("quantity_norm").abs()).alias(
+                        "line_weight"
+                    )
+                )
+                .drop("_wt")
+            )
+            line_weight_added = True
+        fl = freight_log.group_by("order_id").agg(pl.col("amount_cents").sum())
+        driver = "line_weight" if "line_weight" in lines.columns else "net_amount_cents"
+        sl = lines.filter(sale).select(_ROW, "source_line_key", "order_id", driver)
+        sl = allocate_exact(
+            sl, fl, "order_id", "amount_cents", driver, "freight_expense_alloc_cents"
+        )
+        attach(sl.select(_ROW, "freight_expense_alloc_cents"))
+        total_fe = int(freight_log["amount_cents"].sum())
+        alloc_fe = int(sl["freight_expense_alloc_cents"].sum())
+        residuals["freight_expense_unallocated_cents"] = total_fe - alloc_fe
+
+    # Non-price claims (cost credits) allocated to original invoice lines as CTS.
+    cost_credits = lines.filter(pl.col("credit_class") == "cost_credit").select(
+        pl.col("net_amount_cents"), ref_expr
+    )
+    if cost_credits.height:
+        linkable_cc = cost_credits.filter(pl.col("original_invoice_ref").is_not_null())
+        cc_by_inv = (
+            linkable_cc.group_by("original_invoice_ref")
+            .agg((-pl.col("net_amount_cents").sum()).alias("claim_cents"))
+            .rename({"original_invoice_ref": "invoice_id"})
+        )
+        sl = lines.filter(sale).select(_ROW, "source_line_key", "invoice_id", "net_amount_cents")
+        sl = allocate_exact(
+            sl,
+            cc_by_inv,
+            "invoice_id",
+            "claim_cents",
+            "net_amount_cents",
+            "claims_cost_alloc_cents",
+        )
+        attach(sl.select(_ROW, "claims_cost_alloc_cents"))
+        total_claims = int(-cost_credits["net_amount_cents"].sum())
+        alloc_claims = int(sl["claims_cost_alloc_cents"].sum())
+        residuals["claims_unallocated_cents"] = total_claims - alloc_claims
+
+    # --- one wide join brings every narrow allocation column back -------------
+    if extra.width > 1:
+        lines = lines.join(extra, on=_ROW, how="left", maintain_order="left")
+
+    # Defaults for rows (or whole features) without an allocation: the
+    # pre-refactor engine carried explicit zeros and null statuses.
+    int_zero_cols = [
+        "return_recovery_cents",
+        "return_handling_cents",
+        "return_freight_exp_cents",
+        "kit_revenue_realloc_cents",
+        "billed_charge_alloc_cents",
+        "rebate_settlement_alloc_cents",
+        *(c for c in TIERED_COLS if c != "tiered_rebate_status"),
+        "price_credit_alloc_cents",
+        "freight_expense_alloc_cents",
+        "claims_cost_alloc_cents",
+    ]
+    str_null_cols = [
+        "return_recovery_status",
+        "return_freight_exp_status",
+        "return_handling_status",
+        "kit_role",
+        "tiered_rebate_status",
+    ]
+    lines = lines.with_columns(
+        *(
+            pl.col(c).fill_null(0).alias(c)
+            if c in lines.columns
+            else pl.lit(0, dtype=pl.Int64).alias(c)
+            for c in int_zero_cols
+        ),
+        *(pl.lit(None, dtype=pl.String).alias(c) for c in str_null_cols if c not in lines.columns),
+        pl.when(sale)
+        .then(pl.lit("allocated"))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("billed_charge_status")
+        if billed_ran
+        else pl.lit(None, dtype=pl.String).alias("billed_charge_status"),
+        pl.when(pl.col("rebate_settlement_alloc_cents").fill_null(0) != 0)
+        .then(pl.lit("allocated"))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("rebate_settlement_status")
+        if rebate_settlements is not None
+        else pl.lit(None, dtype=pl.String).alias("rebate_settlement_status"),
+        pl.when(sale)
+        .then(pl.lit("allocated"))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("freight_expense_status")
+        if freight_ran
+        else pl.lit(None, dtype=pl.String).alias("freight_expense_status"),
+    )
+
+    # --- stage 2: invoice revenue = net + allocated billed charges ----------
     lines = lines.with_columns(
         (
             pl.col("net_amount_cents")
@@ -414,147 +697,8 @@ def build_waterfall(
         pl.col("discount_cents").fill_null(0).alias("discount_cents")
         if "discount_cents" in lines.columns
         else pl.lit(0, dtype=pl.Int64).alias("discount_cents"),
+        credit_attributed_expr.alias("credit_attributed"),
     )
-
-    if rebate_settlements is not None:
-        # Allocation group: customer x quarter (settlement period) x program.
-        lines = lines.with_columns(
-            (
-                pl.col("customer_id")
-                + "|"
-                + pl.col("invoice_date").dt.year().cast(pl.String)
-                + "-Q"
-                + pl.col("invoice_date").dt.quarter().cast(pl.String)
-            ).alias("_settle_key")
-        )
-        settle = (
-            rebate_settlements.with_columns(
-                (pl.col("customer_id") + "|" + pl.col("period")).alias("_settle_key")
-            )
-            .group_by("_settle_key")
-            .agg(pl.col("amount_cents").sum())
-        )
-        # Settlements accrue on sales net of returns: allocate over both, with
-        # signed weights so return lines carry negative rebate shares.
-        in_basis = (sale | (pl.col("transaction_type") == "return")) & (
-            pl.col("net_amount_cents") != 0
-        )
-        sale_lines = lines.filter(in_basis)
-        other = lines.filter(~in_basis)
-        sale_lines = allocate_exact(
-            sale_lines,
-            settle,
-            "_settle_key",
-            "amount_cents",
-            "net_amount_cents",
-            "rebate_settlement_alloc_cents",
-            signed_driver=True,
-        )
-        # A settlement is allocated whenever its group's total signed weight is
-        # nonzero (return-only groups allocate too). Residual arises ONLY when
-        # no lines match the group (or the signed total is exactly zero); those
-        # settlements are listed individually for the report.
-        alloc_by_group = dict(
-            sale_lines.group_by("_settle_key")
-            .agg(pl.col("rebate_settlement_alloc_cents").sum())
-            .iter_rows()
-        )
-        unallocated = (
-            rebate_settlements.with_columns(
-                (pl.col("customer_id") + "|" + pl.col("period")).alias("_settle_key")
-            )
-            .with_columns(
-                pl.col("_settle_key")
-                .replace_strict(alloc_by_group, default=0, return_dtype=pl.Int64)
-                .alias("_allocated")
-            )
-            .filter((pl.col("_allocated") == 0) & (pl.col("amount_cents") != 0))
-            .drop("_settle_key", "_allocated")
-        )
-        unallocated_settlements = unallocated
-        lines = pl.concat(
-            [
-                sale_lines.with_columns(
-                    pl.when(pl.col("rebate_settlement_alloc_cents") != 0)
-                    .then(pl.lit("allocated"))
-                    .otherwise(pl.lit(None, dtype=pl.String))
-                    .alias("rebate_settlement_status")
-                ),
-                other.with_columns(
-                    pl.lit(0, dtype=pl.Int64).alias("rebate_settlement_alloc_cents"),
-                    pl.lit(None, dtype=pl.String).alias("rebate_settlement_status"),
-                ),
-            ],
-            how="vertical_relaxed",
-        ).drop("_settle_key")
-        total_settle = int(rebate_settlements["amount_cents"].sum())
-        alloc_settle = int(lines["rebate_settlement_alloc_cents"].fill_null(0).sum())
-        residuals["settlement_rebates_unallocated_cents"] = total_settle - alloc_settle
-        if total_settle - alloc_settle:
-            notes.append(
-                f"{unallocated.height} settlement row(s) have no matching lines in "
-                f"their customer-period group; kept as visible residual"
-            )
-    else:
-        unallocated_settlements = None
-        lines = lines.with_columns(
-            pl.lit(0, dtype=pl.Int64).alias("rebate_settlement_alloc_cents"),
-            pl.lit(None, dtype=pl.String).alias("rebate_settlement_status"),
-        )
-
-    # Tiered retrospective rebates: accruals during the period (estimated),
-    # settled customer-years trued up to actual; the waterfall uses whichever
-    # is labeled in tiered_rebate_status.
-    lines = apply_tiered_rebates(
-        lines, rebate_programs, rebate_program_tiers, tiered_settlements, notes, residuals
-    )
-
-    # Price credits: allocate each credit's amount over its original invoice's
-    # sale lines by net share. A credit dollar counts exactly once: attributed
-    # credits zero out on the credit row; unattributable credits keep their own
-    # pocket effect and appear in the residual report.
-    sale_invoice_ids = lines.filter(sale).select(pl.col("invoice_id").unique())
-    credits = lines.filter(pl.col("credit_class") == "price_credit")
-    if credits.height:
-        linkable = credits.filter(
-            pl.col("original_invoice_ref").is_in(sale_invoice_ids["invoice_id"].implode())
-        )
-        credit_by_inv = (
-            linkable.group_by("original_invoice_ref")
-            .agg(pl.col("net_amount_cents").sum().alias("credit_cents"))
-            .rename({"original_invoice_ref": "invoice_id"})
-        )
-        sale_lines = lines.filter(sale)
-        other = lines.filter(~sale)
-        sale_lines = allocate_exact(
-            sale_lines,
-            credit_by_inv,
-            "invoice_id",
-            "credit_cents",
-            "net_amount_cents",
-            "price_credit_alloc_cents",
-        )
-        lines = pl.concat(
-            [
-                sale_lines,
-                other.with_columns(pl.lit(0, dtype=pl.Int64).alias("price_credit_alloc_cents")),
-            ],
-            how="vertical_relaxed",
-        )
-        lines = lines.with_columns(
-            (
-                (pl.col("credit_class") == "price_credit")
-                & pl.col("original_invoice_ref").is_in(sale_invoice_ids["invoice_id"].implode())
-            ).alias("credit_attributed")
-        )
-        total_price_credit = int(credits["net_amount_cents"].sum())
-        attributed_credit = int(linkable["net_amount_cents"].sum())
-        residuals["price_credits_unattributed_cents"] = total_price_credit - attributed_credit
-    else:
-        lines = lines.with_columns(
-            pl.lit(0, dtype=pl.Int64).alias("price_credit_alloc_cents"),
-            pl.lit(False).alias("credit_attributed"),
-        )
 
     is_credit = pl.col("transaction_type") == "credit"
     lines = lines.with_columns(
@@ -596,6 +740,7 @@ def build_waterfall(
             "cost_unavailable instead of numbers"
         )
         lines = lines.with_columns(pl.lit(None, dtype=pl.Int64).alias("base_cost_cents"))
+        qty_scaled = pl.lit(0, dtype=pl.Int64)
     else:
         # Cost per declared unit basis: line UOM uses raw quantity; base UOM
         # uses the normalized quantity (e.g. 24 EA -> 2 CS, cost per case).
@@ -603,22 +748,20 @@ def build_waterfall(
         qty_scaled = (pl.col(qty_col) * 10_000).round(0).cast(pl.Int64)
         base_cost = div_half_even_expr(pl.col("unit_cost_scaled") * qty_scaled, 10_000 * 100)
         lines = lines.with_columns(base_cost.alias("base_cost_cents"))
+    col_order.append("base_cost_cents")
 
     addons = pl.lit(0, dtype=pl.Int64)
     if landed_cost_components is not None and uc is not None and not uc.includes_inbound_freight:
         lc = landed_cost_components.with_columns(
             pl.col("inbound_freight_pu_scaled").cast(pl.Int64),
             pl.col("duty_pu_scaled").cast(pl.Int64),
-        )
+        ).rename({"period": "_period"})
         lines = (
             lines.with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("_period"))
-            .join(
-                lc.rename({"period": "_period"}),
-                on=["item_id", "_period"],
-                how="left",
-            )
+            .join(lc, on=["item_id", "_period"], how="left", maintain_order="left")
             .drop("_period")
         )
+        col_order.extend(c for c in lc.columns if c not in ("item_id", "_period"))
         inb = div_half_even_expr(
             pl.col("inbound_freight_pu_scaled").fill_null(0) * qty_scaled, 10_000 * 100
         )
@@ -629,6 +772,7 @@ def build_waterfall(
         )
         addons = inb + duty
     lines = lines.with_columns(addons.alias("landed_addon_cents"))
+    col_order.append("landed_addon_cents")
 
     vendor_adj = pl.lit(0, dtype=pl.Int64)
     if (
@@ -638,11 +782,20 @@ def build_waterfall(
         and items is not None
     ):
         if "supplier_id" not in lines.columns:
-            lines = lines.join(items.select("item_id", "supplier_id"), on="item_id", how="left")
+            lines = lines.join(
+                items.select("item_id", "supplier_id"),
+                on="item_id",
+                how="left",
+                maintain_order="left",
+            )
+            col_order.append("supplier_id")
         vr = vendor_rebate_programs.with_columns(
             (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rate_bp")
         )
-        lines = lines.join(vr.select("supplier_id", "rate_bp"), on="supplier_id", how="left")
+        lines = lines.join(
+            vr.select("supplier_id", "rate_bp"), on="supplier_id", how="left", maintain_order="left"
+        )
+        col_order.append("rate_bp")
         # Vendor rebates apply to the purchase (base) cost, not freight or duty.
         vendor_adj = div_half_even_expr(
             pl.col("base_cost_cents") * pl.col("rate_bp").fill_null(0), 10_000
@@ -663,85 +816,19 @@ def build_waterfall(
             else "cost_unavailable (declared in the mapping; no cost in the source)"
         ).alias("cost_build_label"),
     )
+    col_order.extend(["vendor_rebate_cents", "product_cost_cents", "cost_build_label"])
 
     # --- stage 5: pocket gross profit ----------------------------------------
     lines = lines.with_columns(
         (pl.col("pocket_revenue_cents") - pl.col("product_cost_cents")).alias("pocket_gp_cents")
     )
+    col_order.append("pocket_gp_cents")
 
     # --- stage 6: cost to serve (freight expense + non-price claims) ---------
-    if freight_log is not None and "order_id" in lines.columns:
-        fl = freight_log.group_by("order_id").agg(pl.col("amount_cents").sum())
-        # Weight driver preferred (spec allocation priority); fall back to net.
-        if items is not None and "weight" in items.columns and "line_weight" not in lines.columns:
-            lines = (
-                lines.join(
-                    items.select("item_id", pl.col("weight").alias("_wt")), on="item_id", how="left"
-                )
-                .with_columns(
-                    (pl.col("_wt").fill_null(0) * pl.col("quantity_norm").abs()).alias(
-                        "line_weight"
-                    )
-                )
-                .drop("_wt")
-            )
-        sale_lines = lines.filter(sale)
-        other = lines.filter(~sale)
-        driver = "line_weight" if "line_weight" in sale_lines.columns else "net_amount_cents"
-        sale_lines = allocate_exact(
-            sale_lines, fl, "order_id", "amount_cents", driver, "freight_expense_alloc_cents"
-        )
-        lines = pl.concat(
-            [
-                sale_lines.with_columns(pl.lit("allocated").alias("freight_expense_status")),
-                other.with_columns(
-                    pl.lit(0, dtype=pl.Int64).alias("freight_expense_alloc_cents"),
-                    pl.lit(None, dtype=pl.String).alias("freight_expense_status"),
-                ),
-            ],
-            how="vertical_relaxed",
-        )
-        total_fe = int(freight_log["amount_cents"].sum())
-        alloc_fe = int(lines["freight_expense_alloc_cents"].fill_null(0).sum())
-        residuals["freight_expense_unallocated_cents"] = total_fe - alloc_fe
-    else:
-        lines = lines.with_columns(
-            pl.lit(0, dtype=pl.Int64).alias("freight_expense_alloc_cents"),
-            pl.lit(None, dtype=pl.String).alias("freight_expense_status"),
-        )
-
-    # Non-price claims (cost credits) allocated to original invoice lines as CTS.
-    cost_credits = lines.filter(pl.col("credit_class") == "cost_credit")
-    if cost_credits.height:
-        linkable = cost_credits.filter(pl.col("original_invoice_ref").is_not_null())
-        cc_by_inv = (
-            linkable.group_by("original_invoice_ref")
-            .agg((-pl.col("net_amount_cents").sum()).alias("claim_cents"))
-            .rename({"original_invoice_ref": "invoice_id"})
-        )
-        sale_lines = lines.filter(sale)
-        other = lines.filter(~sale)
-        sale_lines = allocate_exact(
-            sale_lines,
-            cc_by_inv,
-            "invoice_id",
-            "claim_cents",
-            "net_amount_cents",
-            "claims_cost_alloc_cents",
-        )
-        lines = pl.concat(
-            [
-                sale_lines,
-                other.with_columns(pl.lit(0, dtype=pl.Int64).alias("claims_cost_alloc_cents")),
-            ],
-            how="vertical_relaxed",
-        )
-        total_claims = int(-cost_credits["net_amount_cents"].sum())
-        alloc_claims = int(lines.filter(sale)["claims_cost_alloc_cents"].sum())
-        residuals["claims_unallocated_cents"] = total_claims - alloc_claims
-    else:
-        lines = lines.with_columns(pl.lit(0, dtype=pl.Int64).alias("claims_cost_alloc_cents"))
-
+    if line_weight_added:
+        col_order.append("line_weight")
+    col_order.extend(["freight_expense_alloc_cents", "freight_expense_status"])
+    col_order.append("claims_cost_alloc_cents")
     lines = lines.with_columns(
         (
             pl.col("freight_expense_alloc_cents").fill_null(0)
@@ -751,11 +838,20 @@ def build_waterfall(
             + pl.col("return_freight_exp_cents").fill_null(0)
         ).alias("cost_to_serve_cents")
     )
+    col_order.append("cost_to_serve_cents")
 
     # --- stage 7: contribution ------------------------------------------------
     lines = lines.with_columns(
         (pl.col("pocket_gp_cents") - pl.col("cost_to_serve_cents")).alias("contribution_cents")
     )
+    col_order.append("contribution_cents")
+
+    missing = [c for c in col_order if c not in lines.columns]
+    unexpected = [c for c in lines.columns if c not in col_order and c != _ROW]
+    if missing or unexpected:  # defensive: a logic error, never a data error
+        msg = f"waterfall column accounting broke: missing={missing}, unexpected={unexpected}"
+        raise RuntimeError(msg)
+    lines = lines.select(col_order)
     return WaterfallResult(
         lines=lines,
         residuals=residuals,

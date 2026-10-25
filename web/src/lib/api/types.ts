@@ -3,6 +3,11 @@
  * adapter against the BFF - a one-file change in client.ts. */
 
 import type {
+  ActionEventRow,
+  ActionOutcome,
+  ActionRow,
+  ActionsSection,
+  ActionsSummary,
   CustomerEconomics,
   DispersionSection,
   GroupWaterfall,
@@ -44,6 +49,9 @@ export interface AppData {
   /** Live mode only (30.4): per-section refresh status; stale sections are
    * labeled in the shell. */
   refresh_status?: Record<string, RefreshSectionStatus>;
+  /** Live mode only (Phase 43): plain-English drift flags vs the previous
+   * refresh; empty means a comparison ran and found nothing. */
+  drift_flags?: { code: string; message: string }[];
 }
 
 export interface SegmentName {
@@ -68,6 +76,7 @@ export interface OverviewData {
   total_segments: number;
   negative_contribution_orders: number;
   n_library_warnings: number;
+  open_actions: ActionsSummary;
 }
 
 export interface WaterfallData {
@@ -137,6 +146,7 @@ export interface MethodologyData {
 
 export interface PageDataMap {
   overview: OverviewData;
+  actions: ActionsSection;
   waterfall: WaterfallData;
   customers: CustomersData;
   segments: SegmentsSection;
@@ -155,6 +165,7 @@ export interface TableRowMap {
   guidance: Omit<GuidancePair, "explanation">;
   opportunities: OpportunityRecord;
   customers: CustomerEconomics;
+  actions: ActionRow;
 }
 export type TableName = keyof TableRowMap;
 
@@ -175,18 +186,95 @@ export interface TablePage<T> {
   has_more: boolean;
 }
 
-/** Transport failure with an HTTP-like status; 4xx must not be retried. */
+/** Transport failure with an HTTP-like status; 4xx must not be retried.
+ * `code` carries the API's machine-readable policy reason when present
+ * (role_denied, self_approval, justification_required, below_floor, ...). */
 export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
   ) {
     super(message);
   }
 }
 
+// ---- Action center (Run 5, Phases 39-42) ----------------------------------
+
+export interface ActionUser {
+  name: string;
+  roles: string[];
+}
+
+export interface ActionDetail {
+  action: ActionRow;
+  status: string;
+  events: ActionEventRow[];
+  edits: Record<string, unknown>[];
+  outcome: ActionOutcome | null;
+}
+
+export interface ActionOutcomeListItem {
+  action_id: string;
+  title: string;
+  customer_id: string | null;
+  item_id: string | null;
+  outcome: ActionOutcome;
+}
+
+export interface TransitionResult {
+  action_id: string;
+  status: string;
+  changed: boolean;
+}
+
+export interface BulkApproveItem {
+  action_id: string;
+  outcome: "approved" | "unchanged" | "refused";
+  reason: string;
+}
+
+export interface PriceExportResult {
+  summary: Record<string, unknown>;
+  csv: string;
+  n_transitioned: number;
+  dry_run: boolean;
+}
+
+export type TransitionKind = "submit" | "approve" | "reject" | "rework" | "implement";
+
+/** Review-workflow operations. The static demo is READ-ONLY: readOnly is true
+ * and every mutation rejects with a 405 ApiError; the HTTP adapter talks to
+ * the live API with X-User (configured local identity, not authentication). */
+export interface ActionsClient {
+  readOnly: boolean;
+  getUsers(): Promise<ActionUser[]>;
+  getDetail(actionId: string): Promise<ActionDetail>;
+  /** One row per tracked action: the measured outcome or the stated reason it
+   * cannot be measured. Static mode derives it from the embedded table rows. */
+  getOutcomes(): Promise<ActionOutcomeListItem[]>;
+  transition(
+    actionId: string,
+    kind: TransitionKind,
+    user: string,
+    note?: string,
+  ): Promise<TransitionResult>;
+  bulkApprove(actionIds: string[], user: string, reason?: string): Promise<BulkApproveItem[]>;
+  edit(
+    actionId: string,
+    user: string,
+    patch: Record<string, unknown>,
+  ): Promise<{ action_id: string; changed_fields: string[] }>;
+  propose(
+    user: string,
+    body: Record<string, unknown>,
+  ): Promise<{ action_id: string; status: string }>;
+  priceExport(user: string, dryRun: boolean): Promise<PriceExportResult>;
+}
+
 export interface DataClient {
   getApp(): Promise<AppData>;
+  actions: ActionsClient;
   getPage<P extends PageName>(page: P): Promise<PageDataMap[P]>;
   queryTable<T extends TableName>(table: T, query: TableQuery): Promise<TablePage<TableRowMap[T]>>;
   getGuidanceExplanation(customerId: string, itemId: string): Promise<string>;

@@ -33,8 +33,10 @@ This engine is built around three rules:
 | Opportunity sizing (three levels, never summed) | How much is recoverable at fixed volume vs. after the expected volume response? |
 | Order and customer economics | What does each order and customer contribute after returns and cost-to-serve? |
 | Cost and tariff pass-through scenarios | What happens to margin at 0–100% pass-through? |
+| Action center: findings become proposed actions, reviewed maker-checker, exported to the ERP, then measured | Which findings became decisions — and did they actually work? |
+| Robinson-Patman review flags with cost-to-serve evidence | Which recommended prices put likely-competing customers far apart on the same item? |
 
-**Optional modules** switch on when their input data exists and say so when it doesn't: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups.
+**Optional modules** switch on when their input data exists and say so when it doesn't: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO / LIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups. Analytic periods follow a configurable **fiscal calendar**: calendar months (default), 4-4-5 / 4-5-4 / 5-4-4 retail week calendars, or a custom period table — one declaration drives the sensitivity panel, peer-group quarters, baseline windows and the books tie-out, while data-declared periods (rebate settlements, FX months) always stay as the source states them.
 
 ## Quickstart
 
@@ -131,6 +133,71 @@ Run everything locally with one command (Docker-free; see
 uv run python scripts/live_mode.py          # UI :4174 in API mode, API :8321, replay on
 ```
 
+### Run with Docker
+
+One command starts the whole stack — a one-shot job exports the deterministic
+demo bundle and action seeds, the API (with its in-process refresh scheduler)
+serves it, and nginx serves the built UI with `/api` proxied same-origin:
+
+```bash
+docker compose up --build
+# UI:  http://localhost:8080
+# API: http://localhost:8000/api/health
+```
+
+State (the API's DuckDB stores, the action store with its review history, and
+drift baselines) persists in the `state` volume across restarts; `docker
+compose down -v` resets everything. Set `MARGIN_API_REPLAY: "1"` on the `api`
+service in [`compose.yaml`](compose.yaml) to turn on the replay feed. CI
+builds the images and smoke-tests the composed stack on every push
+([`.github/workflows/docker.yml`](.github/workflows/docker.yml)) — GitHub's
+runners have Docker even when the development machine does not.
+
+## Action center
+
+Analysis that nobody acts on is a report, not an engine. The Action center
+closes the loop from finding to decision to measured outcome:
+
+- **Generation.** The engine turns its own outputs into proposed actions —
+  price changes, below-floor fixes, cost pass-through, service-policy reviews,
+  rebate/discount reviews — each deterministic, with a plain-English rationale
+  whose every number comes from the exports, an evidence status, and an
+  expected impact at the *right* opportunity level for its type (levels are
+  never summed across types). Guardrails are enforced at generation: no
+  proposal below the binding floor, contract-protected pairs generate blocked
+  actions that can never be approved, expected volume response only where the
+  elasticity is causal-supported *and* the move sits inside identifying price
+  support, and Robinson-Patman flags travel with the action.
+- **Maker-checker review.** Lifecycle proposed → under review → approved /
+  rejected → exported → implemented → measured, recorded as an append-only
+  event log whose current status is derived by replay — never edited in place.
+  Roles are analyst (proposes, edits, exports, implements), approver (approves
+  or rejects — never an action they proposed themselves) and viewer. Approving
+  a compliance-flagged action requires a written justification. Identity in
+  local mode is a configured user name, documented everywhere as *not*
+  authentication.
+- **ERP price export.** `margin-engine export-prices` writes approved price
+  actions as an ERP-importable price file (header names, date format, decimal
+  separator and price unit configurable per deployment), deterministic and
+  idempotent — re-exporting rewrites identical bytes and logs no duplicate
+  events. A round-trip test re-imports the exported file through the engine's
+  own ingest and matches every price to the cent.
+- **Results tracking.** `margin-engine track` measures implemented actions
+  after a configurable window: price realization (did the invoiced price
+  actually move, or erode back?), volume against the prediction stored on the
+  action at generation time — as a difference-in-differences against untreated
+  same-segment pairs, so market trends never read as price effects — and
+  margin before vs after. Every gate fails closed with its reason; calibration
+  by evidence bucket appears only once enough actions are measured. On
+  synthetic worlds with planted price interventions the tracker's pooled
+  recovery error is 0.039 log points (see the validation table), and on a
+  sparse world it measures nothing and says why.
+
+The hosted demo shows the Action center read-only with a simulated,
+lifecycle-valid review history (labeled as such); the full workflow — queue,
+transitions, bulk approval, edits with audit trail, manual proposals and the
+price-file download — runs in API/live mode.
+
 ## Supported input formats
 
 The engine reads **tabular, line-level invoice exports**: one row per invoice line, as **CSV** or **.xlsx**. PDF and scanned invoices are not supported; they need a separate extraction step first.
@@ -196,14 +263,16 @@ Planted truth vs. recovered, on synthetic data. These figures are produced by `s
 | Determinism | Byte-identical outputs across runs | Byte-identical |
 | Performance (core pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 37.0s |
 | Scenario matrix, full tier | Every invariant on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300/300 worlds pass |
-| Scale (10M lines under 15 min and 8 GB) | **KNOWN GAP** | Unverifiable on the 13.8 GB build machine (≈5 GB free): the memory-aware ladder records the largest run that fits (241k lines, 2.92 GB, 32.1s; an earlier higher-headroom run: 811k lines, 6.42 GB, 95.6s). Memory is linear in lines across measured rungs, but that is an extrapolation — the 10M target needs the DuckDB/streaming refactor and capable hardware |
+| Scale (10M lines under 15 min and 8 GB) | **KNOWN GAP** | Unverifiable on the 13.8 GB build machine (≈5 GB free): after the Run 5 scale refactor the largest run that fits is 241k lines in 13.0s at 2.64 GB peak (was 32.1s / 2.92 GB before the refactor; marginal memory ≈9.0 KB/line, was ≈10.0). Memory stays linear in lines across measured rungs, but that is an extrapolation — at ≈9 KB/line a full-featured 10M-line world would not fit 8 GB anywhere; the remaining lever (spilling the ledger to parquet between stages) is logged as the next scale step |
 | Hybrid world: real BLS PPI series drive the cost instrument | Informational | Median abs elasticity error 0.037 over 6 segments; 4 causal-supported |
+| Results tracker: planted +8% price interventions recovered (difference-in-differences) | Pooled error ≤ 0.10 log points; ≥ 50% of interventions measured | 21/30 measured; pooled recovery error 0.039 log points (a single pair's 90-day window carries ~0.26 log points of Poisson noise — reported, and why calibration aggregates instead of judging single actions) |
+| Results tracker on a sparse world | Fail-closed: ≤ 25% of interventions get a number | 0/30 measured; every refusal carries its reason |
 
 Reported but not gated, because the planted number is not the estimand once the model is misspecified: `realistic_noise` (median 0.051, P90 0.126, worst 0.210), `persistent_demand` (0.021), `heterogeneous_elasticity` (0.024 — the segment estimate recovers the within-segment average), `nonconstant_elasticity` (0.320 — a constant-elasticity model on curved demand reports a local average), and `competitor_comovement` (0.236, with **zero** segments reaching causal support: the Anderson-Rubin and robustness criteria catch what overidentification cannot). An honest indication that clean synthetic results overstate real-world accuracy.
 
 ## Method in brief
 
-A mapping YAML declares column names and business meaning; ingestion fails actionably on anything undeclared. Classified transactions produce two views (clean sales observations and a complete financial ledger) and a staged waterfall with exact allocations. Prices normalize to an index against the effective-dated list price; robust z-scores flag data-quality anomalies and commercial outliers separately. Commercial segments come from a decision tree on the price index using context features only (guarded against leakage) and are checked for stability by bootstrap. Price guidance is historical reference bands against an exact economic margin floor, rounded up so it always clears minimum margin. Own-price elasticity is estimated per segment by fixed-effects instrumental-variables regression with two instruments (supplier cost index, category tariff rate), and first-stage, overidentification, robustness, and weak-IV-robust diagnostics feed a four-level evidence status. Opportunity is sized at three levels that are never added together. Full detail: [`docs/methodology.md`](docs/methodology.md).
+A mapping YAML declares column names and business meaning; ingestion fails actionably on anything undeclared. Classified transactions produce two views (clean sales observations and a complete financial ledger) and a staged waterfall with exact allocations. Prices normalize to an index against the effective-dated list price; robust z-scores flag data-quality anomalies and commercial outliers separately. Commercial segments come from a decision tree on the price index using context features only (guarded against leakage) and are checked for stability by bootstrap. Price guidance is historical reference bands against an exact economic margin floor, rounded up so it always clears minimum margin. Own-price elasticity is estimated per segment by fixed-effects instrumental-variables regression with two instruments (supplier cost index, category tariff rate), and first-stage, overidentification, robustness, and weak-IV-robust diagnostics feed a four-level evidence status. Opportunity is sized at three levels that are never added together. Findings become proposed actions with guardrails, reviewed maker-checker, exported to the ERP and measured after implementation. Full detail: [`docs/methodology.md`](docs/methodology.md).
 
 ## Honest labels and limitations
 

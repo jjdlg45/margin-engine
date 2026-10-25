@@ -1,5 +1,86 @@
 /* Generated from schema.json (margin-engine export-web). Do not edit. */
 
+export type Bucket = string;
+export type MedianAbsVolumeErrorLogPoints = number | null;
+export type MedianRealizationPct = number | null;
+export type NMeasured = number;
+export type Status = string;
+export type Calibration = CalibrationRow[];
+/**
+ * True when the event history is simulated demo data
+ */
+export type DemoHistory = boolean;
+export type Notes = string[];
+/**
+ * True in the static demo: the review workflow needs the API
+ */
+export type ReadOnly = boolean;
+/**
+ * Across measured outcomes; null below the minimum count
+ */
+export type MedianRealizationPct1 = number | null;
+export type NActions = number;
+export type NBlocked = number;
+export type NComplianceFlagged = number;
+export type NMeasured1 = number;
+export type ActionId = string;
+export type ActionType = string;
+export type Blocked = boolean;
+export type BlockedReason = string | null;
+export type ComplianceFlags = string;
+export type CurrentPriceCents = number | null;
+export type CustomerId = string | null;
+export type CustomerName = string | null;
+export type DueDate = string | null;
+/**
+ * ISO datetime, UTC
+ */
+export type At = string;
+export type FromStatus = string | null;
+export type Note = string;
+export type Seq = number;
+export type ToStatus = string;
+export type Who = string;
+export type Events = ActionEventRow[];
+export type EvidenceStatus = string | null;
+export type ExpectedImpactCents = number | null;
+export type FloorPriceCents = number | null;
+export type GuidanceStatus = string | null;
+export type ImpactBasis = string;
+export type ItemId = string | null;
+export type ItemName = string | null;
+export type ContributionAfterCents = number | null;
+export type ContributionBeforeCents = number | null;
+export type ControlVolumeRatio = number | null;
+export type DidVolumeRatio = number | null;
+export type ImplementedOn = string;
+export type NControlPairs = number;
+export type OutcomeReason = string;
+export type OutcomeStatus = string;
+export type PocketMarginAfter = number | null;
+export type PocketMarginBefore = number | null;
+export type PredictedVolumeRatio = number | null;
+export type PriceAfterCents = number | null;
+export type PriceBeforeCents = number | null;
+export type ProposedPriceCents = number | null;
+export type QtyAfter = number | null;
+export type QtyBefore = number | null;
+export type RealizationPct = number | null;
+export type TreatedVolumeRatio = number | null;
+export type VolumeErrorLogPoints = number | null;
+export type WindowDays = number;
+export type Owner = string;
+export type PredictedVolumeRatio1 = number | null;
+export type Priority = string;
+export type ProposedPriceCents1 = number | null;
+export type Rationale = string;
+export type Scope = string;
+export type Segment = number | null;
+export type Status1 = string;
+export type Title = string;
+export type Uom = string | null;
+export type VolumeTreatment = string | null;
+export type ActionsTable = ActionRow[];
 export type BundleVersion = string;
 export type DataLabel = string;
 export type FlagNote = string;
@@ -20,8 +101,8 @@ export type ActivityCtsCents = number;
 export type AvgOrderValueCents = number;
 export type ContributionAfterActivityCents = number;
 export type ContributionCents = number;
-export type CustomerId = string;
-export type CustomerName = string | null;
+export type CustomerId1 = string;
+export type CustomerName1 = string | null;
 export type NOrders = number;
 export type NetRevenueCents = number;
 export type PctRevenueExcluded = number;
@@ -42,19 +123,19 @@ export type BandP50 = number | null;
 export type BandP75 = number | null;
 export type BindingFloorBasis = string | null;
 export type CurrentIndex = number | null;
-export type CustomerId1 = string;
-export type CustomerName1 = string | null;
+export type CustomerId2 = string;
+export type CustomerName2 = string | null;
 export type Explanation = string;
 export type FloorIndex = number | null;
 export type InvoiceContributionFloorCents = number | null;
 export type InvoiceFloorCents = number | null;
 export type InvoiceFloorGrossCents = number | null;
-export type ItemId = string;
-export type ItemName = string | null;
+export type ItemId1 = string;
+export type ItemName1 = string | null;
 export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
-export type Segment = number | null;
-export type Status = string;
+export type Segment1 = number | null;
+export type Status2 = string;
 export type TargetIndex = number | null;
 export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
@@ -114,14 +195,14 @@ export type InputFiles = {
 }[];
 export type MappingSha256 = string;
 export type NoteOnVolatileFields = string;
-export type Notes = string[];
+export type Notes1 = string[];
 export type RulesSha256 = string;
 export type ExpectedTotalCents = number;
 export type ExpectedTotalNote = string;
 export type GrossConservativeTotalCents = number | null;
 export type GrossTotalCents = number;
 export type Components = LeakageComponent[];
-export type CustomerId2 = string;
+export type CustomerId3 = string;
 export type NetRevenueCents2 = number;
 export type TotalLeakageCents = number;
 export type LeakageByCustomer = CustomerLeakage[];
@@ -131,25 +212,25 @@ export type NOutsidePriceSupport = number;
 export type NRecords = number;
 export type NeverSummedNote = string;
 export type CostUnavailable = boolean;
-export type CustomerId3 = string;
-export type CustomerName2 = string | null;
-export type EvidenceStatus = string | null;
+export type CustomerId4 = string;
+export type CustomerName3 = string | null;
+export type EvidenceStatus1 = string | null;
 export type ExpectedContributionChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type GrossPriceOpportunityConservativeCents = number | null;
-export type ItemId1 = string;
-export type ItemName1 = string | null;
+export type ItemId2 = string;
+export type ItemName2 = string | null;
 /**
  * (target - current) / target, from the pair's guidance
  */
 export type PctBelowTarget = number | null;
-export type Segment1 = number | null;
+export type Segment2 = number | null;
 /**
  * One short row-specific sentence for the table
  */
 export type Summary = string;
-export type VolumeTreatment = string;
+export type VolumeTreatment1 = string;
 export type TopOpportunities = OpportunityRecord[];
 /**
  * Baseline window for every figure in this section
@@ -163,7 +244,7 @@ export type ItemA = string;
 export type ItemB = string;
 export type NObs = number;
 export type Reasons = string;
-export type Status1 = string;
+export type Status3 = string;
 export type CrossPriceAbsentReason = string | null;
 export type CogsTotalCents = number;
 export type Method = string;
@@ -179,8 +260,8 @@ export type NegotiationGap = number | null;
 export type PriceCoef = number | null;
 export type PriceCoefSe = number | null;
 export type Reasons1 = string;
-export type Segment2 = number;
-export type Status2 = string;
+export type Segment3 = number;
+export type Status4 = string;
 export type WinRate = number;
 export type WinCurvesAbsentReason = string | null;
 export type ActualCents = number;
@@ -209,7 +290,7 @@ export type ProtectedExposureCents = number;
 export type RecoveredCents = number;
 export type ResidualExposureCents = number;
 export type Points = ScenarioGridPoint[];
-export type Scope = string;
+export type Scope1 = string;
 /**
  * Supplier/category display name
  */
@@ -221,7 +302,7 @@ export type NPairs1 = number;
 export type P25 = number;
 export type P50 = number;
 export type P75 = number;
-export type Segment3 = number;
+export type Segment4 = number;
 export type IndexDistribution = SegmentIndexStats[];
 export type MarginDriverNote = string;
 /**
@@ -282,14 +363,14 @@ export type Ppml = number | null;
 export type PpmlPositive = number | null;
 export type PriceCvWithin = number;
 export type RobustnessSpread = number | null;
-export type Segment4 = number;
-export type Status3 = string;
+export type Segment5 = number;
+export type Status5 = string;
 export type StatusReasons = string;
 export type SupportLogHi = number | null;
 export type SupportLogLo = number | null;
 export type Sensitivity = SensitivitySegment[];
 export type AmountCents2 = number;
-export type CustomerId4 = string;
+export type CustomerId5 = string;
 export type Period = string;
 export type RebateProgramId = string;
 export type UnallocatedSettlements = UnallocatedSettlement[];
@@ -317,6 +398,8 @@ export type WaterfallBySegment = GroupWaterfall[];
 export type WaterfallOverall = WaterfallStage[];
 
 export interface WebBundle {
+  actions: ActionsSection;
+  actions_table: ActionsTable;
   bundle_version: BundleVersion;
   data_label: DataLabel;
   dispersion: DispersionSection;
@@ -341,6 +424,124 @@ export interface WebBundle {
   waterfall_by_customer: WaterfallByCustomer;
   waterfall_by_segment: WaterfallBySegment;
   waterfall_overall: WaterfallOverall;
+}
+export interface ActionsSection {
+  calibration: Calibration;
+  demo_history: DemoHistory;
+  facets: Facets;
+  notes: Notes;
+  read_only: ReadOnly;
+  summary: ActionsSummary;
+}
+/**
+ * Prediction error by evidence bucket; below the configured minimum the
+ * status says not_enough_implemented_actions instead of showing numbers.
+ */
+export interface CalibrationRow {
+  bucket: Bucket;
+  median_abs_volume_error_log_points: MedianAbsVolumeErrorLogPoints;
+  median_realization_pct: MedianRealizationPct;
+  n_measured: NMeasured;
+  status: Status;
+}
+export interface Facets {
+  [k: string]: string[];
+}
+export interface ActionsSummary {
+  by_status: ByStatus;
+  impact_by_basis_cents: ImpactByBasisCents;
+  impact_by_evidence_cents: ImpactByEvidenceCents;
+  median_realization_pct?: MedianRealizationPct1;
+  n_actions: NActions;
+  n_blocked: NBlocked;
+  n_compliance_flagged: NComplianceFlagged;
+  n_measured: NMeasured1;
+}
+export interface ByStatus {
+  [k: string]: number;
+}
+/**
+ * Expected impact per impact basis - bases are different opportunity levels and are NEVER summed into one number
+ */
+export interface ImpactByBasisCents {
+  [k: string]: number;
+}
+export interface ImpactByEvidenceCents {
+  [k: string]: number;
+}
+/**
+ * One generated action with its derived status, full event history and
+ * outcome (once measured). Impact levels are per impact_basis and never
+ * summed across bases.
+ */
+export interface ActionRow {
+  action_id: ActionId;
+  action_type: ActionType;
+  blocked: Blocked;
+  blocked_reason: BlockedReason;
+  compliance_flags: ComplianceFlags;
+  current_price_cents: CurrentPriceCents;
+  customer_id: CustomerId;
+  customer_name?: CustomerName;
+  due_date: DueDate;
+  events: Events;
+  evidence_status: EvidenceStatus;
+  expected_impact_cents: ExpectedImpactCents;
+  floor_price_cents: FloorPriceCents;
+  guidance_status: GuidanceStatus;
+  impact_basis: ImpactBasis;
+  item_id: ItemId;
+  item_name?: ItemName;
+  outcome?: ActionOutcome | null;
+  owner: Owner;
+  predicted_volume_ratio: PredictedVolumeRatio1;
+  priority: Priority;
+  proposed_price_cents: ProposedPriceCents1;
+  rationale: Rationale;
+  scope: Scope;
+  segment: Segment;
+  status: Status1;
+  title: Title;
+  uom: Uom;
+  volume_treatment: VolumeTreatment;
+}
+/**
+ * One append-only lifecycle event (Phase 38); the static demo ships a
+ * simulated history, labeled demo data.
+ */
+export interface ActionEventRow {
+  at: At;
+  from_status: FromStatus;
+  note: Note;
+  seq: Seq;
+  to_status: ToStatus;
+  who: Who;
+}
+/**
+ * Measured result of an implemented action (Phase 41). Every gate fails
+ * closed: outcome_status insufficient_evidence carries the reason.
+ */
+export interface ActionOutcome {
+  contribution_after_cents: ContributionAfterCents;
+  contribution_before_cents: ContributionBeforeCents;
+  control_volume_ratio: ControlVolumeRatio;
+  did_volume_ratio: DidVolumeRatio;
+  implemented_on: ImplementedOn;
+  n_control_pairs: NControlPairs;
+  outcome_reason: OutcomeReason;
+  outcome_status: OutcomeStatus;
+  pocket_margin_after: PocketMarginAfter;
+  pocket_margin_before: PocketMarginBefore;
+  predicted_volume_ratio: PredictedVolumeRatio;
+  price_after_cents: PriceAfterCents;
+  price_before_cents: PriceBeforeCents;
+  proposed_price_cents: ProposedPriceCents;
+  qty_after: QtyAfter;
+  qty_before: QtyBefore;
+  realization_pct: RealizationPct;
+  treated_volume_ratio: TreatedVolumeRatio;
+  volume_error_log_points: VolumeErrorLogPoints;
+  window_days: WindowDays;
 }
 export interface DispersionSection {
   abc_revenue_counts: AbcRevenueCounts;
@@ -373,8 +574,8 @@ export interface CustomerEconomics {
   avg_order_value_cents: AvgOrderValueCents;
   contribution_after_activity_cents: ContributionAfterActivityCents;
   contribution_cents: ContributionCents;
-  customer_id: CustomerId;
-  customer_name?: CustomerName;
+  customer_id: CustomerId1;
+  customer_name?: CustomerName1;
   n_orders: NOrders;
   net_revenue_cents: NetRevenueCents;
   pct_revenue_excluded: PctRevenueExcluded;
@@ -397,19 +598,19 @@ export interface GuidancePair {
   band_p75: BandP75;
   binding_floor_basis?: BindingFloorBasis;
   current_index: CurrentIndex;
-  customer_id: CustomerId1;
-  customer_name?: CustomerName1;
+  customer_id: CustomerId2;
+  customer_name?: CustomerName2;
   explanation: Explanation;
   floor_index: FloorIndex;
   invoice_contribution_floor_cents?: InvoiceContributionFloorCents;
   invoice_floor_cents: InvoiceFloorCents;
   invoice_floor_gross_cents?: InvoiceFloorGrossCents;
-  item_id: ItemId;
-  item_name?: ItemName;
+  item_id: ItemId1;
+  item_name?: ItemName1;
   list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
-  segment: Segment;
-  status: Status;
+  segment: Segment1;
+  status: Status2;
   target_index: TargetIndex;
   target_label: TargetLabel;
 }
@@ -456,7 +657,7 @@ export interface ManifestInfo {
   input_files: InputFiles;
   mapping_sha256: MappingSha256;
   note_on_volatile_fields: NoteOnVolatileFields;
-  notes: Notes;
+  notes: Notes1;
   rules_sha256: RulesSha256;
   software_versions: SoftwareVersions;
 }
@@ -482,25 +683,25 @@ export interface OpportunitySection {
 }
 export interface CustomerLeakage {
   components: Components;
-  customer_id: CustomerId2;
+  customer_id: CustomerId3;
   net_revenue_cents: NetRevenueCents2;
   total_leakage_cents: TotalLeakageCents;
 }
 export interface OpportunityRecord {
   cost_unavailable?: CostUnavailable;
-  customer_id: CustomerId3;
-  customer_name?: CustomerName2;
-  evidence_status: EvidenceStatus;
+  customer_id: CustomerId4;
+  customer_name?: CustomerName3;
+  evidence_status: EvidenceStatus1;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   gross_price_opportunity_conservative_cents?: GrossPriceOpportunityConservativeCents;
-  item_id: ItemId1;
-  item_name?: ItemName1;
+  item_id: ItemId2;
+  item_name?: ItemName2;
   pct_below_target?: PctBelowTarget;
-  segment: Segment1;
+  segment: Segment2;
   summary: Summary;
-  volume_treatment: VolumeTreatment;
+  volume_treatment: VolumeTreatment1;
 }
 export interface OptionalModules {
   cross_price: CrossPrice;
@@ -518,7 +719,7 @@ export interface CrossPriceEstimate {
   item_b: ItemB;
   n_obs: NObs;
   reasons: Reasons;
-  status: Status1;
+  status: Status3;
 }
 export interface InventorySection {
   cogs_total_cents: CogsTotalCents;
@@ -535,8 +736,8 @@ export interface WinCurve {
   price_coef: PriceCoef;
   price_coef_se: PriceCoefSe;
   reasons: Reasons1;
-  segment: Segment2;
-  status: Status2;
+  segment: Segment3;
+  status: Status4;
   win_rate: WinRate;
 }
 export interface ReconciliationCheck {
@@ -561,7 +762,7 @@ export interface ScenarioGrid {
   name: Name1;
   pct_increase: PctIncrease;
   points: Points;
-  scope: Scope;
+  scope: Scope1;
   scope_label?: ScopeLabel;
   scope_value: ScopeValue;
 }
@@ -587,7 +788,7 @@ export interface SegmentIndexStats {
   p25: P25;
   p50: P50;
   p75: P75;
-  segment: Segment3;
+  segment: Segment4;
 }
 export interface SegmentRule {
   conditions: Conditions;
@@ -626,15 +827,15 @@ export interface SensitivitySegment {
   ppml_positive?: PpmlPositive;
   price_cv_within: PriceCvWithin;
   robustness_spread: RobustnessSpread;
-  segment: Segment4;
-  status: Status3;
+  segment: Segment5;
+  status: Status5;
   status_reasons: StatusReasons;
   support_log_hi?: SupportLogHi;
   support_log_lo?: SupportLogLo;
 }
 export interface UnallocatedSettlement {
   amount_cents: AmountCents2;
-  customer_id: CustomerId4;
+  customer_id: CustomerId5;
   period: Period;
   rebate_program_id: RebateProgramId;
 }

@@ -14,6 +14,7 @@ from __future__ import annotations
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.fiscal import FiscalCalendar, build_calendar
 
 PRICE_INDEX_VS_LIST = "price_vs_effective_list"
 PRICE_INDEX_VS_ITEM_MEDIAN = "price_vs_item_median"
@@ -52,20 +53,22 @@ def normalized_price(observations: pl.DataFrame) -> pl.DataFrame:
     ).drop("_item_median_price")
 
 
-def assign_peer_groups(df: pl.DataFrame, rules: Rules) -> pl.DataFrame:
-    """Peer group: item x UOM x contract regime x quarter, falling back to the
-    item family when the cohort is smaller than the configured minimum."""
+def assign_peer_groups(
+    df: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> pl.DataFrame:
+    """Peer group: item x UOM x contract regime x (fiscal) quarter, falling
+    back to the item family when the cohort is smaller than the configured
+    minimum. The quarter follows the configured fiscal calendar (Phase 36);
+    the default calendar reproduces the historical YYYYQn strings exactly."""
+    if fiscal is None:
+        fiscal = build_calendar(rules.fiscal)
     df = df.with_columns(
         pl.when(pl.col("contract_id").is_not_null())
         .then(pl.lit("contract"))
         .otherwise(pl.lit("open"))
         .alias("contract_regime"),
-        (
-            pl.col("invoice_date").dt.year().cast(pl.String)
-            + "Q"
-            + pl.col("invoice_date").dt.quarter().cast(pl.String)
-        ).alias("quarter"),
     )
+    df = fiscal.attach(df, "invoice_date", quarter="quarter")
     item_group = pl.concat_str(
         [pl.col("item_id"), pl.col("uom_norm"), pl.col("contract_regime"), pl.col("quarter")],
         separator="|",
@@ -245,7 +248,10 @@ def abc_classification(observations: pl.DataFrame, rules: Rules) -> pl.DataFrame
 
 
 def run_dispersion(
-    observations: pl.DataFrame, items: pl.DataFrame | None, rules: Rules
+    observations: pl.DataFrame,
+    items: pl.DataFrame | None,
+    rules: Rules,
+    fiscal: FiscalCalendar | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Full Phase 3: returns (flagged observations, peer stats, abc table)."""
     # Stable row order before any float aggregation (quantiles, means over
@@ -258,7 +264,7 @@ def run_dispersion(
         # small-cohort family fallback is simply unavailable.
         df = df.with_columns(pl.lit(None, dtype=pl.String).alias("item_family"))
     df = normalized_price(df)
-    df = assign_peer_groups(df, rules)
+    df = assign_peer_groups(df, rules, fiscal)
     df = flag_outliers(df, rules)
     stats = peer_group_stats(df)
     abc = abc_classification(observations, rules)

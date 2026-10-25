@@ -1,5 +1,5 @@
 {
- "generated_utc": "2026-10-22T05:27:25+00:00",
+ "generated_utc": "2026-10-24T21:36:35+00:00",
  "script": "scripts/measure_validation.py",
  "runtime_s": 4018.4,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
@@ -167,28 +167,34 @@
    "passed": true
   },
   {
+   "check": "Hybrid world: real PPI cost paths (informational)",
+   "target": "informational: recovery when real cost movements drive the instrument",
+   "achieved": "seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s",
+   "passed": true,
+   "informational": true
+  },
+  {
    "check": "Scale (10M-line pipeline)",
    "target": "10M+ lines under 15 minutes and under 8 GB peak memory",
-   "achieved": "largest run that fits this machine: 241,162 lines in 32.1s, peak 2.92 GB on AMD64 (Windows), 13.8 GB RAM, 5.9 GB available at start; slowest stages: real_data_validation 20.2s, exports 3.3s, sensitivity 3.1s, segmentation 2.0s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.8 GB peak, over the 4.9 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement.",
+   "achieved": "largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest classify waterfall reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement.",
    "passed": false,
    "rungs": [
     {
      "n_customers": 200,
      "n_items": 350,
      "lines": 153941,
-     "gen_s": 0.8,
-     "run_s": 25.3,
-     "peak_gb": 2.11,
+     "gen_s": 1.6,
+     "run_s": 10.1,
+     "peak_gb": 1.91,
      "stages": {
-      "real_data_validation": 15.9,
-      "sensitivity": 2.8,
-      "exports": 2.6,
-      "segmentation": 1.8,
-      "ingest_classify_waterfall_reconcile": 1.0,
-      "optional_modules": 0.5,
-      "panel": 0.2,
-      "guidance": 0.1,
+      "sensitivity": 2.7,
+      "ingest_classify_waterfall_reconcile": 2.3,
+      "exports": 2.1,
+      "segmentation": 1.7,
+      "optional_modules": 0.6,
+      "panel": 0.1,
       "dispersion_outliers_abc": 0.1,
+      "guidance": 0.1,
       "cost_to_serve": 0.1,
       "opportunity": 0.0
      }
@@ -197,31 +203,82 @@
      "n_customers": 300,
      "n_items": 500,
      "lines": 241162,
-     "gen_s": 1.1,
+     "gen_s": 1.9,
+     "run_s": 13.0,
+     "peak_gb": 2.64,
+     "stages": {
+      "exports": 3.3,
+      "sensitivity": 3.2,
+      "ingest_classify_waterfall_reconcile": 3.1,
+      "segmentation": 1.9,
+      "optional_modules": 0.6,
+      "panel": 0.2,
+      "cost_to_serve": 0.2,
+      "dispersion_outliers_abc": 0.2,
+      "guidance": 0.2,
+      "opportunity": 0.0
+     }
+    }
+   ],
+   "phase35_before_after": {
+    "note": "Phase 35 scale refactor, measured at the 300x500 rung (241,162 lines) on the same machine. 'bytes_per_line_peak' divides the whole process peak (including the ~1.3 GB Python + libraries + allocator floor) by lines; 'bytes_per_line_marginal' is the slope between the two measured rungs, i.e. the engine's actual per-line growth. Before numbers are the Run 4 ladder (real-data validation then ran inside the default pipeline; it is now behind --validate, and the ladder measures the default run).",
+    "before": {
+     "lines": 241162,
      "run_s": 32.1,
      "peak_gb": 2.92,
-     "stages": {
+     "bytes_per_line_peak": 13001,
+     "bytes_per_line_marginal": 9972,
+     "stage_timings_s": {
       "real_data_validation": 20.2,
       "exports": 3.3,
       "sensitivity": 3.1,
       "segmentation": 2.0,
-      "ingest_classify_waterfall_reconcile": 1.6,
-      "optional_modules": 0.9,
-      "panel": 0.3,
-      "guidance": 0.2,
-      "dispersion_outliers_abc": 0.2,
-      "cost_to_serve": 0.2,
-      "opportunity": 0.0
+      "ingest_classify_waterfall_reconcile": 1.6
      }
+    },
+    "after": {
+     "lines": 241162,
+     "run_s": 13.0,
+     "peak_gb": 2.64,
+     "bytes_per_line_peak": 11754,
+     "bytes_per_line_marginal": 8987,
+     "stage_timings_s": "see rungs above"
     }
-   ]
+   }
   },
   {
-   "check": "Hybrid world: real PPI cost paths (informational)",
-   "target": "informational: recovery when real cost movements drive the instrument",
-   "achieved": "seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s",
+   "check": "Results tracker: planted-intervention recovery",
+   "target": "pooled recovery |median DiD effect - median planted effect| <= 0.1 log points and >= 50% of interventions measured (well-identified world, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information)",
+   "achieved": "21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419",
    "passed": true,
-   "informational": true
+   "detail": {
+    "n_interventions": 30,
+    "n_measured": 21,
+    "measured_share": 0.7,
+    "pooled_recovery_error_log_points": 0.0394,
+    "per_pair_median_abs_error_log_points": 0.2562,
+    "per_pair_p90_abs_error_log_points": 0.6419,
+    "insufficient_reasons": {
+     "not enough sales around the implementati": 9
+    }
+   }
+  },
+  {
+   "check": "Results tracker: fail-closed on a sparse world",
+   "target": "<= 25% of interventions get a number; the rest report insufficient evidence with reasons (sparse preset, same interventions)",
+   "achieved": "0/30 measured (0%); refusal reasons: {'not enough sales around the implementati': 30}",
+   "passed": true,
+   "detail": {
+    "n_interventions": 30,
+    "n_measured": 0,
+    "measured_share": 0.0,
+    "pooled_recovery_error_log_points": null,
+    "per_pair_median_abs_error_log_points": null,
+    "per_pair_p90_abs_error_log_points": null,
+    "insufficient_reasons": {
+     "not enough sales around the implementati": 30
+    }
+   }
   }
  ]
 }

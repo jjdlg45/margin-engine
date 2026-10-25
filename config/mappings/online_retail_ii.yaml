@@ -8,6 +8,9 @@
 # reasoning sits next to each field. unconfirmed_fields is empty because every
 # guess below has been reviewed.
 source_system: online_retail_ii
+# Display casing for categorical data values (Run 5, Phase 46).
+display:
+  acronyms: [UK, USA, EIRE, RSA]
 lines_file: online_retail_ii.csv
 decimal_separator: "."
 

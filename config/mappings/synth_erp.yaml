@@ -3,6 +3,10 @@
 # not declared here.
 
 source_system: synth_erp
+# Display casing for categorical data values (Run 5, Phase 46): words
+# capitalize; these tokens render fully upper-case. Exports stay raw.
+display:
+  acronyms: [OEM]
 lines_file: invoice_lines.csv
 decimal_separator: "."
 
@@ -165,9 +169,13 @@ reference_tables:
     columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}
   # Optional market/competitor price index (Run 4, 24.10): an elasticity
   # control. Absent file = control off; the engine states that.
+  # public_source (Run 5, Phase 37): the control is accepted from PUBLIC
+  # sources only. The generator simulates a published category-level index
+  # (the synthetic analogue of a PPI-style public series), so it qualifies.
   market_price_index:
     file: market_price_index.csv
     columns: {item_category: CATEGORY, period: PERIOD, market_index: MKT_IDX}
+    public_source: true
   return_freight_log:
     file: return_freight_log.csv
     columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}

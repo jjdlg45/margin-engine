@@ -1,0 +1,56 @@
+# Live mode with one command (30.6 / Phase 45): docker compose up
+#   export    one-shot: builds the deterministic demo bundle + action seeds
+#   api       engine BFF + in-process refresh scheduler (replay optional)
+#   ui        the built web app on http://localhost:8080, /api proxied
+# State (DuckDB stores, drift baselines) persists in the named volume.
+services:
+  export:
+    build:
+      context: .
+      target: api
+    command: ["uv", "run", "--no-sync", "margin-engine", "export-web", "--demo", "--out", "/bundle"]
+    volumes:
+      - bundle:/bundle
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      export:
+        condition: service_completed_successfully
+    environment:
+      MARGIN_API_BUNDLE_DIR: /bundle
+      MARGIN_API_ACTIONS_SEED: /bundle
+      MARGIN_API_DB: /state/api.duckdb
+      MARGIN_API_ACTIONS_DB: /state/actions.duckdb
+      MARGIN_API_DRIFT_DIR: /state/drift
+      MARGIN_API_REPLAY_WORK: /state/replay
+      # Replay feed off by default; set to "1" for the live replay demo.
+      MARGIN_API_REPLAY: "0"
+    volumes:
+      - bundle:/bundle
+      - state:/state
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # The project venv's python is the one interpreter guaranteed on this
+      # image; a bare python3 depends on the base image's symlinks.
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ui:
+    build:
+      context: .
+      target: ui
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  bundle:
+  state:

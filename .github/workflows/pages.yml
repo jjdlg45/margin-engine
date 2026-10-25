@@ -83,6 +83,14 @@ jobs:
           npx --yes serve@14.2.4 -l 5050 dist &
           sleep 3
           node lighthouse.mjs
+      - name: Upload Lighthouse report (kept only when the gate fails)
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: lighthouse-report
+          path: web/lighthouse-report.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v5
         with:

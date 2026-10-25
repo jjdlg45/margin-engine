@@ -50,6 +50,43 @@ class Settings:
     replay_work_dir: Path = field(
         default_factory=lambda: _env_path("MARGIN_API_REPLAY_WORK", REPO / ".api_state" / "replay")
     )
+    # Action center (Phase 39). users: local IDENTITY spec (name:role[+role],
+    # comma-separated) — explicitly NOT authentication; real login belongs to a
+    # future hosting phase. Clients send X-User with a configured name.
+    actions_db: Path = field(
+        default_factory=lambda: _env_path(
+            "MARGIN_API_ACTIONS_DB", REPO / ".api_state" / "actions.duckdb"
+        )
+    )
+    # "1" deletes the action store file at process start, before anything
+    # opens it, so the seed produces a fresh store. For test/demo servers
+    # whose review state is disposable; never the default.
+    actions_reset: bool = field(
+        default_factory=lambda: os.environ.get("MARGIN_API_ACTIONS_RESET") == "1"
+    )
+    # Directory holding engine exports (actions.parquet, action_events.parquet)
+    # to seed/merge the action store from at startup; empty = bundle_dir's
+    # sibling engine output is not assumed, nothing is seeded.
+    actions_seed_dir: Path | None = field(
+        default_factory=lambda: (
+            Path(v) if (v := os.environ.get("MARGIN_API_ACTIONS_SEED")) else None
+        )
+    )
+    # Drift monitoring (Phase 43): previous-run snapshot + latest flags.
+    drift_dir: Path = field(
+        default_factory=lambda: _env_path("MARGIN_API_DRIFT_DIR", REPO / ".api_state" / "drift")
+    )
+    # Policy rules (the price-export template lives under actions.price_export).
+    rules_path: Path = field(
+        default_factory=lambda: _env_path("MARGIN_API_RULES", REPO / "config" / "rules.yaml")
+    )
+    users_spec: str = field(
+        default_factory=lambda: os.environ.get(
+            "MARGIN_API_USERS",
+            "demo-analyst:analyst,demo-approver:approver,"
+            "demo-lead:analyst+approver,demo-viewer:viewer",
+        )
+    )
     # Scheduled connector refreshes (seconds; defaults: FX daily, PPI monthly).
     fx_refresh_s: float = field(
         default_factory=lambda: float(os.environ.get("MARGIN_API_FX_REFRESH_S", str(24 * 3600)))

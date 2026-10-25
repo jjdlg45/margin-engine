@@ -2188,3 +2188,765 @@ group added in Phase 30.
 **Checks (fresh clone of this commit, CI-style).** `uv sync --frozen
 --all-groups` exit 0; `pytest --collect-only` exit 0; full pytest suite
 exit 0; ruff check 0; ruff format --check 0; mypy src api 0.
+
+## Phase 35 — Scale refactor (2026-10-24, Run 5 branch)
+
+Goal: cut the engine's RAM per invoice line and runtime without moving a single
+exported byte. The byte-identity bar was enforced mechanically: every CSV and
+parquet export was hashed on three inputs (committed sample; default-size
+well-identified world, seed 42; the demo world, seed 3) before the refactor,
+and re-hashed after every sub-change. All three stayed byte-identical through
+every change below (sample 46 files, world42 44 files, demo 46 files — the demo
+compared old-code vs new-code in back-to-back runs under matched conditions).
+
+**What changed**
+
+- Real-data validation (temporal backtest, placebos, rolling stability) moved
+  behind `run --validate` and a new `margin-engine validate` command. It was
+  63% of the default run's wall time (20.2s of 32.1s at 241k lines). Library
+  callers keep the config switch; `export-web` still includes it, so the demo
+  bundle is unchanged. The skip is stated in the run notes, never silent.
+- Ingest is a lazy streaming scan (`scan_csv` + streaming collect). All
+  validation — blank rows, unparseable money, over-precise decimals, bad
+  dates, undeclared transaction codes — runs as one aggregation pass over the
+  scan; the raw all-string frame never fully materializes. Offending-row
+  samples are fetched by a second targeted scan only on the error path.
+  Messages are unchanged. .xlsx and non-UTF-8 files keep the eager reader
+  (their decoders are in-memory anyway) behind the same lazy interface.
+- The waterfall no longer splits the full-width ledger into sale/other copies
+  per allocation. Each allocation (returns, kits, billed charges, settlement
+  rebates, tiered rebates, price credits, freight, claims) is computed on a
+  narrow projection (row id, group key, driver), gathered into one frame, and
+  joined back in a single pass; stage math is pure column expressions. Because
+  source_line_key can collide (collisions are kept and flagged), the join key
+  is a run-scoped row id. Column order is reproduced exactly and guarded by a
+  defensive check. The ledger's row order changed (allocations no longer
+  reorder rows); exports were already key-sorted at write time and every float
+  aggregation downstream sorts first, so all hashes held — verified, not
+  assumed.
+- 24 low-cardinality code/status columns (transaction type, statuses, UOMs,
+  currency, channel, program/contract ids, the ~60-byte cost_build_label and
+  so on) are Categorical in memory; only true ID columns stay String. Exports
+  cast back to String, so every file keeps its schema and bytes.
+- Exports are written one frame at a time: the write-ready copy (String cast,
+  natural sort, solver rounding) exists only while its file is written. CSVs
+  stream via sink_csv with the _usd conversion applied in the same lazy pass —
+  dollars exist only at the CSV boundary, cents everywhere inside.
+- The DuckDB store reuses the parquet files the export loop just wrote for its
+  largest tables, derives sales_observations as a SQL filter of the loaded
+  ledger instead of re-serializing the frame, and runs under
+  `SET memory_limit='1GB'` so loads spill to disk rather than balloon the
+  process.
+- Row-wise Python on line-level paths: inventory costing (the one genuinely
+  per-sale-line Python loop; it is inherently sequential — FIFO/LIFO layers
+  are stateful) now accumulates typed column arrays instead of a dict per
+  line. The remaining to_dicts/iter_rows sites are group- or leaf-level
+  (verified individually) or report/bundle serialization.
+- Stage cache keyed by input fingerprint (`margin_engine/cache.py`): sha256 of
+  the exact input bytes + mapping bytes + engine version; a hit can only
+  return what the same code would recompute. Wired as `run --cache-dir` and
+  into the replay feed, which now parses its source exactly once (on-disk
+  cache, survives restarts) and filters the canonical frame per tick. The
+  analytic stages still recompute per tick by design: duplicate detection,
+  settlement allocation and the panel are global, so partial reprocessing
+  would change answers. Tests cover roundtrip, torn writes, key sensitivity,
+  a poisoned-loader hit path, and the replay single-parse guarantee.
+- `run_full` frees the two consumed wide intermediates (pre-dispersion
+  observations, the segmentation frame) as soon as their consumers finish.
+- Scale ladder methodology: world generation moved to a subprocess (the
+  target describes the pipeline on an existing export; the generator's
+  allocator-retained memory inflated every rung), and the ladder now measures
+  a second rung before projecting whenever rung 1 used under half the budget —
+  the one-point ratio projection overestimates (most of rung 1's peak is the
+  fixed interpreter + libraries floor) and had ended the ladder spuriously.
+
+**Measured results (same machine, 13.8 GB RAM, ~5.2-5.4 GB available)**
+
+At the 300x500 rung, 241,162 lines, default run:
+- Runtime 32.1s -> 13.0s (2.5x; with validation included it is ~27s vs 32.1s).
+- Peak RSS 2.92 GB -> 2.64 GB. Peak bytes/line 13,001 -> 11,754; marginal
+  bytes/line between rungs 9,972 -> 8,987. Recorded in validation.json under
+  the scale row (phase35_before_after).
+- Remaining peak consumers, from per-stage RSS profiling at this rung: the
+  DuckDB store load (~2.6 GB segment peak), the export writes (~2.4), the
+  sensitivity solvers (~2.2), streaming ingest transient (~2.2) — all over a
+  ~1.3-1.5 GB Python + libraries + allocator floor that dominates the
+  peak-per-line figure at these sizes. Run-to-run RSS noise on this shared
+  machine is plus or minus 0.1-0.2 GB.
+
+**Known gaps / decisions**
+
+- The 10M-line / 8 GB / 15 min target (27.2) remains a KNOWN GAP on this
+  hardware, as recorded since Run 4: the ladder stops after 241k lines inside
+  a ~4.2 GB budget. The honest extrapolation at ~9 KB marginal bytes/line says
+  a full-featured 10M-line synthetic world would not fit 8 GB even elsewhere;
+  the measured real-data run (1.07M lines, 4.2 GB, fewer active features) is
+  the closer guide. The remaining lever — spilling the ledger to parquet
+  between stages and scanning with per-stage projections (sink_parquet
+  end-to-end) — changes the FullRunResult contract that the web export, API
+  and report all consume, and is logged here as the next scale step rather
+  than half-done in this phase.
+- The spec bullet "DuckDB for the heaviest joins and aggregations": DuckDB is
+  used for the store (bounded memory, spill-to-disk) and the observations
+  derivation. The analytic joins stay in Polars: per-stage profiling shows
+  they are not the peak, and moving them would risk the byte-identity bar for
+  no measured gain.
+- Month-partitioned allocation processing is subsumed by the narrow-projection
+  allocations (an allocation now touches only its group keys and driver, never
+  the full-width ledger); no separate calendar partitioning was needed to
+  clear the measured peaks, and settlement groups already partition by period
+  inside the allocation keys.
+- Pre-existing finding, documented while verifying: the demo web bundle is not
+  byte-stable across separate sessions even on unchanged code — iterative
+  solver outputs (PPML/IRLS) can move in the last ulp with environment
+  conditions, and one value sitting on a 10-significant-digit rounding
+  boundary flips its printed form. Old-code-vs-old-code runs differed in four
+  bundle files; old-vs-new differed in exactly one such value. Engine CSV and
+  parquet exports are immune (solver exports round to 10 significant digits).
+  Logged as an observation for possible later hardening; no target loosened.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0 (all green, slow/network tiers deselected; new tests:
+cache roundtrip/keys/hit-identity, replay single-parse, --validate flag and
+validate command). Byte-identity: sample 46/46, world42 44/44, demo engine
+exports 46/46 identical. Web checks on this phase's final state: tsc exit 0;
+vitest exit 0 (11/11); production build exit 0; Playwright
+(CI=true SKIP_SNAPSHOTS=1) exit 0, 151/151.
+
+## Phase 36 — Fiscal calendars (2026-10-24, Run 5 branch)
+
+Configurable fiscal calendar in `margin_engine/fiscal.py` + a `fiscal` config
+section: calendar_months (default), 4-4-5 / 4-5-4 / 5-4-4 week calendars, or a
+custom period table (new optional reference table `fiscal_periods`:
+period_label, start_date, end_date, optional quarter_label).
+
+**Semantics.** One calendar drives every ANALYTIC period: the sensitivity
+panel's period index and labels, peer-group quarters, the guidance observation
+unit, baseline windows (leakage, opportunity levels 2-3 via the panel index,
+the web bundle's pair revenue window), period counts (customer economics
+orders-per-period, bundle months_covered), the books tie-out, and
+rolling-window stability in real-data validation. Data-declared periods stay
+data-defined on purpose: rebate settlement periods, landed-cost months and FX
+rate months come from the source tables and are not reinterpreted.
+Week calendars follow the retail convention: a fiscal year is the 52/53 weeks
+ending on the configured weekday nearest the last day of the configured
+year-end month; a 53rd week extends the year's final period; labels are
+"FY2026 P03" / "FY2026 Q1". Custom tables are validated (no overlaps; a date
+outside every period is an actionable error; a missing quarter_label falls
+back to the period label, stated in the run notes). Under a non-month
+calendar, monthly instrument / market-index tables join by the calendar month
+containing each fiscal period's start — an approximation stated in the run
+notes, never silent. The default-calendar expressions are the engine's
+historical ones, so every export stays byte-identical (verified).
+
+**Tests (11 new).** Nearest-weekday year ends; period lengths and contiguous
+boundaries for all three week patterns; a 53-week year found programmatically
+with its extended final period; year-boundary attach (FY2023 P12 ->
+FY2024 P01 across 2023-12-30/31); custom-table attach, overlap/missing-table/
+date-outside errors, quarter fallback note; books tie-out exact on a custom
+calendar and a wrong GL figure flagged; full pipeline on the sample world
+under 4-4-5 (reconciliation exact, FY-form quarters in peer groups, FY-form
+panel periods, calendar note present).
+
+**Verification.** Sample exports byte-identical under the default calendar
+(46/46). Demo bundle differs only in intended ways: the new rules hash (the
+fiscal config section), fiscal_periods listed among absent reference tables,
+and the Phase 35 scale row refresh. Known presentation gap deferred to Phase
+46: run notes show raw reference-table names (e.g. fiscal_periods); route
+through the label dictionary there.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0 (all green, slow/network deselected). Web code untouched; bundle parity
+covered by the pytest webexport suite.
+
+## Phase 37 — Pricing compliance (2026-10-24, Run 5 branch)
+
+**Robinson-Patman review flag** (`margin_engine/compliance.py`, config section
+`compliance.robinson_patman`). Customers who are likely competitors of each
+other — same values on the configured attributes, default industry + region —
+whose recommended prices for the SAME item sit more than the configured
+threshold apart (relative %, strictly greater; default 5%) are flagged for
+review. Beside every flag the engine shows the cost-to-serve difference
+between the two customers for that item (the first number a cost-justification
+review needs), taken from the same pair-level per-unit activity costs the
+contribution floor uses. Outputs: a new `compliance_robinson_patman` export
+(one row per flagged competitor pair x item with both prices, the difference,
+and both cost-to-serve figures) and an `rp_review_flag` column on guidance
+(which flows onto opportunity records — Phase 38 actions will require a
+written justification at approval). Pairs with no usable list price cannot be
+price-compared and are excluded with a stated note; a missing customers table
+or missing attributes switch the flag off with the reason stated — never
+silently. Labels added to the dictionary so no raw code reaches a reader.
+
+**Public-data-only rule.** The market/competitor price index is accepted as an
+elasticity control only when the mapping declares `public_source: true` for
+it; otherwise the control is switched off with a note naming the reason
+(competitors sharing non-public prices through pricing algorithms raises
+antitrust concerns). Config: `compliance.market_index_public_source_required`
+(default true). The synthetic mapping declares its simulated index public
+(PPI-style published series), so synthetic-world behavior is unchanged.
+
+**Methodology.** New section 11, "Pricing-law considerations": Robinson-Patman
+orientation (like grade and quality, competing buyers, cost-justification and
+meeting-competition defenses, why the cost-to-serve difference is shown),
+algorithmic pricing / information sharing (why public-only), and what the
+engine never does. Written as orientation, explicitly not legal advice.
+
+**Tests (5 new).** Threshold boundary (exactly 5.00% apart: no flag; 5.01%:
+flagged); no flag for non-competing customers (different region, 100% apart);
+cost-to-serve evidence equals the ledger-derived per-unit figures on a
+hand-built mini-ledger; disabled/missing-attribute paths fail closed with
+stated notes; market-index gate end-to-end on the sample world (undeclared
+source -> control refused with the stated note; declared public -> used).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0. Guidance and opportunities exports gain the rp_review_flag column and
+the new compliance export (intended feature change; run-to-run determinism
+and bundle parity suites all green). Web code untouched.
+
+## Phase 38 — Action model and generation (2026-10-24, Run 5 branch)
+
+New package `margin_engine/actions/` turns findings into proposed actions.
+
+**Model (`model.py`).** Lifecycle proposed -> under review -> approved |
+rejected -> exported -> implemented -> measured (rejected can be reworked to
+proposed). Every transition is an event in an append-only log (who, when,
+from-status, to-status, note); current status is DERIVED by replaying the log,
+never edited in place. `append_event` validates each transition against the
+table; `validate_log` proves a whole log is a legal walk (dense seq from 0,
+every from-status equals the prior to-status) and catches in-place tampering.
+
+**Generation (`generate.py`).** Five action types from engine outputs, each
+with a plain-English title and rationale whose every number comes from those
+outputs, and an expected impact at the RIGHT opportunity level, never summed
+across levels: price_change (level 3 when the volume response is
+causal-supported and inside price support, otherwise level 2 fixed-volume,
+labeled); below_floor_fix (raise to the binding floor at fixed volume, pocket
+dollars; pairs with no baseline volume state that instead of inventing a
+number); cost_pass_through (recovered cost at the configured level — default
+50%, never full — on the top category and supplier scenarios, via the same
+scenario grid the demo uses); service_policy (contribution at stake after
+activity costs, labeled estimated); rebate_discount_review (level-1 leakage in
+excess of the customer's segment-median rate, with ratio and absolute-dollar
+gates). Priority defaults by impact and evidence (non-causal demotes one
+level); owner, due dates (anchored to the data's last invoice date) and
+per-type caps are config (`actions` section in rules.yaml). Guardrails:
+an unblocked proposal below the binding floor raises (never clamped silently);
+contract-protected pairs generate BLOCKED actions with the reason shown and
+never become price changes; the Robinson-Patman flag travels with the action.
+Generation is deterministic: content-hash ids, dates from the data anchor.
+Sample world: 288 actions (73 below-floor, 200 price changes at the per-type
+cap, 2 pass-through, 3 service policy, 10 rebate reviews; 11 carry RP flags).
+
+**Storage (`store.py`).** DuckDB persistence for API mode (Phase 39): seed is
+idempotent (a seeded store refuses a silent reseed), transitions go through
+append_event's validation, reads replay the log. Parquet handoff, no pyarrow.
+
+**Demo history (`demo.py`).** The static demo ships read-only actions with a
+simulated review history: deterministic (id-hash buckets), lifecycle-valid,
+blocked actions never advance, approvals of flagged actions carry a written
+justification, and the simulated approver is never the proposer.
+
+**Engine exports.** `actions` and `action_events` join the standard exports
+(sorted, deterministic), and run_full returns both for the web export and API.
+
+**Tests (9 new).** Determinism (frame-equal double generation, unique ids);
+traceability of every action to its source records (guidance pairs, service
+flags, leakage customers, scenario scopes; below-floor count ties to guidance);
+volume-evidence labeling; RP flag carried exactly; floor guardrail raises on a
+constructed violation; contract-protected blocked with reason and no price
+action; full lifecycle replay + refusal of skipped/terminal/tampered walks;
+store seed idempotency + persisted transitions + store-boundary enforcement;
+demo history determinism and validity.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0. Web untouched (the Action center UI is Phase 42).
+
+## Phase 39 — Review and approval, maker-checker (2026-10-24, Run 5 branch)
+
+**Policy layer (`actions/review.py`).** Roles analyst / approver / viewer (a
+user may hold several, e.g. demo-lead:analyst+approver); identity in local
+mode is a configured user name sent as X-User — documented everywhere as NOT
+authentication (real login belongs to a future hosting phase). Enforced:
+role gates per transition; separation of duties (an approver cannot approve an
+action they proposed or submitted); a written justification is required to
+approve a compliance-flagged action; blocked actions never advance; 'measured'
+belongs to the results tracker, never to a user. Edits are whitelisted
+(owner, due date, title, rationale, proposed price), allowed only before
+approval, refused on blocked actions, and a price edit below the binding floor
+is refused — every edit lands in an append-only audit table.
+
+**Store additions.** merge_new (a fresh engine run adds new actions without
+ever touching existing actions or their review history — the replay feed now
+merges after every tick), apply_edit (audited), add_action (manual proposals),
+guarded empty-DB reads.
+
+**API (`api/actions_routes.py`).** Queue (paginated/filterable/sortable, with
+derived status; TablePage contract shape), summary (counts by status, impact
+by evidence, blocked and flagged counts), detail (action + full event history
++ edit audit), and one endpoint per transition: submit, approve, reject,
+rework, implement, plus bulk-approve, PATCH edit and POST propose. Bulk
+approve applies per-item guardrail checks: failing items are REFUSED with the
+reason and their status untouched (refusing to approve is not a human
+rejection — that reading of "rejected with the reason" is recorded here);
+already-approved items report "unchanged". Every endpoint is idempotent
+(repeating an effective transition returns changed=false) and sits behind the
+same rate-limit middleware as the rest. Manual price proposals are checked
+against the floor on record for the pair; a pair with no floor on record is
+refused rather than guessed. OpenAPI (docs/api/openapi.yaml) gains every
+path, the X-User parameter, and the ActionsSummary / ActionDetail /
+ProposeAction / BulkApproveResult / TransitionResult / PolicyError schemas.
+
+**Tests (8 new, HTTP-driven).** Contract paths present + queue/summary/bulk
+shapes validated against the OpenAPI schemas; viewer and analyst role refusals;
+self-approval blocked (403 self_approval); justification enforced on a flagged
+approval (422 then 200 with reason); blocked action refused at submit;
+bulk-approve mixed outcomes (unchanged / refused / approved / unknown) with
+statuses untouched on refusals; edits audited, floor-guarded, role-guarded and
+frozen after approval; manual proposals (below floor refused, unknown floor
+refused, valid one lands with the proposer's birth event); the store's event
+log stays validate_log-clean after an HTTP-driven lifecycle.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0 (strict);
+full pytest exit 0. Web untouched (Action center UI is Phase 42).
+
+## Phase 40 — ERP-ready price export (2026-10-24, Run 5 branch)
+
+**Export (`actions/export.py` + `actions.price_export` config).** Approved
+price actions (price_change, below_floor_fix) become an ERP-importable price
+file. Generic CSV by default; a deployment overrides header names, date
+format, decimal separator, delimiter and price unit (dollars/cents) — a comma
+decimal with a comma delimiter is refused at config time. Every row carries
+effective date (the action's due date), previous price, new price, UOM (now
+captured per pair at generation: the pair's modal normalized selling unit),
+approval id (derived deterministically from the approving event) and action
+id. The diff summary — count, expected impact BY BASIS (opportunity levels are
+never summed into one number), largest changes — is shown before export (CLI
+prints it first; the API returns it on dry_run) and written beside the file
+(<out>.summary.json).
+
+**Idempotency.** The file always contains every approved-or-already-exported
+price action, deterministically formatted, so re-exporting rewrites the
+identical bytes; only actions still in 'approved' receive the exported
+transition (logged with who), so no event repeats. Non-price actions
+(service policy, rebate review, pass-through) never appear in the price file
+regardless of status.
+
+**Surfaces.** CLI `margin-engine export-prices --actions-db ... --out ...
+[--dry-run]`; API POST /api/actions/price-export (analyst role; returns
+summary + CSV text for the UI download; dry_run previews). OpenAPI updated.
+
+**Tests (7 new).** Only approved price actions export (proposed, blocked-type
+and non-price approved actions excluded); transitions logged once with
+identical bytes on re-export; template variants (semicolon + comma-decimal +
+d.m.Y headers in another language; cents unit; invalid template refused);
+summary per-basis totals with no cross-level "total"; round-trip through the
+engine's OWN ingest for both the default and the comma-decimal template (the
+test, playing the ERP, adds a QTY=1 column; mapping over the exported file;
+every re-imported price equals the exported new price to the cent, dates
+survive the format); the HTTP endpoint (viewer refused, dry-run previews
+without state change, real call transitions once, repeat idempotent).
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0. Web untouched (the export button lands with the Action center UI,
+Phase 42).
+
+## Phase 40.1 — Post-commit check failure fixed (2026-10-24, Run 5 branch)
+
+The phase-40 commit landed before its background check finished; that check
+then FAILED (recorded here, not hidden): mypy flagged two stale ignore
+comments in cli.py, and the replay idempotency test crashed because merging
+new actions read an action store written BEFORE the uom column existed (the
+default actions_db path had a pre-Phase-40 store on this machine — exactly
+what a real deployment would hit after upgrading).
+
+Fixes: (1) forward migration in ActionStore — a store lacking newly added
+schema columns reads them back as nulls, and merge_new rewrites the on-disk
+table into the current schema before inserting, so an upgrade never crashes
+and never loses review history; two tests cover read-forward and
+merge-into-older-store. (2) The replay API test now isolates its actions_db
+in tmp (hermeticity). (3) The stale ignores removed.
+
+**Checks (after fix).** ruff check 0; ruff format --check 0; mypy src api 0;
+full pytest exit 0. Process note: later phases gate the commit on the check
+exit codes read from the log, not on the task completing.
+
+## Phase 41 — Results tracking (2026-10-24, Run 5 branch)
+
+**Tracker (`actions/tracking.py`).** After an action is marked implemented it
+is measured over a configurable window (default 90 days each side):
+- Price realization: (P_after - P_before) / (P_new - P_before) on the pair's
+  invoiced prices — 1.0 fully realized, 0 no move, negative eroded further.
+- Volume vs prediction: the treated pair's volume ratio against the median
+  ratio of untreated same-segment pairs with sales in BOTH windows — a
+  difference-in-differences comparison, so general trends never read as price
+  effects. The engine's prediction is the predicted_volume_ratio now stored on
+  every action at generation ((P1/P0)^elasticity for causal-supported volume
+  responses; 1.0 for fixed-volume; null for non-price actions).
+- Margin outcome: pocket margin and contribution, before vs after.
+Every gate fails closed with its reason on the outcome row: window not yet
+elapsed, too few after-window sales (a pair that stopped buying is reported as
+exactly that), too few comparison pairs. The comparison pool comes from the
+full guidance pair-to-segment map, not just the capped actions table.
+`measure_and_record` persists the outcomes table in the action store and moves
+newly measured actions implemented -> measured (who=tracker) exactly once;
+re-running recomputes outcomes and adds no events. New CLI:
+`margin-engine track --actions-db ... --data ... --mapping ...`.
+
+**Calibration.** Prediction error by evidence bucket (causal-supported /
+IV-estimated / fixed-volume from the action's volume treatment): n, median
+absolute volume error in log points, median realization. Below the configured
+minimum of measured actions (default 10) the table says
+"not enough implemented actions yet" instead of any number.
+
+**Synthetic validation (generator + script).** The generator gained planted
+price interventions (`n_price_interventions`, `intervention_month`,
+`intervention_pct`): chosen non-contract pairs' prices rise by the planted
+percentage from the intervention month and demand responds through each pair's
+planted elasticity; ground truth lands in ground_truth/interventions.parquet
+and the truth summary. scripts/measure_tracker.py (recorded in
+validation.json): on well_identified (seed 5, 30 planted +8% interventions),
+21/30 measured and POOLED recovery error |median DiD effect - median planted
+effect| = 0.0394 log points against a 0.10 bound — per-pair 90-day windows
+carry ~0.26 log points of irreducible Poisson noise (reported as information;
+the planted effect itself is ~0.14, which is why calibration aggregates). On
+the sparse preset the tracker measures 0/30 and reports insufficient evidence
+with reasons — fail-closed as required. Both rows carry pass flags and full
+detail.
+
+**Tests (5 new + generator smoke).** Hand realization/DiD fixture (realization
+0.5; a x1.3 market trend with a x0.8 treatment reads as DiD 0.8, not 1.04);
+fail-closed gates with reasons (few controls; window not elapsed); calibration
+minimum-count gating; measure_and_record transitions once and is idempotent;
+the generator plants interventions on non-contract pairs and the price path
+jumps by the planted percentage at the intervention month.
+
+**Checks.** ruff check 0; ruff format --check 0 (after formatting three
+files); mypy src api 0; full pytest exit 0; tracker validation script exit 0
+with both rows passing.
+
+## Phase 42 — Action center UI (2026-10-24, Run 5 branch)
+
+**Bundle.** New models (ActionRow with embedded event history and outcome,
+ActionsSection with summary / calibration / facets, ActionOutcome,
+CalibrationRow); the demo world ships 277 actions READ-ONLY with a simulated,
+lifecycle-valid review history (shifted ~140 days before the data's end so
+implemented actions have full measurement windows: 13 outcomes measure for
+real against this bundle's ledger, calibration shows three evidence buckets).
+New files actions.json and tables/actions.json (456 KB, under the 1 MB gate);
+overview.json carries the open-actions summary; export-web also writes
+actions.parquet / action_events.parquet as API-mode seeds (the app never
+fetches them). Label dictionary covers every action type, lifecycle status,
+priority, impact basis, outcome status and calibration bucket.
+
+**Data layer.** The DataClient gains an ActionsClient: page + queue table via
+the standard contracts (static files vs /api/pages/actions + /api/actions,
+which the BFF computes LIVE from its action store), detail with full history,
+outcomes list, and mutations (transition, bulk approve, edit, propose, price
+export). The static adapter is read-only: readOnly=true and every mutation
+rejects with a 405; its queue filter predicate mirrors the API matcher exactly
+(parity-tested). New API endpoints: /api/pages/actions, /api/actions/users
+(configured identities - NOT authentication), /api/actions/outcomes; detail
+now embeds the measured outcome.
+
+**UI.** New Action center page (route /actions, in the primary nav): summary
+cards (counts by status; expected impact BY BASIS, never summed; latest
+results), queue on the shared filter system (type/status/priority/evidence
+multi-selects, owner combobox, compliance-only toggle, impact range; chips,
+clear-all, URL round trip, Showing x of y), and a Results tab with the
+calibration table (or the "not enough implemented actions yet" state) and
+every tracked outcome with its reason. Detail route /actions/:actionId:
+rationale, compliance explanation from the dictionary, evidence deep links
+(guidance band for the pair, segments, sensitivity), append-only history
+(labeled simulated in the demo), edit audit, and the outcome cards
+(realization, DiD volume vs prediction with the control-pair count, margin
+before/after). In API mode the toolbar adds the working-identity picker,
+manual proposals and the price export (downloads the CSV, shows the summary);
+lifecycle buttons apply optimistic status updates that ROLL BACK on failure
+with the API's refusal shown verbatim. Overview gains an open-actions finding
+linking to the page.
+
+**Tests.** pytest: bundle parity (per-basis impact totals tie to the engine
+frame cents-exact, no summed total, ids trace 1:1, embedded histories replay
+to the shown statuses, size gate). Playwright static (12): read-only queue
+with counts matching the bundle, no mutation affordances, filters alone and
+combined with chips/clear-all/URL round trip and bundle parity, impact-range
+boundary, detail (demo-history label, compliance note, guidance deep link, no
+workflow buttons, measured outcome), results view, summary parity. Playwright
+API mode (9 total): full lifecycle through the UI (submit, self-approval
+blocked with the API's wording, approve by a different approver, price export
+download moving the action to exported, implement), reject-rework walk with
+the event log, viewer/analyst role refusals, justification demanded then
+accepted on a flagged action, optimistic rollback on a simulated 500, manual
+proposal appearing in the queue. The raw-code scanner and axe now cover
+/actions (and caught two raw codes the new validation rows had leaked into
+the methodology page - fixed in the scripts and stored rows). All 24 visual
+snapshot diffs from the intended nav/overview changes were reviewed and
+re-baselined.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0; tsc 0; vitest 11/11; build 0; Playwright static 169/169 (axe clean,
+snapshots re-baselined); Playwright API mode 9/9.
+
+## Phase 43 — Drift monitoring, live mode (2026-10-24, Run 5 branch)
+
+**Engine (`margin_engine/drift.py`, config section `drift`).** Each refresh
+compares against the previous run: data-quality rates (missing-cost revenue
+share, data-entry anomaly share, commercial-outlier share, reconciliation
+pass), segment assignments (adjusted Rand index over the lines both runs
+share, gated by a minimum shared-line count), per-segment elasticity estimates
+and evidence statuses, and guidance status counts (relative change AND an
+absolute floor so tiny statuses do not flap). Moves beyond the configured
+thresholds become flags with deterministic plain-English sentences through the
+label dictionary ("Segment 2's price sensitivity moved from -1.40 to -0.90
+since the previous refresh."); everything measured lands in a detail payload
+whether flagged or not. A reconciliation regression always flags. DriftStore
+persists the baseline (snapshot JSON + assignments parquet) and the latest
+flags.
+
+**Wiring.** The replay feed refreshes drift after every tick (the engine run
+becomes the new baseline). The API serves GET /api/drift (flags + full
+detail) and adds drift_flags to /api/app; the UI shell shows each flag beside
+the stale-data notices (data-testid drift-flag). The static demo has no
+refresh cycle and carries no flags.
+
+**Tests (7 new, planted shifts).** Elasticity move beyond the threshold fires
+with the exact sentence (and a smaller move stays quiet); a status change
+message uses labels, never raw codes; a genuinely different partition (groups
+collapsing, not a label permutation) fires the ARI flag with the shared-line
+count while identical assignments and too-few-lines stay quiet with the reason
+in the detail; the data-quality threshold is exact at its boundary (float
+noise rounded away) and direction wording is checked; status count changes
+need BOTH the relative and absolute gates; DriftStore baselines on first
+refresh, reports an empty comparison on an identical second run (ARI 1.0),
+and flags a shift planted into the stored baseline; the API serves the flags.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0; tsc 0; vitest 11/11; build 0. (Playwright suites unchanged by this
+phase beyond the passive shell element; full suites ran green in Phase 42.)
+
+## Phase 44 — Supply-chain security (2026-10-24, Run 5 branch)
+
+**Dependabot** (`.github/dependabot.yml`): weekly update PRs for uv (repo
+root), npm (web/) and GitHub Actions; minors and patches grouped, majors
+individual.
+
+**CI audits** (ci.yml): pip-audit over the exact locked Python set
+(`uv export --frozen --all-groups`, failing on ANY known vulnerability) and
+`npm audit --audit-level=high` in web/ (high or critical fails the build).
+
+**Findings handled now, not deferred** — adding the gates surfaced real
+vulnerabilities, fixed per the process the new docs/security.md documents:
+- Python: pillow 12.3.0 -> 13.0.0 (8 CVEs), virtualenv 21.14.7 -> 21.14.13
+  (7 CVEs), filelock 4.1.1 -> 4.2.4 (4 CVEs, surfaced by the re-audit).
+  pip-audit now reports no known vulnerabilities; full pytest green.
+- npm: react-router-dom 6.28.0 -> 6.30.6 (high XSS/open-redirect fixes within
+  v6), postcss 8.4.49 -> 8.5.31 (highs), @playwright/test 1.49.1 -> 1.55.1
+  (high: unverified browser downloads), vitest 2.1.8 -> 5.0.5 (the tinypool
+  prototype-pollution-to-RCE criticals and @vitest/mocker highs are fixed only
+  past the 2.x line), vite 5.4.11 -> 7.3.7 with @vitejs/plugin-react 5.1.4
+  (esbuild dev-server advisory; `vite@latest` was tried first and REVERTED:
+  the rolldown-based line rejects this config's object manualChunks — a
+  worked example of "majors only with the full gates"). npm audit at the high
+  gate is clean; 5 moderates remain, each reviewed and recorded in
+  docs/security.md (tailwind-3 chain: fix is a Tailwind 4 migration, parser
+  runs only at build time on our own CSS; react-router v6 variants fixed only
+  in v7) — accepted in writing, never silenced, and an escalation to high
+  re-breaks CI.
+
+**docs/security.md**: what runs automatically and the finding-handling
+process (read the advisory against actual use, smallest compatible upgrade,
+re-run audits like CI, record in the build log, written acceptance when no
+fix exists, never disable an audit step).
+
+**Checks.** ruff 0 / format 0 / mypy 0 unchanged; full pytest exit 0 on the
+upgraded lock; tsc 0; vitest 11/11 on vitest 5; build 0 on vite 7; Playwright
+static 169/169 (no snapshot drift under Playwright 1.55); Playwright API mode
+9/9; pip-audit clean; npm audit high-gate clean; both workflow YAMLs parse.
+
+## Phase 45 — Container (2026-10-24, Run 5 branch)
+
+One multi-stage Dockerfile: `webbuild` (node 22, UI built in API mode),
+`api` (the astral uv python3.12 image; runtime + api dependency groups only,
+no dev tooling; uvicorn serves api.main:app — the refresh scheduler runs
+inside this process, so no separate scheduler container is needed), and `ui`
+(nginx serving the built SPA with /api proxied to the api service, mirroring
+the local vite proxy). compose.yaml wires three services: a one-shot `export`
+job that builds the deterministic demo bundle plus action-store seeds into a
+shared volume, `api` (health-checked; DuckDB stores, the action review
+history and drift baselines persist in a `state` volume; the replay feed is
+one env flag away), and `ui` on :8080 gated on the API being healthy.
+.dockerignore keeps the build context to what the stages copy.
+
+**CI** (.github/workflows/docker.yml): builds both images and smoke-tests the
+composed stack on every push and PR — API health polled through the demo
+export, a page endpoint, the actions summary, the UI document, and the
+API THROUGH the nginx proxy; logs dumped on failure, volumes torn down after.
+This machine has no Docker (stated in the spec), so the GitHub-hosted runner
+is where this proof executes; compose.yaml and both workflow YAMLs are
+schema-parsed locally and the exact commands the stages run (uv sync flags,
+export-web, uvicorn, npm ci/build) are the ones proven in CI and the local
+gates all run already.
+
+README gains the "Run with Docker" subsection (one command, ports, state
+volume semantics, replay flag, CI smoke pointer).
+
+**Checks.** compose.yaml and docker.yml parse; ruff/mypy/pytest untouched by
+this phase (config files and docs only); quick pytest sanity green. The
+docker build itself is CI-verified by design.
+
+## Phase 46 — Display polish and rendering tests (2026-10-24, Run 5 branch)
+
+**Display names for data values.** New `display_value` in the label module:
+categorical DATA values render with each word capitalized and declared
+acronyms fully upper-case ("OEM", never "oem" or "Oem"; "Construction", never
+"construction"), threaded through every segment-rule phrase builder
+(plain_rule and the one-hot margin-tree phrasing). The acronym list is
+CONFIGURABLE IN THE MAPPING (new `display.acronyms`; the synthetic mapping
+declares OEM, the Online Retail II mapping UK/USA/EIRE/RSA). Raw values stay
+raw in every CSV/Parquet export — only reader-facing text changes.
+Engine-constructed band levels (order-size, discount, rebate-rate and
+cost-ratio bands, revenue classes) are sentence words, not data values, and
+deliberately keep their case ("small or medium orders") — the first pass
+capitalized them too and two existing phrasing tests caught it (fixed, tests
+kept intact). Status-chip visual treatments extended to the action-center
+codes (lifecycle, outcomes, compliance flag).
+
+**Rendering tests.** New Playwright spec (10 passes, desktop + mobile): every
+guidance status, sensitivity status, opportunity evidence status AND volume
+treatment, and every action status and type that appears in the data renders
+as a chip whose accessible name carries the dictionary label plus its
+plain-English explanation (driven per status through each page's filters); a
+casing test proves the segments page shows "OEM" and "Construction" and never
+a bare lowercase data value. Plus 3 pytest units (casing/acronym rules,
+plain_rule casing with engine words intact, mapping declarations). A
+load-dependent flake in the pre-existing keyboard-only combobox test (Enter
+racing a re-render that drops the active option) was made retry-robust the way
+a real keyboard user behaves — press again — with the a11y assertions kept.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0 (incl. the two phrasing tests that caught the band-level overreach);
+tsc 0; build 0; Playwright static 179 passed + 1 intentional skip (segments
+snapshots re-baselined for the casing change); rendering spec 10/10.
+
+## Phase 47 — Documentation and report (2026-10-24, Run 5 branch)
+
+**README.** "What it produces" gains the Action center and Robinson-Patman
+rows, the fiscal-calendar sentence and LIFO; a new "Action center" section
+covers generation with guardrails, the maker-checker workflow and roles
+(identity explicitly not authentication), the ERP price export, and results
+tracking with the measured tracker numbers; the validation table adds the two
+results-tracker rows and refreshes the scale row from validation.json (241k
+lines 13.0s / 2.64 GB after the Phase 35 refactor, was 32.1s / 2.92 GB;
+marginal ~9.0 KB/line, was ~10.0; still a KNOWN GAP against the 10M target,
+stated with the honest extrapolation). The Docker section already landed in
+Phase 45; pricing-law in methodology section 11 (Phase 37).
+
+**Methodology.** New section 12 "Action center": the five generation rules
+with their impact bases (never summed across types), the enforced guardrails,
+the maker-checker lifecycle with the append-only replayed event log, the
+idempotent price export, and the results-tracking method with its limits
+stated plainly (per-pair 90-day Poisson noise ~0.2-0.3 log points means pooled
+calibration is the meaningful read; parallel-trends assumption; measured
+outcomes are a selected sample).
+
+**Report.** docs/run5-report.md: headline before/after numbers (runtime,
+peak memory and bytes/line; 288 sample / 277 demo actions with 13 measured
+outcomes; tracker pooled recovery 0.039 vs the 0.10 bound and 0/30 fail-closed
+on sparse), a per-phase summary of phases 35-47 including the Phase 40.1
+process failure, known gaps with reasons (10M target, demo-bundle solver
+noise, five accepted npm moderates, Docker CI-only, per-action volume noise),
+and the decisions waiting on the owner (merge, scale roadmap, Tailwind 4 /
+react-router 7 migrations, replay flag, real login).
+
+**Format fix.** ruff format (0.17.0, from the Phase 44 lock upgrade) wanted
+synth/demand.py rejoined on two statements; applied mechanically, no semantic
+change (the fresh-clone full pytest below ran on the reformatted file).
+
+**Verification like CI (per the Run 5 spec, before this final commit).**
+Fresh clone of run5 into a temp folder with this phase's four changed files
+copied in (docs plus the format fix — the exact final tree), then:
+uv sync --frozen --all-groups exit 0 (124 packages); full pytest exit 0;
+margin-engine export-web --demo exit 0 (bundle 2,613 KB, 1,550 guidance
+pairs, 8 scenario grids); npm ci exit 0; production build exit 0 (largest
+chunks 259 KB ui / 376 KB recharts, gzip 82 / 104 KB);
+CI=true SKIP_SNAPSHOTS=1 npx playwright test exit 0 — 179 passed,
+1 intentional skip. Working-tree gates: ruff check 0; ruff format --check 0;
+mypy src api 0 (strict); tsc 0; vitest 11/11. API-mode Playwright last ran
+green in Phase 44 (9/9); this phase changed only docs and formatting.
+
+Run 5 is complete. Final commit on run5; not merged, not pushed — the owner
+reviews, pushes and opens the PR.
+
+## Phase 47.1 — Docker export and Lighthouse (2026-10-24, Run 5 branch)
+
+The run5 PR failed two CI checks; both root causes were found by local
+reproduction, not guesswork.
+
+**Docker compose-smoke: the one-shot export service exited 1.** Reproduced by
+building the api image's exact filesystem (only what the Dockerfile copies)
+and dependency set (`uv sync --frozen --no-dev --group api`) in a temp dir:
+`export-web --demo` dies with FileNotFoundError on `docs/validation.json`,
+which webexport/build.py reads unconditionally into the bundle's methodology
+section — and the image never copied docs/. Fix: `COPY docs/validation.json`
+in the api stage; the sim then produces the identical 2,613 KB bundle (exit
+0). The same sim cleared the other suspected causes: the runtime+api groups
+suffice, workdir/command are right, synth/ and config/ ship, and the
+root-owned named volume is writable. Defensive hardening while here: the
+compose healthcheck now uses `/app/.venv/bin/python` (the one interpreter
+guaranteed on that image) instead of a bare `python3`, and docker.yml's
+failure step prints `docker compose ps -a` plus per-service logs (export,
+api, ui) so the next failure is visible in CI.
+
+**Lighthouse performance 78 against the 90 gate.** Measured per instruction
+with web/lighthouse.mjs on production builds of BOTH branches on the same
+machine: run5 98 (LCP 552 ms, TBT 0 ms, CLS 0.095, initial JS 210 KB over 4
+scripts), fresh-clone main 98 (LCP 560 ms, TBT 0 ms, CLS 0.094, 209 KB). No
+branch regression: the Action center and drift code are already lazy-loaded
+routes and the bundles are size-identical. The real defect is PRE-EXISTING
+layout shift, ~0.10 at Lighthouse's own 1350x940 viewport (worse than at
+1440px), which a slower CI runner — which also adds TBT — turns into a
+failing score. Element-attributed PerformanceObserver probes found two
+sources: (1) the IBM Plex fonts were bundled behind the JS via fontsource
+imports, so the late font swap reflowed the headline and captions (~21-25 px);
+(2) the Overview's skeleton-to-content swaps (headline KPIs, waterfall panel)
+reserve less height than the loaded content. Fixes, gate untouched:
+- Fonts self-hosted at stable URLs (web/public/fonts, four woff2 subsets with
+  their SIL OFL licenses committed beside them), declared and PRELOADED from
+  index.html so they are ready at first paint; fontsource imports and
+  packages removed. Declarations mirror the previous fontsource subsets
+  (same families, weights, unicode-ranges), so rendering is pixel-identical —
+  proven by the visual snapshot suite passing unchanged.
+- QuerySection gains a `reserve` prop (min-height through skeleton, error and
+  content states); the Overview reserves the measured heights: headline KPIs
+  109 px (content 109.4 — reserve must never exceed content), waterfall
+  min-h 360/sm:264 (the chart height is a constant per breakpoint, so exact),
+  findings floored at the three rows every dataset produces. A first attempt
+  also reserved two lines for the shell's data notice; at 1440 px the loaded
+  label is ONE line, every desktop snapshot caught the phantom line, and the
+  reservation was dropped — the snapshots passed again with no re-baselining,
+  which is the proof the loaded layout is untouched.
+- Result at the Lighthouse viewport: CLS 0.105 -> 0.003, performance 100
+  (accessibility 100, best practices 96), LCP 0.6 s, TBT 0 ms.
+- lighthouse.mjs now prints LCP, TBT, CLS, FCP and Speed Index with scores
+  and keeps lighthouse-report.json when the gate fails; pages.yml uploads it
+  as a CI artifact on failure.
+
+**API-mode e2e made hermetic (found by this phase's full check run).** The
+suite's persistent `.api_state/e2e-actions.duckdb` had its scarce flagged
+proposed actions consumed by repeated local runs since Phase 42 — a state
+exhaustion, not a code regression (CI checks out fresh). First fix attempt
+(a Playwright globalSetup deleting the store) was WRONG and made 5 tests
+fail: Playwright launches web servers before globalSetup, so the delete
+landed on a live store mid-run. Correct fix: `MARGIN_API_ACTIONS_RESET=1`
+(new api setting) deletes the store file at the SERVER's own start, before
+anything opens it; the e2e config sets it. Proven by running the suite twice
+back-to-back: 9/9 both times.
+
+**Checks (exit codes read from the logs).** ruff check 0; ruff format
+--check 0; mypy src api 0 (strict); full pytest 0; YAML parse 0 for
+docker.yml, pages.yml, ci.yml, compose.yaml; tsc 0; vitest 0 (11/11); build
+0; Playwright static WITH visual snapshots 179 passed + 1 intentional skip,
+no re-baselining; Playwright API mode 9/9 twice; node lighthouse.mjs gate
+exit 0 (performance 100). Docker itself remains CI-validated (no local
+Docker), now with the export fix proven by the filesystem simulation.

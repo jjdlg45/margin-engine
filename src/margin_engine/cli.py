@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from margin_engine import __version__
 from margin_engine.config import load_rules
+from margin_engine.fiscal import FiscalCalendarError
 from margin_engine.ingest.mapping import MappingError
 from margin_engine.money import MoneyParseError
 from margin_engine.waterfall.reconcile import ReconciliationError
@@ -45,12 +46,25 @@ def run(
         Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
     ),
     out: Path = typer.Option(Path("output"), "--out", help="Output directory"),  # noqa: B008
+    validate: bool = typer.Option(
+        False,
+        "--validate",
+        help="Also run the real-data validation suite (temporal backtest, "
+        "placebos, rolling-window stability); off by default because it "
+        "dominates runtime (Phase 35)",
+    ),
+    cache_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--cache-dir",
+        help="Directory for the fingerprint-keyed parse cache: re-running on "
+        "unchanged input skips re-parsing the export (Phase 35)",
+    ),
 ) -> None:
     """Run the full pipeline: ingest -> waterfall -> analytics -> report."""
     from margin_engine.report.full_run import run_full
 
     try:
-        result = run_full(data, mapping, rules, out)
+        result = run_full(data, mapping, rules, out, validate=validate, cache_dir=cache_dir)
     except MappingError as exc:
         _fail("mapping", exc)
     except MoneyParseError as exc:
@@ -59,12 +73,164 @@ def run(
         _fail("configuration", exc)
     except ReconciliationError as exc:
         _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
     typer.echo(f"Ledger lines: {result.pipeline.ledger.height}")
     typer.echo(f"Reconciliation: {'PASS' if result.pipeline.reconciliation.all_pass else 'FAIL'}")
     for stage, secs in result.timings.items():
         typer.echo(f"  {stage}: {secs:.1f}s")
     typer.echo(f"Report: {out / 'report.html'}")
     typer.echo(f"Manifest: {out / 'run_manifest.json'}")
+
+
+@app.command()
+def validate(
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
+    ),
+    out: Path = typer.Option(Path("output"), "--out", help="Output directory"),  # noqa: B008
+) -> None:
+    """Run the real-data validation suite (temporal backtest, placebo tests,
+    rolling-window stability) and write its exports. Equivalent to
+    `run --validate`; exists so routine runs stay fast (Phase 35)."""
+    from margin_engine.report.full_run import run_full
+
+    try:
+        result = run_full(data, mapping, rules, out, validate=True)
+    except MappingError as exc:
+        _fail("mapping", exc)
+    except MoneyParseError as exc:
+        _fail("money parsing", exc)
+    except ValidationError as exc:
+        _fail("configuration", exc)
+    except ReconciliationError as exc:
+        _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
+    typer.echo("Real-data validation (no planted truth; informational, never gates a status):")
+    for name in (
+        "real_validation_backtest",
+        "real_validation_placebo",
+        "real_validation_stability_elasticity",
+        "real_validation_stability_segments",
+    ):
+        path = out / f"{name}.csv"
+        typer.echo(f"  {name}: {path if path.exists() else 'not produced'}")
+    secs = result.timings.get("real_data_validation")
+    if secs is not None:
+        typer.echo(f"  validation runtime: {secs:.1f}s")
+
+
+@app.command()
+def export_prices(
+    actions_db: Path = typer.Option(  # noqa: B008
+        ..., "--actions-db", help="Action store (DuckDB) holding reviewed actions"
+    ),
+    out: Path = typer.Option(Path("prices.csv"), "--out", help="Price file to write"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"),
+        "--rules",
+        help="Policy rules YAML (actions.price_export template)",
+    ),
+    who: str = typer.Option("cli", "--who", help="Recorded in the exported transition events"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the diff summary without writing or changing state"
+    ),
+) -> None:
+    """Export approved price actions as an ERP-ready price file (Phase 40).
+    The diff summary prints BEFORE the file is written; re-exporting is
+    idempotent (identical file, no repeated transitions)."""
+    from margin_engine.actions.export import export_price_file
+    from margin_engine.actions.store import ActionStore
+
+    try:
+        loaded = load_rules(rules)
+    except (ValidationError, ValueError, TypeError) as exc:
+        _fail("configuration", exc)
+    store = ActionStore(actions_db)
+    preview = export_price_file(store, loaded, None, who=who, dry_run=True)
+    s = preview.summary
+    typer.echo(f"Price changes to export: {s['n_changes']}")
+    typer.echo("Expected impact by basis (never summed across levels):")
+    for basis, cents in dict(s["expected_impact_by_basis_cents"]).items():  # type: ignore[call-overload]
+        typer.echo(f"  {basis}: ${int(cents) / 100:,.2f}")
+    for ch in list(s["largest_changes"]):  # type: ignore[call-overload]
+        typer.echo(
+            f"  largest: {ch['customer_id']} / {ch['item_id']} "
+            f"{ch['change_pct']:+.2f}% (action {ch['action_id']})"
+        )
+    if dry_run:
+        typer.echo("Dry run: nothing written, no state changed.")
+        return
+    result = export_price_file(store, loaded, out, who=who)
+    typer.echo(f"Wrote {out} and {out.name}.summary.json beside it")
+    typer.echo(f"Actions moved to exported: {result.n_transitioned}")
+
+
+@app.command()
+def track(
+    actions_db: Path = typer.Option(  # noqa: B008
+        ..., "--actions-db", help="Action store (DuckDB) with implemented actions"
+    ),
+    data: Path = typer.Option(..., "--data", help="Directory with the source export"),  # noqa: B008
+    mapping: Path = typer.Option(..., "--mapping", help="Mapping YAML for the source"),  # noqa: B008
+    rules: Path = typer.Option(  # noqa: B008
+        Path("config/rules.yaml"), "--rules", help="Policy rules YAML"
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None, "--out", help="Also write action_outcomes.csv/.parquet here"
+    ),
+) -> None:
+    """Measure implemented actions against the ledger (Phase 41): price
+    realization, volume vs prediction with an untreated same-segment comparison
+    group (difference-in-differences), margin before vs after. Newly measured
+    actions move implemented -> measured; gates fail closed with reasons."""
+    import tempfile
+
+    from margin_engine.actions.store import ActionStore
+    from margin_engine.actions.tracking import measure_and_record
+    from margin_engine.report.full_run import run_full
+
+    try:
+        loaded = load_rules(rules)
+        with tempfile.TemporaryDirectory() as td:
+            result_full = run_full(data, mapping, rules, Path(td) / "out", validate=False)
+    except MappingError as exc:
+        _fail("mapping", exc)
+    except MoneyParseError as exc:
+        _fail("money parsing", exc)
+    except ValidationError as exc:
+        _fail("configuration", exc)
+    except ReconciliationError as exc:
+        _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
+    store = ActionStore(actions_db)
+    pair_segments = result_full.guidance.select("customer_id", "item_id", "segment_leaf")
+    result = measure_and_record(
+        store, result_full.pipeline.ledger, loaded, pair_segments=pair_segments
+    )
+    for note in result.notes:
+        typer.echo(note)
+    for row in result.calibration.to_dicts():
+        if row["status"] == "not_enough_implemented_actions":
+            typer.echo(
+                f"Calibration: not enough implemented actions yet ({row['n_measured']} measured)"
+            )
+        else:
+            typer.echo(
+                f"Calibration [{row['bucket']}]: n={row['n_measured']}, "
+                f"median |volume error| = {row['median_abs_volume_error_log_points']} "
+                f"log points, median realization = {row['median_realization_pct']}"
+            )
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        result.outcomes.write_parquet(out / "action_outcomes.parquet")
+        result.outcomes.write_csv(out / "action_outcomes.csv")
+        result.calibration.write_csv(out / "action_calibration.csv")
+        typer.echo(f"Outcomes written to {out}")
 
 
 # Demo world for the hosted site: generated in CI at deploy time, never
@@ -149,7 +315,14 @@ def export_web(
         _fail("configuration", exc)
     except ReconciliationError as exc:
         _fail("reconciliation", exc)
+    except FiscalCalendarError as exc:
+        _fail("fiscal calendar", exc)
     bundle_path, schema_path = write_bundle(bundle, out)
+    # Action store seeds for API mode (Phase 42): the live BFF merges these at
+    # startup (MARGIN_API_ACTIONS_SEED); the static site never fetches them.
+    if result.actions is not None and result.action_events is not None:
+        result.actions.write_parquet(out / "actions.parquet")
+        result.action_events.write_parquet(out / "action_events.parquet")
     size_kb = bundle_path.stat().st_size / 1024
     typer.echo(f"Bundle: {bundle_path} ({size_kb:,.0f} KB)")
     typer.echo(f"Schema: {schema_path}")

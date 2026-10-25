@@ -15,11 +15,14 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from api.actions_routes import router as actions_router
 from api.filters import paginate
 from api.ratelimit import TokenBucketLimiter
 from api.refresh import RefreshScheduler
 from api.settings import Settings
 from api.store import PAGES, TABLES, BundleStore
+from margin_engine.actions.review import ReviewPolicy
+from margin_engine.actions.store import ActionStore
 
 log = logging.getLogger("margin_api")
 
@@ -30,6 +33,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     s = settings or Settings()
     store = BundleStore(s.db_path)
     scheduler = RefreshScheduler(s, store)
+    if s.actions_reset:
+        s.actions_db.unlink(missing_ok=True)
+        log.info("action store reset (MARGIN_API_ACTIONS_RESET): %s", s.actions_db)
+    action_store = ActionStore(s.actions_db)
+    review_policy = ReviewPolicy.from_spec(s.users_spec)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -42,6 +50,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.info("bundle restored from DuckDB (version %s)", store.snapshot.version)
         else:
             log.warning("no bundle found in %s or DuckDB", s.bundle_dir)
+        # Action store seed (Phase 39): merge engine-generated actions without
+        # ever touching existing actions or their review history.
+        if s.actions_seed_dir is not None:
+            import polars as pl
+
+            a_pq = s.actions_seed_dir / "actions.parquet"
+            e_pq = s.actions_seed_dir / "action_events.parquet"
+            if a_pq.exists() and e_pq.exists():
+                added = action_store.merge_new(pl.read_parquet(a_pq), pl.read_parquet(e_pq))
+                log.info("action store: %d new action(s) merged from %s", added, s.actions_seed_dir)
+            else:
+                log.warning("actions seed dir %s has no actions exports", s.actions_seed_dir)
         scheduler.start(asyncio.get_running_loop())
         yield
         scheduler.stop()
@@ -51,6 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.store = store
     app.state.scheduler = scheduler
     app.state.settings = s
+    app.state.action_store = action_store
+    app.state.review_policy = review_policy
+    app.include_router(actions_router)
 
     @app.middleware("http")
     async def rate_limit(request: Request, call_next: Any) -> Response:
@@ -85,6 +108,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"status": "no_bundle"}
         return {"status": "ok", "bundle_version": version}
 
+    @app.get("/api/drift")
+    async def drift(request: Request) -> Any:
+        """Latest drift comparison (Phase 43): flags plus the raw numbers
+        behind every comparison, flagged or not."""
+        from margin_engine.drift import DriftStore
+
+        return DriftStore(s.drift_dir).latest()
+
     @app.get("/api/version")
     async def version() -> dict[str, Any]:
         snap = store.snapshot
@@ -107,6 +138,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             replay = snap.refresh_status.get("replay") or {}
             if replay.get("data_as_of"):
                 payload["data_as_of"] = replay["data_as_of"]
+        # Drift flags (Phase 43): plain-English changes vs the previous
+        # refresh; an empty list means a comparison ran and found nothing.
+        from margin_engine.drift import DriftStore
+
+        payload["drift_flags"] = DriftStore(s.drift_dir).latest()["flags"]
         return _cached_json(request, payload)
 
     @app.get("/api/pages/{page}")

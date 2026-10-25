@@ -213,6 +213,7 @@ def test_replay_idempotency_no_double_count(bundle: Path, tmp_path: Path) -> Non
     s = Settings(
         bundle_dir=bundle,
         db_path=tmp_path / "replay.duckdb",
+        actions_db=tmp_path / "actions.duckdb",
         replay_enabled=True,
         replay_work_dir=tmp_path / "work",
         replay_source_dir=REPO / "data" / "sample_online_retail",

@@ -30,6 +30,16 @@ const TREATMENT: Record<string, string> = {
   cost_unavailable: "chip-dashed",
   minimum_order_policy: "chip-hatched",
   delivery_frequency_policy: "chip-hatched",
+  // Action center (Run 5): lifecycle, outcomes and compliance.
+  proposed: "chip-outline",
+  under_review: "chip-hatched",
+  approved: "chip-solid",
+  rejected: "chip-fail",
+  exported: "chip-hatched",
+  implemented: "chip-solid",
+  measured: "chip-solid",
+  insufficient_evidence: "chip-dashed",
+  rp_review_flag: "chip-fail",
 };
 
 export function StatusChip({ status, reason }: { status: string; reason?: string }) {

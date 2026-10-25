@@ -446,6 +446,182 @@ class ReportingConfig(StrictModel):
 
 
 # ---------------------------------------------------------------------------
+# drift monitoring (Run 5, Phase 43)
+# ---------------------------------------------------------------------------
+
+
+class DriftConfig(StrictModel):
+    """Live-mode drift thresholds: each refresh compares against the previous
+    run, and only moves beyond these bounds are flagged (plain-English, in the
+    API and UI)."""
+
+    enabled: bool = True
+    # Segment-assignment agreement (adjusted Rand index over shared lines).
+    ari_warn_below: float = Field(default=0.8, ge=0.0, le=1.0)
+    min_common_lines: int = Field(default=100, ge=1)
+    # Absolute move of a segment's IV elasticity estimate.
+    elasticity_abs_change: float = Field(default=0.3, ge=0.0)
+    # Data-quality rate change, in percentage points.
+    data_quality_change_pp: float = Field(default=2.0, ge=0.0)
+    # Guidance status count change: relative share AND an absolute floor so
+    # tiny statuses do not flap.
+    status_share_change: float = Field(default=0.2, ge=0.0)
+    min_status_count_change: int = Field(default=5, ge=1)
+
+
+# ---------------------------------------------------------------------------
+# actions (Run 5, Phase 38)
+# ---------------------------------------------------------------------------
+
+
+class ActionPriorityConfig(StrictModel):
+    """Default priority rule: by expected dollar impact, demoted one level when
+    the volume evidence is not causal-supported (configurable)."""
+
+    high_impact_cents: int = Field(default=500_000, ge=0)
+    medium_impact_cents: int = Field(default=50_000, ge=0)
+    demote_without_causal: bool = True
+
+
+class PriceExportConfig(StrictModel):
+    """ERP-ready price file template (Phase 40). The generic CSV is the
+    default; a deployment overrides header names, date format, decimal
+    separator and price unit to match what its ERP imports."""
+
+    delimiter: str = Field(default=",", min_length=1, max_length=1)
+    decimal_separator: Literal[".", ","] = "."
+    date_format: str = "%Y-%m-%d"
+    price_unit: Literal["dollars", "cents"] = "dollars"
+    headers: dict[str, str] = Field(
+        default_factory=lambda: {
+            "action_id": "ACTION_ID",
+            "approval_id": "APPROVAL_ID",
+            "customer_id": "CUSTOMER",
+            "item_id": "ITEM",
+            "uom": "UOM",
+            "effective_date": "EFFECTIVE_DATE",
+            "previous_price": "PREVIOUS_PRICE",
+            "new_price": "NEW_PRICE",
+        }
+    )
+
+    @model_validator(mode="after")
+    def _headers_complete(self) -> PriceExportConfig:
+        required = {
+            "action_id",
+            "approval_id",
+            "customer_id",
+            "item_id",
+            "uom",
+            "effective_date",
+            "previous_price",
+            "new_price",
+        }
+        missing = required - set(self.headers)
+        if missing:
+            msg = (
+                f"price_export.headers must name every canonical column; missing {sorted(missing)}"
+            )
+            raise ValueError(msg)
+        if self.decimal_separator == "," and self.delimiter == ",":
+            msg = (
+                "price_export: a comma decimal separator needs a non-comma "
+                "delimiter (e.g. ';'), or the file is unparseable"
+            )
+            raise ValueError(msg)
+        return self
+
+
+class ActionsConfig(StrictModel):
+    """Action generation (Phase 38). Dates are anchored to the data's last
+    invoice date so generation is deterministic for a given world."""
+
+    enabled: bool = True
+    default_owner: str = "unassigned"
+    priority: ActionPriorityConfig = ActionPriorityConfig()
+    due_days_high: int = Field(default=14, ge=0)
+    due_days_medium: int = Field(default=30, ge=0)
+    due_days_low: int = Field(default=60, ge=0)
+    # Cost pass-through actions: the chosen level applied to the auto-selected
+    # top scenarios (never assumed full pass-through).
+    pass_through_level: float = Field(default=0.5, ge=0.0, le=1.0)
+    max_pass_through_scenarios: int = Field(default=2, ge=0)
+    # Rebate/discount review: a customer's leakage rate must exceed BOTH the
+    # ratio to its segment's median rate and the absolute excess-dollar floor.
+    leakage_review_min_ratio: float = Field(default=1.5, ge=1.0)
+    leakage_review_min_excess_cents: int = Field(default=100_000, ge=0)
+    # Deterministic cap per action type (largest expected impact first).
+    max_actions_per_type: int = Field(default=200, ge=1)
+    price_export: PriceExportConfig = PriceExportConfig()
+    # Results tracking (Phase 41): measurement window after implementation,
+    # evidence gates for the difference-in-differences comparison, and the
+    # minimum measured actions before a calibration number is shown.
+    tracking_window_days: int = Field(default=90, ge=1)
+    tracking_min_control_pairs: int = Field(default=5, ge=1)
+    tracking_min_after_sales: int = Field(default=3, ge=1)
+    calibration_min_actions: int = Field(default=10, ge=1)
+
+
+# ---------------------------------------------------------------------------
+# pricing compliance (Run 5, Phase 37)
+# ---------------------------------------------------------------------------
+
+
+class RobinsonPatmanConfig(StrictModel):
+    """Review flag for price discrimination exposure: customers who are likely
+    COMPETITORS of each other (same values on `competitor_attributes`, default
+    industry + region) receiving recommended prices for the SAME item that
+    differ by more than the threshold. The flag is a review prompt with the
+    cost-to-serve difference shown as supporting documentation (cost
+    justification is a recognized defense) — orientation, not legal advice.
+    """
+
+    enabled: bool = True
+    competitor_attributes: tuple[str, ...] = ("industry", "region")
+    # Relative difference between the two recommended prices, in percent;
+    # strictly-greater-than fires the flag.
+    price_difference_threshold_pct: float = Field(default=5.0, ge=0)
+
+
+class ComplianceConfig(StrictModel):
+    robinson_patman: RobinsonPatmanConfig = RobinsonPatmanConfig()
+    # The market/competitor price index control is accepted from PUBLIC
+    # sources only (the mapping must declare public_source: true): feeding
+    # competitors' non-public prices through a pricing algorithm raises
+    # antitrust concerns, so the engine refuses the control rather than
+    # assume. Documented in docs/methodology.md (Pricing-law considerations).
+    market_index_public_source_required: bool = True
+
+
+# ---------------------------------------------------------------------------
+# fiscal calendar (Run 5, Phase 36)
+# ---------------------------------------------------------------------------
+
+
+class FiscalConfig(StrictModel):
+    """Fiscal calendar for the engine's ANALYTIC periods: the sensitivity
+    panel, peer-group quarters, the guidance observation unit, baseline
+    windows, period counts and the books tie-out. Data-declared periods
+    (rebate settlement periods, landed-cost months, FX rate months) always
+    follow the source data and are untouched by this setting.
+
+    calendar_months (default) reproduces the engine's historical behavior
+    exactly. The week-based calendars (4-4-5 / 4-5-4 / 5-4-4) define a fiscal
+    year as the 52 or 53 weeks ending on `year_end_weekday` nearest to the
+    last day of `year_end_month` (the retail-calendar convention); in a
+    53-week year the extra week extends the year's final period. `custom`
+    takes an explicit period table (reference table `fiscal_periods` in the
+    mapping: period_label, start_date, end_date, optional quarter_label).
+    """
+
+    calendar: Literal["calendar_months", "4-4-5", "4-5-4", "5-4-4", "custom"] = "calendar_months"
+    year_end_month: int = Field(default=12, ge=1, le=12)
+    year_end_weekday: Literal[
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+    ] = "saturday"
+
+
+# ---------------------------------------------------------------------------
 # root
 # ---------------------------------------------------------------------------
 
@@ -469,6 +645,10 @@ class Rules(StrictModel):
     opportunity: OpportunityConfig = OpportunityConfig()
     tariff_scenarios: TariffScenariosConfig = TariffScenariosConfig()
     reporting: ReportingConfig = ReportingConfig()
+    fiscal: FiscalConfig = FiscalConfig()
+    compliance: ComplianceConfig = ComplianceConfig()
+    actions: ActionsConfig = ActionsConfig()
+    drift: DriftConfig = DriftConfig()
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 

@@ -1,0 +1,45 @@
+# Run 5, Phase 45: build the container images and smoke-test the composed
+# stack (export -> api with in-process scheduler -> ui behind nginx).
+# GitHub-hosted runners have Docker; the dev machine does not, so CI is where
+# this proof runs.
+name: Docker
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build images
+        run: docker compose build
+      - name: Start the stack
+        run: docker compose up -d
+      - name: Smoke test (API health, a page endpoint, UI, proxied API)
+        run: |
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/health | grep -q '"ok"'; then ok=1; break; fi
+            sleep 10
+          done
+          test "$ok" = "1"
+          curl -fsS http://localhost:8000/api/pages/overview > /dev/null
+          curl -fsS http://localhost:8000/api/actions/summary > /dev/null
+          curl -fsS http://localhost:8080/ | grep -qi "<title"
+          curl -fsS http://localhost:8080/api/health | grep -q '"ok"'
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "===== docker compose ps -a ====="
+          docker compose ps -a || true
+          for svc in export api ui; do
+            echo "===== logs: $svc ====="
+            docker compose logs --no-color "$svc" || true
+          done
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
