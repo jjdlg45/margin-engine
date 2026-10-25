@@ -40,22 +40,28 @@ export function ErrorState({ message, onRetry }: { message?: string; onRetry: ()
 }
 
 /** Render-prop wrapper: skeleton while loading, error state on failure, and
- * children only when the data is complete. */
+ * children only when the data is complete. `reserve` (Tailwind min-height
+ * classes) holds the section's final height through the skeleton-to-content
+ * swap so loading causes no layout shift. */
 export function QuerySection<T>({
   query,
   label,
   lines,
+  reserve,
   children,
 }: {
   query: UseQueryResult<T>;
   label: string;
   lines?: number;
+  reserve?: string;
   children: (data: T) => ReactNode;
 }) {
-  if (query.isPending) return <Skeleton label={label} lines={lines} />;
-  if (query.isError)
-    return <ErrorState message={query.error.message} onRetry={() => query.refetch()} />;
-  return <>{children(query.data)}</>;
+  let body: ReactNode;
+  if (query.isPending) body = <Skeleton label={label} lines={lines} />;
+  else if (query.isError)
+    body = <ErrorState message={query.error.message} onRetry={() => query.refetch()} />;
+  else body = children(query.data);
+  return reserve ? <div className={reserve}>{body}</div> : <>{body}</>;
 }
 
 interface BoundaryState {

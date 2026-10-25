@@ -58,6 +58,12 @@ class Settings:
             "MARGIN_API_ACTIONS_DB", REPO / ".api_state" / "actions.duckdb"
         )
     )
+    # "1" deletes the action store file at process start, before anything
+    # opens it, so the seed produces a fresh store. For test/demo servers
+    # whose review state is disposable; never the default.
+    actions_reset: bool = field(
+        default_factory=lambda: os.environ.get("MARGIN_API_ACTIONS_RESET") == "1"
+    )
     # Directory holding engine exports (actions.parquet, action_events.parquet)
     # to seed/merge the action store from at startup; empty = bundle_dir's
     # sibling engine output is not assumed, nothing is seeded.

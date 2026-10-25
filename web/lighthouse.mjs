@@ -33,5 +33,19 @@ for (const [cat, min] of Object.entries(THRESHOLDS)) {
   console.log(`${cat}: ${(score * 100).toFixed(0)} (gate ${min * 100}) ${ok ? "PASS" : "FAIL"}`);
   if (!ok) failed = true;
 }
-rmSync(out, { force: true });
+// The individual metrics, so a failing score is diagnosable from the log.
+const METRICS = [
+  ["largest-contentful-paint", "LCP"],
+  ["total-blocking-time", "TBT"],
+  ["cumulative-layout-shift", "CLS"],
+  ["first-contentful-paint", "FCP"],
+  ["speed-index", "Speed Index"],
+];
+for (const [id, name] of METRICS) {
+  const a = report.audits[id];
+  if (a) console.log(`${name}: ${a.displayValue ?? a.numericValue} (score ${a.score})`);
+}
+// Keep the full report for the CI artifact when the gate fails.
+if (failed) console.log(`Gate failed - full report kept at ${out}`);
+else rmSync(out, { force: true });
 process.exit(failed ? 1 : 0);

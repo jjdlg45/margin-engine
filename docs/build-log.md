@@ -2877,3 +2877,76 @@ green in Phase 44 (9/9); this phase changed only docs and formatting.
 
 Run 5 is complete. Final commit on run5; not merged, not pushed — the owner
 reviews, pushes and opens the PR.
+
+## Phase 47.1 — Docker export and Lighthouse (2026-10-24, Run 5 branch)
+
+The run5 PR failed two CI checks; both root causes were found by local
+reproduction, not guesswork.
+
+**Docker compose-smoke: the one-shot export service exited 1.** Reproduced by
+building the api image's exact filesystem (only what the Dockerfile copies)
+and dependency set (`uv sync --frozen --no-dev --group api`) in a temp dir:
+`export-web --demo` dies with FileNotFoundError on `docs/validation.json`,
+which webexport/build.py reads unconditionally into the bundle's methodology
+section — and the image never copied docs/. Fix: `COPY docs/validation.json`
+in the api stage; the sim then produces the identical 2,613 KB bundle (exit
+0). The same sim cleared the other suspected causes: the runtime+api groups
+suffice, workdir/command are right, synth/ and config/ ship, and the
+root-owned named volume is writable. Defensive hardening while here: the
+compose healthcheck now uses `/app/.venv/bin/python` (the one interpreter
+guaranteed on that image) instead of a bare `python3`, and docker.yml's
+failure step prints `docker compose ps -a` plus per-service logs (export,
+api, ui) so the next failure is visible in CI.
+
+**Lighthouse performance 78 against the 90 gate.** Measured per instruction
+with web/lighthouse.mjs on production builds of BOTH branches on the same
+machine: run5 98 (LCP 552 ms, TBT 0 ms, CLS 0.095, initial JS 210 KB over 4
+scripts), fresh-clone main 98 (LCP 560 ms, TBT 0 ms, CLS 0.094, 209 KB). No
+branch regression: the Action center and drift code are already lazy-loaded
+routes and the bundles are size-identical. The real defect is PRE-EXISTING
+layout shift, ~0.10 at Lighthouse's own 1350x940 viewport (worse than at
+1440px), which a slower CI runner — which also adds TBT — turns into a
+failing score. Element-attributed PerformanceObserver probes found two
+sources: (1) the IBM Plex fonts were bundled behind the JS via fontsource
+imports, so the late font swap reflowed the headline and captions (~21-25 px);
+(2) the Overview's skeleton-to-content swaps (headline KPIs, waterfall panel)
+reserve less height than the loaded content. Fixes, gate untouched:
+- Fonts self-hosted at stable URLs (web/public/fonts, four woff2 subsets with
+  their SIL OFL licenses committed beside them), declared and PRELOADED from
+  index.html so they are ready at first paint; fontsource imports and
+  packages removed. Declarations mirror the previous fontsource subsets
+  (same families, weights, unicode-ranges), so rendering is pixel-identical —
+  proven by the visual snapshot suite passing unchanged.
+- QuerySection gains a `reserve` prop (min-height through skeleton, error and
+  content states); the Overview reserves the measured heights: headline KPIs
+  109 px (content 109.4 — reserve must never exceed content), waterfall
+  min-h 360/sm:264 (the chart height is a constant per breakpoint, so exact),
+  findings floored at the three rows every dataset produces. A first attempt
+  also reserved two lines for the shell's data notice; at 1440 px the loaded
+  label is ONE line, every desktop snapshot caught the phantom line, and the
+  reservation was dropped — the snapshots passed again with no re-baselining,
+  which is the proof the loaded layout is untouched.
+- Result at the Lighthouse viewport: CLS 0.105 -> 0.003, performance 100
+  (accessibility 100, best practices 96), LCP 0.6 s, TBT 0 ms.
+- lighthouse.mjs now prints LCP, TBT, CLS, FCP and Speed Index with scores
+  and keeps lighthouse-report.json when the gate fails; pages.yml uploads it
+  as a CI artifact on failure.
+
+**API-mode e2e made hermetic (found by this phase's full check run).** The
+suite's persistent `.api_state/e2e-actions.duckdb` had its scarce flagged
+proposed actions consumed by repeated local runs since Phase 42 — a state
+exhaustion, not a code regression (CI checks out fresh). First fix attempt
+(a Playwright globalSetup deleting the store) was WRONG and made 5 tests
+fail: Playwright launches web servers before globalSetup, so the delete
+landed on a live store mid-run. Correct fix: `MARGIN_API_ACTIONS_RESET=1`
+(new api setting) deletes the store file at the SERVER's own start, before
+anything opens it; the e2e config sets it. Proven by running the suite twice
+back-to-back: 9/9 both times.
+
+**Checks (exit codes read from the logs).** ruff check 0; ruff format
+--check 0; mypy src api 0 (strict); full pytest 0; YAML parse 0 for
+docker.yml, pages.yml, ci.yml, compose.yaml; tsc 0; vitest 0 (11/11); build
+0; Playwright static WITH visual snapshots 179 passed + 1 intentional skip,
+no re-baselining; Playwright API mode 9/9 twice; node lighthouse.mjs gate
+exit 0 (performance 100). Docker itself remains CI-validated (no local
+Docker), now with the export fix proven by the filesystem simulation.

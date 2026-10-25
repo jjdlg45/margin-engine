@@ -28,6 +28,9 @@ COPY api/ api/
 COPY config/ config/
 COPY synth/ synth/
 COPY data/sample_online_retail/ data/sample_online_retail/
+# The web export reads the validation results into the bundle's methodology
+# section (webexport/build.py); without this file export-web exits 1.
+COPY docs/validation.json docs/validation.json
 RUN uv sync --frozen --no-dev --group api
 EXPOSE 8000
 CMD ["uv", "run", "--no-sync", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

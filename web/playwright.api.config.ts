@@ -21,8 +21,15 @@ export default defineConfig({
       env: {
         // Seed the action store from the exported bundle dir (Phase 42); a
         // dedicated DB keeps review-state churn out of any real local state.
+        // The reset makes each suite run hermetic: lifecycle tests consume
+        // proposed actions (flagged ones are scarce), so a persistent store
+        // exhausts them across repeated local runs. The server deletes the
+        // file at ITS OWN start (never mid-run; Playwright launches web
+        // servers before globalSetup, so a setup-script delete lands on a
+        // live store). A reused already-running server keeps its state.
         MARGIN_API_ACTIONS_SEED: "web/public/data",
         MARGIN_API_ACTIONS_DB: ".api_state/e2e-actions.duckdb",
+        MARGIN_API_ACTIONS_RESET: "1",
       },
     },
     {

@@ -122,7 +122,9 @@ export function Overview() {
           path from list price to pocket margin to the cent, and labels how
           much evidence stands behind every number it reports.
         </p>
-        <QuerySection query={app} label="headline figures" lines={2}>
+        {/* Reserved heights measured from the rendered content so the
+            skeleton-to-content swap causes no layout shift (Lighthouse CLS). */}
+        <QuerySection query={app} label="headline figures" lines={2} reserve="sm:min-h-[109px]">
           {(a) => <Headline app={a} />}
         </QuerySection>
       </section>
@@ -135,7 +137,14 @@ export function Overview() {
         <p className="mb-6 mt-0 max-w-2xl text-caption secondary">
           Sale lines only - returns appear in Customers & orders. Hatched bars are pricing leakage (discounts, rebates, concessions); dotted bars are costs. Hover any bar for exact amounts and the share of lines covered at that stage.
         </p>
-        <QuerySection query={overview} label="the price waterfall" lines={6}>
+        {/* The chart's height is a constant (360 compact / 264 desktop,
+            matching the 640px breakpoint), so the reservation is exact. */}
+        <QuerySection
+          query={overview}
+          label="the price waterfall"
+          lines={6}
+          reserve="min-h-[360px] sm:min-h-[264px]"
+        >
           {(o) => <Waterfall stages={o.waterfall_overall} compact={compact} />}
         </QuerySection>
       </section>
@@ -145,7 +154,9 @@ export function Overview() {
         <h2 id="findings" className="heading-rule mb-5 mt-0 text-section">
           What the engine found
         </h2>
-        <QuerySection query={overview} label="key findings" lines={5}>
+        {/* Floor at the three findings every dataset produces (~81px each);
+            more findings may extend below the reservation. */}
+        <QuerySection query={overview} label="key findings" lines={5} reserve="sm:min-h-[242px]">
           {(o) => (
             <ul className="m-0 list-none p-0">
               {findings(o).map((f) => (

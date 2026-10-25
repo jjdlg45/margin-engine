@@ -13,8 +13,6 @@
     "review-shots": "node capture-review.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/ibm-plex-sans": "5.2.8",
-    "@fontsource/ibm-plex-mono": "5.2.7",
     "@radix-ui/react-collapsible": "^1.1.1",
     "@radix-ui/react-slider": "^1.2.1",
     "@radix-ui/react-tabs": "^1.1.1",

@@ -33,6 +33,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     s = settings or Settings()
     store = BundleStore(s.db_path)
     scheduler = RefreshScheduler(s, store)
+    if s.actions_reset:
+        s.actions_db.unlink(missing_ok=True)
+        log.info("action store reset (MARGIN_API_ACTIONS_RESET): %s", s.actions_db)
     action_store = ActionStore(s.actions_db)
     review_policy = ReviewPolicy.from_spec(s.users_spec)
 
