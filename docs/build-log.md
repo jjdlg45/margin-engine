@@ -2763,3 +2763,34 @@ fix exists, never disable an audit step).
 upgraded lock; tsc 0; vitest 11/11 on vitest 5; build 0 on vite 7; Playwright
 static 169/169 (no snapshot drift under Playwright 1.55); Playwright API mode
 9/9; pip-audit clean; npm audit high-gate clean; both workflow YAMLs parse.
+
+## Phase 45 — Container (2026-10-24, Run 5 branch)
+
+One multi-stage Dockerfile: `webbuild` (node 22, UI built in API mode),
+`api` (the astral uv python3.12 image; runtime + api dependency groups only,
+no dev tooling; uvicorn serves api.main:app — the refresh scheduler runs
+inside this process, so no separate scheduler container is needed), and `ui`
+(nginx serving the built SPA with /api proxied to the api service, mirroring
+the local vite proxy). compose.yaml wires three services: a one-shot `export`
+job that builds the deterministic demo bundle plus action-store seeds into a
+shared volume, `api` (health-checked; DuckDB stores, the action review
+history and drift baselines persist in a `state` volume; the replay feed is
+one env flag away), and `ui` on :8080 gated on the API being healthy.
+.dockerignore keeps the build context to what the stages copy.
+
+**CI** (.github/workflows/docker.yml): builds both images and smoke-tests the
+composed stack on every push and PR — API health polled through the demo
+export, a page endpoint, the actions summary, the UI document, and the
+API THROUGH the nginx proxy; logs dumped on failure, volumes torn down after.
+This machine has no Docker (stated in the spec), so the GitHub-hosted runner
+is where this proof executes; compose.yaml and both workflow YAMLs are
+schema-parsed locally and the exact commands the stages run (uv sync flags,
+export-web, uvicorn, npm ci/build) are the ones proven in CI and the local
+gates all run already.
+
+README gains the "Run with Docker" subsection (one command, ports, state
+volume semantics, replay flag, CI smoke pointer).
+
+**Checks.** compose.yaml and docker.yml parse; ruff/mypy/pytest untouched by
+this phase (config files and docs only); quick pytest sanity green. The
+docker build itself is CI-verified by design.

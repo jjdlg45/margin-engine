@@ -1,0 +1,17 @@
+# Keep the build context lean: only what the Dockerfile copies matters.
+.git
+.venv
+.api_state
+output
+data/*
+!data/sample_online_retail
+web/node_modules
+web/dist
+web/playwright-report
+web/test-results
+web/public/data
+**/__pycache__
+*.duckdb
+.pytest_cache
+.mypy_cache
+.ruff_cache

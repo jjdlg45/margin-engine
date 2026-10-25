@@ -131,6 +131,26 @@ Run everything locally with one command (Docker-free; see
 uv run python scripts/live_mode.py          # UI :4174 in API mode, API :8321, replay on
 ```
 
+### Run with Docker
+
+One command starts the whole stack — a one-shot job exports the deterministic
+demo bundle and action seeds, the API (with its in-process refresh scheduler)
+serves it, and nginx serves the built UI with `/api` proxied same-origin:
+
+```bash
+docker compose up --build
+# UI:  http://localhost:8080
+# API: http://localhost:8000/api/health
+```
+
+State (the API's DuckDB stores, the action store with its review history, and
+drift baselines) persists in the `state` volume across restarts; `docker
+compose down -v` resets everything. Set `MARGIN_API_REPLAY: "1"` on the `api`
+service in [`compose.yaml`](compose.yaml) to turn on the replay feed. CI
+builds the images and smoke-tests the composed stack on every push
+([`.github/workflows/docker.yml`](.github/workflows/docker.yml)) — GitHub's
+runners have Docker even when the development machine does not.
+
 ## Supported input formats
 
 The engine reads **tabular, line-level invoice exports**: one row per invoice line, as **CSV** or **.xlsx**. PDF and scanned invoices are not supported; they need a separate extraction step first.
