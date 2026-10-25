@@ -495,13 +495,36 @@ _BAND_PHRASES: dict[str, str] = {
 MERGED_QUALIFIER = "[not assigned to a more specific leaf]"
 
 
-def _nice_value(v: str) -> str:
+def display_value(v: str, acronyms: frozenset[str] = frozenset()) -> str:
+    """Display form of a categorical DATA value (Phase 46): each word
+    capitalized, acronyms (from the mapping's display.acronyms list) fully
+    upper-cased. Raw values stay raw in every CSV/Parquet export."""
+    upper = {a.upper() for a in acronyms}
+    words = v.replace("_", " ").split(" ")
+    out = [w.upper() if w.upper() in upper else (w[:1].upper() + w[1:]) for w in words if w]
+    return " ".join(out)
+
+
+def _nice_value(v: str, acronyms: frozenset[str] = frozenset(), *, plain: bool = False) -> str:
     v = v.strip()
-    return _VALUE_WORDS.get(v, v.replace("_", " "))
+    # Engine-constructed descriptor words and band levels keep their sentence
+    # case (plain=True); actual DATA values render through display_value
+    # (Phase 46): capitalized words, declared acronyms upper-case.
+    if v in _VALUE_WORDS:
+        return _VALUE_WORDS[v]
+    if plain:
+        return v.replace("_", " ")
+    return display_value(v, acronyms)
 
 
-def _natural_list(values: list[str], conj: str = "and") -> str:
-    vals = [_nice_value(v) for v in values]
+def _natural_list(
+    values: list[str],
+    conj: str = "and",
+    acronyms: frozenset[str] = frozenset(),
+    *,
+    plain: bool = False,
+) -> str:
+    vals = [_nice_value(v, acronyms, plain=plain) for v in values]
     if len(vals) == 1:
         return vals[0]
     return ", ".join(vals[:-1]) + f" {conj} {vals[-1]}"
@@ -514,8 +537,10 @@ def _order_values(feature: str, values: list[str]) -> list[str]:
     return sorted(values)
 
 
-def _include_phrase(feature: str, values: list[str]) -> str:
-    vals = _natural_list(_order_values(feature, values), "or")
+def _include_phrase(feature: str, values: list[str], acronyms: frozenset[str] = frozenset()) -> str:
+    # Engine-constructed ordered bands are sentence words, not data values.
+    plain = feature in _ORDERED_LEVELS
+    vals = _natural_list(_order_values(feature, values), "or", acronyms, plain=plain)
     if feature in _BAND_PHRASES:
         return f"{vals} {_BAND_PHRASES[feature]}"
     if feature == "revenue_abc":
@@ -524,17 +549,20 @@ def _include_phrase(feature: str, values: list[str]) -> str:
     return f"{vals} {noun}"
 
 
-def _phrase(feature: str, values: list[str], negated: bool) -> str:
+def _phrase(
+    feature: str, values: list[str], negated: bool, acronyms: frozenset[str] = frozenset()
+) -> str:
     if not negated:
-        return _include_phrase(feature, values)
+        return _include_phrase(feature, values, acronyms)
     order = _ORDERED_LEVELS.get(feature)
     if order and set(values) <= set(order):
         kept = [lv for lv in order if lv not in values]
         if kept:
-            return _include_phrase(feature, kept)
+            return _include_phrase(feature, kept, acronyms)
     # Data-driven categories: exclusions read as "all X except A, B and C".
     noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
-    return f"all {noun} except {_natural_list(sorted(values))}"
+    plain = feature in _ORDERED_LEVELS
+    return f"all {noun} except {_natural_list(sorted(values), acronyms=acronyms, plain=plain)}"
 
 
 def _parse_clause(clause: str) -> list[tuple[str, list[str], bool]]:
@@ -575,7 +603,7 @@ def _split_one_hot(cond: str) -> tuple[str, str, bool]:
     return body, "", neg
 
 
-def _one_hot_phrases(conds: list[str]) -> list[str]:
+def _one_hot_phrases(conds: list[str], acronyms: frozenset[str] = frozenset()) -> list[str]:
     """Group one-hot conditions per feature, rendering each group through the
     same phrasing as the segment rules: ordered bands always as included
     levels, data-driven categories excluded with 'except'. An included value
@@ -592,9 +620,9 @@ def _one_hot_phrases(conds: list[str]) -> list[str]:
     phrases = []
     for feat in order:
         if feat in included:
-            phrases.append(_include_phrase(feat, included[feat]))
+            phrases.append(_include_phrase(feat, included[feat], acronyms))
         elif feat in excluded:
-            phrases.append(_phrase(feat, sorted(excluded[feat]), negated=True))
+            phrases.append(_phrase(feat, sorted(excluded[feat]), negated=True, acronyms=acronyms))
     return phrases
 
 
@@ -623,7 +651,7 @@ _MERGED_BULLET = (
 )
 
 
-def plain_rule(rule: str) -> PlainRule:
+def plain_rule(rule: str, acronyms: frozenset[str] = frozenset()) -> PlainRule:
     """Plain-English name, description and condition bullets for a tree rule.
 
     A segment merged from several tree leaves (an OR of branch rules) is
@@ -661,7 +689,7 @@ def plain_rule(rule: str) -> PlainRule:
         conds = [
             c.strip() for c in core.replace("(", "").replace(")", "").split(" AND ") if c.strip()
         ]
-        words = _one_hot_phrases(conds)
+        words = _one_hot_phrases(conds, acronyms)
         name = _cap_first(" · ".join(words))
         description = _cap_first(" and ".join(words) + ".")
         bullets = [_cap_first(w) for w in words]
@@ -669,12 +697,14 @@ def plain_rule(rule: str) -> PlainRule:
             description += " A more specific leaf does not exist for these lines."
             bullets.append(_MERGED_BULLET)
         return PlainRule(name or "All lines", description, bullets, note)
-    sentences = [" with ".join(_phrase(f, v, n) for f, v, n in branch) for branch in parsed]
+    sentences = [
+        " with ".join(_phrase(f, v, n, acronyms) for f, v, n in branch) for branch in parsed
+    ]
     # The name covers every branch (each branch contributes its leading
     # conditions); the description and bullets carry every branch in full.
     name_parts: list[str] = []
     for branch in parsed:
-        part = " with ".join(_phrase(f, v, n) for f, v, n in branch[:3])
+        part = " with ".join(_phrase(f, v, n, acronyms) for f, v, n in branch[:3])
         if part not in name_parts:
             name_parts.append(part)
     name = _cap_first(" or ".join(name_parts))
@@ -682,7 +712,7 @@ def plain_rule(rule: str) -> PlainRule:
         f"Lines from {sentences[0]}" + "".join(f"; or from {s}" for s in sentences[1:]) + "."
     )
     if len(parsed) == 1:
-        bullets = [_cap_first(_phrase(f, v, n)) for f, v, n in parsed[0]]
+        bullets = [_cap_first(_phrase(f, v, n, acronyms)) for f, v, n in parsed[0]]
     else:
         bullets = [_cap_first(sentences[0]), *(f"or {s}" for s in sentences[1:])]
     if len(parsed) > 1:

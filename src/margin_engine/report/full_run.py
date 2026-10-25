@@ -603,6 +603,8 @@ def run_full(
     write_manifest(manifest, out_dir)
 
     # ---- report --------------------------------------------------------------
+    # Display casing for data values (Phase 46): acronyms from the mapping.
+    _acronyms = frozenset(res.mapping.display.acronyms)
     sale = res.ledger.filter(pl.col("transaction_type") == "sale")
     net_rev = int(sale["net_amount_cents"].sum())
     missing_cost_rev = int(sale.filter(pl.col("flag_missing_cost"))["net_amount_cents"].sum())
@@ -754,10 +756,10 @@ def run_full(
                 {
                     **{k: v for k, v in r.items() if k != "rule"},
                     "display_rank": rank,
-                    "name": plain_rule(str(r["rule"])).name,
-                    "plain": plain_rule(str(r["rule"])).description,
-                    "conditions": plain_rule(str(r["rule"])).conditions,
-                    "technical_note": plain_rule(str(r["rule"])).note,
+                    "name": plain_rule(str(r["rule"]), _acronyms).name,
+                    "plain": plain_rule(str(r["rule"]), _acronyms).description,
+                    "conditions": plain_rule(str(r["rule"]), _acronyms).conditions,
+                    "technical_note": plain_rule(str(r["rule"]), _acronyms).note,
                 }
                 for rank, r in enumerate(
                     sorted(seg.rules, key=lambda r: (-int(r["n_lines"]), int(r["leaf_id"]))),

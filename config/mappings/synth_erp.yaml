@@ -3,6 +3,10 @@
 # not declared here.
 
 source_system: synth_erp
+# Display casing for categorical data values (Run 5, Phase 46): words
+# capitalize; these tokens render fully upper-case. Exports stay raw.
+display:
+  acronyms: [OEM]
 lines_file: invoice_lines.csv
 decimal_separator: "."
 

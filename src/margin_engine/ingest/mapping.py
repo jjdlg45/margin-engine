@@ -204,6 +204,14 @@ class ReferenceTable(StrictModel):
     public_source: bool | None = None
 
 
+class DisplayConfig(StrictModel):
+    """Phase 46: how categorical DATA values render for a reader. Values get
+    word capitalization; tokens in `acronyms` render fully upper-case ("OEM",
+    never "Oem"). Raw values stay raw in every CSV/Parquet export."""
+
+    acronyms: list[str] = Field(default_factory=list)
+
+
 class SourceMapping(StrictModel):
     """Root of a mapping YAML for one source system."""
 
@@ -218,6 +226,7 @@ class SourceMapping(StrictModel):
     lines: LinesMapping
     # Optional reference tables, keyed by canonical table name.
     reference_tables: dict[str, ReferenceTable] = Field(default_factory=dict)
+    display: DisplayConfig = DisplayConfig()
     # Credit-memo reason normalization: source code -> canonical reason.
     credit_reason_map: dict[str, str] = Field(default_factory=dict)
     # Return reason normalization: source code -> canonical return reason

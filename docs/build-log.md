@@ -2794,3 +2794,37 @@ volume semantics, replay flag, CI smoke pointer).
 **Checks.** compose.yaml and docker.yml parse; ruff/mypy/pytest untouched by
 this phase (config files and docs only); quick pytest sanity green. The
 docker build itself is CI-verified by design.
+
+## Phase 46 — Display polish and rendering tests (2026-10-24, Run 5 branch)
+
+**Display names for data values.** New `display_value` in the label module:
+categorical DATA values render with each word capitalized and declared
+acronyms fully upper-case ("OEM", never "oem" or "Oem"; "Construction", never
+"construction"), threaded through every segment-rule phrase builder
+(plain_rule and the one-hot margin-tree phrasing). The acronym list is
+CONFIGURABLE IN THE MAPPING (new `display.acronyms`; the synthetic mapping
+declares OEM, the Online Retail II mapping UK/USA/EIRE/RSA). Raw values stay
+raw in every CSV/Parquet export — only reader-facing text changes.
+Engine-constructed band levels (order-size, discount, rebate-rate and
+cost-ratio bands, revenue classes) are sentence words, not data values, and
+deliberately keep their case ("small or medium orders") — the first pass
+capitalized them too and two existing phrasing tests caught it (fixed, tests
+kept intact). Status-chip visual treatments extended to the action-center
+codes (lifecycle, outcomes, compliance flag).
+
+**Rendering tests.** New Playwright spec (10 passes, desktop + mobile): every
+guidance status, sensitivity status, opportunity evidence status AND volume
+treatment, and every action status and type that appears in the data renders
+as a chip whose accessible name carries the dictionary label plus its
+plain-English explanation (driven per status through each page's filters); a
+casing test proves the segments page shows "OEM" and "Construction" and never
+a bare lowercase data value. Plus 3 pytest units (casing/acronym rules,
+plain_rule casing with engine words intact, mapping declarations). A
+load-dependent flake in the pre-existing keyboard-only combobox test (Enter
+racing a re-render that drops the active option) was made retry-robust the way
+a real keyboard user behaves — press again — with the a11y assertions kept.
+
+**Checks.** ruff check 0; ruff format --check 0; mypy src api 0; full pytest
+exit 0 (incl. the two phrasing tests that caught the band-level overreach);
+tsc 0; build 0; Playwright static 179 passed + 1 intentional skip (segments
+snapshots re-baselined for the casing change); rendering spec 10/10.

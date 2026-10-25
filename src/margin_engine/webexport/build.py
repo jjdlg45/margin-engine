@@ -392,7 +392,7 @@ def build_bundle(
         )
         out = []
         for r in tree_rules:
-            pr = plain_rule(str(r["rule"]))
+            pr = plain_rule(str(r["rule"]), frozenset(res.pipeline.mapping.display.acronyms))
             mean = _r(r.get("mean_target", r.get("median_price_index"))) or 0.0
             out.append(
                 SegmentRule(
