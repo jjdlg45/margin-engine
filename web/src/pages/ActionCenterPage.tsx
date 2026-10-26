@@ -32,6 +32,7 @@ import {
 } from "../lib/queries";
 import { dataClient } from "../lib/api/client";
 import { queryClient } from "../lib/queries";
+import { useCompact } from "../lib/useCompact";
 
 const FILTER_KEYS = ["types", "statuses", "owner", "priorities", "evidence", "compliance", "impact"];
 
@@ -196,8 +197,88 @@ function ExportButton() {
   );
 }
 
+/** Linked action title: type + entities when the action targets a pair or a
+ * customer, otherwise the generated title. Shared by the desktop table and
+ * the compact card list so both read identically. */
+function ActionTitle({ a }: { a: ActionRow }) {
+  const labels = useLabels();
+  return (
+    <Link to={`/actions/${a.action_id}`} className="font-medium">
+      {a.customer_id ? (
+        <>
+          {labels(a.action_type).label}:{" "}
+          <EntityLabel name={a.customer_name} id={a.customer_id} />
+          {a.item_id && (
+            <>
+              {" / "}
+              <EntityLabel name={a.item_name} id={a.item_id} />
+            </>
+          )}
+        </>
+      ) : (
+        a.title
+      )}
+    </Link>
+  );
+}
+
+/** Compact (below 640 px) queue: stacked cards instead of a nine-column
+ * table, so the page never overflows sideways on a phone. */
+function QueueCards({ items }: { items: ActionRow[] }) {
+  const labels = useLabels();
+  const [shown, setShown] = useState(15);
+  const sorted = useMemo(
+    () =>
+      [...items].sort(
+        (x, y) => (y.expected_impact_cents ?? -Infinity) - (x.expected_impact_cents ?? -Infinity),
+      ),
+    [items],
+  );
+  const slice = sorted.slice(0, shown);
+  return (
+    <>
+      <ul className="m-0 list-none p-0" data-testid="queue-cards">
+        {slice.map((a) => (
+          <li key={a.action_id} className="border-t hairline py-4 first:border-t-0">
+            <ActionTitle a={a} />
+            {a.blocked && (
+              <span className="mt-1 block text-caption text-amber">
+                Blocked: {a.blocked_reason}
+              </span>
+            )}
+            <span className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusChip status={a.status} />
+              <StatusChip status={a.evidence_status ?? "insufficient_data"} />
+              {a.compliance_flags && <StatusChip status="rp_review_flag" />}
+            </span>
+            <span className="mt-1.5 block text-caption secondary">
+              Expected impact:{" "}
+              {a.expected_impact_cents !== null ? dollars(a.expected_impact_cents) : "none stated"}{" "}
+              ({labels(a.impact_basis).label.toLowerCase()})
+            </span>
+            <span className="block text-caption secondary">
+              Owner: {a.owner}
+              {a.due_date ? `. Due ${a.due_date}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {sorted.length > shown && (
+        <button
+          type="button"
+          className={`${btnClass} mt-2`}
+          onClick={() => setShown(shown + 15)}
+        >
+          Show more ({sorted.length - shown} remaining)
+        </button>
+      )}
+    </>
+  );
+}
+
 function Queue({ page }: { page: ActionsSection }) {
   const labels = useLabels();
+  const compact = useCompact();
   const f = useFilterParams();
   const types = f.getList("types");
   const statuses = f.getList("statuses");
@@ -245,29 +326,16 @@ function Queue({ page }: { page: ActionsSection }) {
         accessorKey: "title",
         meta: { left: true },
         cell: (c) => (
-          <span className="left block min-w-[18rem]">
-            <Link to={`/actions/${c.row.original.action_id}`} className="font-medium">
-              {c.row.original.customer_id ? (
-                <>
-                  {labels(c.row.original.action_type).label}:{" "}
-                  <EntityLabel
-                    name={c.row.original.customer_name}
-                    id={c.row.original.customer_id}
-                  />
-                  {c.row.original.item_id && (
-                    <>
-                      {" / "}
-                      <EntityLabel name={c.row.original.item_name} id={c.row.original.item_id} />
-                    </>
-                  )}
-                </>
-              ) : (
-                c.row.original.title
-              )}
-            </Link>
+          <span className="left block min-w-[16rem]">
+            <ActionTitle a={c.row.original} />
             {c.row.original.blocked && (
               <span className="mt-1 block text-caption text-amber">
                 Blocked: {c.row.original.blocked_reason}
+              </span>
+            )}
+            {c.row.original.compliance_flags && (
+              <span className="mt-1 block">
+                <StatusChip status="rp_review_flag" />
               </span>
             )}
           </span>
@@ -309,16 +377,6 @@ function Queue({ page }: { page: ActionsSection }) {
       },
       { header: "Owner", accessorKey: "owner", cell: (c) => c.row.original.owner },
       { header: "Due", accessorKey: "due_date", cell: (c) => c.row.original.due_date ?? "—" },
-      {
-        header: "Compliance",
-        accessorKey: "compliance_flags",
-        cell: (c) =>
-          c.row.original.compliance_flags ? (
-            <StatusChip status="rp_review_flag" />
-          ) : (
-            <span className="secondary">—</span>
-          ),
-      },
     ],
     [labels],
   );
@@ -355,12 +413,16 @@ function Queue({ page }: { page: ActionsSection }) {
       <QuerySection query={table} label="action queue" lines={8}>
         {(data) =>
           data.items.length ? (
-            <SortableTable
-              data={data.items}
-              columns={columns}
-              pageSize={15}
-              initialSort={[{ id: "expected_impact_cents", desc: true }]}
-            />
+            compact ? (
+              <QueueCards items={data.items} />
+            ) : (
+              <SortableTable
+                data={data.items}
+                columns={columns}
+                pageSize={15}
+                initialSort={[{ id: "expected_impact_cents", desc: true }]}
+              />
+            )
           ) : (
             <EmptyState title="No actions match these filters">
               Clear a filter or two; the engine generated {count(page.summary.n_actions)} actions

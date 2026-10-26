@@ -140,3 +140,25 @@ test("summary impact by basis equals the bundle sums (parity)", async ({ page })
   }
   await expect(page.getByText("never summed", { exact: false }).first()).toBeVisible();
 });
+
+test("queue never overflows sideways at desktop or phone width", async ({ page }) => {
+  // Desktop: the queue table fits its region - no inner sideways scroll.
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.goto("/#/actions");
+  const region = page.getByRole("region", { name: "Table" });
+  await expect(region.locator("tbody tr").first()).toBeVisible();
+  const inner = await region.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(inner, "queue table fits at 1440 px").toBeLessThanOrEqual(0);
+
+  // Phone: stacked cards replace the table; the page never scrolls sideways.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(page.getByTestId("queue-cards").locator("li").first()).toBeVisible();
+  for (const width of [1440, 375] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(200);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `no page overflow at ${width} px`).toBeLessThanOrEqual(0);
+  }
+});
