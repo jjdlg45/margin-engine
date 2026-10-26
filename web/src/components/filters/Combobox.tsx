@@ -66,37 +66,47 @@ export function EntityCombobox({
 }) {
   const hasNames = options.some((o) => o.name);
   const [byId, setById] = useState(!hasNames);
-  const [inputValue, setInputValue] = useState("");
+  const display = (o: Option) =>
+    byId || !o.name ? `${o.id}${o.name ? ` · ${o.name}` : ""}` : `${o.name} · ${o.id}`;
+  const selectedText = () => {
+    const o = options.find((x) => x.id === value);
+    return o ? display(o) : "";
+  };
+  // The selection renders as the input's VALUE (normal text), never as grey
+  // placeholder text - including a selection that arrives from the URL.
+  const [inputValue, setInputValue] = useState(selectedText);
   const inputRef = useRef<HTMLInputElement>(null);
   const labelId = useId();
-  // An external clear (Clear all, chip removal) must not leave stale text in
-  // the input: when the selected value is cleared from outside, reset the
-  // typed text in the same render (state adjustment during render, so the
-  // stale text never paints).
+  // External changes (Clear all, chip removal, a deep link resolving) must
+  // not leave stale text: when the selected value changes from outside, show
+  // the new selection (or nothing) in the same render, so stale text never
+  // paints.
   const [prevValue, setPrevValue] = useState(value);
   if (prevValue !== value) {
     setPrevValue(value);
-    if (value === null && inputValue !== "") setInputValue("");
+    const text = selectedText();
+    if (inputValue !== text) setInputValue(text);
   }
-  const display = (o: Option) =>
-    byId || !o.name ? `${o.id}${o.name ? ` · ${o.name}` : ""}` : `${o.name} · ${o.id}`;
   const items = useMemo(
     () => options.map((o) => ({ ...o, text: display(o), search: `${o.name ?? ""} ${o.id}` })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [options, byId],
   );
+  const selected = items.find((o) => o.id === value) ?? null;
   // Controlled filtering: with items and inputValue both controlled, React
   // Aria applies no filter of its own, so the filtered count is known here
-  // and the virtualized list can be sized exactly.
+  // and the virtualized list can be sized exactly. When the input still shows
+  // the selection verbatim, the full list opens (the text is a display, not a
+  // search the user typed).
   const filtered = useMemo(() => {
+    if (selected && inputValue === selected.text) return items;
     const tokens = inputValue.toLowerCase().split(/\s+/).filter((t) => t && t !== "·");
     if (!tokens.length) return items;
     return items.filter((o) => {
       const hay = o.search.toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
-  }, [items, inputValue]);
-  const selected = items.find((o) => o.id === value) ?? null;
+  }, [items, inputValue, selected]);
   const groups = useMemo(
     () => [...new Set(filtered.map((o) => o.group).filter(Boolean))] as string[],
     [filtered],
@@ -203,7 +213,7 @@ export function EntityCombobox({
         <div className="flex w-72 max-w-full items-stretch">
           <Input
             ref={inputRef}
-            placeholder={placeholder ?? (selected ? selected.text : "Type to search…")}
+            placeholder={placeholder ?? "Type to search…"}
             className="w-full rounded-l-badge border hairline bg-card px-2 py-1 text-sm text-ink/[0.87]"
           />
           <Button className="rounded-r-badge border hairline border-l-0 bg-card px-2 text-ink/70">

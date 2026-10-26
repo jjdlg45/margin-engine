@@ -69,6 +69,12 @@ function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
           })
         }
       />
+      <p className="mb-0 mt-3 max-w-2xl" data-testid="selected-scenario">
+        Selected: a +{pct(grid.pct_increase, 0)} landed-cost increase on{" "}
+        <span className="font-medium">{grid.scope_label ?? grid.scope_value}</span>{" "}
+        ({grid.scope === "category" ? "category" : "supplier"} {grid.scope_value}), covering{" "}
+        {count(grid.n_pairs)} customer-item pairs.
+      </p>
       <div className="panel mt-4 max-w-2xl px-5 py-6 sm:px-8">
         <label className="text-caption secondary" htmlFor="pt-slider">
           Pass-through: <span className="font-semibold text-ink">{pct(point.pass_through, 0)}</span>{" "}

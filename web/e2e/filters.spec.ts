@@ -247,3 +247,17 @@ test("scenarios: grouped combobox switches the grid", async ({ page }) => {
   await page.getByRole("option").first().click();
   await expect(page).toHaveURL(/scenario=/);
 });
+
+test("scenarios: the selection reads as normal text and is shown untruncated", async ({ page }) => {
+  await page.goto("/#/scenarios");
+  const grid = bundle.scenario_grids[0];
+  const input = page.getByRole("combobox", { name: "Scenario" });
+  // The selection is the input's value (normal text), not grey placeholder text.
+  await expect(input).toHaveValue(new RegExp(grid.scope_label ?? grid.scope_value));
+  // The full selected scenario is stated in normal page text, wrapping, never clipped.
+  const line = page.getByTestId("selected-scenario");
+  await expect(line).toContainText(grid.scope_label ?? grid.scope_value);
+  await expect(line).toContainText(grid.scope_value);
+  const clipped = await line.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  expect(clipped, "selected-scenario line wraps instead of clipping").toBe(false);
+});
