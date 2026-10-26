@@ -184,25 +184,41 @@ def cost_sales(
 
 
 def scenario_timing_statement(method: str, cost_pool: str) -> str:
-    """Honest statement of when a cost change reaches COGS for a scenario."""
+    """Honest statement of when a cost change reaches COGS for a scenario,
+    written as plain-English sentences (it renders verbatim in the UI)."""
     if cost_pool == "existing_pool":
-        return "cost change applied to the existing pool: reaches COGS immediately (revaluation)"
+        return (
+            "The cost change revalues the existing inventory pool, so it "
+            "reaches cost of goods sold (COGS) immediately (a revaluation)."
+        )
     base = {
         "fifo": (
-            "new receipts only: reaches COGS after existing FIFO layers are "
-            "consumed (lag depends on inventory cover)"
+            "The cost change applies to new receipts only. It reaches cost of "
+            "goods sold (COGS) once the existing FIFO layers are consumed, so "
+            "the lag depends on how much inventory cover is on hand."
         ),
         "lifo": (
-            "new receipts only: reaches COGS immediately while new receipts "
-            "keep arriving (newest layers consumed first); ending inventory "
-            "retains old-cost layers"
+            "The cost change applies to new receipts only. Under LIFO the "
+            "newest layers are consumed first, so it reaches cost of goods "
+            "sold (COGS) immediately while new receipts keep arriving; ending "
+            "inventory keeps the older, lower-cost layers."
         ),
-        "average": "new receipts only: dilutes into moving average immediately on first receipt",
+        "average": (
+            "The cost change applies to new receipts only. It starts diluting "
+            "into the moving average cost, and so into cost of goods sold "
+            "(COGS), immediately with the first new receipt."
+        ),
         "standard": (
-            "standard costing: reaches COGS at the next standard-cost revision "
-            "(a policy decision, not derivable from the data)"
+            "Under standard costing, the change reaches cost of goods sold "
+            "(COGS) at the next standard-cost revision. That timing is a "
+            "policy decision, not something the data can derive."
         ),
     }[method]
     if cost_pool == "blend":
-        return f"blend of existing pool and new receipts; for new receipts: {base}"
+        return (
+            "This scenario blends the existing inventory pool with new "
+            "receipts: the existing-pool share reaches cost of goods sold "
+            "(COGS) immediately (a revaluation). For the new-receipts share: "
+            f"{base}"
+        )
     return base

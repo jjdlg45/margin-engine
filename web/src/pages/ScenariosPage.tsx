@@ -129,11 +129,11 @@ function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
               : "No pair in scope reaches causal-supported elasticity, so the engine reports cost and recovery only - no volume response is modeled."}
         </p>
       </div>
-      <Section title="COGS timing" lede={grid.cogs_timing}>
+      <Section title="When the cost increase reaches COGS" lede={grid.cogs_timing}>
         <p className="m-0 max-w-2xl text-caption secondary">
-          The timing statement comes from the declared cost basis of the
-          mapped data and says when a landed-cost change reaches reported
-          COGS under that method.
+          This statement follows from the declared cost basis of the mapped
+          data. COGS is cost of goods sold, the product cost the ledger
+          reports against revenue.
         </p>
       </Section>
     </>
