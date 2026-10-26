@@ -73,6 +73,16 @@ class TransactionsConfig(StrictModel):
     price_credit_reasons: tuple[str, ...] = ("price_correction", "customer_rebate")
     # Reasons routed to cost categories instead of revenue.
     cost_credit_reasons: tuple[str, ...] = ("damage", "shortage", "quality", "warranty")
+    # Reasons whose counterparty is the SUPPLIER (Run 6, Phase 61): recoveries
+    # for supplier-caused damage and similar claims. They never touch customer
+    # revenue; their dollars land in cost-to-serve with the supplier named as
+    # the counterparty in the economic-event taxonomy.
+    supplier_claim_reasons: tuple[str, ...] = ()
+    # Economic-event classification of billed order charges by charge code
+    # (Run 6, Phase 61), e.g. {"FRT": "freight_pass_through"}. Codes not listed
+    # stay `other_adjustment` with a stated note - the engine never guesses
+    # what a charge code means.
+    charge_event_types: dict[str, str] = Field(default_factory=dict)
     zero_quantity_treatment: Literal["exclude_and_flag"] = "exclude_and_flag"
 
 

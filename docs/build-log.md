@@ -3083,3 +3083,75 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 vite build 0; Playwright static with snapshots 225 passed (exit 0). Demo
 bundle re-exported (labels only; schema content unchanged). No headline
 numbers changed in this phase.
+
+## Phase 61 — Economic event taxonomy (2026-10-26, Run 6 branch)
+
+Every adjustment is now classified by its ECONOMICS, independently of raw
+ERP labels (Finding 5).
+
+1. **Events module** - src/margin_engine/ledger/events.py classifies every
+   adjustment into 11 event types (customer price concession, refund/return,
+   service payment, non-price claim, supplier rebate/allowance, supplier
+   quality claim, vendor distinct-service and selling-cost reimbursements,
+   freight pass-through, tax/deposit/liability, other). Each event carries
+   counterparty, direction, source document and reference, original-invoice
+   link, program, earn and settlement periods, eligible basis, actual/
+   allocated/estimated status, reversal/true-up link and a duplicate-suspect
+   flag. New exports: economic_events, economic_event_totals,
+   vendor_rebate_rollforward (deterministic sort keys registered).
+2. **Vendor consideration (ASC 705-20)** - programs may declare
+   consideration_type in the vendor program table: distinct-service and
+   selling-cost reimbursements never net product cost and become their own
+   events (rate-based estimates, labeled). The vendor rebate ROLL-FORWARD
+   separates rebates earned on receipts from rebates recognized in COGS;
+   the running balance belongs to inventory on hand. Without receipts the
+   roll-forward reports not testable.
+3. **Duplicate credit representations** - a credit memo embedded as a
+   negative line on its original invoice AND present as a standalone credit
+   document is flagged on classification
+   (flag_duplicate_adjustment_suspect), counted ONCE in event totals (the
+   embedded posting wins), the excluded amount reported. Ledger keeps every
+   source dollar; reconciliation untouched.
+4. **Multiple simultaneous rebate programs** - tiered accrual reworked to
+   per-program accrual over the shared cumulative basis, summed per line:
+   no row duplication, no double counting. Settlements match per customer x
+   year x program; partially settled years mix actuals and accruals
+   (status partially_settled); settlements naming an unheld program stay a
+   visible residual. Reconciliation check 4b now sums actual allocations
+   over all lines (identical on single-program worlds). Guidance's
+   deduction rate d sums stacked program rates per customer, fixing a
+   latent join that would have duplicated pairs for multi-program customers.
+5. **Supplier quality claims** - transactions.supplier_claim_reasons routes
+   configured credit reasons to the supplier as counterparty; dollars reduce
+   cost-to-serve via the existing signed claims allocation, never customer
+   revenue. Billed order charges classify only via
+   transactions.charge_event_types (shipped: FRT_OUT -> freight
+   pass-through); undeclared codes are other adjustments with a stated note.
+6. **Negative rebate basis** - a customer-year with returns exceeding
+   purchases accrues nothing; the summary marks negative_basis and the
+   accrual event carries fail_closed_negative_basis.
+
+Tests added: tests/test_events.py (15 tests) covering all seven spec edge
+cases: duplicate credit counted once; voided-and-replaced invoice (pocket
+nets to the replacement; reversal link); customer claim caused by supplier
+damage (claim is customer cost, recovery reduces cost with supplier as
+counterparty); supplier rebate with inventory on hand (earned 50.00 /
+recognized 30.00 / 20.00 on hand); vendor distinct marketing service (no
+cost netting; event visible); negative net rebate basis (fail closed);
+multiple simultaneous programs (per-line sums, partial settlement, unheld-
+program residual, guidance stacking without pair duplication). Plus charge
+classification config tests and a taxonomy-integrity test.
+
+Decisions: duplicate representations keep both rows' dollars in the ledger
+(source totals must reconcile) and are de-duplicated at the EVENT layer
+with the excluded amount reported - surfacing the double posting instead
+of silently dropping a source row. Tax/deposit/liability mechanics (new
+mapped fields) land with the charge declarations in Phase 63; the event
+type exists now.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 439 passed 0 failed (exit 0); Playwright static with
+snapshots 225 passed (exit 0) against a re-exported demo bundle. Headline
+numbers unchanged (the demo world has no multi-program customers, supplier
+claims or consideration exceptions; FRT_OUT charges now classify as
+freight pass-through in the events export).

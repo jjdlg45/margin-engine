@@ -234,8 +234,16 @@ def build_guidance(
     # on sale lines), both in basis points. Both reduce pocket revenue, so both
     # belong in the invoice floor (spec 5.5 / Phase 5).
     if rebate_programs is not None:
-        rp = rebate_programs.with_columns(
-            (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rebate_bp")
+        # A customer can hold several simultaneous programs (Run 6, Phase 61):
+        # every program's rate reduces pocket, so d carries their SUM — and the
+        # aggregation guarantees one row per customer, so the pair frame can
+        # never be duplicated by a multi-program join.
+        rp = (
+            rebate_programs.with_columns(
+                (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rebate_bp")
+            )
+            .group_by("customer_id")
+            .agg(pl.col("rebate_bp").sum())
         )
         pair = pair.join(
             rp.select("customer_id", "rebate_bp"), on="customer_id", how="left"

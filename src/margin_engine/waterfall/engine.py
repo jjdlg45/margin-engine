@@ -45,6 +45,9 @@ class WaterfallResult:
     # Settlement rows that could not be attributed to any line (no lines in
     # the customer-period group, or an exactly-zero signed basis).
     unallocated_settlements: pl.DataFrame | None = None
+    # Per customer x year x program tiered-rebate summary (Run 6, Phase 61):
+    # the grain of the economic-event taxonomy and the rebate subledger.
+    tiered_summary: pl.DataFrame | None = None
 
 
 def normalize_quantity(
@@ -497,7 +500,7 @@ def build_waterfall(
     # Tiered retrospective rebates: accruals during the period (estimated),
     # settled customer-years trued up to actual; the waterfall uses whichever
     # is labeled in tiered_rebate_status.
-    tiered_narrow = tiered_rebate_columns(
+    tiered_res = tiered_rebate_columns(
         lines.select(
             _ROW,
             "source_line_key",
@@ -513,8 +516,8 @@ def build_waterfall(
         residuals,
         row_col=_ROW,
     )
-    if tiered_narrow is not None:
-        attach(tiered_narrow)
+    if tiered_res is not None:
+        attach(tiered_res.narrow)
     col_order.extend(TIERED_COLS)
 
     # Price credits: allocate each credit's amount over its original invoice's
@@ -595,10 +598,14 @@ def build_waterfall(
         alloc_fe = int(sl["freight_expense_alloc_cents"].sum())
         residuals["freight_expense_unallocated_cents"] = total_fe - alloc_fe
 
-    # Non-price claims (cost credits) allocated to original invoice lines as CTS.
-    cost_credits = lines.filter(pl.col("credit_class") == "cost_credit").select(
-        pl.col("net_amount_cents"), ref_expr
-    )
+    # Non-price claims (cost credits) allocated to original invoice lines as
+    # CTS. Supplier claims (Run 6, Phase 61) ride the same rails: their net is
+    # positive (a recovery FROM the supplier), so the signed allocation reduces
+    # cost-to-serve on the original lines; the counterparty distinction lives
+    # in the economic-event taxonomy, never in customer revenue.
+    cost_credits = lines.filter(
+        pl.col("credit_class").is_in(["cost_credit", "supplier_claim"])
+    ).select(pl.col("net_amount_cents"), ref_expr)
     if cost_credits.height:
         linkable_cc = cost_credits.filter(pl.col("original_invoice_ref").is_not_null())
         cc_by_inv = (
@@ -704,7 +711,7 @@ def build_waterfall(
     lines = lines.with_columns(
         pl.when(is_credit & pl.col("credit_attributed"))
         .then(0)  # attributed to original sale lines; counted there
-        .when(is_credit & (pl.col("credit_class") == "cost_credit"))
+        .when(is_credit & pl.col("credit_class").is_in(["cost_credit", "supplier_claim"]))
         .then(0)  # claims belong to the cost side, allocated below
         .otherwise(
             pl.col("invoice_revenue_cents")
@@ -789,7 +796,28 @@ def build_waterfall(
                 maintain_order="left",
             )
             col_order.append("supplier_id")
-        vr = vendor_rebate_programs.with_columns(
+        # Vendor consideration (Run 6, Phase 61 / ASC 705-20): a program reduces
+        # acquisition cost by DEFAULT; programs declared as payment for a
+        # distinct good or service, or reimbursement of identifiable selling
+        # costs, never net into product cost — they are separate economic
+        # events (ledger/events.py), so nothing is double counted or hidden.
+        vr_src = vendor_rebate_programs
+        if "consideration_type" in vr_src.columns:
+            excluded = vr_src.filter(
+                pl.col("consideration_type").is_not_null()
+                & (pl.col("consideration_type") != "cost_reduction")
+            )
+            if excluded.height:
+                notes.append(
+                    f"{excluded.height} vendor program(s) declared as distinct-service "
+                    f"or selling-cost reimbursement: excluded from product-cost "
+                    f"netting (ASC 705-20 exception), reported as economic events"
+                )
+            vr_src = vr_src.filter(
+                pl.col("consideration_type").is_null()
+                | (pl.col("consideration_type") == "cost_reduction")
+            )
+        vr = vr_src.with_columns(
             (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rate_bp")
         )
         lines = lines.join(
@@ -857,4 +885,5 @@ def build_waterfall(
         residuals=residuals,
         notes=notes,
         unallocated_settlements=unallocated_settlements,
+        tiered_summary=tiered_res.summary if tiered_res is not None else None,
     )

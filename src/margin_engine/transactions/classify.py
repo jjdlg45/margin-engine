@@ -70,11 +70,20 @@ def classify(lines: pl.DataFrame, rules: Rules) -> ClassifiedData:
     lines = lines.with_columns((pl.len().over(BUSINESS_COLS) > 1).alias("flag_lookalike_duplicate"))
 
     # --- credit classification -------------------------------------------------
+    # Classified by the CANONICAL reason (the mapping normalizes raw ERP codes
+    # first), never by raw source labels (Run 6, Phase 61).
     price_reasons = list(rules.transactions.price_credit_reasons)
     cost_reasons = list(rules.transactions.cost_credit_reasons)
+    supplier_reasons = list(rules.transactions.supplier_claim_reasons)
     lines = lines.with_columns(
         pl.when(pl.col("transaction_type") != "credit")
         .then(pl.lit(None, dtype=pl.String))
+        .when(
+            pl.col("credit_reason").is_in(supplier_reasons)
+            if supplier_reasons
+            else pl.lit(value=False)
+        )
+        .then(pl.lit("supplier_claim"))
         .when(pl.col("credit_reason").is_in(price_reasons))
         .then(pl.lit("price_credit"))
         .when(pl.col("credit_reason").is_in(cost_reasons))
@@ -82,6 +91,42 @@ def classify(lines: pl.DataFrame, rules: Rules) -> ClassifiedData:
         .otherwise(pl.lit("unclassified_credit"))
         .alias("credit_class")
     )
+
+    # --- duplicate adjustment representations (Run 6, Phase 61) ----------------
+    # A credit memo can appear twice in one export: once as its own credit
+    # document and once embedded as a negative line on the original invoice.
+    # Both rows KEEP their dollars (the ledger reconciles to source totals);
+    # the flag makes the suspect pair loud, and the economic-event taxonomy
+    # counts the adjustment once (the embedded posting wins; the standalone
+    # credit event is marked a duplicate suspect).
+    flag_dup = pl.lit(value=False).alias("flag_duplicate_adjustment_suspect")
+    if "original_invoice_ref" in lines.columns:
+        embedded = lines.filter(
+            (pl.col("transaction_type") == "sale") & (pl.col("net_amount_cents") < 0)
+        ).select(
+            "customer_id",
+            "item_id",
+            pl.col("invoice_id").alias("original_invoice_ref"),
+            "net_amount_cents",
+        )
+        if embedded.height:
+            is_dup_credit = (
+                (pl.col("transaction_type") == "credit")
+                & pl.col("original_invoice_ref").is_not_null()
+                & pl.struct(
+                    "customer_id", "item_id", "original_invoice_ref", "net_amount_cents"
+                ).is_in(
+                    embedded.select(
+                        pl.struct(
+                            "customer_id", "item_id", "original_invoice_ref", "net_amount_cents"
+                        ).alias("s")
+                    )["s"].implode()
+                )
+            )
+            flag_dup = is_dup_credit.fill_null(value=False).alias(
+                "flag_duplicate_adjustment_suspect"
+            )
+    lines = lines.with_columns(flag_dup)
 
     # --- data flags (5.3) -------------------------------------------------------
     lines = lines.with_columns(

@@ -411,6 +411,77 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "The no-planted-truth checks (temporal backtest, placebo tests, "
         "rolling stability) run as a pipeline stage.",
     },
+    # --- economic event taxonomy (Run 6, Phase 61) ------------------------------
+    "customer_price_concession": {
+        "label": "Customer price concession",
+        "description": "Discounts, rebates, freight concessions and price credits that "
+        "reduce what the customer actually pays.",
+    },
+    "customer_refund_return": {
+        "label": "Customer refund or return",
+        "description": "Product returned by the customer; linked to the original sale "
+        "where the data allows.",
+    },
+    "customer_service_payment": {
+        "label": "Customer service payment",
+        "description": "Restocking fees and return freight billed to the customer - "
+        "recovery revenue, not a price concession.",
+    },
+    "non_price_customer_claim": {
+        "label": "Non-price customer claim",
+        "description": "Damage, shortage, quality or warranty credits - a cost, never a "
+        "reduction of realized price.",
+    },
+    "supplier_rebate_allowance": {
+        "label": "Supplier rebate or allowance",
+        "description": "Vendor consideration that reduces acquisition cost, never "
+        "customer-facing revenue.",
+    },
+    "supplier_quality_claim": {
+        "label": "Supplier quality claim",
+        "description": "A recovery from a supplier for supplier-caused cost; reduces "
+        "cost to serve, with the supplier as counterparty.",
+    },
+    "vendor_distinct_service_reimbursement": {
+        "label": "Vendor payment for a distinct service",
+        "description": "Vendor consideration that pays for a distinct good or service - "
+        "an ASC 705-20 exception that never nets product cost.",
+    },
+    "vendor_selling_cost_reimbursement": {
+        "label": "Vendor selling-cost reimbursement",
+        "description": "Vendor consideration reimbursing identifiable selling costs - an "
+        "ASC 705-20 exception that never nets product cost.",
+    },
+    "freight_pass_through": {
+        "label": "Freight pass-through",
+        "description": "A billed charge the configuration declares as freight passed "
+        "through to the customer.",
+    },
+    "tax_deposit_liability": {
+        "label": "Tax, deposit or third-party collection",
+        "description": "Amounts collected for someone else; excluded from product "
+        "revenue by default.",
+    },
+    "other_adjustment": {
+        "label": "Other adjustment",
+        "description": "An adjustment without a declared classification - stated, never "
+        "silently absorbed.",
+    },
+    "partially_settled": {
+        "label": "Partially settled",
+        "description": "Some of this customer-year's rebate programs settled to actuals; "
+        "the rest remain accrual estimates.",
+    },
+    "fail_closed_negative_basis": {
+        "label": "Fail closed: negative basis",
+        "description": "Returns exceeded purchases in the period, so no rebate accrual "
+        "is invented; the case is reported instead.",
+    },
+    "unallocated_residual": {
+        "label": "Unallocated residual",
+        "description": "A source amount with no matching lines to carry it; kept as a "
+        "visible residual, never forced onto lines.",
+    },
     # --- statuses used by the report/UI for reconciliation ---------------------
     "reconciled": {
         "label": "Reconciled",

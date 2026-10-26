@@ -88,6 +88,47 @@ Reconciliation checks (row conservation, net-amount conservation, allocation
 conservation for charges / settlements / freight incl. the return freight log,
 stage identities) are exact to the cent and raise on failure.
 
+### Economic event taxonomy (Run 6)
+
+Every adjustment is also classified by its ECONOMICS, independently of raw ERP
+labels (the mapping normalizes source codes to canonical reasons; the taxonomy
+classifies the canonical data): customer price concession, customer refund or
+return, customer service payment, non-price customer claim, supplier rebate or
+allowance, supplier quality claim, vendor payment for a distinct service,
+vendor selling-cost reimbursement, freight pass-through, tax or deposit or
+third-party collection, and other adjustment (stated, never silently
+absorbed). Each event carries counterparty, direction, source document and
+reference, original invoice link, program, earn and settlement periods,
+eligible basis, estimate-vs-actual status and a reversal/true-up link. The
+events table is an analytical classification: the ledger keeps every source
+dollar and reconciliation is untouched by it.
+
+Duplicate representations: a credit memo that appears both embedded as a
+negative line on its original invoice and as a standalone credit document is
+flagged on both rows, counted ONCE in event totals (the embedded posting
+wins), and the excluded amount is reported. The ledger keeps both rows'
+dollars because source totals must still reconcile - the engine surfaces the
+double posting loudly instead of silently dropping a source row.
+
+Vendor consideration follows ASC 705-20: it reduces acquisition cost by
+default. A program the data declares as payment for a distinct good or
+service, or as reimbursement of identifiable selling costs, is an exception:
+it never nets into product cost and is reported as its own economic event.
+A vendor rebate roll-forward separates rebates EARNED on receipts from
+rebates RECOGNIZED against the cost of goods sold; the balance belongs to
+inventory still on hand and never hits current-period line cost. Without an
+inventory-receipts table the roll-forward is reported as not testable.
+
+Multiple simultaneous rebate programs: a customer may hold several programs
+with overlapping eligibility. Each program accrues on its own tier table over
+the same cumulative basis and the line carries the SUM - no dollar is counted
+twice and no ledger row is duplicated. Settlements match per customer, year
+and program; a year where only some programs settled uses actuals for those
+and accruals for the rest (partially settled). A settlement naming a program
+the customer does not hold stays a visible residual. A customer-year whose
+eligible basis is negative (returns exceed purchases) accrues nothing - the
+fail-closed outcome is reported, never a negative rebate invented.
+
 ## 4. Dispersion and outliers
 
 Prices normalize to an index (realized unit price / effective-dated list;

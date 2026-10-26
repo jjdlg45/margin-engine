@@ -26,6 +26,7 @@ from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
+from margin_engine.ledger.events import build_events, vendor_rebate_rollforward
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.manifest.run_manifest import (
     build_manifest,
@@ -178,6 +179,9 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "win_curves": ["segment"],
     "cross_price_estimates": ["group_id", "item_a", "item_b"],
     "unallocated_settlements": ["customer_id", "period", "rebate_program_id"],
+    "economic_events": ["event_type", "event_subtype", "source_ref"],
+    "economic_event_totals": ["event_type"],
+    "vendor_rebate_rollforward": ["supplier_id", "period"],
 }
 
 
@@ -253,6 +257,29 @@ def run_full(
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
     rss_log("cost_to_serve")
+
+    # Economic event taxonomy (Run 6, Phase 61): every adjustment classified by
+    # its economics, with counterparty, direction, periods, basis, status and
+    # reversal links; plus the vendor rebate roll-forward (ASC 705-20).
+    t = time.perf_counter()
+    events_res = build_events(
+        res.ledger,
+        rules=rules,
+        rebate_settlements=res.reference.get("rebate_settlements"),
+        order_charges=res.reference.get("order_charges"),
+        vendor_rebate_programs=res.reference.get("vendor_rebate_programs"),
+        tiered_summary=res.tiered_summary,
+    )
+    res.notes.extend(events_res.notes)
+    rollforward_res = vendor_rebate_rollforward(
+        res.ledger,
+        res.reference.get("inventory_receipts"),
+        res.reference.get("items"),
+        res.reference.get("vendor_rebate_programs"),
+    )
+    res.notes.extend(rollforward_res.notes)
+    timings["economic_events"] = time.perf_counter() - t
+    rss_log("economic_events")
 
     t = time.perf_counter()
     analysis_obs, h_notes = apply_analysis_level(
@@ -511,6 +538,13 @@ def run_full(
         **({"cross_price_estimates": cross_estimates} if cross_estimates is not None else {}),
         "customer_economics": cts.customer_economics,
         "service_policy_flags": cts.service_flags,
+        "economic_events": events_res.events,
+        "economic_event_totals": events_res.totals,
+        **(
+            {"vendor_rebate_rollforward": rollforward_res.table}
+            if rollforward_res.table is not None
+            else {}
+        ),
         "reconciliation": res.reconciliation.to_frame(),
         **({"books_tieout": tieout_res.table} if tieout_res is not None else {}),
         **(

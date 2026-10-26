@@ -20,6 +20,14 @@ transactions:
   flag_lookalike_duplicates: true
   price_credit_reasons: [price_correction, customer_rebate]
   cost_credit_reasons: [damage, shortage, quality, warranty]
+  # Credit reasons whose counterparty is the supplier (Run 6, Phase 61):
+  # recoveries for supplier-caused cost. None exist in the synthetic ERP.
+  supplier_claim_reasons: []
+  # Economic-event classification of billed order charges by charge code
+  # (Run 6, Phase 61). The synthetic ERP bills outbound freight as FRT_OUT;
+  # undeclared codes are reported as other adjustments, never guessed.
+  charge_event_types:
+    FRT_OUT: freight_pass_through
 
 hierarchy:
   analysis_level: ship_to

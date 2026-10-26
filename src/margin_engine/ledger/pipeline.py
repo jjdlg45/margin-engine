@@ -34,6 +34,9 @@ class PipelineResult:
     unallocated_settlements: pl.DataFrame | None
     reference: dict[str, pl.DataFrame | None]
     notes: list[str]
+    # Per customer x year x program tiered summary (Run 6, Phase 61), for the
+    # economic-event taxonomy and the rebate subledger.
+    tiered_summary: pl.DataFrame | None = None
     # Fully blank input rows dropped per source file (whitespace-only included).
     blank_rows_dropped: dict[str, int] = field(default_factory=dict)
 
@@ -258,6 +261,7 @@ def run_pipeline(
         reference=ref,
         notes=notes,
         blank_rows_dropped=blank_counts,
+        tiered_summary=wf.tiered_summary,
     )
 
 

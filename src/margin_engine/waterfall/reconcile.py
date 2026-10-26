@@ -156,12 +156,12 @@ def reconcile(
             0,
             int(wf["kit_revenue_realloc_cents"].fill_null(0).sum()),
         )
-    # 4b. Tiered settlements: actual allocations on settled years + residual
-    # == settlement table total.
+    # 4b. Tiered settlements: actual allocations + residual == settlement table
+    # total. Summed over every line: a program that did not settle contributes
+    # zero, and a partially settled customer-year (Run 6, Phase 61: several
+    # simultaneous programs) carries exactly its settled programs' allocations.
     if tiered_settlements is not None and "tiered_rebate_status" in wf.columns:
-        alloc = int(
-            wf.filter(pl.col("tiered_rebate_status") == "actual")["tiered_actual_alloc_cents"].sum()
-        )
+        alloc = int(wf["tiered_actual_alloc_cents"].fill_null(0).sum())
         resid = residuals.get("tiered_settlements_unallocated_cents", 0)
         total = int(tiered_settlements["amount_cents"].sum())
         rep.add(
