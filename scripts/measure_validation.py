@@ -243,7 +243,75 @@ def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
                 "so holding the market price constant leaves the supplier cost shock as "
                 "the identifying variation)"
             ),
-            None,
+            True,
+        )
+    )
+    # Informational (Run 6, Phase 71): the robust weak-instrument diagnostics,
+    # measured on worlds that have no planted anticipation channel, so a
+    # rejection of the lead test there is a false positive by construction.
+    lead = [str(r.get("lead_test_status")) for r in study]
+    rejected = sum(1 for s in lead if s == "lead_test_rejected")
+    passed_lead = sum(1 for s in lead if s == "lead_test_passed")
+    inconclusive = sum(1 for s in lead if s == "lead_test_inconclusive")
+    immaterial = sum(1 for s in lead if s == "lead_test_immaterial")
+    bounds = sorted(
+        float(r["lead_test_bound"])
+        for r in study
+        if r.get("lead_test_bound") is not None and r.get("lead_test_status") == "lead_test_passed"
+    )
+    rows.append(
+        _row(
+            "Anticipation (lead) test false-rejection rate",
+            "Informational: on the well-identified preset no anticipation channel is "
+            "planted, so every rejection is a false positive",
+            (
+                f"{rejected}/{len(lead)} segment-seeds rejected as material, "
+                f"{passed_lead} passed, {immaterial} detected but below the materiality "
+                f"threshold, {inconclusive} reported inconclusive for lack of power"
+                + (
+                    f"; smallest detectable effect {bounds[0]:.2f}-{bounds[-1]:.2f} "
+                    "log-volume units where it passes"
+                    if bounds
+                    else ""
+                )
+            ),
+            True,
+        )
+    )
+    f_eff = sorted(
+        float(r["effective_first_stage_f"])
+        for r in study
+        if r.get("effective_first_stage_f") is not None
+    )
+    heur = sorted(float(r["first_stage_f"]) for r in study if r.get("first_stage_f") is not None)
+    shapes: dict[str, int] = {}
+    for r in study:
+        shapes[str(r.get("ar_shape"))] = shapes.get(str(r.get("ar_shape")), 0) + 1
+    measures = sorted(float(r["ar_measure"]) for r in study if r.get("ar_measure") is not None)
+    rows.append(
+        _row(
+            "Robust first-stage statistic and robust-set shape",
+            "Informational: the Montiel Olea-Pflueger effective F against the published "
+            "23.109 bar, and the shape of the weak-instrument-robust set",
+            (
+                (
+                    f"Effective F {f_eff[0]:.0f}-{f_eff[-1]:.0f} "
+                    f"(heuristic Wald/K {heur[0]:.0f}-{heur[-1]:.0f}); "
+                    if f_eff and heur
+                    else "Effective F not computed; "
+                )
+                + "robust set "
+                + ", ".join(
+                    f"{k.replace('ar_set_', '').replace('_', ' ')} x{v}"
+                    for k, v in sorted(shapes.items())
+                )
+                + (
+                    f"; total accepted width {measures[0]:.2f}-{measures[-1]:.2f}"
+                    if measures
+                    else ""
+                )
+            ),
+            True,
         )
     )
     return rows

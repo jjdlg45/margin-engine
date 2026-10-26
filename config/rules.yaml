@@ -99,6 +99,31 @@ sensitivity:
   panel_period: month
   active_assortment_lookback_months: 6
   min_first_stage_f: 10.0
+  # The GATE uses the Montiel Olea-Pflueger effective F, whose critical value is
+  # derived for an arbitrary clustered variance structure; min_first_stage_f
+  # above stays the reported rule-of-thumb and the bar for the instrumented
+  # status. 23.109 is the published 10% relative-bias value.
+  min_effective_first_stage_f: 23.109
+  # Anticipation (lead) test: do FUTURE cost and tariff movements predict
+  # current volume? The overidentification test compares the instruments
+  # against each other and cannot see a violation they share; this one can see
+  # that violation when it takes the form of timing.
+  lead_test_horizon: 2
+  lead_test_alpha: 0.05
+  # In log-volume units per unit of the aggregate lead regressor, where one
+  # unit is one standard deviation of a single lead. The whole contemporaneous
+  # price channel is about 0.08 in those units on the demo world, so a value
+  # much above 0.1 would be larger than the entire effect the instruments
+  # identify. It governs BOTH branches: an effect below it is reported as
+  # detected but immaterial rather than blocking the causal status, and a
+  # non-rejection whose interval still admits it is reported as inconclusive
+  # rather than as a pass.
+  lead_test_meaningful_effect: 0.05
+  # Minimum residual degrees of freedom before the test will run. A row count
+  # alone let saturated designs through, where pair and period fixed effects
+  # absorb more parameters than there are rows and any coefficient becomes an
+  # enormous test statistic.
+  lead_test_min_residual_dof: 30
   robustness_max_spread: 0.20
   max_ci_width: 1.0
   overid_alpha: 0.05

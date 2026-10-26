@@ -69,6 +69,7 @@ function ModulesBody({ m }: { m: OptionalModules }) {
                   <th>Substitute</th>
                   <th>Observations</th>
                   <th>Cross elasticity</th>
+                  <th>Instrument strength for this price alone</th>
                   <th className="left">Status</th>
                 </tr>
               </thead>
@@ -80,6 +81,14 @@ function ModulesBody({ m }: { m: OptionalModules }) {
                     <td className="font-mono">{c.item_b}</td>
                     <td>{count(c.n_obs)}</td>
                     <td>{c.cross_elasticity !== null ? num(c.cross_elasticity) : "—"}</td>
+                    <td title={c.first_stage_detail || undefined}>
+                      {c.conditional_effective_f !== null && c.conditional_effective_f !== undefined
+                        ? num(c.conditional_effective_f, 1)
+                        : "—"}
+                      {c.marginal_first_stage_f !== null && c.marginal_first_stage_f !== undefined
+                        ? ` (${num(c.marginal_first_stage_f, 1)} without holding the other price fixed)`
+                        : ""}
+                    </td>
                     <td>
                       <StatusChip status={c.status} reason={c.reasons || undefined} />
                     </td>

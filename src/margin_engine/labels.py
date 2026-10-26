@@ -562,6 +562,106 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "Not evaluated",
         "description": "The data could not support this check, so it is not counted as passed.",
     },
+    # --- weak-instrument diagnostics (Run 6, Phase 71) --------------------------
+    "ar_set_empty": {
+        "label": "Robust set empty",
+        "description": "No candidate price sensitivity survives the weak-instrument-robust "
+        "test: the instruments reject the model everywhere searched, which is evidence of "
+        "misspecification rather than precision.",
+    },
+    "ar_set_single_point": {
+        "label": "Robust set a single point",
+        "description": "Only one candidate value survives, so the model is rejected almost "
+        "everywhere - evidence against it, not a tight estimate.",
+    },
+    "ar_set_interval": {
+        "label": "Robust set one range",
+        "description": "The weak-instrument-robust set is a single connected range.",
+    },
+    "ar_set_disconnected": {
+        "label": "Robust set disconnected",
+        "description": "The robust set is two or more separate ranges with rejected values "
+        "between them, so no single interval describes it.",
+    },
+    "ar_set_reaches_search_bound": {
+        "label": "Robust set open-ended",
+        "description": "The robust set runs to the edge of the searched range, so it is "
+        "reported as open rather than compressed into an interval.",
+    },
+    "lead_test_passed": {
+        "label": "No anticipation detected",
+        "description": "Future cost and tariff movements do not predict current volume, and "
+        "the interval is tight enough for that to mean something. It tests TIMING only: a "
+        "violation both instruments share in the same period stays invisible to it.",
+    },
+    "lead_test_rejected": {
+        "label": "Anticipation detected",
+        "description": "Future cost and tariff movements predict current volume, which is an "
+        "exclusion violation the overidentification test cannot see.",
+    },
+    "lead_test_immaterial": {
+        "label": "Anticipation detected but immaterial",
+        "description": "Future cost and tariff movements do predict current volume, but "
+        "every effect the interval admits is smaller than the engine treats as material. "
+        "With tens of thousands of rows this check resolves effects far below that bar, "
+        "so it is reported rather than treated as a broken assumption.",
+    },
+    "lead_test_inconclusive": {
+        "label": "Anticipation test inconclusive",
+        "description": "No anticipation effect was detected, but the interval still admits a "
+        "material one: the test lacks the power to clear the channel, so it is not reported "
+        "as a pass.",
+    },
+    "lead_test_unavailable": {
+        "label": "Anticipation test not run",
+        "description": "Too few periods, clusters or complete rows to test anticipation, so "
+        "nothing is claimed about it either way.",
+    },
+    "no_material_anticipation_effect": {
+        "label": "No material anticipation effect",
+        "description": "Future instrument movements do not predict current volume by a "
+        "margin the engine treats as material. A material effect blocks the causal "
+        "status; a detected but immaterial one is reported and does not block; an "
+        "inconclusive result is reported with the smallest effect the test could have "
+        "detected.",
+    },
+    "placebo_not_run": {
+        "label": "Placebo check not run",
+        "description": "The shuffled-instrument placebo needs the validation run, so "
+        "nothing is claimed here about whether this design's standard errors are the "
+        "right size.",
+    },
+    "placebo_passed": {
+        "label": "Placebo check passed",
+        "description": "Shuffled instruments reached significance at about the nominal "
+        "rate, so this design's standard errors are the right size. It says nothing "
+        "about whether the real instruments are valid.",
+    },
+    "placebo_underpowered": {
+        "label": "Placebo check not conclusive",
+        "description": "Shuffled instruments did not reach significance more often "
+        "than chance, but too few draws were run for that to clear this design's "
+        "standard errors. The smallest over-rejection the draw count could have "
+        "caught is reported.",
+    },
+    "placebo_over_rejects": {
+        "label": "Placebo check over-rejects",
+        "description": "Shuffled instruments reached significance far more often than "
+        "they should, so the standard errors in this design are too small and a "
+        "significant result on the real instruments is not trustworthy either.",
+    },
+    "overidentification_blind_spot": {
+        "label": "What overidentification cannot see",
+        "description": "The overidentification test compares the instruments against each "
+        "other, so it detects disagreement - never a violation they share. Two industry-wide "
+        "cost instruments can both fail the same way and the test still passes.",
+    },
+    "anderson_rubin_blind_spot": {
+        "label": "What the robust set cannot fix",
+        "description": "The Anderson-Rubin set stays valid when instruments are weak, but it "
+        "cannot repair a wrong exclusion story: it answers 'given these instruments', not "
+        "'are these instruments right'.",
+    },
     # --- economic event taxonomy (Run 6, Phase 61) ------------------------------
     "customer_price_concession": {
         "label": "Customer price concession",

@@ -40,6 +40,27 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
         </EmptyState>
       )}
       <Section title="Per-segment detail">
+        {/* What these two diagnostics can and cannot establish, stated once and
+            always visible rather than inside a panel a reader has to open
+            (Run 6, Phase 71). The same text is the tooltip on each figure. */}
+        <dl className="m-0 mb-4 grid gap-y-2">
+          <div>
+            <dt className="text-caption font-medium">
+              {labels("overidentification_blind_spot").label}
+            </dt>
+            <dd className="m-0 max-w-2xl text-caption secondary">
+              {labels("overidentification_blind_spot").description}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-caption font-medium">
+              {labels("anderson_rubin_blind_spot").label}
+            </dt>
+            <dd className="m-0 max-w-2xl text-caption secondary">
+              {labels("anderson_rubin_blind_spot").description}
+            </dd>
+          </div>
+        </dl>
         <ul className="m-0 list-none p-0">
           {rows.map((r) => (
             <li key={r.segment} className="border-t hairline py-4">
@@ -78,7 +99,12 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">Overidentification p</dt>
+                      <dt
+                        className="text-caption secondary"
+                        title={labels("overidentification_blind_spot").description}
+                      >
+                        Overidentification p
+                      </dt>
                       <dd className="m-0">{r.overid_p !== null ? num(r.overid_p, 3) : "—"}</dd>
                     </div>
                     <div>
@@ -94,11 +120,78 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">Anderson-Rubin set</dt>
+                      <dt className="text-caption secondary">
+                        Robust effective F (published bar 23.1)
+                      </dt>
                       <dd className="m-0">
-                        {r.ar_ci_low !== null && r.ar_ci_high !== null
-                          ? `[${num(r.ar_ci_low)}, ${num(r.ar_ci_high)}]`
-                          : "empty / not applicable"}
+                        <span title={r.effective_f_detail || undefined}>
+                          {r.effective_first_stage_f !== null &&
+                          r.effective_first_stage_f !== undefined
+                            ? num(r.effective_first_stage_f, 1)
+                            : "—"}
+                        </span>
+                        {r.n_clusters !== null && r.n_clusters !== undefined
+                          ? ` over ${count(r.n_clusters)} clusters`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      {/* The extent of the robust set is a HULL, not a
+                          confidence interval - named as one. */}
+                      <dt
+                        className="text-caption secondary"
+                        title={labels("anderson_rubin_blind_spot").description}
+                      >
+                        Weak-instrument-robust set
+                      </dt>
+                      <dd className="m-0">
+                        <span title={r.ar_shape ? labels(r.ar_shape).description : undefined}>
+                          {r.ar_shape ? labels(r.ar_shape).label : "—"}
+                        </span>
+                        {r.ar_hull_lo !== null &&
+                        r.ar_hull_lo !== undefined &&
+                        r.ar_hull_hi !== null &&
+                        r.ar_hull_hi !== undefined
+                          ? `, hull [${num(r.ar_hull_lo)}, ${num(r.ar_hull_hi)}]`
+                          : ""}
+                        {r.ar_n_components !== null &&
+                        r.ar_n_components !== undefined &&
+                        r.ar_n_components > 1
+                          ? ` in ${count(r.ar_n_components)} parts`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Placebo check</dt>
+                      <dd className="m-0">
+                        <span
+                          title={
+                            r.placebo_detail ||
+                            (r.placebo_status ? labels(r.placebo_status).description : undefined)
+                          }
+                        >
+                          {r.placebo_status ? labels(r.placebo_status).label : "—"}
+                        </span>
+                        {r.placebo_share_significant !== null &&
+                        r.placebo_share_significant !== undefined
+                          ? ` (${pct(r.placebo_share_significant)} of shuffled draws significant)`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Anticipation test</dt>
+                      <dd className="m-0">
+                        <span
+                          title={
+                            r.lead_test_detail ||
+                            (r.lead_test_status ? labels(r.lead_test_status).description : undefined)
+                          }
+                        >
+                          {r.lead_test_status ? labels(r.lead_test_status).label : "—"}
+                        </span>
+                        {r.lead_test_bound !== null && r.lead_test_bound !== undefined
+                          ? ` (detects effects above ${num(r.lead_test_bound)})`
+                          : ""}
                       </dd>
                     </div>
                     <div>

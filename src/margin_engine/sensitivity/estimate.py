@@ -37,6 +37,21 @@ from margin_engine.sensitivity.market_control import (
     estimand_for,
     resolve_competitor_path,
 )
+from margin_engine.sensitivity.weak_iv import (
+    AR_SHAPE_EMPTY,
+    AR_SHAPE_INTERVAL,
+    LEAD_IMMATERIAL,
+    LEAD_INCONCLUSIVE,
+    LEAD_PASSED,
+    LEAD_REJECTED,
+    LEAD_UNAVAILABLE,
+    PLACEBO_NOT_RUN,
+    LeadTest,
+    ar_set_from_accepted,
+    effective_first_stage_f,
+    lead_test_from_moments,
+    placebo_verdict,
+)
 
 STATUS_INSUFFICIENT = "insufficient_data"
 STATUS_DESCRIPTIVE = "descriptive_elasticity"
@@ -86,6 +101,38 @@ class SegmentEstimate:
     ar_ci_low: float | None = None
     ar_ci_high: float | None = None
     ar_bounded: bool | None = None
+    # Run 6, Phase 71: the robust set's SHAPE, its hull (not an interval),
+    # its total accepted measure and whether its display can be trusted.
+    ar_shape: str | None = None
+    ar_hull_lo: float | None = None
+    ar_hull_hi: float | None = None
+    ar_measure: float | None = None
+    ar_n_components: int | None = None
+    ar_reaches_search_bound: bool | None = None
+    ar_display_reliable: bool | None = None
+    ar_psd_failures: int | None = None
+    ar_detail: str = ""
+    # Robust effective first stage (Montiel Olea-Pflueger family).
+    effective_first_stage_f: float | None = None
+    effective_k: float | None = None
+    n_absorbed_parameters: int | None = None
+    n_clusters: int | None = None
+    first_stage_variance_pd: bool | None = None
+    effective_f_detail: str = ""
+    # Anticipation (lead) test.
+    lead_test_status: str = LEAD_UNAVAILABLE
+    lead_test_p: float | None = None
+    lead_test_horizon: int | None = None
+    lead_test_bound: float | None = None
+    lead_test_detail: str = ""
+    # Per-segment placebo (shuffled instrument), annotated after the fact when
+    # the real-data validation suite has run. Informational: it needs the
+    # validation run, so it is never a gate - a gate that reads "not evaluated"
+    # by default would withdraw every causal status in the default path.
+    placebo_status: str = PLACEBO_NOT_RUN
+    placebo_share_significant: float | None = None
+    placebo_actual_p: float | None = None
+    placebo_detail: str = ""
     robustness_spread: float | None = None
     # How many IDENTIFIED specifications the spread covers, and which
     # alternatives were excluded as unidentified (Run 6, Phase 70).
@@ -211,35 +258,69 @@ def _cluster_meat(x: np.ndarray, resid: np.ndarray, codes: np.ndarray, n_g: int)
     return scores.T @ scores
 
 
-def _cluster_ols(y: np.ndarray, x: np.ndarray, spec: ClusterSpec) -> tuple[np.ndarray, np.ndarray]:
+def _cluster_ols(
+    y: np.ndarray, x: np.ndarray, spec: ClusterSpec, n_absorbed: int = 0
+) -> tuple[np.ndarray, np.ndarray]:
     """OLS beta and CRV1 cluster-robust vcov (no intercept; demeaned inputs).
     Multiway vcov combines per-dimension sandwiches with CGM signs; a
     non-positive-definite combination falls back to the largest one-way
-    component (standard CGM practice for the scalar case)."""
+    component (standard CGM practice for the scalar case).
+
+    `n_absorbed` (Run 6, Phase 71) counts the parameters the WITHIN
+    transformation already removed - pair and time fixed effects, plus a
+    partialled control. They are invisible in `x` but were estimated from the
+    same rows, so leaving them out of the degrees-of-freedom factor overstates
+    precision in exactly the thin segments where weak identification bites.
+    """
     xtx = x.T @ x
     xtx_inv = np.linalg.pinv(xtx)
     beta = xtx_inv @ (x.T @ y)
     resid = y - x @ beta
     n, k = x.shape
+    k_total = k + n_absorbed
+    if n <= k_total:
+        # The design is saturated: the within transformation plus the regressors
+        # have used up every observation, so there are no residual degrees of
+        # freedom and the residuals are driven to the rounding floor. The old
+        # code set the small-sample factor to 1.0 here and returned a variance
+        # of 1e-12 to 1e-24, which `pinv` inverts without complaint and which
+        # turns any coefficient into an enormous Wald statistic. There is no
+        # variance to report, so it is reported as infinite and every gate that
+        # reads it fails closed.
+        return beta, np.full((k, k), np.inf)
     parts: list[np.ndarray] = []
     for codes, n_g, sign in spec:
         meat = _cluster_meat(x, resid, codes, n_g)
-        dof = (n_g / (n_g - 1)) * ((n - 1) / (n - k)) if n_g > 1 and n > k else 1.0
+        dof = (n_g / (n_g - 1)) * ((n - 1) / (n - k_total)) if n_g > 1 else 1.0
         parts.append(sign * dof * xtx_inv @ meat @ xtx_inv)
     vcov = np.sum(np.stack(parts), axis=0)
-    if k == 1 and float(vcov[0, 0]) <= 0 and len(parts) > 1:
-        # Standard CGM practice for the scalar case: fall back to the largest
-        # positive one-way component. When NO component is positive the
-        # clustered variance is not estimable, so it is reported as infinite -
-        # which fails the strength and precision gates instead of passing them
-        # on a variance of zero.
-        positives = [float(p[0, 0]) for p in parts if float(p[0, 0]) > 0]
-        vcov = np.array([[max(positives)]]) if positives else np.array([[np.inf]])
+    # A Cameron-Gelbach-Miller combination subtracts one sandwich from another
+    # and can land with a non-positive variance on any diagonal entry, not only
+    # in the scalar case. The previous guard was reachable only at k == 1, so a
+    # multi-regressor design (the anticipation test runs at k = 5 or 6) could
+    # report a negative or zero variance as precision. Fall back to the largest
+    # positive one-way component per entry; when no component is positive the
+    # variance is not estimable and is reported as infinite, which fails the
+    # strength and precision gates instead of passing them on a variance of
+    # zero.
+    if len(parts) > 1:
+        bad = [i for i in range(k) if not (float(vcov[i, i]) > 0)]
+        for i in bad:
+            positives = [float(p[i, i]) for p in parts if float(p[i, i]) > 0]
+            vcov[i, i] = max(positives) if positives else np.inf
+    elif k >= 1 and any(not (float(vcov[i, i]) > 0) for i in range(k)):
+        for i in range(k):
+            if not (float(vcov[i, i]) > 0):
+                vcov[i, i] = np.inf
     return beta, vcov
 
 
-def _first_stage_f(p: np.ndarray, z: np.ndarray, spec: ClusterSpec) -> float:
-    beta, vcov = _cluster_ols(p, z, spec)
+def _first_stage_f(p: np.ndarray, z: np.ndarray, spec: ClusterSpec, n_absorbed: int = 0) -> float:
+    """Cluster-robust Wald divided by the number of instruments. This is the
+    long-standing HEURISTIC statistic compared against 10; it is not a
+    classical first-stage F and has no derived critical value for a clustered
+    variance structure. The gate uses the robust effective F instead."""
+    beta, vcov = _cluster_ols(p, z, spec, n_absorbed)
     if not np.all(np.isfinite(vcov)):
         # An inestimable clustered variance is no evidence of strength, so it
         # must read as a WEAK first stage rather than passing the gate.
@@ -257,7 +338,7 @@ def _ar_confidence_set(
     z: np.ndarray,
     spec: ClusterSpec,
     grid: np.ndarray,
-) -> tuple[float | None, float | None]:
+) -> tuple[list[float], int]:
     """Anderson-Rubin confidence set by grid inversion: betas where instruments
     have no explanatory power for y - beta*p (cluster-robust Wald, multiway
     via CGM signs).
@@ -282,6 +363,7 @@ def _ar_confidence_set(
         dof = sign * n_g / max(n_g - 1, 1)
         terms.append((dof, c0.T @ c0, c0.T @ c1, c1.T @ c1))
     accepted: list[float] = []
+    psd_failures = 0
     for b in grid:
         # Wald-form AR: reduced-form coefficient of (y - b p) on Z with
         # cluster-robust vcov; both are affine/quadratic in b.
@@ -291,12 +373,17 @@ def _ar_confidence_set(
         try:
             w = float(coef @ np.linalg.pinv(vcov) @ coef)
         except np.linalg.LinAlgError:
+            # Skipping a point is equivalent to REJECTING it, which narrows
+            # the reported set; the count is returned so the caller can mark
+            # the display unreliable rather than print a clean range.
+            psd_failures += 1
+            continue
+        if not np.isfinite(w):
+            psd_failures += 1
             continue
         if w <= crit:
             accepted.append(float(b))
-    if not accepted:
-        return None, None
-    return min(accepted), max(accepted)
+    return accepted, psd_failures
 
 
 def _overid_j(y: np.ndarray, p: np.ndarray, z: np.ndarray, beta_iv: float) -> tuple[float, float]:
@@ -500,7 +587,24 @@ def estimate_segment(
         est.estimand, est.estimand_bias_direction = estimand_for(iv_ran=False, path_resolved=False)
         return est
 
-    est.first_stage_f = _first_stage_f(pz, z, spec)
+    # Parameters the within transformation already removed, plus the
+    # partialled control: they were estimated from these rows, so the
+    # degrees-of-freedom factor must count them (Run 6, Phase 71).
+    n_absorbed = (
+        int(pdf["pair"].nunique()) + int(pdf[time_fe].nunique()) + (1 if use_control else 0)
+    )
+    est.n_absorbed_parameters = n_absorbed
+    est.n_clusters = _spec_min_groups(spec)
+    est.first_stage_f = _first_stage_f(pz, z, spec, n_absorbed)
+    # Robust effective first stage: the statistic whose critical value is
+    # derived for an arbitrary (clustered) variance structure. This is what
+    # the gate uses; the Wald/K heuristic above stays reported.
+    _, vcov_pi = _cluster_ols(pz, z, spec, n_absorbed)
+    eff = effective_first_stage_f(pz, z, vcov_pi, n_absorbed=n_absorbed, n_clusters=est.n_clusters)
+    est.effective_first_stage_f = eff.f_eff
+    est.effective_k = eff.k_eff
+    est.first_stage_variance_pd = eff.variance_positive_definite
+    est.effective_f_detail = eff.detail
     # Identifying coverage: share of pairs with within-pair instrument movement.
     cov = (
         pos.group_by("pair")
@@ -626,15 +730,54 @@ def estimate_segment(
         est.iv_ci_low = beta_iv - crit * est.iv_se
         est.iv_ci_high = beta_iv + crit * est.iv_se
 
-    grid = np.arange(-5.0, 1.0, 0.02)
-    est.ar_ci_low, est.ar_ci_high = _ar_confidence_set(yz, pz, z, spec, grid)
-    # Bounded means the accepted set does not run into the search grid's edges.
-    est.ar_bounded = (
-        est.ar_ci_low is not None
-        and est.ar_ci_high is not None
-        and est.ar_ci_low > float(grid[0]) + 0.021
-        and est.ar_ci_high < float(grid[-1]) - 0.021
+    # Anderson-Rubin set, described as the SHAPE it is (Run 6, Phase 71).
+    # On contact with the search edge the grid is extended outward ONCE at a
+    # coarser step, so the report can say whether the set is bounded anywhere
+    # economically plausible rather than only that it touched -5.
+    step = 0.02
+    grid_lo, grid_hi = -5.0, 1.0
+    grid = np.arange(grid_lo, grid_hi, step)
+    accepted, psd_failures = _ar_confidence_set(yz, pz, z, spec, grid)
+    if accepted and (
+        min(accepted) <= grid_lo + step * 1.01 or max(accepted) >= grid_hi - step * 1.01
+    ):
+        wide_step = 0.1
+        wide_lo, wide_hi = -15.0, 5.0
+        wide = np.arange(wide_lo, wide_hi, wide_step)
+        wide_accepted, wide_psd = _ar_confidence_set(yz, pz, z, spec, wide)
+        if wide_accepted:
+            accepted = sorted(set(accepted) | set(wide_accepted))
+            psd_failures += wide_psd
+            grid_lo, grid_hi, step = wide_lo, wide_hi, wide_step
+    ar = ar_set_from_accepted(
+        accepted, grid_lo=grid_lo, grid_hi=grid_hi, step=step, psd_failures=psd_failures
     )
+    est.ar_shape = ar.shape
+    est.ar_hull_lo, est.ar_hull_hi = ar.hull_lo, ar.hull_hi
+    # Deprecated aliases: the extent of the accepted set is a HULL, not a
+    # confidence interval. Kept so older bundles and parity tests still read.
+    est.ar_ci_low, est.ar_ci_high = ar.hull_lo, ar.hull_hi
+    est.ar_measure = ar.measure
+    est.ar_n_components = len(ar.components)
+    est.ar_reaches_search_bound = ar.reaches_lower_bound or ar.reaches_upper_bound
+    est.ar_display_reliable = ar.display_reliable
+    est.ar_detail = ar.detail
+    est.ar_psd_failures = psd_failures
+    # "Bounded" now means: a connected range that does not run to the search
+    # edge, is not degenerate, and whose display is reliable.
+    est.ar_bounded = ar.shape == AR_SHAPE_INTERVAL and ar.display_reliable and not ar.degenerate
+
+    # Anticipation (lead) test (Run 6, Phase 71): FUTURE instrument values
+    # must not predict current quantity once current and lagged values are
+    # controlled. Current and lagged z stay in the design because the
+    # instrument processes are AR(1) - without them a lead block would pick up
+    # persistence rather than anticipation.
+    est.lead_test_horizon = sc.lead_test_horizon
+    lead = _lead_test(pdf, z_cols, time_fe, cluster_cols, spec, rules, use_control=use_control)
+    est.lead_test_status = lead.status
+    est.lead_test_p = lead.p_value
+    est.lead_test_bound = lead.detectable_bound
+    est.lead_test_detail = lead.detail
 
     # Overidentification over the instruments that are still IDENTIFIED after
     # controlling (Run 6, Phase 70). A J test run against an instrument with
@@ -726,21 +869,36 @@ def estimate_segment(
     if not path.resolved:
         reasons.append(f"competitor-price path not controlled: {path.detail}")
 
-    f_ok = est.first_stage_f is not None and est.first_stage_f >= sc.min_first_stage_f
+    # The GATE uses the robust effective F (Montiel Olea-Pflueger family),
+    # whose critical value is derived for an arbitrary clustered variance
+    # structure (Run 6, Phase 71). The long-standing Wald/K statistic is kept
+    # REPORTED next to it: it is a heuristic with no derived critical value
+    # here, so it informs but does not decide.
+    f_eff = est.effective_first_stage_f
+    f_ok = f_eff is not None and f_eff >= sc.min_effective_first_stage_f
+    heur = (
+        f"; reported heuristic Wald/K {est.first_stage_f:.1f} against 10"
+        if est.first_stage_f is not None
+        else ""
+    )
     gate(
         3,
         "first_stage_strength",
         f_ok,
         (
-            f"first-stage F {est.first_stage_f:.1f} against the {sc.min_first_stage_f} "
-            f"threshold (uncontrolled F {est.first_stage_f_uncontrolled:.1f})"
-            if est.first_stage_f is not None and est.first_stage_f_uncontrolled is not None
-            else "the first stage could not be computed"
+            f"robust effective F {f_eff:.1f} against the published "
+            f"{sc.min_effective_first_stage_f} critical value, over "
+            f"{est.n_clusters} independent clusters after absorbing "
+            f"{est.n_absorbed_parameters} fixed-effect parameters{heur}"
+            if f_eff is not None
+            else f"{est.effective_f_detail}{heur}"
         ),
     )
     if not f_ok:
-        f_txt = f"{est.first_stage_f:.1f}" if est.first_stage_f is not None else "n/a"
-        reasons.append(f"first-stage F {f_txt} below {sc.min_first_stage_f}")
+        f_txt = f"{f_eff:.1f}" if f_eff is not None else "not computable"
+        reasons.append(
+            f"robust effective first-stage F {f_txt} below {sc.min_effective_first_stage_f}"
+        )
         est.status = STATUS_DESCRIPTIVE
         est.status_reasons = reasons
         est.causal_status_reasons = gates
@@ -858,27 +1016,55 @@ def estimate_segment(
                 f"Anderson-Rubin set width {ar_width:.2f} exceeds "
                 f"{sc.ar_max_width_ratio}x the primary interval ({ci_width:.2f})"
             )
-    ar_detail = (
-        "the weak-instrument-robust set is bounded and agrees with the primary interval"
-        if est.ar_bounded
-        else (
-            "the weak-instrument-robust set is empty: the instruments jointly reject "
-            "every candidate elasticity, which is evidence of misspecification"
-            if est.ar_ci_low is None
-            else "the weak-instrument-robust set runs to the edge of the search range, "
-            "so it is reported as unbounded rather than compressed into an interval"
-        )
-    )
+    ar_detail = est.ar_detail or "the weak-instrument-robust set was not computed"
     ar_ok = bool(est.ar_bounded)
-    if ar_ok and ci_width is not None and est.ar_ci_low is not None and est.ar_ci_high is not None:
-        ar_ok = (est.ar_ci_high - est.ar_ci_low) <= sc.ar_max_width_ratio * ci_width
+    if ar_ok and ci_width is not None and est.ar_measure is not None:
+        # Compare the set's total accepted MEASURE (grid step included) with
+        # the primary interval, so a one-point set cannot read as width zero.
+        ar_ok = est.ar_measure <= sc.ar_max_width_ratio * ci_width
         if not ar_ok:
             ar_detail = (
-                f"the weak-instrument-robust set spans "
-                f"{est.ar_ci_high - est.ar_ci_low:.2f}, beyond {sc.ar_max_width_ratio}x "
-                f"the primary interval ({ci_width:.2f})"
+                f"the weak-instrument-robust set accepts {est.ar_measure:.2f} in total, "
+                f"beyond {sc.ar_max_width_ratio}x the primary interval ({ci_width:.2f})"
             )
     gate(8, "weak_instrument_robust_agreement", ar_ok, ar_detail)
+    if not ar_ok:
+        reasons.append(f"weak-instrument-robust set: {ar_detail}")
+    # An EMPTY robust set with two instruments is the cluster-robust
+    # overidentification test rejecting: the model is refused everywhere, so
+    # the status drops to descriptive rather than merely losing the top rung.
+    if est.ar_shape == AR_SHAPE_EMPTY:
+        est.status = STATUS_DESCRIPTIVE
+        est.status_reasons = reasons
+        est.causal_status_reasons = gates
+        est.estimand, est.estimand_bias_direction = estimand_for(
+            iv_ran=False, path_resolved=path.resolved
+        )
+        return est
+
+    # Anticipation: a REJECTION is direct evidence of an exclusion violation
+    # that the overidentification test cannot see, so it blocks. An
+    # inconclusive or unavailable result is reported as exactly that and does
+    # NOT block - the spec asks for the test to be added and reported, and a
+    # non-rejection of a low-power test is not evidence of exogeneity either
+    # way. The detectable bound is shown so nobody reads silence as proof.
+    # The criterion is a MATERIAL anticipation effect. A detected but immaterial
+    # one passes it, with the finding named in the detail: the engine's own
+    # materiality threshold is what decides, on both branches of the test. An
+    # inconclusive result is recorded as NOT EVALUATED rather than as a failure -
+    # the same situation as an overidentification test with one instrument, where
+    # the check could not speak. Recording it as a failure while the status stays
+    # causal would make the gate record contradict the status it explains.
+    gate(
+        9,
+        "no_material_anticipation_effect",
+        None
+        if est.lead_test_status in (LEAD_UNAVAILABLE, LEAD_INCONCLUSIVE)
+        else est.lead_test_status in (LEAD_PASSED, LEAD_IMMATERIAL),
+        est.lead_test_detail or "the anticipation test was not run",
+    )
+    if est.lead_test_status == LEAD_REJECTED:
+        reasons.append(f"anticipation detected: {est.lead_test_detail}")
 
     est.status = STATUS_CAUSAL if not reasons else STATUS_IV
     est.status_reasons = reasons
@@ -887,6 +1073,148 @@ def estimate_segment(
         iv_ran=True, path_resolved=path.resolved
     )
     return est
+
+
+def _lead_test(
+    pdf: pd.DataFrame,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    spec: ClusterSpec,
+    rules: Rules,
+    *,
+    use_control: bool,
+) -> LeadTest:
+    """Regress within-transformed log quantity on current, lagged and LEAD
+    instrument values and test the lead block jointly.
+
+    Inference is F(K*H, G-1): with a few dozen clusters a chi-square bar
+    over-rejects, and the rest of this estimator already uses t/F critical
+    values for the same reason.
+    """
+    sc = rules.sensitivity
+    h = sc.lead_test_horizon
+    df = pdf.copy()
+    df = df.sort_values(["pair", "month_idx"])
+    # ONE aggregate lead regressor rather than K*H separate ones. With a few
+    # dozen clusters a 4-restriction cluster-robust Wald over-rejects badly,
+    # and the individual leads are nearly collinear with the current and
+    # lagged values anyway (the instrument processes are AR(1)). Testing the
+    # combined future movement keeps one restriction, which the small-cluster
+    # F critical value can actually support.
+    lead_parts: list[str] = []
+    keep = ["log_qty", "pair", time_fe, *cluster_cols]
+    # Leads and lags are taken by CALENDAR month, not by row position: the panel
+    # is sparse, so a positional shift would silently reach past a gap and call
+    # a value from three months ahead "next month". One merge per offset carries
+    # every instrument at once - merging on (pair, month) is the expensive step
+    # here, so a two-instrument horizon-2 design does 3 merges, not 6.
+    for offset in (*range(1, h + 1), -1):
+        names = {c: (f"_{c}_lead{offset}" if offset > 0 else f"_{c}_lag1") for c in z_cols}
+        src = df[["pair", "month_idx", *z_cols]].rename(columns=names)
+        src["month_idx"] = src["month_idx"] - offset
+        df = df.merge(src, on=["pair", "month_idx"], how="left")
+        if offset > 0:
+            lead_parts.extend(names[c] for c in z_cols)
+    for c in z_cols:
+        keep += [c, f"_{c}_lag1"]
+    # ONE aggregate regressor, but a scale-free one: the instruments are
+    # different series with different variances, so a raw sum would weight
+    # whichever happens to be larger. Each lead is divided by its own standard
+    # deviation first, which makes the aggregate a direction rather than an
+    # arbitrary mixture.
+    scaled = []
+    for name in lead_parts:
+        sd = float(df[name].std())
+        scaled.append(df[name] / sd if np.isfinite(sd) and sd > 0 else df[name] * 0.0)
+    df["_z_lead_sum"] = sum(scaled[1:], scaled[0]) if scaled else 0.0
+    lead_names: list[str] = ["_z_lead_sum"]
+    if use_control and "log_mkt" in df.columns:
+        keep.append("log_mkt")
+    cols = [*dict.fromkeys([*keep, *lead_names, *lead_parts])]
+    n_positive = len(pdf)
+    df = df[cols].dropna()
+    n_rows = len(df)
+    # The guard counts RESIDUAL degrees of freedom, not rows. Requiring a row
+    # count alone let saturated designs through: the pair and time fixed effects
+    # can absorb more parameters than there are rows, at which point the
+    # residuals collapse to the rounding floor and any coefficient becomes an
+    # enormous Wald statistic. Measured on thin segments, that produced
+    # rejection rates of 8-30% with no anticipation present at all.
+    n_reg = sum(
+        1
+        for c in cols
+        if c not in ("log_qty", "pair", time_fe, *cluster_cols) and c not in lead_parts
+    )
+    n_absorbed_est = int(df["pair"].nunique()) + int(df[time_fe].nunique()) if n_rows else 0
+    residual_dof = n_rows - n_reg - n_absorbed_est
+    if (
+        n_rows < max(sc.min_observations, 50)
+        or df["pair"].nunique() < 5
+        or residual_dof < sc.lead_test_min_residual_dof
+    ):
+        return lead_test_from_moments(
+            wald=None,
+            coefficients=None,
+            std_errors=None,
+            dof_num=len(lead_names),
+            dof_den=0,
+            horizon=h,
+            n_rows=n_rows,
+            alpha=sc.lead_test_alpha,
+            meaningful_effect=sc.lead_test_meaningful_effect,
+            n_positive_rows=n_positive,
+            residual_dof=residual_dof,
+        )
+    # The sample lost its first and last periods, so the cluster spec is
+    # rebuilt on the rows that remain.
+    lead_spec = _make_cluster_spec(*(df[c].to_numpy() for c in cluster_cols))
+    reg_cols = [
+        c
+        for c in cols
+        if c not in ("log_qty", "pair", time_fe, *cluster_cols) and c not in lead_parts
+    ]
+    dm = _two_way_demean(df, ["log_qty", *reg_cols], "pair", time_fe)
+    y = dm["log_qty"].to_numpy()
+    x = dm[reg_cols].to_numpy()
+    beta, vcov = _cluster_ols(y, x, lead_spec, n_absorbed_est)
+    idx = [reg_cols.index(n) for n in lead_names]
+    sub_v = vcov[np.ix_(idx, idx)]
+    sub_b = beta[idx]
+    wald: float | None
+    try:
+        wald = float(sub_b @ np.linalg.pinv(sub_v) @ sub_b)
+    except np.linalg.LinAlgError:
+        wald = None
+    diag = np.diag(sub_v)
+    ses = np.sqrt(np.where(diag > 0, diag, np.nan))
+    if wald is None or not np.isfinite(wald) or not np.all(np.isfinite(ses)):
+        return lead_test_from_moments(
+            wald=None,
+            coefficients=None,
+            std_errors=None,
+            dof_num=len(lead_names),
+            dof_den=max(_spec_min_groups(lead_spec) - 1, 0),
+            horizon=h,
+            n_rows=n_rows,
+            alpha=sc.lead_test_alpha,
+            meaningful_effect=sc.lead_test_meaningful_effect,
+            n_positive_rows=n_positive,
+            residual_dof=residual_dof,
+        )
+    return lead_test_from_moments(
+        wald=wald,
+        coefficients=sub_b,
+        std_errors=ses,
+        dof_num=len(lead_names),
+        dof_den=max(_spec_min_groups(lead_spec) - 1, 0),
+        horizon=h,
+        n_rows=n_rows,
+        alpha=sc.lead_test_alpha,
+        meaningful_effect=sc.lead_test_meaningful_effect,
+        n_positive_rows=n_positive,
+        residual_dof=residual_dof,
+    )
 
 
 def _ppml(panel_seg: pl.DataFrame, rules: Rules) -> float | None:
@@ -969,3 +1297,44 @@ def run_sensitivity(
         market_control_source=market_control_source,
         market_control_grain=market_control_grain,
     ).estimates
+
+
+def annotate_placebo(estimates: pl.DataFrame, placebo: pl.DataFrame) -> pl.DataFrame:
+    """Attach the shuffled-instrument placebo verdict to each segment estimate.
+
+    The placebo suite runs after estimation, so this is an annotation rather
+    than part of the gate record. Segments with no placebo row keep
+    `placebo_not_run` and say so.
+    """
+    from margin_engine.sensitivity.real_validation import PLACEBO_NOMINAL_ALPHA
+
+    rows = {
+        int(r["segment"]): r
+        for r in placebo.filter(pl.col("test") == "shuffled_instrument").to_dicts()
+        if r.get("segment") is not None
+    }
+    statuses: list[str] = []
+    shares: list[float | None] = []
+    actuals: list[float | None] = []
+    details: list[str] = []
+    for seg in estimates["segment"].to_list():
+        row = rows.get(int(seg)) if seg is not None else None
+        share = row.get("share_significant") if row else None
+        actual = row.get("actual") if row else None
+        draws = row.get("n_draws") if row else None
+        status, detail = placebo_verdict(
+            float(share) if share is not None else None,
+            float(actual) if actual is not None else None,
+            n_draws=int(draws) if draws is not None else 0,
+            alpha=PLACEBO_NOMINAL_ALPHA,
+        )
+        statuses.append(status)
+        shares.append(float(share) if share is not None else None)
+        actuals.append(float(actual) if actual is not None else None)
+        details.append(detail)
+    return estimates.with_columns(
+        pl.Series("placebo_status", statuses, dtype=pl.String),
+        pl.Series("placebo_share_significant", shares, dtype=pl.Float64),
+        pl.Series("placebo_actual_p", actuals, dtype=pl.Float64),
+        pl.Series("placebo_detail", details, dtype=pl.String),
+    )

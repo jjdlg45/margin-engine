@@ -489,6 +489,157 @@ detects an invalid instrument only when the two instruments disagree.
 Exclusion restrictions remain economic assumptions that no statistical test
 fully proves.
 
+### Weak-instrument diagnostics (Run 6)
+
+Three diagnostics replaced statistics that were reported more confidently than
+they could be read.
+
+**Robust effective first-stage F.** The earlier statistic was a cluster-robust
+Wald statistic divided by the number of instruments. That is a reasonable
+heuristic, but it is not the quantity the published threshold belongs to, and
+it does not account for the parameters absorbed by the fixed-effect
+transformation. The statistic now reported is
+
+```text
+F_eff = pi' Z'Z pi / trace(V_pi Z'Z)        [dimensionless]
+```
+
+where `pi` is the within-transformed first-stage coefficient vector, `Z'Z` the
+instrument cross-product, and `V_pi` the clustered first-stage variance
+carrying the caller's degrees-of-freedom correction. Each estimate reports
+`F_eff`, the effective number of instruments
+`trace(V Z'Z)^2 / trace((V Z'Z)^2)` (how many instrument directions actually
+carry information, which can be below the nominal count), the number of
+absorbed fixed-effect parameters, and the number of independent clusters, so a
+reader can see how thin the segment was. The threshold for
+`causal_elasticity_supported` is the Montiel Olea-Pflueger 10% relative-bias
+critical value of 23.109; `iv_estimated_elasticity` keeps the rule-of-thumb
+minimum of 10.
+
+When the clustered variance is materially indefinite - which a
+Cameron-Gelbach-Miller two-way combination can produce, since it subtracts one
+sandwich from another - no strength statistic is computed at all. A positive
+trace over an indefinite variance yields a large and meaningless `F_eff`.
+Indefiniteness is judged relative to the matrix's own scale: an eigenvalue at
+the arithmetic rounding floor of a positive-semidefinite sandwich is noise, not
+a broken variance, and refusing it would withhold a usable statistic.
+
+**The weak-instrument-robust set is reported as a shape, not an interval.**
+Inverting the Anderson-Rubin test over a grid produces an acceptance *set*,
+which need not be a single interval. Compressing it to its lowest and highest
+accepted points describes a disconnected set as though it were connected, and
+an open-ended one as though it were bounded. Each estimate therefore reports
+which of five shapes it is - empty, a single point, one connected range, two or
+more separate ranges, or a set that reaches the edge of the searched range -
+together with the convex hull, the total measure of the accepted ranges (the
+gaps excluded), the number of components, and the rejected ranges between them.
+Two shapes are evidence *against* the model rather than precision in favour of
+it: an empty set means the instruments reject every candidate value searched,
+and a single-point set means they reject almost all of them. Both are reported
+as such and neither earns the causal status. A single point is given the
+measure of one grid step rather than zero width, because zero reads as "nothing
+is accepted" when the truth is "almost nothing is accepted". When the set
+touches a search bound the grid is widened once and re-inverted; if it still
+touches, the set is labeled open-ended. Where grid points had to be skipped
+because the variance there was not usable, the displayed set is marked as
+possibly narrower than the data support.
+
+**Anticipation (lead) test.** The overidentification test compares the two
+instruments against each other, so it cannot see a violation they share. One
+such shared violation is anticipation: if buyers see a cost or tariff movement
+coming and shift purchases before it lands, future instrument values predict
+current volume, and the exclusion restriction fails in a way no
+overidentification test detects. The test regresses within-transformed log
+volume on the sum of the next `lead_test_horizon` periods' instrument values
+(a single aggregate restriction, which has materially more power here than one
+coefficient per lead period) and reports one of three outcomes:
+
+| Outcome | Meaning |
+|---|---|
+| Rejected | Future instrument movements predict current volume by a margin the engine treats as material. This blocks the causal status. |
+| Detected but immaterial | Future movements do predict current volume, but every effect the interval admits is below the material threshold. Reported, and does not block. |
+| Passed | No effect detected, and the interval is tight enough to rule out a material one. |
+| Inconclusive | No effect detected, but the interval still admits a material one. Reported with the smallest effect the test could have detected, and recorded in the gate list as not evaluated rather than as a pass - the same treatment an overidentification test gets when there is only one instrument. |
+
+**Materiality governs both branches.** An earlier version compared only the
+non-rejection against the material threshold and rejected on significance
+alone. On a panel of tens of thousands of rows this test resolves effects two
+orders of magnitude below what the engine itself calls material, so that
+asymmetry let a coefficient of -0.004 with an interval of [-0.008, -0.000]
+print "anticipation detected, an exclusion violation the overidentification
+test cannot see" beside an interval that ruled the channel out, and move a
+segment's status on it. The threshold is now applied on both sides. Its units
+are log-volume per unit of the aggregate lead regressor, where one unit is one
+standard deviation of a single lead; for scale, the entire contemporaneous
+price channel is about 0.08 in those units on the demo world, so the previous
+default of 0.50 was roughly six times the whole effect the instruments
+identify and made the inconclusive verdict unreachable. The default is 0.05.
+
+**Degrees of freedom, not row count.** The test is skipped unless the
+regression has residual degrees of freedom to spare
+(`lead_test_min_residual_dof`, default 30). A row-count floor alone let
+saturated designs through: pair and period fixed effects can absorb more
+parameters than there are rows, at which point the residuals collapse to the
+arithmetic rounding floor and any coefficient becomes an enormous test
+statistic. Measured on thin segments, that produced rejection rates of 8 to 30
+per cent with no anticipation present at all. The same defect had a second
+source in the clustered variance estimator, which switched its small-sample
+correction off exactly when the design was saturated, and whose guard against
+a non-positive Cameron-Gelbach-Miller variance was reachable only with a
+single regressor; both are fixed, and an inestimable variance is now reported
+as infinite so every gate reading it fails closed.
+
+**What the sample is.** The test needs an unbroken run of purchase months
+around each observation, so it runs on frequent repeat buyers rather than on
+the whole estimation sample - roughly half the positive rows at the demo
+scale, and far less in a long-tail segment. It also runs on positive-quantity
+rows only, so anticipation expressed as holding off from buying altogether is
+invisible to it. Every verdict states the rows used, the rows available and
+the degrees of freedom left, so a pass is read for what it covers.
+
+The third outcome is the point of the design. A non-rejection from a test with
+no power is not evidence of exogeneity, so it is not reported as one. The
+detectable bound is compared against `lead_test_meaningful_effect`
+(default 0.50 in log-volume units). Inference uses an F distribution on the
+cluster count rather than chi-square, which is strictly more conservative at
+the roughly two dozen clusters these panels have. The test addresses timing
+only: a contemporaneous violation shared by both instruments stays invisible to
+it, exactly as it does to the overidentification test.
+
+Two construction details matter. Leads are taken by calendar month, not by row
+position: the panel is sparse, so a positional shift would reach past a gap and
+treat a value three months ahead as next month's. And the aggregate regressor
+divides each lead by its own standard deviation before summing, because the two
+instruments are different series with different variances and a raw sum would
+weight whichever happened to be larger.
+
+**Shuffled-instrument placebo.** The placebo replaces the instruments with
+copies shuffled within period and re-estimates. Under the null that the
+inference is correctly sized, each draw rejects with probability 0.05, so the
+number of rejections across draws is Binomial(`placebo_draws`, 0.05) and is
+read as a binomial tail probability rather than as a raw share. It has the same
+three outcomes as the anticipation test, for the same reason: at ten draws, two
+rejections has probability 0.09 under a correctly sized test, so reading it as
+over-rejection would report sampling noise as a finding. A non-rejection
+reports the smallest share the draw count could have flagged - at ten draws
+that is 30%, so ten draws cannot clear a design, only fail to condemn it. The
+verdict qualifies the *inference*, not the instruments' validity: relevance is
+the first-stage statistic's question, and the real reduced-form p-value appears
+beside it only as context. It is informational and never a gate, because it
+requires the validation run, and a gate reading "not evaluated" in the default
+path would withdraw every causal status.
+
+**Cross-price first stage.** With two endogenous prices in one equation, a
+marginal first-stage F answers "do the instruments move this price?" when the
+question that matters is "do they move this price independently of the other
+one?". Two industry-wide cost instruments can move both prices strongly and
+still fail to separate them. Cross-price estimates therefore report the
+Sanderson-Windmeijer conditional statistic: the target price is residualized
+against the other endogenous price (using the instruments to form that
+relationship) and the effective F above is computed on what is left. Both
+statistics are reported so the gap between them is visible, and the conditional
+one decides the status.
+
 ## 8. Opportunity and scenarios
 
 Three levels, never summed. Units: prices and gaps are cents per normalized

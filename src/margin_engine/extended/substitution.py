@@ -29,6 +29,10 @@ from margin_engine.sensitivity.estimate import (
     _cluster_codes,
     _cluster_meat,
 )
+from margin_engine.sensitivity.weak_iv import (
+    effective_first_stage_f,
+    sanderson_windmeijer_residual,
+)
 
 STATUS_CROSS = "iv_estimated_cross_elasticity"
 STATUS_CROSS_CAUSAL = "causal_cross_elasticity_supported"
@@ -45,6 +49,11 @@ class CrossEstimate:
     cross_se: float | None = None
     own_elasticity: float | None = None
     min_first_stage_f: float | None = None
+    min_conditional_effective_f: float | None = None
+    effective_k: float | None = None
+    n_absorbed_parameters: int | None = None
+    n_clusters: int | None = None
+    first_stage_detail: str = ""
     status: str = STATUS_INSUFFICIENT
     reasons: str = ""
 
@@ -160,23 +169,53 @@ def estimate_cross_effects(panel: pl.DataFrame, groups: pl.DataFrame, rules: Rul
             bread = np.linalg.pinv(xtx)
             vcov = bread @ meat @ bread.T * n_g / max(n_g - 1, 1)
             est.cross_se = float(np.sqrt(max(vcov[1, 1], 0)))
-            # First-stage strength per endogenous regressor (cluster-robust F).
-            fs = []
+            # First-stage strength per endogenous regressor. Two statistics are
+            # computed and both are reported: the marginal cluster-robust Wald
+            # F, which asks whether the instruments move each price, and the
+            # Sanderson-Windmeijer conditional effective F (Run 6, Phase 71),
+            # which asks whether they move each price INDEPENDENTLY of the
+            # other. Only the second one speaks to whether the cross effect is
+            # separately identified, so it is the one that gates the status.
+            n_absorbed = both["pair"].n_unique() + 2  # pair FE + two seasonal terms
+            fs: list[float] = []
+            cond: list[float] = []
             for j in range(2):
                 bz = zz_inv @ (z.T @ x[:, j])
-                resid = x[:, j] - z @ bz
-                m = _cluster_meat(z, resid, codes, n_g)
+                resid_j = x[:, j] - z @ bz
+                m = _cluster_meat(z, resid_j, codes, n_g)
                 v = zz_inv @ m @ zz_inv * n_g / max(n_g - 1, 1)
                 try:
                     f = float(bz @ np.linalg.pinv(v) @ bz / z.shape[1])
                 except np.linalg.LinAlgError:
                     f = 0.0
-                fs.append(f)
+                fs.append(0.0 if not np.isfinite(f) else f)
+                sw = sanderson_windmeijer_residual(x[:, j], x[:, 1 - j], z)
+                if sw is None:
+                    cond.append(0.0)
+                    continue
+                bz_sw = zz_inv @ (z.T @ sw)
+                m_sw = _cluster_meat(z, sw - z @ bz_sw, codes, n_g)
+                v_sw = zz_inv @ m_sw @ zz_inv * n_g / max(n_g - 1, 1)
+                eff = effective_first_stage_f(sw, z, v_sw, n_absorbed=n_absorbed, n_clusters=n_g)
+                cond.append(0.0 if eff.f_eff is None else eff.f_eff)
+                # Report the detail for whichever regressor is the weaker one,
+                # since that is the value the gate reads.
+                if j == 0 or cond[j] < cond[0]:
+                    est.first_stage_detail = eff.detail
+                    est.effective_k = eff.k_eff
             est.min_first_stage_f = min(fs)
+            est.min_conditional_effective_f = min(cond)
+            est.n_absorbed_parameters = n_absorbed
+            est.n_clusters = n_g
             reasons = []
-            if est.min_first_stage_f < sc.min_first_stage_f:
+            if est.min_conditional_effective_f < sc.min_first_stage_f:
                 est.status = STATUS_DESCRIPTIVE
-                est.reasons = f"weak first stage (min F {est.min_first_stage_f:.1f})"
+                est.reasons = (
+                    "the instruments do not separate the two prices strongly enough "
+                    f"(conditional effective F {est.min_conditional_effective_f:.1f} "
+                    f"against a minimum of {sc.min_first_stage_f:.0f}; the marginal F "
+                    f"was {est.min_first_stage_f:.1f})"
+                )
                 out.append(est.to_dict())
                 continue
             ci_width = 2 * 1.96 * est.cross_se

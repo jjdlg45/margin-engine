@@ -562,6 +562,31 @@ class SensitivityConfig(StrictModel):
     # Only NEAR-EXACT restatement of an instrument is refused: controlling for
     # it would remove the identifying variation rather than a confound.
     market_control_restatement_r2: float = Field(default=0.99, gt=0, le=1)
+    # Robust weak-instrument diagnostics (Run 6, Phase 71). The effective-F
+    # bar is the PUBLISHED Montiel Olea-Pflueger simplified critical value at
+    # the 10% worst-case-bias threshold; the classical F >= 10 above stays a
+    # REPORTED heuristic with no derived critical value for this variance
+    # structure. Only this bar gates.
+    min_effective_first_stage_f: float = Field(default=23.109, gt=0)
+    # Anticipation (lead) test: how many future periods to test, the level,
+    # and the coefficient magnitude treated as economically material. An
+    # interval that cannot exclude that magnitude is INCONCLUSIVE, because a
+    # non-rejection of a low-power test is not evidence of exogeneity.
+    # Default horizon 2: pre-buying ahead of an announced tariff typically
+    # runs two to three months, against which a single lead has little power.
+    lead_test_horizon: int = Field(default=2, ge=1)
+    lead_test_alpha: float = Field(default=0.05, gt=0, lt=1)
+    # In log-volume units per unit of the aggregate lead regressor, where one
+    # unit is one standard deviation of a single lead. The whole contemporaneous
+    # price channel is about 0.08 in those units on the demo world, so the old
+    # default of 0.50 was roughly six times the entire effect the instruments
+    # identify: it made the underpowered verdict unreachable and let a
+    # statistically significant but immaterial effect block the causal status.
+    lead_test_meaningful_effect: float = Field(default=0.05, gt=0)
+    # Minimum residual degrees of freedom for the anticipation test. Row count
+    # alone let saturated designs through, where the fixed effects absorb more
+    # parameters than there are rows.
+    lead_test_min_residual_dof: int = Field(default=30, ge=1)
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)

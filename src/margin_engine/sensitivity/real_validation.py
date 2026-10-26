@@ -38,6 +38,11 @@ from margin_engine.sensitivity.estimate import (
     estimate_segment,
 )
 
+# The significance level the shuffled-instrument placebo counts rejections
+# at. The verdict that reads those counts uses the same number, so the two
+# cannot drift apart.
+PLACEBO_NOMINAL_ALPHA = 0.05
+
 
 @dataclass
 class RealValidationResult:
@@ -371,7 +376,7 @@ def placebo_tests(
                         "share_strong_first_stage": float(
                             np.mean(np.array(fstats) >= sc.min_first_stage_f)
                         ),
-                        "share_significant": float(np.mean(arr < 0.05)),
+                        "share_significant": float(np.mean(arr < PLACEBO_NOMINAL_ALPHA)),
                     }
                 )
 

@@ -3734,3 +3734,304 @@ vitest 22/22; vite build 0; Playwright 225 passed 3 skipped (exit 0) after
 re-baselining 8 snapshots on the three pages whose content deliberately
 changed (sensitivity gains the gate checklist; opportunity and actions carry
 the new expected-change numbers). validation.json regenerated.
+
+## Phase 71 — Robust weak-instrument diagnostics (2026-10-26, Run 6 branch)
+
+Findings 4 and 13. Four statistics were reported more confidently than they
+could be read. Each now says what it measures, and the cases it cannot speak to
+are named rather than implied. New module
+`src/margin_engine/sensitivity/weak_iv.py` holds all four, tested in isolation.
+
+1. **Robust effective first-stage F.** The gate used a cluster-robust Wald
+   statistic divided by the instrument count against the rule-of-thumb 10. That
+   has no derived critical value for this variance structure and ignored the
+   parameters the within transformation absorbs. The gate now uses
+   `F_eff = pi' Z'Z pi / trace(V_pi Z'Z)` against the Montiel Olea-Pflueger 10%
+   relative-bias value of 23.109 (`min_effective_first_stage_f`), with the
+   heuristic kept reported beside it. Each estimate also carries the effective
+   instrument count `trace(VZZ)^2 / trace((VZZ)^2)` — how many instrument
+   directions actually carry information — plus the absorbed-parameter count
+   and the cluster count, so a reader can see how thin the segment was.
+   Demo: F_eff 131.8, 1034.8 and 1278.9 against the 23.109 bar, against the
+   heuristic's 90.1, 1385.7 and 1539.9 on the same segments — the heuristic
+   reads both higher and lower than the corrected statistic, so it was not a
+   conservative stand-in. 24 clusters; 230 to 844 absorbed parameters; the
+   effective instrument count is 1.50 to 1.93 against a nominal 2, so one
+   instrument direction is already carrying most of the information.
+
+2. **The weak-instrument-robust set is reported as a shape, not an interval.**
+   Inverting the Anderson-Rubin test over a grid gives an acceptance set that
+   need not be connected or bounded; compressing it to its lowest and highest
+   accepted points described a disconnected set as connected and an open-ended
+   one as bounded. Five shapes are distinguished — empty, single point, one
+   range, two or more ranges, reaches the search bound — with the convex hull,
+   the total measure of the accepted ranges (gaps excluded), the component
+   count, and the rejected ranges between them. An empty set and a single-point
+   set are evidence *against* the model, not precision in its favour, and
+   neither earns the causal status. A single point gets the measure of one grid
+   step rather than zero width, because zero reads as "nothing accepted" when
+   the truth is "almost nothing accepted". Touching a search bound widens the
+   grid once and re-inverts before the set is labeled open-ended. Gate 8
+   compares the measure, not the hull, so a disconnected set is not credited
+   with the gaps it rejects. Demo: all three segments one connected range,
+   measures 0.34 to 0.78.
+
+3. **Anticipation (lead) test.** The overidentification test compares the
+   instruments against each other and cannot see a violation they share.
+   Anticipation is one such violation: if buyers see a cost or tariff movement
+   coming, future instrument values predict current volume. The test regresses
+   within-transformed log volume on the standardized sum of the next
+   `lead_test_horizon` periods' instrument values, controlling for current and
+   lagged values, and reports one of five outcomes: rejected (material),
+   detected but immaterial, passed, inconclusive, or not run. Inference uses
+   F on the cluster count rather than chi-square, strictly more conservative at
+   roughly two dozen clusters.
+
+4. **Shuffled-instrument placebo, wired to the estimate it qualifies.** The
+   Phase 27.4 placebo existed but reached only the validation appendix, and
+   `SegmentEstimate.placebo_p` was a declared field that was never populated.
+   The verdict now travels with each segment estimate, read as a binomial-tail
+   test on the rejection count — under a correctly sized test that count is
+   Binomial(`placebo_draws`, 0.05) — with the same three-way structure as the
+   lead test. It qualifies the *inference*, not the instruments' validity, and
+   is informational rather than a gate: it needs the validation run, and a gate
+   reading "not evaluated" in the default path would withdraw every causal
+   status.
+
+5. **The robust standard applied to cross-price (Sanderson-Windmeijer).** With
+   two endogenous prices in one equation, a marginal first-stage F answers "do
+   the instruments move this price?" when the question is "do they move it
+   independently of the other one?" — two industry-wide cost instruments can
+   move both prices strongly and still fail to separate them. Cross-price
+   estimates now report the Sanderson-Windmeijer conditional statistic (target
+   price residualized against the other endogenous price using the instruments,
+   then the effective F on what is left). Both statistics are reported and the
+   conditional one gates the status. The two disagree on 3 of 20 pairs;
+   13 pairs reach the instrumented status, direction 12 of 13 positive as
+   planted.
+
+The spec's two permanent interpretations - that the overidentification test
+cannot detect a violation the instruments share, and that the
+Anderson-Rubin set stays valid under weak instruments but cannot repair a wrong
+exclusion story - are stated once at the top of the per-segment list, always
+visible, and attached as the tooltip on each of the two figures they qualify.
+They were first written inside the per-segment diagnostics panel, which is
+collapsed by default: a caveat a reader has to open is neither permanent nor a
+tooltip.
+
+### Five bugs found while measuring, four of them pre-existing
+
+- **The clustered variance estimator switched its small-sample correction off
+  exactly when it was needed.** `_cluster_ols` computed
+  `dof = ... if n_g > 1 and n > k_total else 1.0`, so a saturated design —
+  where the fixed effects absorb more parameters than there are rows — silently
+  got `dof = 1.0` and returned a variance of 1e-12 to 1e-24, which `pinv`
+  inverts without complaint and which turns any coefficient into an enormous
+  Wald statistic. An inestimable variance is now reported as infinite, so every
+  gate reading it fails closed. This estimator also carries the headline
+  standard errors, not only the lead test.
+- **The guard against a non-positive Cameron-Gelbach-Miller variance was
+  reachable only with a single regressor** (`if k == 1 and ...`). The two-way
+  combination subtracts one sandwich from another and can leave a non-positive
+  diagonal entry at any number of regressors; the anticipation test runs at
+  five or six. The guard now applies per entry at any `k`.
+- **The lead test's sample guard counted rows, not degrees of freedom.** A row
+  floor let saturated designs through. An independent Monte Carlo matched to
+  this generator measured 8 to 30 per cent rejection under the pure null in
+  that band, and the engine reaches it: on well-identified seeds the long-tail
+  segment produced lead samples of 23 and 26 rows with an implied coefficient
+  of -1.6e14. The guard now requires residual degrees of freedom
+  (`lead_test_min_residual_dof`, default 30).
+- **The materiality threshold was applied to only one branch of the lead test,
+  and was set far off the scale it governs.** Rejection fired on `p < alpha`
+  alone while non-rejection was judged against `lead_test_meaningful_effect`.
+  On a panel of tens of thousands of rows the test resolves effects two orders
+  of magnitude below what the engine calls material, so the asymmetry let a
+  coefficient of -0.004 with an interval of [-0.008, -0.000] print "anticipation
+  detected, an exclusion violation the overidentification test cannot see"
+  beside an interval that ruled the channel out — and move a segment's status
+  on it. Worse, the threshold's units are log-volume per standard deviation of
+  one lead, where the entire contemporaneous price channel is about 0.08, so
+  the default of 0.50 was roughly six times the whole effect the instruments
+  identify: the inconclusive verdict was unreachable, and measured power
+  against an anticipation effect worth 42 per cent of the price channel was
+  only 33 per cent, reported as a pass. The threshold now governs both branches
+  and defaults to 0.05, and a significant but immaterial finding is reported as
+  `lead_test_immaterial` without blocking. Gate 9 is renamed
+  `no_material_anticipation_effect` to match what it tests.
+- **The positive-definiteness guard on the effective F used a strict
+  `min_eig <= 0`** and so refused 8 of 20 legitimate cross-price first stages,
+  reporting them as conditional F 0.0, which then read as "weak instruments".
+  Indefiniteness is now judged relative to the matrix's own scale: an
+  eigenvalue at the arithmetic rounding floor of a positive-semidefinite
+  sandwich is noise, not a broken variance. (Introduced in this phase.)
+
+Two further construction defects in the lead test, both fixed: leads were taken
+by positional `shift(-k)`, so on this sparse panel a lead could reach past a gap
+and treat a value three months ahead as next month's; and the aggregate
+regressor summed raw lead values across two instruments with different
+variances, weighting whichever happened to be larger. Leads are now taken by
+calendar month and each is divided by its own standard deviation before summing.
+
+### What the lead test does and does not cover
+
+It runs on positive-quantity rows with an unbroken run of months around them —
+about half the positive rows at demo scale, and 23 of 9004 in a long-tail
+segment — so it measures frequent repeat buyers, not the population whose
+elasticity it gates, and anticipation expressed as holding off from buying
+altogether is invisible to it. Power is also a function of the horizon: the same
+planted anticipation at lead 1 rejected 115 of 150 times at horizon 2 and 8 of
+150 at horizon 4, since the equal-weight aggregate dilutes across more leads and
+the sample shrinks. The single aggregate restriction is a valid test of one
+scalar functional of the null, not of all of its restrictions, and is blind to
+patterns orthogonal to it (opposite signs across instruments or horizons). Every
+verdict now states the rows used, the rows available and the degrees of freedom
+left; the limitations are in `docs/methodology.md`.
+
+### Measured outcomes
+
+Anticipation test on `well_identified` worlds, which plant no anticipation
+channel at all (`synth/demand.py` drives demand from contemporaneous terms
+only, so every rejection there is a false positive by construction): 3 seeds x 6
+planted segments = 18 segment-seeds, **0 rejected**, 15 passed, 3 not run,
+p-values spread 0.07 to 0.99 (roughly uniform, as a correctly sized test
+produces under the null) and detectable bounds 0.0016 to 0.0067 — two orders of
+magnitude inside the 0.05 material bar, so the passes are genuine passes rather
+than low-power silence. 11 of 18 segments reach causal support.
+
+An earlier version of this test, before the fixes above, rejected 2 of 4
+segments in the same kind of world at detectable bounds of 5 to 131 — i.e. with
+no power whatsoever.
+
+Demo world: segment 6 keeps `causal_elasticity_supported`. Its anticipation
+test is significant (p = 0.0376) but the largest effect its interval admits is
+0.009 against the 0.05 bar, so it reads "detected but immaterial" and does not
+block. Segment 23 passes (p = 0.2592, bound 0.0075); segment 26's test cannot
+run. The placebo reads underpowered for segments 6 and 23 (2 of 10 shuffled
+draws significant — ordinary sampling noise at that draw count, where only 3 of
+10 or more could have been flagged) and **over-rejects for segment 26** (4 of 10
+draws, probability 0.001 under a correctly sized test), meaning that segment's
+standard errors are too small. Segment 26 already carried only
+`iv_estimated_elasticity`, so no status moved, but the finding is now visible
+beside the estimate instead of buried in an appendix.
+
+Demo dollar headlines are unchanged from Phase 70: expected contribution change
+4,993,815 cents, pocket gross profit basis 4,963,644 cents, causal segments 1 of
+3. The gate got stricter without moving the numbers, because the demo's
+diagnostics clear the stronger bars.
+
+### Decision recorded
+
+When the first version of the calendar-lead fix made the test powerful enough to
+reject on the demo, segment 6 lost its causal status and the demo would have
+shipped with no causal segment at all. The fix was **not** to loosen the test or
+to add a per-world exception. Two independent reviews (an econometric
+specification read with its own Monte Carlo, and an adversarial read instructed
+to defend the rejection) converged on the actual defect: the rejection branch
+had no materiality floor while the non-rejection branch had one. Applying the
+engine's own threshold symmetrically restores the status *and* keeps the finding
+reported. The test was left strictly more powerful than before, and its
+false-rejection rate on worlds with nothing planted is 0 of 18.
+
+### Tests added
+
+`tests/test_weak_iv.py` (33): effective F against its homoskedastic reduction,
+scale invariance in the instruments, refusal of an indefinite and of an
+inestimable variance, monotonicity in instrument strength, absorbed-parameter
+reporting, and the one derived critical value; the five Anderson-Rubin shapes
+including an empty set read as misspecification, a single point given one grid
+step of measure rather than zero, the rejected gap in a disconnected set, edge
+contact, and skipped grid points making the display unreliable; the lead test's
+five outcomes, F rather than chi-square inference, horizon reporting, the
+materiality floor on both branches, and a precision sweep proving a sub-threshold
+effect can never read as a material violation at any sample size; the
+Sanderson-Windmeijer conditional statistic collapsing when two loading vectors
+are parallel while the marginal statistic barely moves; the binomial placebo
+verdict including 2-of-10 as noise, 4-of-10 as over-rejection, 300 draws
+actually clearing the inference, and monotonicity in the rejection count; and
+the two `_cluster_ols` guards — a saturated design reporting no variance rather
+than a tiny one, and a non-positive clustered variance caught above one
+regressor. `tests/test_substitution.py` gains a test that the conditional
+statistic, not the marginal one, is what gates the cross-price status.
+
+### A stale snapshot inherited from Phase 70
+
+The Playwright run surfaced four failing snapshots on the Data & methodology
+page that Phase 71 did not cause: the committed images still showed the
+pre-Phase-70 validation figures (elasticity P90 0.051 and worst 0.110, CI
+coverage 278/300 = 92.7%, "Causal support reachable: Reached") while the page
+correctly rendered the committed `docs/validation.json` (P90 0.077, worst 0.095,
+284/300 = 94.7%, and the new competitor-price path row). Phase 70 regenerated
+validation.json *after* its Playwright gate had run and re-baselined only the
+sensitivity, opportunity and actions pages, so it committed an image that no
+longer matched its own data. Recorded here rather than quietly fixed: the gate
+did its job, a phase report claimed a pass the artifacts did not support, and
+the ordering that caused it - regenerate measurements, then re-export, then
+re-baseline, then gate - is the ordering this phase followed.
+
+The two remaining snapshot changes are Phase 71's own: the cross-price table
+gained the conditional first-stage column, which wraps at 375 px and so changes
+the modules page on mobile only.
+
+### Performance: a 2.4% regression found, fixed, and verified
+
+The regenerated validation run reported the Run-1 performance check FAILED:
+811,253 lines in 125.8s against a 120s bar, where the committed figure was
+111.0s. Rather than accept or dismiss it, the check was measured A/B - current
+tree against the Phase 70 commit in a git worktree, same interpreter and
+dependency set, three runs each, interleaved so thermal drift could not favour
+one side.
+
+| Run | Current, before fix | Current, after fix | Baseline (Phase 70 code) |
+|---|---|---|---|
+| 1 | 122.4s | 121.6s | 119.5s / 118.4s |
+| 2 | 118.1s | 117.6s | 118.9s / 119.0s |
+| 3 | 123.5s | 119.0s | 120.3s / 118.3s |
+| median | 122.4s | 119.0s | 119.5s / 118.4s |
+
+(The baseline column shows both A/B rounds; it is unchanged code measured twice.)
+
+Two separate facts came out of it.
+
+**The committed 111.0s does not reproduce on this machine.** Unchanged Phase 70
+code measures 118.3 to 120.3s today. About 8s of the original 14.8s gap is the
+machine, not the code. The performance row records the hardware but held a
+single measurement with no spread, so it could not distinguish a code
+regression from a slower machine - which is exactly the confusion it caused
+here. The figure now committed, 119.0s, is likewise a single draw from a
+distribution whose spread is roughly 4s on this hardware.
+
+**Phase 71 did add a real cost of about 2.9s (2.4%)**, and that part was mine.
+The anticipation test built its lead and lag columns with one merge on
+(pair, month) per instrument per offset - six merges for a two-instrument
+horizon-2 design - where one merge per offset carrying both instruments is
+identical in semantics and does three. After the fix the gap to baseline is
+0.6s at the median, inside the run-to-run spread, and the check passes at
+119.0s. No target was loosened and no world was shrunk.
+
+Noted for the owner, not acted on: the harness measures a world of 811,253
+lines against a target stated as "500k+ lines under 2 minutes", while its own
+comment says the world is meant to be "~600-700k lines, measured at that scale,
+not at multiples of it". The generated world has drifted about 25% above its
+documented intent at some earlier point, which is why a 120s bar is now decided
+by a few seconds of ambient variation. Shrinking the world would make the check
+pass by making it easier, so it is left alone and recorded instead.
+
+### validation.json
+
+Regenerated in 3715s; 35 rows, 1 failing -
+only the pre-existing Scale (10M-line) KNOWN GAP, unchanged. No gated target
+moved. Two informational rows added:
+
+- **Anticipation (lead) test false-rejection rate**: 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes
+- **Robust first-stage statistic and robust-set shape**: Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86
+
+### Checks
+
+ruff check 0; ruff format clean; mypy src api 0 (strict, 91 files); full pytest 579 passed
+2 deselected (exit 0, 1800s); tsc 0; vitest 22/22; vite build 0; Playwright 225 passed 3 skipped
+(exit 0) after re-baselining 10 snapshots on the three pages whose content
+deliberately changed - sensitivity (the new robust diagnostics and the two
+permanent interpretations), modules on mobile (the conditional first-stage
+column), and methodology (the regenerated validation table, four of whose
+images were already stale from Phase 70).

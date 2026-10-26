@@ -55,7 +55,7 @@ from margin_engine.segment.trees import (
     fit_margin_driver_tree,
     prepare_segmentation_frame,
 )
-from margin_engine.sensitivity.estimate import run_sensitivity_full
+from margin_engine.sensitivity.estimate import annotate_placebo, run_sensitivity_full
 from margin_engine.sensitivity.market_control import select_market_index
 
 
@@ -532,6 +532,11 @@ def run_full(
         res.notes.extend(real_val.notes)
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
+        # The shuffled-instrument placebo speaks to whether this design's
+        # inference is correctly sized, which is read beside the elasticity it
+        # qualifies rather than only in the validation appendix (Run 6, Phase
+        # 71). It runs after estimation, so it is annotated on, never a gate.
+        sens = annotate_placebo(sens, real_val.placebo)
     else:
         res.notes.append(
             "real-data validation OFF: disabled in config"

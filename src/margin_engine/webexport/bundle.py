@@ -238,6 +238,30 @@ class SensitivitySegment(BaseModel):
     n_identified_instruments: int | None = None
     robustness_n_specifications: int | None = None
     robustness_excluded_weak: str | None = None
+    # Run 6, Phase 71: the robust first-stage statistic and the shape of the
+    # weak-instrument-robust set (a HULL, not a confidence interval).
+    effective_first_stage_f: float | None = None
+    effective_k: float | None = None
+    n_absorbed_parameters: int | None = None
+    n_clusters: int | None = None
+    effective_f_detail: str | None = None
+    ar_shape: str | None = None
+    ar_hull_lo: float | None = None
+    ar_hull_hi: float | None = None
+    ar_measure: float | None = None
+    ar_n_components: int | None = None
+    ar_display_reliable: bool | None = None
+    ar_detail: str | None = None
+    lead_test_status: str | None = None
+    lead_test_p: float | None = None
+    lead_test_horizon: int | None = None
+    lead_test_bound: float | None = None
+    lead_test_detail: str | None = None
+    # Shuffled-instrument placebo, annotated when the validation suite has run.
+    placebo_status: str = "placebo_not_run"
+    placebo_share_significant: float | None = None
+    placebo_actual_p: float | None = None
+    placebo_detail: str | None = None
     causal_gates: list[CausalGate] = Field(default_factory=list)
     status: str
     status_reasons: str
@@ -370,6 +394,14 @@ class CrossPriceEstimate(BaseModel):
     cross_se: float | None
     status: str
     reasons: str
+    # Both first-stage statistics travel with the estimate: the marginal F says
+    # the instruments move each price, the conditional one says they move one
+    # price independently of the other. Only the second gates the status.
+    marginal_first_stage_f: float | None = None
+    conditional_effective_f: float | None = None
+    n_clusters: int | None = None
+    n_absorbed_parameters: int | None = None
+    first_stage_detail: str = ""
 
 
 class InventorySection(BaseModel):

@@ -556,6 +556,27 @@ def build_bundle(
                 n_identified_instruments=r.get("n_identified_instruments"),
                 robustness_n_specifications=r.get("robustness_n_specifications"),
                 robustness_excluded_weak=r.get("robustness_excluded_weak") or None,
+                effective_first_stage_f=_r(r.get("effective_first_stage_f")),
+                effective_k=_r(r.get("effective_k")),
+                n_absorbed_parameters=r.get("n_absorbed_parameters"),
+                n_clusters=r.get("n_clusters"),
+                effective_f_detail=r.get("effective_f_detail") or None,
+                ar_shape=r.get("ar_shape"),
+                ar_hull_lo=_r(r.get("ar_hull_lo")),
+                ar_hull_hi=_r(r.get("ar_hull_hi")),
+                ar_measure=_r(r.get("ar_measure")),
+                ar_n_components=r.get("ar_n_components"),
+                ar_display_reliable=r.get("ar_display_reliable"),
+                ar_detail=r.get("ar_detail") or None,
+                lead_test_status=r.get("lead_test_status"),
+                lead_test_p=_r(r.get("lead_test_p")),
+                lead_test_horizon=r.get("lead_test_horizon"),
+                lead_test_bound=_r(r.get("lead_test_bound")),
+                lead_test_detail=r.get("lead_test_detail") or None,
+                placebo_status=str(r.get("placebo_status") or "placebo_not_run"),
+                placebo_share_significant=_r(r.get("placebo_share_significant")),
+                placebo_actual_p=_r(r.get("placebo_actual_p")),
+                placebo_detail=r.get("placebo_detail") or None,
                 causal_gates=[
                     CausalGate(
                         order=int(g["gate_order"]),
@@ -1116,6 +1137,15 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
                 cross_se=_r(r.get("cross_se")),
                 status=str(r["status"]),
                 reasons=str(r.get("reasons") or ""),
+                marginal_first_stage_f=_r(r.get("min_first_stage_f")),
+                conditional_effective_f=_r(r.get("min_conditional_effective_f")),
+                n_clusters=_i(r["n_clusters"]) if r.get("n_clusters") is not None else None,
+                n_absorbed_parameters=(
+                    _i(r["n_absorbed_parameters"])
+                    if r.get("n_absorbed_parameters") is not None
+                    else None
+                ),
+                first_stage_detail=str(r.get("first_stage_detail") or ""),
             )
             for r in res.cross_estimates.sort(["group_id", "item_a", "item_b"]).to_dicts()
         ]

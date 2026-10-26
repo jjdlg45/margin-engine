@@ -771,6 +771,18 @@
   },
   "CrossPriceEstimate": {
    "properties": {
+    "conditional_effective_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Conditional Effective F"
+    },
     "cross_elasticity": {
      "anyOf": [
       {
@@ -793,6 +805,11 @@
      ],
      "title": "Cross Se"
     },
+    "first_stage_detail": {
+     "default": "",
+     "title": "First Stage Detail",
+     "type": "string"
+    },
     "group_id": {
      "title": "Group Id",
      "type": "string"
@@ -804,6 +821,42 @@
     "item_b": {
      "title": "Item B",
      "type": "string"
+    },
+    "marginal_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Marginal First Stage F"
+    },
+    "n_absorbed_parameters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Absorbed Parameters"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
     },
     "n_obs": {
      "title": "N Obs",
@@ -2302,6 +2355,90 @@
      ],
      "title": "Ar Ci Low"
     },
+    "ar_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Detail"
+    },
+    "ar_display_reliable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Display Reliable"
+    },
+    "ar_hull_hi": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Hull Hi"
+    },
+    "ar_hull_lo": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Hull Lo"
+    },
+    "ar_measure": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Measure"
+    },
+    "ar_n_components": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar N Components"
+    },
+    "ar_shape": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Shape"
+    },
     "carried_forward_share": {
      "anyOf": [
       {
@@ -2344,6 +2481,42 @@
      ],
      "default": null,
      "title": "Competitor Path Resolution"
+    },
+    "effective_f_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective F Detail"
+    },
+    "effective_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective First Stage F"
+    },
+    "effective_k": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective K"
     },
     "estimand": {
      "anyOf": [
@@ -2447,6 +2620,66 @@
      ],
      "title": "Iv Se"
     },
+    "lead_test_bound": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Bound"
+    },
+    "lead_test_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Detail"
+    },
+    "lead_test_horizon": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Horizon"
+    },
+    "lead_test_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test P"
+    },
+    "lead_test_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Status"
+    },
     "market_control_coverage": {
      "anyOf": [
       {
@@ -2536,6 +2769,30 @@
      "default": null,
      "title": "Market Control Within Cell Values"
     },
+    "n_absorbed_parameters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Absorbed Parameters"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
+    },
     "n_identified_instruments": {
      "anyOf": [
       {
@@ -2607,6 +2864,47 @@
       }
      ],
      "title": "Overid P"
+    },
+    "placebo_actual_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Actual P"
+    },
+    "placebo_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Detail"
+    },
+    "placebo_share_significant": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Share Significant"
+    },
+    "placebo_status": {
+     "default": "placebo_not_run",
+     "title": "Placebo Status",
+     "type": "string"
     },
     "ppml": {
      "anyOf": [
