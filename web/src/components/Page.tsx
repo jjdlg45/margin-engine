@@ -2,6 +2,53 @@
  * and a consistent empty/edge-state block that explains what happened in
  * plain language (spec: edge states are designed, not blank). */
 
+import { Link } from "react-router-dom";
+
+/** Breadcrumb trail for detail views: every crumb but the last navigates (a
+ * route link or a callback that preserves the parent view's filters); the
+ * last names the current page. */
+export function Breadcrumbs({
+  trail,
+}: {
+  trail: { label: React.ReactNode; to?: string; onClick?: () => void }[];
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className="pt-6 text-caption">
+      <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0">
+        {trail.map((t, i) => {
+          const last = i === trail.length - 1;
+          return (
+            <li key={i} className="flex items-center gap-x-2">
+              {i > 0 && (
+                <span aria-hidden="true" className="secondary">
+                  /
+                </span>
+              )}
+              {last ? (
+                <span aria-current="page" className="font-medium">
+                  {t.label}
+                </span>
+              ) : t.to ? (
+                <Link to={t.to} className="text-petrol underline-offset-4 hover:underline">
+                  {t.label}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={t.onClick}
+                  className="cursor-pointer border-0 bg-transparent p-0 text-caption text-petrol underline-offset-4 hover:underline"
+                >
+                  {t.label}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 export function PageHeader({ title, lede }: { title: string; lede: React.ReactNode }) {
   return (
     <header className="pb-6 pt-10">

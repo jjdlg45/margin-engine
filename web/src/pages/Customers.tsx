@@ -13,7 +13,7 @@ import { EntityCombobox } from "../components/filters/Combobox";
 import { FilterBar } from "../components/filters/FilterBar";
 import { MultiSelect } from "../components/filters/MultiSelect";
 import { RangeFilter } from "../components/filters/RangeFilter";
-import { EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
+import { Breadcrumbs, EmptyState, PageHeader, Section, ScrollX } from "../components/Page";
 import { SortableTable } from "../components/SortableTable";
 import { StatusChip } from "../components/StatusChip";
 import type { CustomersData } from "../lib/api/types";
@@ -281,14 +281,13 @@ function CustomerDetail({
     filters: { customer: customerId },
   });
   const wf = d.waterfall_by_customer.find((g) => g.key === customerId);
+  const crumbName = d.facets.customers.find((c) => c.id === customerId)?.name ?? customerId;
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="cursor-pointer border-0 bg-transparent p-0 font-medium text-petrol underline-offset-4 hover:underline"
-      >
-        Back to all customers
-      </button>
+      {/* The first crumb returns to the full list with its filters intact. */}
+      <Breadcrumbs
+        trail={[{ label: "Customers & orders", onClick: onBack }, { label: crumbName }]}
+      />
       <QuerySection query={rowQuery} label="customer detail" lines={4}>
         {(page) => {
           const customer = page.items[0];

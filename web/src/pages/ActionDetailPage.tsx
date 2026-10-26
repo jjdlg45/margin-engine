@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EntityLabel } from "../components/EntityLabel";
-import { EmptyState, PageHeader, Section } from "../components/Page";
+import { Breadcrumbs, EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { dataClient } from "../lib/api/client";
 import { ApiError, type ActionDetail, type TransitionKind } from "../lib/api/types";
@@ -283,31 +283,51 @@ export function ActionDetailPage() {
       <QuerySection query={detail} label="action detail" lines={10}>
         {(d) => (
           <>
+            <Breadcrumbs
+              trail={[{ label: "Action center", to: "/actions" }, { label: d.action.title }]}
+            />
             <PageHeader title={d.action.title} lede={d.action.rationale} />
-            <p className="m-0 mt-2">
-              <Link to="/actions" className="text-caption">
-                Back to the Action center
-              </Link>
-            </p>
             <Section title="Where it stands">
               <div className="flex flex-wrap items-center gap-3">
                 <StatusChip status={d.status} />
                 <StatusChip status={d.action.action_type} />
-                <span className="text-caption secondary">
-                  Priority {labels(d.action.priority).label.toLowerCase()} · owner {d.action.owner}
-                  {d.action.due_date ? ` · due ${d.action.due_date}` : ""}
-                  {d.action.overdue && (
-                    <span className="font-medium text-garnet"> (overdue)</span>
-                  )}
-                </span>
-                {d.action.expected_impact_cents !== null &&
-                  d.action.expected_impact_cents !== undefined && (
-                    <span className="text-caption">
-                      Expected impact {dollars(d.action.expected_impact_cents)} (
-                      {labels(d.action.impact_basis).label.toLowerCase()})
-                    </span>
-                  )}
               </div>
+              {/* Labeled fields, never a dot-separated meta string. */}
+              <dl className="m-0 mt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-caption secondary">Priority</dt>
+                  <dd className="m-0 font-medium">{labels(d.action.priority).label}</dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Owner</dt>
+                  <dd className="m-0 font-medium">{d.action.owner}</dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Due date</dt>
+                  <dd className="m-0 font-medium">
+                    {d.action.due_date ?? "None set"}
+                    {d.action.overdue && (
+                      <span className="font-medium text-garnet"> (overdue)</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Expected impact</dt>
+                  <dd className="m-0 font-medium">
+                    {d.action.expected_impact_cents !== null &&
+                    d.action.expected_impact_cents !== undefined ? (
+                      <>
+                        {dollars(d.action.expected_impact_cents)}{" "}
+                        <span className="font-normal secondary">
+                          {labels(d.action.impact_basis).label.toLowerCase()}
+                        </span>
+                      </>
+                    ) : (
+                      "None stated"
+                    )}
+                  </dd>
+                </div>
+              </dl>
               {d.action.compliance_flags && (
                 <p className="mb-0 mt-3 max-w-2xl text-caption text-amber" data-testid="compliance-note">
                   {labels("rp_review_flag").label}: {labels("rp_review_flag").description}
@@ -350,13 +370,35 @@ export function ActionDetailPage() {
                   </li>
                 )}
                 {d.action.current_price_cents !== null && (
-                  <li className="mt-1 secondary">
-                    Current price {dollars(d.action.current_price_cents)}
-                    {d.action.proposed_price_cents !== null &&
-                      ` · proposed ${dollars(d.action.proposed_price_cents)}`}
-                    {d.action.floor_price_cents !== null &&
-                      ` · binding floor ${dollars(d.action.floor_price_cents)}`}
-                    {d.action.uom ? ` · per ${d.action.uom}` : ""}
+                  <li className="mt-3">
+                    <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-4">
+                      <div>
+                        <dt className="text-caption secondary">Current price</dt>
+                        <dd className="m-0 font-medium">
+                          {dollars(d.action.current_price_cents)}
+                        </dd>
+                      </div>
+                      {d.action.proposed_price_cents !== null && (
+                        <div>
+                          <dt className="text-caption secondary">Proposed price</dt>
+                          <dd className="m-0 font-medium">
+                            {dollars(d.action.proposed_price_cents)}
+                          </dd>
+                        </div>
+                      )}
+                      {d.action.floor_price_cents !== null && (
+                        <div>
+                          <dt className="text-caption secondary">Binding floor</dt>
+                          <dd className="m-0 font-medium">{dollars(d.action.floor_price_cents)}</dd>
+                        </div>
+                      )}
+                      {d.action.uom && (
+                        <div>
+                          <dt className="text-caption secondary">Unit</dt>
+                          <dd className="m-0 font-medium">{d.action.uom}</dd>
+                        </div>
+                      )}
+                    </dl>
                   </li>
                 )}
                 <PassThroughEvidence action={d.action} />
