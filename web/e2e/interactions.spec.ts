@@ -70,3 +70,20 @@ test("keyboard: tab reaches the nav and focus is visible", async ({ page }) => {
   const outline = await focused.evaluate((el) => getComputedStyle(el).outlineStyle);
   expect(outline).not.toBe("none");
 });
+
+test("dark mode follows the system setting; the Theme button overrides", async ({ page }) => {
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/#/");
+  const darkBg = await bg();
+  await page.emulateMedia({ colorScheme: "light" });
+  const lightBg = await bg();
+  expect(darkBg, "system dark and light render differently").not.toBe(lightBg);
+  // The Theme button overrides the system preference, both ways.
+  await page.emulateMedia({ colorScheme: "dark" });
+  const toggle = page.getByRole("button", { name: "Toggle light and dark theme" });
+  await toggle.click();
+  expect(await bg(), "one click from system-dark gives light").toBe(lightBg);
+  await toggle.click();
+  expect(await bg(), "a second click returns to dark").toBe(darkBg);
+});
