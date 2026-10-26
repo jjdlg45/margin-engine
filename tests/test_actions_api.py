@@ -57,6 +57,8 @@ def _mk_action(
         "current_price_cents": 900,
         "proposed_price_cents": 1_200,
         "floor_price_cents": floor,
+        "pass_through_level": None,
+        "incremental_cost_cents": None,
         "priority": "medium",
         "owner": "unassigned",
         "due_date": dt.date(2026, 2, 25),

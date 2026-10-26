@@ -391,6 +391,19 @@
      "title": "Impact Basis",
      "type": "string"
     },
+    "incremental_cost_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "cost_pass_through only: the scenario's incremental cost",
+     "title": "Incremental Cost Cents"
+    },
     "item_id": {
      "anyOf": [
       {
@@ -428,6 +441,19 @@
     "owner": {
      "title": "Owner",
      "type": "string"
+    },
+    "pass_through_level": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "cost_pass_through only: the chosen pass-through level",
+     "title": "Pass Through Level"
     },
     "predicted_volume_ratio": {
      "anyOf": [

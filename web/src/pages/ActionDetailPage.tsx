@@ -12,6 +12,7 @@ import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { dataClient } from "../lib/api/client";
 import { ApiError, type ActionDetail, type TransitionKind } from "../lib/api/types";
+import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
 import { useLabels } from "../lib/labels";
 import { queryClient, useActionDetail, useCurrentUser } from "../lib/queries";
@@ -235,6 +236,44 @@ function OutcomeCard({ detail }: { detail: ActionDetail }) {
   );
 }
 
+/** Pass-through actions have no customer-item pair, so their evidence is the
+ * scenario itself: the grid it came from, its scope, the chosen pass-through
+ * level and the incremental cost - all from the engine's exports. */
+function PassThroughEvidence({ action }: { action: ActionRow }) {
+  if (action.action_type !== "cost_pass_through") return null;
+  const sep = action.scope.indexOf(":");
+  const scopeType = sep > 0 ? action.scope.slice(0, sep) : null;
+  const scopeValue = sep > 0 ? action.scope.slice(sep + 1) : action.scope;
+  return (
+    <>
+      {scopeType && (
+        <li>
+          Scenario:{" "}
+          <Link
+            to={`/scenarios?scenario=${encodeURIComponent(`+10% landed cost: ${scopeType} ${scopeValue}`)}`}
+          >
+            open the pass-through grid
+          </Link>{" "}
+          (every point precomputed by the engine)
+        </li>
+      )}
+      <li className="mt-1">
+        Scope: {scopeType === "supplier" ? "supplier" : "category"} {scopeValue}
+      </li>
+      {action.pass_through_level !== null && action.pass_through_level !== undefined && (
+        <li className="mt-1">
+          Pass-through level: {pct(action.pass_through_level)} of the cost increase priced through
+        </li>
+      )}
+      {action.incremental_cost_cents !== null && action.incremental_cost_cents !== undefined && (
+        <li className="mt-1">
+          Incremental cost: {dollars(action.incremental_cost_cents)} over the baseline window
+        </li>
+      )}
+    </>
+  );
+}
+
 export function ActionDetailPage() {
   const { actionId } = useParams();
   const labels = useLabels();
@@ -282,7 +321,7 @@ export function ActionDetailPage() {
               </div>
             </Section>
             <Section title="Evidence" lede="Every number traces to engine output.">
-              <ul className="m-0 list-none p-0 text-sm">
+              <ul className="m-0 list-none p-0 text-sm" data-testid="evidence-list">
                 {d.action.customer_id && d.action.item_id && (
                   <li>
                     Guidance band for{" "}
@@ -317,6 +356,33 @@ export function ActionDetailPage() {
                     {d.action.uom ? ` · per ${d.action.uom}` : ""}
                   </li>
                 )}
+                <PassThroughEvidence action={d.action} />
+                {d.action.action_type === "service_policy" && d.action.customer_id && (
+                  <li className="mt-1">
+                    Order and activity economics for{" "}
+                    <EntityLabel name={d.action.customer_name} id={d.action.customer_id} />:{" "}
+                    <Link to={`/customers?customer=${encodeURIComponent(d.action.customer_id)}`}>
+                      open the customer drill-down
+                    </Link>{" "}
+                    (contribution after activity costs, order sizes, service flags)
+                  </li>
+                )}
+                {d.action.action_type === "rebate_discount_review" && d.action.customer_id && (
+                  <li className="mt-1">
+                    Leakage for{" "}
+                    <EntityLabel name={d.action.customer_name} id={d.action.customer_id} /> against
+                    its segment:{" "}
+                    <Link to={`/opportunity?customer=${encodeURIComponent(d.action.customer_id)}`}>
+                      open the opportunity view
+                    </Link>{" "}
+                    (observed leakage by component, reconciled dollars)
+                  </li>
+                )}
+                {/* Every action type shows evidence - never an empty heading. */}
+                <li className="mt-1 secondary">
+                  Generation rules and guardrails for every action type:{" "}
+                  <Link to="/methodology">Data & methodology</Link>
+                </li>
               </ul>
             </Section>
             <Section

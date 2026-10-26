@@ -799,6 +799,8 @@ def build_bundle(
                     current_price_cents=a["current_price_cents"],
                     proposed_price_cents=a["proposed_price_cents"],
                     floor_price_cents=a["floor_price_cents"],
+                    pass_through_level=a["pass_through_level"],
+                    incremental_cost_cents=a["incremental_cost_cents"],
                     priority=str(a["priority"]),
                     owner=str(a["owner"]),
                     due_date=str(a["due_date"]) if a["due_date"] is not None else None,

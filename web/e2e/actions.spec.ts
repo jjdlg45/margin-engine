@@ -162,3 +162,25 @@ test("queue never overflows sideways at desktop or phone width", async ({ page }
     expect(overflow, `no page overflow at ${width} px`).toBeLessThanOrEqual(0);
   }
 });
+
+test("evidence shows content for every action type, never an empty heading", async ({ page }) => {
+  const byType = new Map<string, (typeof bundle.actions_table)[number]>();
+  for (const a of bundle.actions_table) {
+    if (!byType.has(a.action_type)) byType.set(a.action_type, a);
+  }
+  expect(byType.size).toBeGreaterThan(1);
+  for (const a of byType.values()) {
+    await page.goto(`/#/actions/${a.action_id}`);
+    const items = page.getByTestId("evidence-list").locator("li");
+    await expect(items.first()).toBeVisible();
+  }
+  // A pass-through action names its scenario, scope, level and incremental cost.
+  const pt = bundle.actions_table.find((a) => a.action_type === "cost_pass_through");
+  if (pt) {
+    await page.goto(`/#/actions/${pt.action_id}`);
+    await expect(page.getByText("Pass-through level:")).toBeVisible();
+    await expect(page.getByText("Incremental cost:")).toBeVisible();
+    await expect(page.getByRole("link", { name: "open the pass-through grid" })).toBeVisible();
+    await expect(page.getByText(/Scope: (category|supplier)/)).toBeVisible();
+  }
+});

@@ -316,3 +316,20 @@ def test_merge_new_into_older_schema_store(tmp_path: Path) -> None:
     from margin_engine.actions.generate import ACTIONS_SCHEMA
 
     assert list(merged.columns) == list(ACTIONS_SCHEMA)
+
+
+def test_pass_through_actions_carry_scenario_evidence(sample_run: FullRunResult) -> None:
+    """cost_pass_through actions carry the chosen level and the scenario's
+    incremental cost, so the UI's evidence section shows engine numbers
+    without re-deriving anything; every other type leaves both null."""
+    actions = sample_run.actions
+    assert actions is not None
+    pt = actions.filter(pl.col("action_type") == "cost_pass_through")
+    assert pt.height > 0
+    for r in pt.iter_rows(named=True):
+        assert r["pass_through_level"] == RULES.actions.pass_through_level
+        assert r["incremental_cost_cents"] is not None
+        assert r["incremental_cost_cents"] > 0
+    others = actions.filter(pl.col("action_type") != "cost_pass_through")
+    assert others["pass_through_level"].null_count() == others.height
+    assert others["incremental_cost_cents"].null_count() == others.height

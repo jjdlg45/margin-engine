@@ -577,6 +577,8 @@ async def propose(
             "current_price_cents": [None],
             "proposed_price_cents": [int(proposed_price) if proposed_price is not None else None],
             "floor_price_cents": [floor],
+            "pass_through_level": [None],
+            "incremental_cost_cents": [None],
             "priority": [str(body.get("priority", "medium"))],
             "owner": [str(body.get("owner", x_user))],
             "due_date": [None],
