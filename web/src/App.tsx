@@ -26,6 +26,7 @@ const ActionCenterPage = lazy(() =>
 const ActionDetailPage = lazy(() =>
   import("./pages/ActionDetailPage").then((m) => ({ default: m.ActionDetailPage })),
 );
+const GuidePage = lazy(() => import("./pages/GuidePage").then((m) => ({ default: m.GuidePage })));
 
 const PAGES = [
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
@@ -38,6 +39,7 @@ const PAGES = [
   { path: "/scenarios", label: "Scenarios", el: <ScenariosPage /> },
   { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
   { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
+  { path: "/guide", label: "Use it with your own data", el: <GuidePage /> },
 ];
 
 /** Navigation grouped by the question a page answers. Paths reference PAGES
@@ -67,6 +69,7 @@ const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: b
     items: [
       { path: "/methodology", label: "Data & methodology" },
       { path: "/modules", label: "Optional modules" },
+      { path: "/guide", label: "Use it with your own data" },
     ],
   },
 ];

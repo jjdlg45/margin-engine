@@ -89,3 +89,26 @@ test("customer drill-down breadcrumb returns to the filtered list", async ({ pag
   await expect(page).toHaveURL(/losing=1/);
   await expect(page.locator("tbody tr").first()).toBeVisible();
 });
+
+test("the guide page is in the Data group and covers the full path", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.goto("/#/");
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await nav.getByRole("link", { name: "Use it with your own data", exact: true }).click();
+  await expect(page).toHaveURL(/#\/guide/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Use it with your own data" }),
+  ).toBeVisible();
+  for (const heading of [
+    "1. Install",
+    "2. Map your export",
+    "3. Run",
+    "4. Tie out to the books",
+    "5. Live mode",
+    "6. Work the actions",
+  ]) {
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  }
+  await expect(page.getByText("docker compose up --build")).toBeVisible();
+  await expect(page.getByText("draft-mapping")).toBeVisible();
+});
