@@ -653,6 +653,26 @@ can never become price changes; the Robinson-Patman review flag (section 11)
 travels with the action; priority defaults by impact and evidence, with a
 non-causal evidence status demoting one level.
 
+### Scope keys, overlap and portfolio totals (Run 6)
+
+Every action carries its scope metadata: a scope key (for price actions, the
+uniqueness unit customer x item x unit x effective date), baseline period,
+intervention, affected set, scenario link and overlap group. ONE active
+proposed price may exist per scope key: approving a duplicate is refused with
+the competing action named, and the price export refuses a file that would
+carry two prices for one scope (defense in depth). Cross-scope overlaps - a
+pass-through scenario and pair price actions on the same items - share an
+overlap group, and the portfolio table carries each group's JOINT estimate
+under one baseline: price actions keep their single-action impacts (deduped
+by scope key) while the pass-through recovery is recomputed with the priced
+pairs excluded from its base. The naive sum is shown beside it only to make
+the double counting visible; neither figure is ever added to the single-action
+lists, and the three quantities (single-action impact, scenario impact,
+portfolio estimate) stay distinct in the UI, the CSV exports and the API.
+Portfolio groups are computed at engine-run time over the generated action
+set; manual proposals join the duplicate guard through their scope keys but
+not the precomputed groups (stated in the API payload).
+
 ### Review workflow (maker-checker)
 
 Lifecycle: proposed → under review → approved | rejected → exported →

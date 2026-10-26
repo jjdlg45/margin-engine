@@ -47,6 +47,7 @@ _REVIEW_HTTP = {
     "justification_required": 422,
     "tracker_only": 403,
     "blocked": 409,
+    "duplicate_active_price": 409,
     "unknown_status": 400,
     "field_not_editable": 422,
     "status_not_editable": 409,
@@ -144,6 +145,11 @@ def _transition(
         return JSONResponse({"action_id": action_id, "status": current, "changed": False})
     try:
         policy.check_transition(action, events, user=user, to_status=to_status, note=note)
+        if to_status == "approved":
+            # One active proposed price per scope (Run 6, Phase 68).
+            from margin_engine.actions.review import check_no_duplicate_active_price
+
+            check_no_duplicate_active_price(action, store.actions(), replay_status(events))
         store.transition(action_id, who=user, to_status=to_status, note=note)
     except ReviewError as exc:
         return _err(_REVIEW_HTTP.get(exc.code, 400), exc.code, str(exc))
@@ -204,6 +210,15 @@ async def actions_page(request: Request) -> Any:
             ),
         },
         "calibration": calibration,
+        # Overlap-group portfolio estimates (Run 6, Phase 68) are engine-run
+        # artifacts computed over the GENERATED action set under one baseline;
+        # served from the loaded bundle (manual proposals are not in them,
+        # which the note states).
+        "overlap_groups": (
+            request.app.state.store.snapshot.pages.get("actions", {}).get("overlap_groups", [])
+            if getattr(request.app.state.store, "snapshot", None) is not None
+            else []
+        ),
         "facets": {
             "types": sorted({str(r["action_type"]) for r in rows}),
             "statuses": sorted({str(r["status"]) for r in rows}),
@@ -596,6 +611,22 @@ async def propose(
             "floor_price_cents": [floor],
             "pass_through_level": [None],
             "incremental_cost_cents": [None],
+            # Scope metadata (Phase 68): manual price proposals share the same
+            # uniqueness unit as generated ones (no effective date yet).
+            "scope_key": [
+                f"price|{customer_id}|{item_id}|unit|none"
+                if action_type in ("price_change", "below_floor_fix")
+                else f"{action_type}|manual|{action_id}"
+            ],
+            "baseline_period": [None],
+            "intervention": ["manual action"],
+            "affected_set": [
+                "one customer-item pair"
+                if action_type in ("price_change", "below_floor_fix")
+                else "manual scope"
+            ],
+            "scenario_id": [None],
+            "overlap_group": [None],
             "priority": [str(body.get("priority", "medium"))],
             "owner": [str(body.get("owner", x_user))],
             "due_date": [None],

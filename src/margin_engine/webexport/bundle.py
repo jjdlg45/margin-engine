@@ -494,6 +494,19 @@ class ActionsSummary(BaseModel):
     )
 
 
+class OverlapGroup(BaseModel):
+    """Overlapping action scopes (Run 6, Phase 68): the naive sum is shown
+    only to make double counting visible; the portfolio estimate is the joint
+    figure under one baseline and is NEVER added to the single-action lists."""
+
+    overlap_group: str
+    n_actions: int
+    action_ids: list[str]
+    naive_sum_cents: int
+    portfolio_estimate_cents: int
+    note: str
+
+
 class ActionsSection(BaseModel):
     read_only: bool = Field(
         description="True in the static demo: the review workflow needs the API"
@@ -502,6 +515,7 @@ class ActionsSection(BaseModel):
     summary: ActionsSummary
     calibration: list[CalibrationRow]
     facets: dict[str, list[str]]
+    overlap_groups: list[OverlapGroup] = Field(default_factory=list)
     notes: list[str]
 
 

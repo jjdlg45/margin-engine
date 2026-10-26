@@ -11,6 +11,13 @@ export type Calibration = CalibrationRow[];
  */
 export type DemoHistory = boolean;
 export type Notes = string[];
+export type ActionIds = string[];
+export type NActions = number;
+export type NaiveSumCents = number;
+export type Note = string;
+export type OverlapGroup1 = string;
+export type PortfolioEstimateCents = number;
+export type OverlapGroups = OverlapGroup[];
 /**
  * True in the static demo: the review workflow needs the API
  */
@@ -19,7 +26,7 @@ export type ReadOnly = boolean;
  * Across measured outcomes; null below the minimum count
  */
 export type MedianRealizationPct1 = number | null;
-export type NActions = number;
+export type NActions1 = number;
 export type NBlocked = number;
 export type NComplianceFlagged = number;
 export type NMeasured1 = number;
@@ -37,7 +44,7 @@ export type DueDate = string | null;
  */
 export type At = string;
 export type FromStatus = string | null;
-export type Note = string;
+export type Note1 = string;
 export type Seq = number;
 export type ToStatus = string;
 export type Who = string;
@@ -454,6 +461,7 @@ export interface ActionsSection {
   demo_history: DemoHistory;
   facets: Facets;
   notes: Notes;
+  overlap_groups?: OverlapGroups;
   read_only: ReadOnly;
   summary: ActionsSummary;
 }
@@ -471,12 +479,25 @@ export interface CalibrationRow {
 export interface Facets {
   [k: string]: string[];
 }
+/**
+ * Overlapping action scopes (Run 6, Phase 68): the naive sum is shown
+ * only to make double counting visible; the portfolio estimate is the joint
+ * figure under one baseline and is NEVER added to the single-action lists.
+ */
+export interface OverlapGroup {
+  action_ids: ActionIds;
+  n_actions: NActions;
+  naive_sum_cents: NaiveSumCents;
+  note: Note;
+  overlap_group: OverlapGroup1;
+  portfolio_estimate_cents: PortfolioEstimateCents;
+}
 export interface ActionsSummary {
   by_status: ByStatus;
   impact_by_basis_cents: ImpactByBasisCents;
   impact_by_evidence_cents: ImpactByEvidenceCents;
   median_realization_pct?: MedianRealizationPct1;
-  n_actions: NActions;
+  n_actions: NActions1;
   n_blocked: NBlocked;
   n_compliance_flagged: NComplianceFlagged;
   n_measured: NMeasured1;
@@ -539,7 +560,7 @@ export interface ActionRow {
 export interface ActionEventRow {
   at: At;
   from_status: FromStatus;
-  note: Note;
+  note: Note1;
   seq: Seq;
   to_status: ToStatus;
   who: Who;

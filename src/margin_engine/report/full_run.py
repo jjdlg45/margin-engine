@@ -17,6 +17,7 @@ from typing import Any
 import polars as pl
 
 from margin_engine.actions.generate import generate_actions
+from margin_engine.actions.portfolio import build_portfolio_groups
 from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
@@ -80,6 +81,8 @@ class FullRunResult:
     fiscal: FiscalCalendar | None = None  # the calendar in force (Phase 36)
     actions: pl.DataFrame | None = None  # generated action proposals (Phase 38)
     action_events: pl.DataFrame | None = None  # their birth event log (Phase 38)
+    # Overlap-group portfolio estimates (Run 6, Phase 68).
+    action_portfolio: pl.DataFrame | None = None
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -171,6 +174,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
     "actions": ["action_type", "action_id"],
     "action_events": ["action_id", "seq"],
+    "action_portfolio_groups": ["overlap_group"],
     "sensitivity": ["segment"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
@@ -613,6 +617,12 @@ def run_full(
         rules=rules,
     )
     res.notes.extend(actions_res.notes)
+    # Portfolio scenarios for overlapping scopes (Run 6, Phase 68): one row
+    # per overlap group with the naive sum and the joint estimate under a
+    # common baseline - never summed into any headline.
+    action_portfolio = build_portfolio_groups(
+        actions_res.actions, panel, guidance_res.guidance, sens, rules
+    )
     timings["actions"] = time.perf_counter() - t
 
     # ---- outputs -----------------------------------------------------------
@@ -628,6 +638,7 @@ def run_full(
         "compliance_robinson_patman": compliance_res.detail,
         "actions": actions_res.actions,
         "action_events": actions_res.events,
+        "action_portfolio_groups": action_portfolio,
         "sensitivity": sens,
         "opportunities": opps,
         "leakage": leak,
@@ -1090,4 +1101,5 @@ def run_full(
         fiscal=fiscal,
         actions=actions_res.actions,
         action_events=actions_res.events,
+        action_portfolio=action_portfolio,
     )

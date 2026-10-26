@@ -92,6 +92,25 @@ def build_price_file(
         .join(_approval_ids(events), on="action_id", how="left", maintain_order="left")
         .sort("action_id")
     )
+    # Defense in depth (Run 6, Phase 68): approval already blocks duplicate
+    # active prices per scope; a file with two prices for one scope would be
+    # an ERP import hazard, so the export refuses rather than picks one.
+    if "scope_key" in rows.columns:
+        dup = (
+            rows.filter(pl.col("scope_key").is_not_null())
+            .group_by("scope_key")
+            .len()
+            .filter(pl.col("len") > 1)
+        )
+        if dup.height:
+            scopes = dup["scope_key"].head(5).to_list()
+            msg = (
+                f"price export refused: {dup.height} scope(s) have more than one "
+                f"active price action (e.g. {scopes}). One active proposed price "
+                "per customer, item, unit and effective date - supersede or "
+                "reject the duplicates first."
+            )
+            raise ValueError(msg)
     header = [cfg.headers[c] for c in CANONICAL_COLUMNS]
     lines = [cfg.delimiter.join(header)]
     for r in rows.iter_rows(named=True):

@@ -70,6 +70,16 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # re-deriving anything (null for every other type).
     "pass_through_level": pl.Float64,
     "incremental_cost_cents": pl.Int64,
+    # Scope and overlap metadata (Run 6, Phase 68): one active proposed price
+    # per scope_key (customer x item x UOM x effective date), and overlapping
+    # scopes share an overlap_group whose joint impact lives in the portfolio
+    # table - never in a naive sum.
+    "scope_key": pl.String,
+    "baseline_period": pl.String,
+    "intervention": pl.String,
+    "affected_set": pl.String,
+    "scenario_id": pl.String,
+    "overlap_group": pl.String,
     "priority": pl.String,
     "owner": pl.String,
     "due_date": pl.Date,
@@ -155,6 +165,60 @@ def _finalize(
             + pl.duration(days=pl.col("priority").replace_strict(due_days, return_dtype=pl.Int64))
         ).alias("due_date"),
         pl.lit(created).alias("created_at"),
+    )
+    price_types = ["price_change", "below_floor_fix"]
+    out = out.with_columns(
+        # Scope key (Phase 68): the uniqueness unit for an active proposed
+        # price is customer x item x UOM x effective date.
+        pl.when(pl.col("action_type").is_in(price_types))
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit("price|"),
+                    pl.col("customer_id").fill_null("none"),
+                    pl.lit("|"),
+                    pl.col("item_id").fill_null("none"),
+                    pl.lit("|"),
+                    pl.col("uom").fill_null("unit"),
+                    pl.lit("|"),
+                    pl.col("due_date").cast(pl.String).fill_null("none"),
+                ]
+            )
+        )
+        .otherwise(
+            pl.concat_str(
+                [
+                    pl.col("action_type"),
+                    pl.lit("|"),
+                    pl.coalesce(pl.col("scope"), pl.col("customer_id"), pl.lit("all")),
+                ]
+            )
+        )
+        .alias("scope_key"),
+        pl.lit(f"last_{rules.opportunity.baseline_window_months} months").alias("baseline_period"),
+        pl.col("action_type")
+        .replace_strict(
+            {
+                "price_change": "set the pair's price to the proposed price",
+                "below_floor_fix": "raise the pair's price to the binding floor",
+                "cost_pass_through": "raise prices at the chosen pass-through level",
+                "service_policy": "change the customer's service policy",
+                "rebate_discount_review": "review the customer's rebate and discount terms",
+            },
+            default="manual action",
+        )
+        .alias("intervention"),
+        pl.when(pl.col("action_type").is_in(price_types))
+        .then(pl.lit("one customer-item pair"))
+        .when(pl.col("action_type") == "cost_pass_through")
+        .then(pl.concat_str([pl.lit("every unprotected pair in "), pl.col("scope")]))
+        .otherwise(pl.concat_str([pl.lit("customer "), pl.col("customer_id").fill_null("-")]))
+        .alias("affected_set"),
+        pl.when(pl.col("action_type") == "cost_pass_through")
+        .then(pl.concat_str([pl.lit("scn|"), pl.col("scope")]))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("scenario_id"),
+        pl.lit(None, dtype=pl.String).alias("overlap_group"),
     )
     out = (
         out.sort(
@@ -745,20 +809,63 @@ def generate_actions(
         return ActionGenerationResult(
             actions=pl.DataFrame(schema=ACTIONS_SCHEMA), events=empty_events(), notes=notes
         )
+    finalize_built = (
+        "priority",
+        "owner",
+        "due_date",
+        "created_at",
+        # Scope and overlap metadata (Phase 68) is built in _finalize / the
+        # overlap pass, not by the per-type generators.
+        "scope_key",
+        "baseline_period",
+        "intervention",
+        "affected_set",
+        "scenario_id",
+        "overlap_group",
+    )
     combined = pl.concat(
-        [
-            f.select(
-                [
-                    c
-                    for c in ACTIONS_SCHEMA
-                    if c not in ("priority", "owner", "due_date", "created_at")
-                ]
-            )
-            for f in frames
-        ],
+        [f.select([c for c in ACTIONS_SCHEMA if c not in finalize_built]) for f in frames],
         how="vertical_relaxed",
     )
     actions = _finalize(combined, rules, anchor, created)
+
+    # Cross-scope overlap (Phase 68): a pass-through scenario and a pair price
+    # action on the same items must never both count. Both sides get a shared
+    # overlap_group; the portfolio table carries their joint estimate.
+    pt = actions.filter(pl.col("action_type") == "cost_pass_through")
+    if pt.height and panel is not None and panel.height:
+        for r in pt.select("scope").unique().sort("scope").iter_rows(named=True):
+            scope = str(r["scope"])
+            kind, _, value = scope.partition(":")
+            col = {"category": "item_category", "supplier": "supplier_id"}.get(kind)
+            if col is None or col not in panel.columns:
+                continue
+            items_in_scope = sorted(
+                {
+                    str(i)
+                    for i in panel.filter(pl.col(col).cast(pl.String) == value)["item_id"].to_list()
+                }
+            )
+            if not items_in_scope:
+                continue
+            group = f"overlap|{scope}"
+            hits = (pl.col("scope") == scope) | (
+                pl.col("action_type").is_in(["price_change", "below_floor_fix"])
+                & pl.col("item_id").cast(pl.String).is_in(items_in_scope)
+            )
+            actions = actions.with_columns(
+                pl.when(hits & pl.col("overlap_group").is_null())
+                .then(pl.lit(group))
+                .otherwise(pl.col("overlap_group"))
+                .alias("overlap_group")
+            )
+        n_overlap = actions.filter(pl.col("overlap_group").is_not_null()).height
+        if n_overlap:
+            notes.append(
+                f"{n_overlap} action(s) share scopes with a pass-through scenario: "
+                "their joint impact lives in the portfolio table under a common "
+                "baseline and is never a naive sum"
+            )
 
     # Guardrail: no unblocked action may propose a price below the binding
     # floor. The guidance target respects the floor by construction, so a hit

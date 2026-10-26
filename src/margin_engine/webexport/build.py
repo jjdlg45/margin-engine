@@ -45,6 +45,7 @@ from margin_engine.webexport.bundle import (
     OpportunitySection,
     OptionalModules,
     OrderEconomicsSummary,
+    OverlapGroup,
     PeerGroupStat,
     ReconciliationCheck,
     Residual,
@@ -892,6 +893,19 @@ def build_bundle(
                     {a.evidence_status or "insufficient_data" for a in actions_table}
                 ),
             },
+            overlap_groups=[
+                OverlapGroup(
+                    overlap_group=str(g["overlap_group"]),
+                    n_actions=int(g["n_actions"]),
+                    action_ids=str(g["action_ids"]).split(";"),
+                    naive_sum_cents=int(g["naive_sum_cents"]),
+                    portfolio_estimate_cents=int(g["portfolio_estimate_cents"]),
+                    note=str(g["note"]),
+                )
+                for g in (
+                    res.action_portfolio.to_dicts() if res.action_portfolio is not None else []
+                )
+            ],
             notes=list(tracked.notes),
         )
     else:

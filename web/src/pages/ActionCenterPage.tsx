@@ -698,6 +698,37 @@ export function ActionCenterPage() {
                 )}
               </div>
             </div>
+            {(p.overlap_groups ?? []).length > 0 && (
+              <div className="panel mt-4 px-5 py-5" data-testid="overlap-groups">
+                <h2 className="m-0 text-section">Overlapping scopes</h2>
+                <p className="m-0 mt-1 text-caption secondary">
+                  These actions touch the same items from different directions
+                  (a pass-through scenario and pair price changes). Their joint
+                  value is the portfolio estimate under one baseline - the
+                  naive sum is shown only to make the double counting visible,
+                  and neither figure is ever added to the lists above.
+                </p>
+                <ul className="m-0 mt-2 list-none p-0 text-caption">
+                  {(p.overlap_groups ?? []).map((g) => (
+                    <li key={g.overlap_group} className="flex flex-wrap justify-between gap-3 py-1">
+                      <span className="secondary">
+                        {g.overlap_group.replace("overlap|", "").replace(":", " ")} -{" "}
+                        {count(g.n_actions)} actions
+                      </span>
+                      <span>
+                        portfolio estimate{" "}
+                        <span className="font-medium">
+                          {dollarsShort(g.portfolio_estimate_cents)}
+                        </span>{" "}
+                        <span className="secondary">
+                          (a naive sum would claim {dollarsShort(g.naive_sum_cents)})
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {!dataClient.actions.readOnly && (
               <div className="panel mt-4 flex flex-wrap items-center gap-4 px-4 py-3" data-testid="actions-toolbar">
                 <UserPicker />

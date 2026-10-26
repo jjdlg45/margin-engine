@@ -139,7 +139,10 @@ def test_contribution_floor_scoped_to_roles() -> None:
         }
     )
     k = _k_frame(
-        [{"customer_id": "CK", "item_id": "IK", "k": 2_000}, {"customer_id": "CN", "item_id": "IN", "k": 2_000}]
+        [
+            {"customer_id": "CK", "item_id": "IK", "k": 2_000},
+            {"customer_id": "CN", "item_id": "IN", "k": 2_000},
+        ]
     )
     res = build_guidance(_frame(rows), rules, None, cts_per_unit=k)
     ck = res.guidance.filter(pl.col("customer_id") == "CK").to_dicts()[0]

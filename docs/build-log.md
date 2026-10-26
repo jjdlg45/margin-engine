@@ -3477,3 +3477,53 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 (strict); full pytest 494 passed 0 failed (exit 0); Playwright 225 passed
 (exit 0). Demo bundle re-exported (guidance CSV gains the disclosure
 columns; bundle figures unchanged).
+
+## Phase 68 — Action overlap and portfolio totals (2026-10-26, Run 6 branch)
+
+Finding 16 (confirmed: no overlap guard existed).
+
+1. **Scope metadata on every action** - scope_key (for price actions the
+   uniqueness unit customer x item x UOM x effective date), baseline_period,
+   intervention, affected_set, scenario_id, overlap_group. Built in
+   _finalize so the per-type generators stay simple; manual API proposals
+   carry the same keys.
+2. **One active proposed price per scope** - approval refuses a duplicate
+   with the competing action named (review.check_no_duplicate_active_price,
+   HTTP 409 duplicate_active_price); the price export refuses a file
+   carrying two prices for one scope (defense in depth, since an ERP import
+   with two prices for one key is a hazard).
+3. **Cross-scope overlap** - a pass-through scenario and pair price actions
+   on the same items share an overlap_group, assigned at generation from the
+   panel's category/supplier membership.
+4. **Portfolio scenarios** - new actions/portfolio.py computes, per overlap
+   group, the naive sum AND the joint estimate under one baseline: price
+   actions keep single-action impacts (deduped by scope_key) while the
+   pass-through recovery is RECOMPUTED with the priced pairs removed from
+   its eligible base. New export action_portfolio_groups; the bundle carries
+   overlap_groups and the Action center shows them with the naive sum beside
+   the portfolio estimate, explicitly non-additive with the lists above.
+   The API serves the engine-computed groups and says manual proposals are
+   not in them.
+
+Tests added: tests/test_action_overlap.py (5): duplicate blocked at
+approval (and NOT blocked by a rejected competitor, nor across different
+effective dates); export refuses duplicate scopes; portfolio estimate
+equals price impact + recomputed residual recovery and is strictly below
+the naive sum; portfolio dedupes price scopes. Existing hand-built action
+fixtures in three test files gained the new schema columns.
+
+Demo world: 2 overlap groups found - category CAT02 (49 actions, naive
+17,049,821 cents vs portfolio 11,786,553) and supplier SUP04 (37 actions,
+naive 16,294,575 vs portfolio 10,797,603). The gap IS the double counting
+the previous build would have implied. Action count (277), by-status and
+by-basis dollars unchanged.
+
+Process note: the first full-pytest run of this phase was stopped after
+Phase 69 edits had begun landing in the same tree (the run would have
+tested a mixture). The Phase 69 work was snapshotted out, the tree
+restored to Phase 68 only, and the gate re-run clean.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 498 passed 0 failed (exit 0); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed (exit 0). Demo bundle
+re-exported; schema and generated types updated.

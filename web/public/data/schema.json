@@ -599,6 +599,13 @@
      "title": "Notes",
      "type": "array"
     },
+    "overlap_groups": {
+     "items": {
+      "$ref": "#/$defs/OverlapGroup"
+     },
+     "title": "Overlap Groups",
+     "type": "array"
+    },
     "read_only": {
      "description": "True in the static demo: the review workflow needs the API",
      "title": "Read Only",
@@ -1753,6 +1760,48 @@
     "activity_status_note"
    ],
    "title": "OrderEconomicsSummary",
+   "type": "object"
+  },
+  "OverlapGroup": {
+   "description": "Overlapping action scopes (Run 6, Phase 68): the naive sum is shown\nonly to make double counting visible; the portfolio estimate is the joint\nfigure under one baseline and is NEVER added to the single-action lists.",
+   "properties": {
+    "action_ids": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Action Ids",
+     "type": "array"
+    },
+    "n_actions": {
+     "title": "N Actions",
+     "type": "integer"
+    },
+    "naive_sum_cents": {
+     "title": "Naive Sum Cents",
+     "type": "integer"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "overlap_group": {
+     "title": "Overlap Group",
+     "type": "string"
+    },
+    "portfolio_estimate_cents": {
+     "title": "Portfolio Estimate Cents",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "overlap_group",
+    "n_actions",
+    "action_ids",
+    "naive_sum_cents",
+    "portfolio_estimate_cents",
+    "note"
+   ],
+   "title": "OverlapGroup",
    "type": "object"
   },
   "PeerGroupStat": {
