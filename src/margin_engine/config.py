@@ -429,6 +429,29 @@ class PriceGuidanceConfig(StrictModel):
     # below the margin by a fraction of a cent.
     floor_rounding: Literal["ceiling", "half_even"] = "ceiling"
     min_band_observations: int = Field(default=10, ge=1)
+    # Band independence (Run 6, Phase 67 / Finding 10): observations are
+    # already independent units (one median per customer x item x month), and
+    # a band additionally needs this many DISTINCT customers - a band built
+    # from one customer's history is that customer's history, not a market
+    # reference. Distinct customers, pairs, months and list regimes are
+    # reported per band either way.
+    min_band_customers: int = Field(default=5, ge=1)
+    # Contribution-floor scope (Run 6, Phase 67): when min_contribution_margin
+    # is set, apply it only to these item roles / channels (empty = all).
+    # Order-type scoping would need an order-level floor, which does not exist
+    # at pair grain - stated in the methodology as a limitation.
+    contribution_floor_item_roles: tuple[str, ...] = ()
+    contribution_floor_channels: tuple[str, ...] = ()
+    # Roles whose below-floor prices are EXPLICITLY AUTHORIZED policy (loss
+    # leaders, strategic key-value items, end-of-life clearances): their
+    # below-floor statuses stay visible, but fix actions generate BLOCKED with
+    # the authorization shown - a policy override exists only here, never
+    # implicitly.
+    authorized_below_floor_roles: tuple[str, ...] = ()
+    # ERP price precision (Run 6, Phase 67): optimized and proposed prices are
+    # rounded to this increment (cents); 1 = no constraint. Rounding never
+    # goes below the binding floor.
+    price_increment_cents: int = Field(default=1, ge=1)
     # Floor-index comparisons (floor / list vs realized index) require a valid
     # list price. A list in force but older than this many months at the pair's
     # last sale is STALE: the pair keeps dollar floors but gets no floor-index

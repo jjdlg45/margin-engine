@@ -244,6 +244,30 @@ comparison was made. A price index computed against the item-median fallback
 is never compared to a floor index: the two live in different reference
 spaces.
 
+Guardrails (Run 6, Phase 67). Bands are PAIR-WEIGHTED (one median per
+customer x item x month — the stated weighting) and report the independence
+behind them: distinct customers, pairs, months and list regimes per band. A
+band needs the configured minimum of independent observations AND distinct
+customers — one customer's history is not a market reference. Targets and
+starts are UNAVAILABLE, with the reason named, when the segment is thin, the
+floor sits above the corridor, or the pair's list is stale (a target in index
+space against a list no longer in force is a number nobody can act on; the
+dollar floors are kept either way). An item trading in several normalized
+units without an equivalence conversion never enters a band and its pairs say
+why. The contribution floor stays OPT-IN (off by default) and can be scoped
+to configured item roles and channels; when it binds, the K assumption that
+makes it bind is disclosed next to it (order-type scoping would need an
+order-level floor, which does not exist at pair grain — a stated limitation).
+Explicitly authorized below-floor roles (loss leaders, strategic key-value
+items, end-of-life clearances) keep their visible below-floor status, and fix
+actions generate BLOCKED with the authorization shown — configuration is the
+only override path. Optimized prices snap to the configured ERP price
+increment, with the floor rounded up to the increment first so a snap can
+never breach it. Guidance disclosures per pair: list provenance, contract
+eligibility, the unit basis of every comparison, and the as-of date of the
+CURRENT unit cost guidance prices against (historical margins use dated
+historical costs; the two are labeled, never mixed).
+
 Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (floor above band P75 — flagged, never papered
 over with a fake target), market_reference_below_floor (the segment's P50

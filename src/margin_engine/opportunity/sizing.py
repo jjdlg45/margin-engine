@@ -442,7 +442,8 @@ def _recompute_tiered_rows(
             c0 = _p0 * _retain - _f - float(_cost) - kk  # type: ignore[arg-type]
             dr3 = _p1 * q1 - _p0 * _qty
             adj = ctx.delta_cents(_cust, dr3) or 0.0
-            return int(round(c1 * q1 - c0 * _qty - adj))
+            value: float = c1 * q1 - c0 * _qty - adj
+            return round(value)
 
         e = r.get("elasticity")
         e_lo, e_hi = r.get("elasticity_ci_low"), r.get("elasticity_ci_high")
@@ -521,6 +522,29 @@ def numeric_optimal_price(
     hi2 = min(hi_cents, int(best + step) + 1)
     fine = np.arange(lo2, hi2 + 1, dtype=np.float64)
     return int(fine[int(np.argmax(total(fine)))])
+
+
+def _snap_to_increment(out: pl.DataFrame, rules: Rules) -> pl.DataFrame:
+    """ERP price precision (Run 6, Phase 67): snap optimized prices to the
+    configured increment, never below the binding floor (the floor itself is
+    rounded UP to the increment so the snap cannot breach it)."""
+    inc = rules.price_guidance.price_increment_cents
+    if inc <= 1 or "optimal_price_cents" not in out.columns:
+        return out
+    price = pl.col("optimal_price_cents")
+    snapped = ((price + inc // 2) // inc) * inc
+    floor_up = (
+        ((pl.col("invoice_floor_cents") + inc - 1) // inc) * inc
+        if "invoice_floor_cents" in out.columns
+        else snapped
+    )
+    return out.with_columns(
+        pl.when(price.is_not_null())
+        .then(pl.max_horizontal(snapped, floor_up))
+        .otherwise(None)
+        .cast(pl.Int64)
+        .alias("optimal_price_cents")
+    )
 
 
 def optimize_targets(
@@ -639,7 +663,7 @@ def optimize_targets(
                 )
             )
         j = j.with_columns(pl.Series("_p_num", prices, dtype=pl.Int64))
-        return j.with_columns(
+        out = j.with_columns(
             pl.when(pl.col("_interior"))
             .then(pl.col("_p_num"))
             .when(pl.col("_eligible"))
@@ -655,13 +679,14 @@ def optimize_targets(
             .alias("target_basis"),
             pl.lit(objective).alias("objective"),
         ).drop("_k_marginal", "_retain", "_hi", "_interior", "_eligible", "_p_num")
+        return _snap_to_increment(out, rules)
 
     interior = causal & in_support & (beta < -1.0) & pl.col("unit_cost_cents").is_not_null()
     p_star = (c_eff * beta / (1.0 + beta)).round(0)
     clipped = pl.min_horizontal(
         pl.max_horizontal(p_star, pl.col("invoice_floor_cents")), corridor_hi
     )
-    return j.with_columns(
+    out = j.with_columns(
         pl.when(interior)
         .then(clipped)
         .when(causal & in_support & pl.col("unit_cost_cents").is_not_null())
@@ -677,3 +702,4 @@ def optimize_targets(
         .alias("target_basis"),
         pl.lit(objective).alias("objective"),
     )
+    return _snap_to_increment(out, rules)

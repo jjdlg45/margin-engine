@@ -317,12 +317,31 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
         pl.col("_compliance").alias("compliance_flags"),
-        pl.col("contract_protected").fill_null(value=False).alias("blocked"),
+        (
+            pl.col("contract_protected").fill_null(value=False)
+            | (
+                pl.col("below_floor_authorized").fill_null(value=False)
+                if "below_floor_authorized" in rows.columns
+                else pl.lit(value=False)
+            )
+        ).alias("blocked"),
         pl.when(pl.col("contract_protected").fill_null(value=False))
         .then(
             pl.lit(
                 "contract-protected line: price actions are blocked until the "
                 "price protection lapses"
+            )
+        )
+        .when(
+            pl.col("below_floor_authorized").fill_null(value=False)
+            if "below_floor_authorized" in rows.columns
+            else pl.lit(value=False)
+        )
+        .then(
+            pl.lit(
+                "below-floor price explicitly authorized by policy for this item "
+                "role (loss leader / strategic exception); no fix is proposed "
+                "without that authorization being withdrawn"
             )
         )
         .otherwise(None)

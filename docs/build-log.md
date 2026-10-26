@@ -3423,3 +3423,57 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 (strict); full pytest 487 passed 0 failed (exit 0); tsc 0; vitest 22/22;
 vite build 0; Playwright 225 passed (exit 0, no snapshot changes). Demo
 bundle re-exported; generated types updated.
+
+## Phase 67 — Floors and bands guardrails (2026-10-26, Run 6 branch)
+
+Findings 9 and 10 (policy decisions), implemented as explicit configuration
+and visible disclosure, never implicit behavior.
+
+1. **Band independence** - bands report the distinct customers, pairs,
+   months and list regimes behind them, and a band now needs
+   min_band_customers distinct customers (default 5) besides the minimum
+   independent observations (pair-month medians, pair-weighted, stated):
+   one customer's history is not a market reference.
+2. **Target unavailability with named reasons** - targets/starts are
+   unavailable (target_unavailable_reason) when the segment is thin
+   (thin_segment_or_data), the floor sits above the corridor
+   (floor_above_corridor), or the pair's list is STALE (stale_list - new
+   behavior: a stale list previously blocked only the floor-index
+   comparison; now it blocks the index-space target too; dollar floors are
+   kept).
+3. **Mixed units equivalence guard** - an item trading in several
+   normalized units never enters a band; its pairs report insufficient data
+   with reason mixed_units_no_equivalence and a run note.
+4. **Contribution floor scope and disclosure** - stays opt-in (default
+   off); scopable to item roles and channels
+   (contribution_floor_item_roles/channels; order-type scoping documented
+   as a pair-grain limitation); when it binds, k_assumption discloses the
+   estimated K that makes it bind.
+5. **Authorized below-floor roles** - authorized_below_floor_roles (empty
+   by default): statuses stay visible; below-floor-fix actions generate
+   BLOCKED with the authorization shown - configuration is the only
+   override path for loss leaders / strategic KVIs / end-of-life items.
+6. **ERP price increments** - price_increment_cents (default 1 = no
+   change): optimized prices snap to the increment with the floor rounded
+   UP first, so a snap can never breach it.
+7. **Disclosures** - guidance pairs carry uom_basis, channel, cost_as_of
+   (the date of the sale the CURRENT unit cost came from) and k_assumption;
+   methodology states the pair weighting, the current-vs-dated cost
+   labeling and the eligibility disclosures.
+
+Tests added: tests/test_floors_bands.py (7): independence counts;
+single-customer band insufficient; stale list blocks target with reason
+and keeps dollar floors; mixed units excluded without contaminating the
+band; contribution floor role scoping with K disclosure; authorized role
+blocks the fix action; increment snapping (9700 -> 9600 at a 300-cent
+increment, floor rounded up).
+
+Headline numbers: UNCHANGED on the demo world (identical opportunity
+totals 39,629,675 / 7,966,738 cents; 1,550 guidance pairs; no stale lists
+at the 24-month default and every band has at least 5 customers thanks to
+the 20-customer leaf minimums).
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 494 passed 0 failed (exit 0); Playwright 225 passed
+(exit 0). Demo bundle re-exported (guidance CSV gains the disclosure
+columns; bundle figures unchanged).
