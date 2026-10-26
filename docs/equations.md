@@ -12,11 +12,14 @@ stated. Symbols are shared across the sheet:
   and net of vendor rebates [cents per unit].
 - `K` — estimated per-unit cost-to-serve from configured activity rates
   [cents per unit, labeled estimated].
-- `d` — percentage post-invoice deductions as a rate: the customer's rebate
-  program rate plus the customer's realized freight-concession rate. Held in
-  basis points internally. Assumption: these deductions scale proportionally
-  with invoice value (a fixed-rate approximation; Phase 66 adds explicit
-  denominators and recomputation for tiered arrangements).
+- `d` — percentage post-invoice deductions as a rate: the customer's flat
+  rebate program rates plus the realized freight-concession rate. Held in
+  basis points internally. Rates sum into d only because they share one base
+  (net invoiced value) and apply independently (Phase 66); rates on different
+  bases are never summed. TIERED programs never flatten into d: their rebate
+  is rate(cumulative basis) x cumulative basis and every candidate-price
+  figure recomputes it at the candidate revenue (a tiered customer without a
+  tier table keeps the flat figure, labeled a fixed-rate approximation).
 - `F` — fixed per-unit post-invoice deductions [cents per unit].
 - `m`, `m_c` — minimum pocket gross margin and minimum contribution margin
   (dimensionless rates).

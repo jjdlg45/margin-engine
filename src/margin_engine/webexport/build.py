@@ -566,6 +566,7 @@ def build_bundle(
             ),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
+            deduction_treatment=str(r.get("deduction_treatment") or "flat_rate_exact"),
             cost_unavailable=bool(r.get("cost_unavailable") or False),
             evidence_status=r.get("evidence_status"),
             pct_below_target=_r(

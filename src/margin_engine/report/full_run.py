@@ -36,6 +36,7 @@ from margin_engine.manifest.run_manifest import (
 )
 from margin_engine.memlog import rss_log
 from margin_engine.money import cents_col_to_dollars
+from margin_engine.opportunity.deductions import build_tiered_context, deduction_coverage
 from margin_engine.opportunity.sizing import observed_leakage, price_opportunities
 from margin_engine.panel.build import build_panel
 from margin_engine.report.render import render_report
@@ -186,6 +187,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "rebate_subledger": ["customer_id", "rebate_program_id", "period", "entry_type", "source_ref"],
     "rebate_subledger_balances": ["customer_id", "rebate_program_id", "period"],
     "cost_pools": ["cost_pool_id", "detail"],
+    "deduction_coverage": ["customer_id"],
     "gl_trace_sample": ["month", "source_line_key"],
     "books_tieout": ["month", "measure"],
 }
@@ -466,7 +468,38 @@ def run_full(
 
     t = time.perf_counter()
     leak = observed_leakage(res.ledger, rules, fiscal)
-    opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
+    # Deductions with explicit denominators (Run 6, Phase 66): tiered programs
+    # are RECOMPUTED at candidate revenue, never flattened into d; a tiered
+    # customer without a tier table gets the fixed-rate approximation label.
+    tiered_cust_ids: set[str] = set()
+    _programs_ref = res.reference.get("rebate_programs")
+    if _programs_ref is not None:
+        tiered_cust_ids = {
+            str(c)
+            for c in _programs_ref.filter(pl.col("program_kind") == "tiered")[
+                "customer_id"
+            ].to_list()
+        }
+    tiered_ctx = build_tiered_context(
+        res.reference.get("rebate_programs"),
+        res.reference.get("rebate_program_tiers"),
+        res.tiered_summary,
+    )
+    if tiered_cust_ids and tiered_ctx is None:
+        res.notes.append(
+            f"{len(tiered_cust_ids)} tiered-program customer(s) have no usable tier "
+            "table: their opportunity figures use the flat deduction rate, labeled "
+            "a fixed-rate approximation"
+        )
+    opps = price_opportunities(
+        guidance_res.guidance,
+        panel,
+        sens,
+        rules,
+        tiered_ctx=tiered_ctx,
+        tiered_customers=tiered_cust_ids,
+    )
+    ded_coverage = deduction_coverage(guidance_res.guidance, tiered_cust_ids)
     timings["opportunity"] = time.perf_counter() - t
     rss_log("opportunity")
 
@@ -610,6 +643,7 @@ def run_full(
         "rebate_subledger": subledger_res.entries,
         "rebate_subledger_balances": subledger_res.balances,
         **({"cost_pools": cts.pools} if cts.pools is not None else {}),
+        "deduction_coverage": ded_coverage,
         **(
             {"vendor_rebate_rollforward": rollforward_res.table}
             if rollforward_res.table is not None

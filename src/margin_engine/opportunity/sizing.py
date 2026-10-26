@@ -41,6 +41,12 @@ import polars as pl
 
 from margin_engine.config import Rules
 from margin_engine.fiscal import FiscalCalendar
+from margin_engine.opportunity.deductions import (
+    TREATMENT_APPROX,
+    TREATMENT_FLAT,
+    TREATMENT_RECOMPUTED,
+    TieredDeductionContext,
+)
 from margin_engine.sensitivity.estimate import STATUS_CAUSAL, STATUS_IV
 
 TREATMENT_EXPECTED = "expected_change"
@@ -106,8 +112,18 @@ def price_opportunities(
     panel: pl.DataFrame,
     sensitivity: pl.DataFrame,
     rules: Rules,
+    *,
+    tiered_ctx: TieredDeductionContext | None = None,
+    tiered_customers: set[str] | None = None,
 ) -> pl.DataFrame:
-    """Levels 2 and 3 per customer x item, from guidance targets."""
+    """Levels 2 and 3 per customer x item, from guidance targets.
+
+    Deduction treatment (Run 6, Phase 66): flat percentage rates on the same
+    base (net invoiced value) flatten into d exactly; TIERED programs are
+    RECOMPUTED at the candidate revenue via `tiered_ctx` (crossing a tier
+    re-rates the whole basis), and a tiered customer WITHOUT a tier table gets
+    the (1 - d) result labeled a fixed-rate approximation - stated, never
+    silent. Every record carries `deduction_treatment`."""
     oc = rules.opportunity
     window = rules.opportunity.baseline_window_months
     max_m = int(panel["month_idx"].max() or 0)  # type: ignore[arg-type]
@@ -325,6 +341,20 @@ def price_opportunities(
             pl.col("baseline_qty"),
         ).alias("calc_trace"),
     )
+    # --- deduction treatment (Run 6, Phase 66) -------------------------------
+    tiered_set = sorted({str(c) for c in (tiered_customers or set())})
+    if tiered_set:
+        g = g.with_columns(
+            pl.when(pl.col("customer_id").cast(pl.String).is_in(tiered_set))
+            .then(pl.lit(TREATMENT_RECOMPUTED if tiered_ctx is not None else TREATMENT_APPROX))
+            .otherwise(pl.lit(TREATMENT_FLAT))
+            .alias("deduction_treatment")
+        )
+    else:
+        g = g.with_columns(pl.lit(TREATMENT_FLAT).alias("deduction_treatment"))
+    if tiered_ctx is not None and tiered_set:
+        g = _recompute_tiered_rows(g, tiered_ctx, tiered_set)
+
     return g.select(
         "customer_id",
         "item_id",
@@ -349,12 +379,112 @@ def price_opportunities(
         "k_status",
         "cost_unavailable",
         "volume_treatment",
+        "deduction_treatment",
         "baseline_window",
         "action",
         "constraints",
         "quantity_basis",
         "calc_trace",
     )
+
+
+def _recompute_tiered_rows(
+    g: pl.DataFrame, ctx: TieredDeductionContext, tiered_set: list[str]
+) -> pl.DataFrame:
+    """Replace the flat-rate figures of tiered customers' rows with FULLY
+    recomputed ones (Phase 66): the tiered rebate change is evaluated at each
+    scenario's candidate revenue - rate(B0 + dR) x (B0 + dR) - rate(B0) x B0 -
+    so crossing a tier re-rates the whole basis exactly as a settlement would.
+    Rows stay row-identical except for the adjusted dollar columns."""
+    is_tiered = pl.col("customer_id").cast(pl.String).is_in(tiered_set)
+    rows = g.filter(is_tiered)
+    if rows.height == 0:
+        return g
+    adj_records: list[dict[str, object]] = []
+    for r in rows.sort("customer_id", "item_id").to_dicts():
+        cust = str(r["customer_id"])
+        qty = float(r["baseline_qty"])
+        retain = float(r["pocket_retention"])
+        p0 = float(r["current_invoice_price_cents"])
+        p1 = float(r["proposed_invoice_price_cents"])
+        gap = p1 - p0
+        rec: dict[str, object] = {"customer_id": r["customer_id"], "item_id": r["item_id"]}
+        d2 = ctx.delta_cents(cust, gap * qty)
+        if d2 is None:
+            continue  # no tiered program after all; flat figures stand
+        rec["_adj_gross"] = round(gap * qty * retain - d2)
+        cons = r.get("gross_price_opportunity_conservative_cents")
+        if cons is not None and retain > 0:
+            d2c = ctx.delta_cents(cust, float(cons) / retain) or 0.0
+            rec["_adj_cons"] = round(float(cons) - d2c)
+        f = float(r.get("fixed_deduction_f") or 0)
+        cost = r.get("unit_cost_cents")
+        k = r.get("k_per_unit_cents")
+
+        def level3(
+            ex: float | None,
+            *,
+            with_k: bool,
+            _cust: str = cust,
+            _qty: float = qty,
+            _retain: float = retain,
+            _p0: float = p0,
+            _p1: float = p1,
+            _f: float = f,
+            _cost: object = cost,
+            _k: object = k,
+        ) -> int | None:
+            if ex is None or _cost is None or (with_k and _k is None):
+                return None
+            q1 = _qty * (_p1 / _p0) ** float(ex)
+            kk = float(_k) if with_k and _k is not None else 0.0  # type: ignore[arg-type]
+            c1 = _p1 * _retain - _f - float(_cost) - kk  # type: ignore[arg-type]
+            c0 = _p0 * _retain - _f - float(_cost) - kk  # type: ignore[arg-type]
+            dr3 = _p1 * q1 - _p0 * _qty
+            adj = ctx.delta_cents(_cust, dr3) or 0.0
+            return int(round(c1 * q1 - c0 * _qty - adj))
+
+        e = r.get("elasticity")
+        e_lo, e_hi = r.get("elasticity_ci_low"), r.get("elasticity_ci_high")
+        if r.get("expected_pocket_gross_profit_change_cents") is not None:
+            rec["_adj_gp"] = level3(e, with_k=False)
+        if r.get("expected_contribution_change_cents") is not None:
+            rec["_adj_contrib"] = level3(e, with_k=True)
+        if r.get("gp_change_low_cents") is not None:
+            lo, hi = level3(e_lo, with_k=False), level3(e_hi, with_k=False)
+            if lo is not None and hi is not None:
+                rec["_adj_gp_lo"], rec["_adj_gp_hi"] = min(lo, hi), max(lo, hi)
+        if r.get("contribution_change_low_cents") is not None:
+            lo, hi = level3(e_lo, with_k=True), level3(e_hi, with_k=True)
+            if lo is not None and hi is not None:
+                rec["_adj_c_lo"], rec["_adj_c_hi"] = min(lo, hi), max(lo, hi)
+        adj_records.append(rec)
+    if not adj_records:
+        return g
+    adj = pl.DataFrame(adj_records)
+    g = g.join(adj, on=["customer_id", "item_id"], how="left", maintain_order="left")
+    replacements = {
+        "_adj_gross": "gross_price_opportunity_cents",
+        "_adj_cons": "gross_price_opportunity_conservative_cents",
+        "_adj_gp": "expected_pocket_gross_profit_change_cents",
+        "_adj_contrib": "expected_contribution_change_cents",
+        "_adj_gp_lo": "gp_change_low_cents",
+        "_adj_gp_hi": "gp_change_high_cents",
+        "_adj_c_lo": "contribution_change_low_cents",
+        "_adj_c_hi": "contribution_change_high_cents",
+    }
+    exprs = []
+    drops = []
+    for tmp, target in replacements.items():
+        if tmp in g.columns:
+            exprs.append(
+                pl.when(pl.col(tmp).is_not_null())
+                .then(pl.col(tmp))
+                .otherwise(pl.col(target))
+                .alias(target)
+            )
+            drops.append(tmp)
+    return g.with_columns(exprs).drop(drops)
 
 
 def numeric_optimal_price(

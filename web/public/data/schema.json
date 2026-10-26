@@ -1417,6 +1417,11 @@
      "default": null,
      "title": "Customer Name"
     },
+    "deduction_treatment": {
+     "default": "flat_rate_exact",
+     "title": "Deduction Treatment",
+     "type": "string"
+    },
     "evidence_status": {
      "anyOf": [
       {

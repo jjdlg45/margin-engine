@@ -230,6 +230,10 @@ class OpportunityRecord(BaseModel):
     expected_pocket_gross_profit_change_cents: int | None = None
     expected_contribution_change_cents: int | None
     volume_treatment: str
+    # How post-invoice deductions were treated for this record (Run 6, Phase
+    # 66): exact flat rate, recomputed tiered formula, or a labeled
+    # fixed-rate approximation.
+    deduction_treatment: str = "flat_rate_exact"
     cost_unavailable: bool = False
     evidence_status: str | None
     pct_below_target: float | None = Field(

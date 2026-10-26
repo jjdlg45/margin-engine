@@ -3374,3 +3374,52 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 (strict); full pytest 477 passed 0 failed (exit 0); tsc 0; vitest 22/22;
 vite build 0; Playwright 225 passed (exit 0). Demo bundle re-exported;
 schema +22 lines; generated types updated.
+
+## Phase 66 — Deductions with explicit denominators (2026-10-26, Run 6 branch)
+
+Finding 8: every deduction has a declared form and base, and tiered
+formulas are recomputed, never flattened.
+
+1. **Forms and bases** - flat program rates and realized freight-concession
+   rates are percentages of the SAME base (net invoiced value) applying
+   independently, so they sum into d exactly (documented; rates on
+   different bases are never summed). Fixed per-unit deductions F are cents
+   per unit. Tiered programs are retrospective formulas: rebate =
+   rate(cumulative basis) x cumulative basis.
+2. **Tiered recomputation** - new opportunity/deductions.py:
+   TieredDeductionContext recomputes rebate(B0 + dR) - rebate(B0) per
+   customer-program at each scenario's candidate revenue. Level 2, the
+   conservative variant and BOTH level-3 bases (point and interval, GP and
+   contribution) are fully recomputed for tiered customers - crossing a
+   tier re-rates the whole basis exactly as a settlement would; a negative
+   baseline basis accrues nothing (fail closed). Every record carries
+   deduction_treatment: flat_rate_exact | recomputed_tiered |
+   fixed_rate_approximation (tiered customer with no usable tier table -
+   labeled, with a run note, never silent).
+3. **Known deduction coverage** - new deduction_coverage export per
+   customer: total d, observed share (realized concession history),
+   contract-derived share (program rates), and whether a tiered formula is
+   recomputed; zero coverage is reported as zero, never invented.
+4. **Surfaces** - the bundle's opportunity records carry
+   deduction_treatment (schema +5 lines, labels added); methodology and the
+   equation sheet state the forms, bases and sequencing.
+
+Exit gate (tests/test_deductions.py, 10 tests): reported impact equals a
+baseline-vs-scenario ledger RECOMPUTED THROUGH THE FULL PIPELINE, to the
+cent, for flat (4,900 = gap x qty x 0.98), fixed per-unit, tiered within a
+tier (4,950), tiered CROSSING a tier (3,920 vs the flat rate's naive 5,000)
+and mixed flat+tiered (3,820) arrangements; plus coverage, labels,
+negative-basis and context-construction tests.
+
+Before/after headline numbers (demo world, deliberate): gross price
+opportunity 40,450,015 -> 39,629,675 cents (tiered customers' rebate growth
+now nets out of level 2); expected contribution change 7,843,222 ->
+7,966,738 cents and GP basis 7,799,686 -> 7,923,208 cents (elastic demand:
+candidate revenue falls, so tiered rebates fall, raising the pocket gain);
+action level-3 impact 3,863,155 -> 3,942,697 cents; level-2 action bucket
+20,110,146 -> 19,416,170 cents.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 487 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0, no snapshot changes). Demo
+bundle re-exported; generated types updated.

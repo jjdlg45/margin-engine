@@ -420,6 +420,23 @@ the pair's percentage post-invoice deductions d.
    high-service pairs can rank differently under the two bases, which is the
    point of keeping both.
 
+**Deductions with explicit denominators** (Run 6, Phase 66 / Finding 8):
+every post-invoice adjustment has a declared FORM and BASE. Flat program rates
+and realized freight-concession rates are both percentages of the SAME base —
+net invoiced value — and apply independently, so they sum into d exactly;
+rates on different bases are never summed. Fixed per-unit deductions F are
+cents per unit. TIERED programs are retrospective formulas — the rebate is
+rate(cumulative basis) x cumulative basis — so every opportunity figure for a
+tiered customer is RECOMPUTED at the candidate revenue (crossing a tier
+re-rates the whole basis, exactly as a settlement would); a tiered customer
+whose tier table is missing keeps the flat (1 - d) figure labeled a
+fixed-rate approximation, never silently. Each record carries its deduction
+treatment, and the per-customer coverage table (deduction_coverage export)
+reports how much of d is observed history, contract-derived rates, or a
+recomputed tiered formula. Fixtures prove the reported impact equals a
+baseline-vs-scenario ledger recomputed through the full pipeline, to the
+cent, for flat, fixed, tiered and mixed arrangements.
+
 **Per-unit cost-to-serve K** (Run 6, Phase 65 / Finding 8): the pair's
 activity cost over the covered baseline divided by its units, decomposed into
 a VARIABLE component (per-line and per-unit handling rates over observed

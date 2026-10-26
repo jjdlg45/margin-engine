@@ -236,6 +236,7 @@ export type OptimizerObjective = string;
 export type CostUnavailable = boolean;
 export type CustomerId4 = string;
 export type CustomerName3 = string | null;
+export type DeductionTreatment = string;
 export type EvidenceStatus1 = string | null;
 export type ExpectedContributionChangeCents = number | null;
 export type ExpectedPocketGrossProfitChangeCents = number | null;
@@ -721,6 +722,7 @@ export interface OpportunityRecord {
   cost_unavailable?: CostUnavailable;
   customer_id: CustomerId4;
   customer_name?: CustomerName3;
+  deduction_treatment?: DeductionTreatment;
   evidence_status: EvidenceStatus1;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
   expected_pocket_gross_profit_change_cents?: ExpectedPocketGrossProfitChangeCents;

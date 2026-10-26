@@ -266,6 +266,22 @@ LABELS: dict[str, dict[str, str]] = {
         "ever induced in this segment, so no volume response is modeled - the figure "
         "assumes unchanged volume.",
     },
+    # --- deduction treatments (Run 6, Phase 66) ---------------------------------
+    "flat_rate_exact": {
+        "label": "Flat rates, exact",
+        "description": "Every percentage deduction applies independently on the same base "
+        "(net invoiced value), so the flat rate is exact, not an approximation.",
+    },
+    "recomputed_tiered": {
+        "label": "Tiered rebate recomputed",
+        "description": "This customer holds a tiered program, so the rebate was recomputed "
+        "at the candidate revenue - crossing a tier re-rates the whole basis.",
+    },
+    "fixed_rate_approximation": {
+        "label": "Fixed-rate approximation",
+        "description": "This customer's tiered arrangement has no usable tier table, so a "
+        "flat rate stands in - labeled, never silent.",
+    },
     "cost_unavailable": {
         "label": "Cost unavailable",
         "description": "No unit cost is known for this pair: cost-dependent figures are not "
