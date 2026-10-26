@@ -404,11 +404,30 @@ the pair's percentage post-invoice deductions d.
    raises the rebates and concessions that scale with it, so the pocket gain
    is (1 - d) of the invoice gap. A conservative variant raises below-P25
    pairs to P25 only, reported alongside (never added to the main level).
-3. Expected contribution change: c(P1) Q(P1) - c(P0) Q(P0) with pocket-aware
-   unit contribution c(P) = P (1 - d) - F - C [cents/unit] — only where the
-   elasticity status is causal AND the proposed move lies inside the
-   segment's identifying price support; at `iv_estimated_elasticity` a
-   labeled sensitivity range is shown; below that, fixed-volume numbers only.
+3. Expected change with a volume response, reported on TWO bases that are
+   never conflated or summed (Run 6, Phase 65): the expected POCKET GROSS
+   PROFIT change uses unit economics c(P) = P (1 - d) - F - C [cents/unit];
+   the expected CONTRIBUTION change also subtracts the pair's estimated
+   per-unit cost-to-serve K (c(P) = P (1 - d) - F - C - K, labeled estimated
+   because K comes from configured activity rates) and is UNAVAILABLE for a
+   pair without a supported K — never borrowed from the gross profit basis.
+   Both are c(P1) Q(P1) - c(P0) Q(P0), produced only where the elasticity
+   status is causal AND the proposed move lies inside the segment's
+   identifying price support; at `iv_estimated_elasticity` a labeled
+   sensitivity range is shown; below that, fixed-volume numbers only.
+   Because a price increase sheds volume and its service cost with it, the
+   contribution change EXCEEDS the gross profit change by K x (Q0 - Q1) —
+   high-service pairs can rank differently under the two bases, which is the
+   point of keeping both.
+
+**Per-unit cost-to-serve K** (Run 6, Phase 65 / Finding 8): the pair's
+activity cost over the covered baseline divided by its units, decomposed into
+a VARIABLE component (per-line and per-unit handling rates over observed
+lines and units) and an ORDER component (per-order and per-delivery
+allocations). Both derive from the pool-resolved effective rates, so a rate
+switched off by the cost-pool overlap check never re-enters through K, and
+the floor's K and the optimizer's K are the same number — the derivation is
+stated here precisely so neither can be circular with the other.
 
 Pairs without a known unit cost are excluded from cost-dependent levels and
 labeled `cost_unavailable` — missing cost is never treated as zero.
@@ -416,12 +435,22 @@ Eligibility excludes contract-protected pairs and insufficient-data guidance.
 Every record carries baseline window, action, constraints, quantity basis,
 price assumptions, evidence status and a calculation trace.
 
-Target optimization maximizes pocket contribution (P (1 - d) - F - C) Q(P);
-the log-log interior optimum is P* = (C + F) / (1 - d) x beta / (1 + beta)
-[cents/unit, invoice basis], applied only at causal support inside the
-identifying price range, clipped to the floor and corridor; inelastic
-segments get the corridor top, labeled. All other targets remain provisional
-historical.
+Target optimization maximizes the CONFIGURED objective (Run 6, Phase 65) and
+every output names it. Under `pocket_gross_profit` the objective is
+(P (1 - d) - F - C) Q(P), with the log-log interior optimum
+P* = (C + F) / (1 - d) x beta / (1 + beta) [cents/unit, invoice basis]. Under
+`contribution` the objective also subtracts K, and the MARGINAL K follows the
+declared order-cost response: with a fixed ordering cadence
+(`fixed_order_frequency`, the default) order quantities scale with volume, so
+the per-order component's TOTAL is volume-constant and drops out of marginal
+economics; with `fixed_order_size` order counts scale with volume and the
+whole K is marginal. The contribution optimum is found NUMERICALLY (coarse
+grid plus cent-resolution refine — exact for this smooth, unimodal objective
+and still correct if unit economics gain further quantity dependence); a pair
+without a supported K keeps the provisional target. Either way the optimum is
+applied only at causal support inside the identifying price range, clipped to
+the floor and corridor; inelastic segments get the corridor top, labeled. All
+other targets remain provisional historical.
 
 Cost/tariff scenarios state scope (item / supplier / category), magnitude and
 effective date; pass-through strategies 0% / 50% / 100% and segment-weighted
@@ -450,8 +479,12 @@ segment at or under the threshold recovered within 7 percent, while segments
 above it erred by up to 28 percent. The gate is roughly a 1.5-sigma criterion
 against the +/-15 percent bound, so it is probabilistic rather than a
 guarantee — stated here rather than hidden. The negotiation gap (quote to
-close on won deals) informs the start price. Win-aware optimization maximizes
-(P - C) x P_win(P) with deal size held at baseline: ONE volume-response source
+close on won deals) informs the start price. Win-aware optimization (Run 6,
+Phase 65) translates the quote index into a monetary price and maximizes the
+POCKET objective times the win probability — (P (1 - d) - F - C) x P_win(P),
+or with per-unit cost-to-serve K also subtracted under the contribution
+objective (refused, not guessed, when no K is supported) — with deal size
+held at baseline: ONE volume-response source
 per record, enforced by the function signature. An elasticity estimated from
 realized transactions (PPML on the panel including zeros) already contains
 the extensive margin the win curve models — lost deals ARE the zeros — so

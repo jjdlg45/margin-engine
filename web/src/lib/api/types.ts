@@ -116,8 +116,10 @@ export interface OpportunityData {
   leakage_total_cents: number;
   gross_total_cents: number;
   gross_conservative_total_cents: number | null;
+  expected_gp_total_cents: number;
   expected_total_cents: number;
   expected_total_note: string;
+  optimizer_objective: string;
   n_records: number;
   n_cost_unavailable: number;
   n_outside_price_support: number;

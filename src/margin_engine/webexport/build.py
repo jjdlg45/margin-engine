@@ -561,6 +561,9 @@ def build_bundle(
             gross_price_opportunity_conservative_cents=r.get(
                 "gross_price_opportunity_conservative_cents"
             ),
+            expected_pocket_gross_profit_change_cents=r.get(
+                "expected_pocket_gross_profit_change_cents"
+            ),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
             cost_unavailable=bool(r.get("cost_unavailable") or False),
@@ -609,16 +612,25 @@ def build_bundle(
         )
         if res.opportunities.height
         else 0,
+        expected_gp_total_cents=_i(
+            res.opportunities["expected_pocket_gross_profit_change_cents"].fill_null(0).sum()
+        )
+        if res.opportunities.height
+        and "expected_pocket_gross_profit_change_cents" in res.opportunities.columns
+        else 0,
         expected_total_cents=_i(
             res.opportunities["expected_contribution_change_cents"].fill_null(0).sum()
         )
         if res.opportunities.height
         else 0,
         expected_total_note=(
-            "Expected contribution change is summed only over records whose "
-            "elasticity is causal-supported; everything else contributes zero here "
-            "and is shown fixed-volume."
+            "Two expected-change bases, never conflated: the pocket gross profit "
+            "change uses unit economics net of deductions and product cost; the "
+            "contribution change also subtracts estimated per-unit cost-to-serve. "
+            "Each sums only records whose elasticity is causal-supported; "
+            "everything else contributes zero here and is shown fixed-volume."
         ),
+        optimizer_objective=rules.opportunity.optimizer_objective,
         top_opportunities=top_opps,
         n_records=res.opportunities.height,
     )
@@ -1181,8 +1193,10 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
             "leakage_total_cents": opp["leakage_total_cents"],
             "gross_total_cents": opp["gross_total_cents"],
             "gross_conservative_total_cents": opp["gross_conservative_total_cents"],
+            "expected_gp_total_cents": opp["expected_gp_total_cents"],
             "expected_total_cents": opp["expected_total_cents"],
             "expected_total_note": opp["expected_total_note"],
+            "optimizer_objective": opp["optimizer_objective"],
             "n_records": opp["n_records"],
             "n_cost_unavailable": opp["n_cost_unavailable"],
             "n_outside_price_support": opp["n_outside_price_support"],

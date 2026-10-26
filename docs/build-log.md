@@ -3314,3 +3314,63 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 vite build 0; Playwright 225 passed (exit 0) after re-baselining the 4
 overview snapshots changed by the headline. Demo bundle re-exported with
 the two new KPI fields (schema +12 lines); business figures unchanged.
+
+## Phase 65 — Contribution vs gross profit, and the win-curve objective (2026-10-26, Run 6 branch)
+
+Finding 1: every expected-change figure now says exactly which unit
+economics produced it.
+
+1. **Two expected-change bases, never conflated**: level 3 reports the
+   expected POCKET GROSS PROFIT change (c(P) = P(1-d) - F - C; today's
+   formula, renamed) AND the expected CONTRIBUTION change (c(P) = P(1-d) -
+   F - C - K, with K the pair's estimated per-unit cost-to-serve, labeled
+   estimated). A pair without a supported K gets NO contribution figure -
+   never a borrowed one (k_status: estimated | unavailable). Sensitivity
+   ranges exist on both bases. Because a price increase sheds volume and
+   its service cost, the contribution change exceeds the gross profit
+   change by K x (Q0 - Q1) - high-service pairs rank differently under the
+   two bases (tested).
+2. **Configurable optimizer objective** (pocket_gross_profit default, or
+   contribution); every output names its objective. The contribution
+   optimum is found NUMERICALLY (coarse grid + cent-resolution refine -
+   agrees with the closed form where one exists, tested to within 1 cent)
+   against the MARGINAL K under a declared order-cost response:
+   fixed_order_frequency (default; per-order cost total is volume-constant
+   and drops out of marginal economics) or fixed_order_size (per-order cost
+   is marginal) - the optimum moves accordingly (9150 vs 9450 in the
+   fixture). Without a supported K the provisional target is kept.
+3. **K defined, non-circular (Finding 8)**: K = pair activity cost per unit
+   over the covered baseline, decomposed into a variable component
+   (per-line + per-unit handling) and an order component (per-order +
+   per-delivery), both from the POOL-RESOLVED effective rates - a rate
+   switched off by the Phase 63 overlap check never re-enters through K,
+   and the floor and optimizer share the same number by construction.
+4. **Win-curve objective**: the quote index translates into a monetary
+   price and the optimizer maximizes (P(1-d) - F - C [- K]) x P_win - a
+   contribution call without a supported K is refused, never guessed. The
+   quote optimum differs between the gross and pocket/contribution
+   objectives (tested: deductions push it up, K further).
+5. **Everywhere the figures appear**: actions pick the contribution basis
+   when K is supported, else the named gross profit basis (rationale says
+   which); the bundle, opportunity page, HTML report and explanations show
+   both totals side by side with a never-summed note; metric dictionary and
+   equation sheet updated (Phase 60 pending notes flipped to actual).
+
+Tests: 8 new/reworked in test_opportunity.py (hand-calc on both bases: GP
+2826 / contribution 3235 with K=200; ranking flip; numeric-vs-closed-form;
+order-cost response; objective naming; no-K provisional) and 2 in
+test_quotes.py (objective differences; contribution-without-K refused).
+
+Before/after headline numbers (demo world, deliberate per run-6 rules):
+expected contribution change total 7,799,686 -> 7,843,222 cents (K is now
+subtracted on both sides and volume shed saves service cost); action
+level-3 impact (contribution basis) 3,796,446 -> 3,863,155 cents; the
+fixed-volume level-2 action bucket moved 20,164,261 -> 20,110,146 cents
+(impact-ranked per-type cap recomposed under the new impacts). New GP-basis
+totals shown alongside; 4 opportunity-page snapshots re-baselined for the
+deliberate new line.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 477 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0). Demo bundle re-exported;
+schema +22 lines; generated types updated.

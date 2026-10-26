@@ -40,6 +40,9 @@ class CostToServeResult:
     # source, which by an activity estimate, and which rate was switched off
     # to prevent double counting.
     pools: pl.DataFrame | None = None
+    # The pool-resolved effective activity rates actually applied (Run 6,
+    # Phase 65): downstream K decomposition reads these, never the raw config.
+    rates: dict[str, int] | None = None
 
 
 class CostPoolOverlapError(ValueError):
@@ -345,4 +348,5 @@ def run_cost_to_serve(
         service_flags=flags,
         notes=notes,
         pools=pools,
+        rates=rates,
     )

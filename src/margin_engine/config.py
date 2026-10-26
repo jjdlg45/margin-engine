@@ -547,6 +547,22 @@ class OpportunityConfig(StrictModel):
     # Expected contribution change only at causal_elasticity_supported;
     # iv_estimated shown as a labeled sensitivity range; else fixed-volume only.
     volume_response_requires: Literal["causal_elasticity_supported"] = "causal_elasticity_supported"
+    # Optimizer objective (Run 6, Phase 65): pocket gross profit
+    # (P(1-d) - F - C) or contribution (also subtracts per-unit cost-to-serve
+    # K, estimated from activity rates). Every optimizer output names its
+    # objective; a pair without a supported K keeps the provisional target
+    # under the contribution objective instead of borrowing a generic number.
+    optimizer_objective: Literal["pocket_gross_profit", "contribution"] = "pocket_gross_profit"
+    # How per-order and per-delivery costs respond to a volume change (Run 6,
+    # Phase 65 / Finding 8). fixed_order_frequency: customers keep their
+    # ordering cadence, so order quantities scale with volume and the TOTAL
+    # per-order cost is volume-constant - it drops out of marginal economics.
+    # fixed_order_size: order counts scale with volume, so per-order cost is
+    # marginal per unit. The contribution optimizer re-optimizes numerically
+    # under the declared response.
+    order_cost_response: Literal["fixed_order_frequency", "fixed_order_size"] = (
+        "fixed_order_frequency"
+    )
 
 
 # ---------------------------------------------------------------------------

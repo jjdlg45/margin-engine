@@ -1439,6 +1439,18 @@
      ],
      "title": "Expected Contribution Change Cents"
     },
+    "expected_pocket_gross_profit_change_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Expected Pocket Gross Profit Change Cents"
+    },
     "explanation": {
      "title": "Explanation",
      "type": "string"
@@ -1525,6 +1537,11 @@
   },
   "OpportunitySection": {
    "properties": {
+    "expected_gp_total_cents": {
+     "default": 0,
+     "title": "Expected Gp Total Cents",
+     "type": "integer"
+    },
     "expected_total_cents": {
      "title": "Expected Total Cents",
      "type": "integer"
@@ -1576,6 +1593,11 @@
     },
     "never_summed_note": {
      "title": "Never Summed Note",
+     "type": "string"
+    },
+    "optimizer_objective": {
+     "default": "pocket_gross_profit",
+     "title": "Optimizer Objective",
      "type": "string"
     },
     "top_opportunities": {

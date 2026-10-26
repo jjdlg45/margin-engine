@@ -333,6 +333,14 @@ def run_full(
     t = time.perf_counter()
     # Per-unit cost-to-serve K (estimated, from config activity rates) for the
     # optional contribution floor (24.3): pair totals over covered sale lines.
+    # K definition (Run 6, Phase 65 / Finding 8): the pair's per-unit
+    # cost-to-serve over the covered baseline, decomposed so the optimizer can
+    # treat order-level costs by the declared order-cost response. Variable
+    # component: per-line and per-unit handling rates over observed lines and
+    # units; order component: the remainder (per-order and per-delivery
+    # allocations). Both derive from the POOL-RESOLVED effective rates, so a
+    # rate switched off by the overlap check never re-enters through K.
+    eff_rates = cts.rates or {}
     cts_per_unit = (
         res.ledger.filter(
             (pl.col("transaction_type") == "sale")
@@ -343,12 +351,34 @@ def run_full(
         .agg(
             pl.col("activity_cts_cents").sum().alias("_cts"),
             pl.col("quantity_norm").sum().alias("_qty"),
+            pl.len().alias("_n_lines"),
         )
         .filter(pl.col("_qty") > 0)
         .with_columns(
-            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents")
+            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents"),
+            (
+                (
+                    pl.col("_n_lines") * eff_rates.get("per_line", 0)
+                    + pl.col("_qty") * eff_rates.get("special_handling", 0)
+                )
+                / pl.col("_qty")
+            )
+            .round(0)
+            .cast(pl.Int64)
+            .alias("k_variable_per_unit_cents"),
         )
-        .select("customer_id", "item_id", "cts_per_unit_cents")
+        .with_columns(
+            (pl.col("cts_per_unit_cents") - pl.col("k_variable_per_unit_cents"))
+            .clip(lower_bound=0)
+            .alias("k_order_per_unit_cents")
+        )
+        .select(
+            "customer_id",
+            "item_id",
+            "cts_per_unit_cents",
+            "k_variable_per_unit_cents",
+            "k_order_per_unit_cents",
+        )
         if "activity_cts_cents" in res.ledger.columns
         else None
     )
@@ -920,6 +950,11 @@ def run_full(
             "expected_total": _fmt_dollars(
                 int(opps["expected_contribution_change_cents"].fill_null(0).sum())
                 if opps.height
+                else 0
+            ),
+            "expected_gp_total": _fmt_dollars(
+                int(opps["expected_pocket_gross_profit_change_cents"].fill_null(0).sum())
+                if opps.height and "expected_pocket_gross_profit_change_cents" in opps.columns
                 else 0
             ),
             "n_records": opps.height,

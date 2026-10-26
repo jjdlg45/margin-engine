@@ -174,3 +174,41 @@ def test_win_aware_uses_single_volume_response() -> None:
             list_cents=10_000,
             floor_cents=6_500,
         )
+
+
+def test_win_aware_pocket_objective_differs_from_gross() -> None:
+    """Phase 65: the quote optimum translates the index into money and applies
+    the pair's post-invoice economics. A deduction rate lowers pocket margin
+    per dollar, so the pocket-aware optimum differs from the legacy gross one;
+    under the contribution objective K shifts it again."""
+    base = {
+        "cost_cents": 6_000,
+        "p0_cents": 9_000,
+        "list_cents": 10_000,
+        "floor_cents": 6_500,
+        "win_intercept": 5.4,
+        "win_price_coef": -6.0,
+    }
+    p_gross, _ = optimal_price_win_aware(**base)
+    p_pocket, _ = optimal_price_win_aware(**base, deduction_bp=1_500)
+    p_contrib, _ = optimal_price_win_aware(
+        **base, deduction_bp=1_500, k_per_unit_cents=600, objective="contribution"
+    )
+    # A 15% deduction raises the effective marginal cost of an invoice dollar,
+    # pushing the optimum UP relative to the gross objective; adding K pushes
+    # it further.
+    assert p_pocket > p_gross
+    assert p_contrib > p_pocket
+
+
+def test_win_aware_contribution_without_k_is_refused() -> None:
+    with pytest.raises(ValueError, match="cost-to-serve"):
+        optimal_price_win_aware(
+            cost_cents=6_000,
+            p0_cents=9_000,
+            win_intercept=5.4,
+            win_price_coef=-6.0,
+            list_cents=10_000,
+            floor_cents=6_500,
+            objective="contribution",
+        )

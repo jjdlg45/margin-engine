@@ -276,8 +276,17 @@ def build_guidance(
     # Per-unit cost-to-serve K for the contribution floor (24.3). Estimated
     # from config activity rates upstream; labeled estimated.
     if cts_per_unit is not None:
+        k_cols = [
+            c
+            for c in (
+                "cts_per_unit_cents",
+                "k_variable_per_unit_cents",
+                "k_order_per_unit_cents",
+            )
+            if c in cts_per_unit.columns
+        ]
         pair = pair.join(
-            cts_per_unit.select("customer_id", "item_id", "cts_per_unit_cents"),
+            cts_per_unit.select("customer_id", "item_id", *k_cols),
             on=["customer_id", "item_id"],
             how="left",
         )

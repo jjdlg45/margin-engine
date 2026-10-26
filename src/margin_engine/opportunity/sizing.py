@@ -221,23 +221,45 @@ def price_opportunities(
             "gross_price_opportunity_conservative_cents"
         )
 
-    # Level 3: pocket-aware unit contribution c(P) = P(1-d) - F - C (24.1).
+    # Level 3 (Run 6, Phase 65): TWO expected-change bases, never conflated.
+    # Pocket gross profit basis: c(P) = P(1-d) - F - C (24.1). Contribution
+    # basis additionally subtracts the pair's per-unit cost-to-serve K
+    # (estimated from activity rates, labeled); without a supported K the
+    # contribution figures are unavailable, never borrowed from the GP basis.
     # Missing cost is never zero (24.2): cost-dependent outputs stay null.
     unit_cost = pl.col("unit_cost_cents")
     has_cost = unit_cost.is_not_null()
+    k_unit = (
+        pl.col("cts_per_unit_cents").cast(pl.Float64)
+        if "cts_per_unit_cents" in g.columns
+        else pl.lit(None, dtype=pl.Float64)
+    )
+    g = g.with_columns(
+        k_unit.alias("k_per_unit_cents"),
+        pl.when(k_unit.is_not_null())
+        .then(pl.lit("estimated"))
+        .otherwise(pl.lit("unavailable"))
+        .alias("k_status"),
+    )
+    has_k = pl.col("k_per_unit_cents").is_not_null()
     p0 = pl.col("current_invoice_price_cents")
     p1 = pl.col("proposed_invoice_price_cents")
     p_ratio = p1 / p0
     unit_c0 = p0 * pl.col("pocket_retention") - pl.col("fixed_deduction_f") - unit_cost
     unit_c1 = p1 * pl.col("pocket_retention") - pl.col("fixed_deduction_f") - unit_cost
-    q1 = pl.col("baseline_qty") * p_ratio.pow(pl.col("elasticity"))
-    contrib_0 = unit_c0 * pl.col("baseline_qty")
-    delta = (unit_c1 * q1 - contrib_0).round(0)
+    q0 = pl.col("baseline_qty")
+    q1 = q0 * p_ratio.pow(pl.col("elasticity"))
+    delta = (unit_c1 * q1 - unit_c0 * q0).round(0)
+    # Contribution basis: subtract K per unit on both sides.
+    kc = pl.col("k_per_unit_cents").fill_null(0)
+    delta_contrib = ((unit_c1 - kc) * q1 - (unit_c0 - kc) * q0).round(0)
 
-    q1_lo = pl.col("baseline_qty") * p_ratio.pow(pl.col("elasticity_ci_low"))
-    q1_hi = pl.col("baseline_qty") * p_ratio.pow(pl.col("elasticity_ci_high"))
-    delta_lo = (unit_c1 * q1_lo - contrib_0).round(0)
-    delta_hi = (unit_c1 * q1_hi - contrib_0).round(0)
+    q1_lo = q0 * p_ratio.pow(pl.col("elasticity_ci_low"))
+    q1_hi = q0 * p_ratio.pow(pl.col("elasticity_ci_high"))
+    delta_lo = (unit_c1 * q1_lo - unit_c0 * q0).round(0)
+    delta_hi = (unit_c1 * q1_hi - unit_c0 * q0).round(0)
+    delta_contrib_lo = ((unit_c1 - kc) * q1_lo - (unit_c0 - kc) * q0).round(0)
+    delta_contrib_hi = ((unit_c1 - kc) * q1_hi - (unit_c0 - kc) * q0).round(0)
 
     causal = pl.col("evidence_status") == STATUS_CAUSAL
     ivonly = pl.col("evidence_status") == STATUS_IV
@@ -256,13 +278,25 @@ def price_opportunities(
         pl.when(causal & has_cost & in_support)
         .then(delta)
         .otherwise(None)
-        .alias("expected_contribution_change_cents"),
+        .alias("expected_pocket_gross_profit_change_cents"),
         pl.when((causal | ivonly) & has_cost & in_support)
         .then(pl.min_horizontal(delta_lo, delta_hi))
         .otherwise(None)
-        .alias("contribution_change_low_cents"),
+        .alias("gp_change_low_cents"),
         pl.when((causal | ivonly) & has_cost & in_support)
         .then(pl.max_horizontal(delta_lo, delta_hi))
+        .otherwise(None)
+        .alias("gp_change_high_cents"),
+        pl.when(causal & has_cost & has_k & in_support)
+        .then(delta_contrib)
+        .otherwise(None)
+        .alias("expected_contribution_change_cents"),
+        pl.when((causal | ivonly) & has_cost & has_k & in_support)
+        .then(pl.min_horizontal(delta_contrib_lo, delta_contrib_hi))
+        .otherwise(None)
+        .alias("contribution_change_low_cents"),
+        pl.when((causal | ivonly) & has_cost & has_k & in_support)
+        .then(pl.max_horizontal(delta_contrib_lo, delta_contrib_hi))
         .otherwise(None)
         .alias("contribution_change_high_cents"),
         pl.when(has_cost.not_())
@@ -305,9 +339,14 @@ def price_opportunities(
         "pocket_retention",
         "gross_price_opportunity_cents",
         "gross_price_opportunity_conservative_cents",
+        "expected_pocket_gross_profit_change_cents",
+        "gp_change_low_cents",
+        "gp_change_high_cents",
         "expected_contribution_change_cents",
         "contribution_change_low_cents",
         "contribution_change_high_cents",
+        "k_per_unit_cents",
+        "k_status",
         "cost_unavailable",
         "volume_treatment",
         "baseline_window",
@@ -318,31 +357,79 @@ def price_opportunities(
     )
 
 
+def numeric_optimal_price(
+    *,
+    q0: float,
+    p0_cents: float,
+    beta: float,
+    retain: float,
+    fixed_f_cents: float,
+    unit_cost_cents: float,
+    k_marginal_cents: float,
+    lo_cents: int,
+    hi_cents: int,
+) -> int:
+    """Numeric argmax of (P x retain - F - C - K_marginal) x Q(P) over
+    [lo, hi] (Run 6, Phase 65): a coarse grid then a cent-resolution refine.
+    The objective is smooth and unimodal in P for log-log demand, so the
+    two-stage search is exact at cent granularity. It agrees with the closed
+    form where one exists (tested), and stays correct when unit economics
+    depend on quantity through the declared order-cost response."""
+    import numpy as np
+
+    if hi_cents <= lo_cents:
+        return int(lo_cents)
+
+    def total(p: np.ndarray) -> np.ndarray:
+        q = q0 * (p / p0_cents) ** beta
+        return (p * retain - fixed_f_cents - unit_cost_cents - k_marginal_cents) * q
+
+    coarse = np.linspace(float(lo_cents), float(hi_cents), 241)
+    best = float(coarse[int(np.argmax(total(coarse)))])
+    step = (hi_cents - lo_cents) / 240.0
+    lo2 = max(lo_cents, int(best - step) - 1)
+    hi2 = min(hi_cents, int(best + step) + 1)
+    fine = np.arange(lo2, hi2 + 1, dtype=np.float64)
+    return int(fine[int(np.argmax(total(fine)))])
+
+
 def optimize_targets(
     opportunities: pl.DataFrame, guidance: pl.DataFrame, rules: Rules
 ) -> pl.DataFrame:
-    """P* = argmax of pocket contribution (P(1-d) - F - C) x Q(P) for log-log
-    demand, causal-supported only (24.1).
+    """P* = argmax of the CONFIGURED objective (Run 6, Phase 65) for log-log
+    demand, causal-supported only (24.1). Every row names its objective.
 
-    First-order condition gives P* = (C + F) / (1 - d) x beta / (1 + beta) for
-    beta < -1. Clipped to [floor, band P75]; for beta >= -1 the unconstrained
-    optimum is unbounded, so the corridor top is used and labeled. Pairs
-    without cost (24.2) or outside identifying price support (24.6) keep the
-    provisional historical target. Everything else keeps provisional too.
+    pocket_gross_profit: (P(1-d) - F - C) x Q(P); the first-order condition
+    gives P* = (C + F) / (1 - d) x beta / (1 + beta) for beta < -1.
+    contribution: also subtracts the pair's per-unit cost-to-serve. The
+    MARGINAL K follows the declared order-cost response: under
+    fixed_order_frequency the per-order component's TOTAL is volume-constant
+    and drops out of marginal economics; under fixed_order_size it is marginal
+    per unit. The contribution optimum is found NUMERICALLY (grid + refine) so
+    the path stays correct under quantity-dependent unit economics; a pair
+    without a supported K keeps the provisional target - never a borrowed
+    number.
+
+    Clipped to [floor, band P75]; for beta >= -1 the unconstrained optimum is
+    unbounded, so the corridor top is used and labeled. Pairs without cost
+    (24.2) or outside identifying price support (24.6) keep the provisional
+    historical target. Everything else keeps provisional too.
     """
-    g = guidance.select(
+    objective = rules.opportunity.optimizer_objective
+    g_cols: list[str | pl.Expr] = [
         "customer_id",
         "item_id",
         pl.col("unit_cost_cents"),
         pl.col("invoice_floor_cents"),
         pl.col("eff_list_cents"),
         pl.col("band_p75"),
-        *(
-            [pl.col("deduction_bp"), pl.col("fixed_deduction_cents")]
-            if "deduction_bp" in guidance.columns
-            else []
-        ),
-    )
+    ]
+    if "deduction_bp" in guidance.columns:
+        g_cols += [pl.col("deduction_bp"), pl.col("fixed_deduction_cents")]
+    for k_col in ("cts_per_unit_cents", "k_variable_per_unit_cents"):
+        if k_col in guidance.columns:
+            g_cols.append(pl.col(k_col).alias(f"_opt_{k_col}"))
+    g = guidance.select(g_cols)
     j = opportunities.join(g, on=["customer_id", "item_id"], how="left")
     if "deduction_bp" not in j.columns:
         j = j.with_columns(
@@ -353,12 +440,13 @@ def optimize_targets(
     in_support = (
         pl.col("volume_treatment") != TREATMENT_OUTSIDE_SUPPORT
         if "volume_treatment" in j.columns
-        else pl.lit(True)
+        else pl.lit(value=True)
     )
     if "elasticity" not in j.columns:
         return j.with_columns(
             pl.lit(None, dtype=pl.Int64).alias("optimal_price_cents"),
             pl.lit("provisional_historical").alias("target_basis"),
+            pl.lit(objective).alias("objective"),
         )
     beta = pl.col("elasticity")
     # round(6): lossless (deduction_bp is an integer) and kernel-stable; see
@@ -366,9 +454,80 @@ def optimize_targets(
     retain = ((10_000 - pl.col("deduction_bp").fill_null(0)) / 10_000).round(6)
     # Pocket-aware marginal cost of an invoice dollar: (C + F) / (1 - d).
     c_eff = (pl.col("unit_cost_cents") + pl.col("fixed_deduction_cents").fill_null(0)) / retain
+    corridor_hi = (pl.col("band_p75") * pl.col("eff_list_cents")).round(0)
+
+    if objective == "contribution":
+        k_total = (
+            pl.col("_opt_cts_per_unit_cents").cast(pl.Float64)
+            if "_opt_cts_per_unit_cents" in j.columns
+            else pl.lit(None, dtype=pl.Float64)
+        )
+        k_var = (
+            pl.col("_opt_k_variable_per_unit_cents").cast(pl.Float64)
+            if "_opt_k_variable_per_unit_cents" in j.columns
+            else pl.lit(None, dtype=pl.Float64)
+        )
+        if rules.opportunity.order_cost_response == "fixed_order_size":
+            k_marginal = k_total
+        else:
+            # Fixed ordering cadence: per-order cost is volume-constant in
+            # total, so only the variable component is marginal. Without the
+            # component split the total K is the conservative stand-in.
+            k_marginal = pl.coalesce(k_var, k_total)
+        j = j.with_columns(
+            k_marginal.alias("_k_marginal"),
+            retain.alias("_retain"),
+            corridor_hi.alias("_hi"),
+        )
+        eligible = (
+            causal
+            & in_support
+            & pl.col("unit_cost_cents").is_not_null()
+            & pl.col("_k_marginal").is_not_null()
+        )
+        j = j.with_columns(
+            (eligible & (beta < -1.0)).alias("_interior"), eligible.alias("_eligible")
+        )
+        prices: list[int | None] = []
+        for r in j.iter_rows(named=True):
+            if not r["_interior"]:
+                prices.append(None)
+                continue
+            lo = int(r["invoice_floor_cents"]) if r["invoice_floor_cents"] is not None else 1
+            hi = int(r["_hi"]) if r["_hi"] is not None else lo
+            prices.append(
+                numeric_optimal_price(
+                    q0=float(r["baseline_qty"]),
+                    p0_cents=float(r["current_invoice_price_cents"]),
+                    beta=float(r["elasticity"]),
+                    retain=float(r["_retain"]),
+                    fixed_f_cents=float(r["fixed_deduction_cents"] or 0),
+                    unit_cost_cents=float(r["unit_cost_cents"]),
+                    k_marginal_cents=float(r["_k_marginal"]),
+                    lo_cents=lo,
+                    hi_cents=max(hi, lo),
+                )
+            )
+        j = j.with_columns(pl.Series("_p_num", prices, dtype=pl.Int64))
+        return j.with_columns(
+            pl.when(pl.col("_interior"))
+            .then(pl.col("_p_num"))
+            .when(pl.col("_eligible"))
+            .then(corridor_hi)  # inelastic: corridor top, labeled below
+            .otherwise(None)
+            .cast(pl.Int64)
+            .alias("optimal_price_cents"),
+            pl.when(pl.col("_interior"))
+            .then(pl.lit("optimized_numeric_contribution_clipped"))
+            .when(pl.col("_eligible"))
+            .then(pl.lit("corridor_top_inelastic"))
+            .otherwise(pl.lit("provisional_historical"))
+            .alias("target_basis"),
+            pl.lit(objective).alias("objective"),
+        ).drop("_k_marginal", "_retain", "_hi", "_interior", "_eligible", "_p_num")
+
     interior = causal & in_support & (beta < -1.0) & pl.col("unit_cost_cents").is_not_null()
     p_star = (c_eff * beta / (1.0 + beta)).round(0)
-    corridor_hi = (pl.col("band_p75") * pl.col("eff_list_cents")).round(0)
     clipped = pl.min_horizontal(
         pl.max_horizontal(p_star, pl.col("invoice_floor_cents")), corridor_hi
     )
@@ -386,4 +545,5 @@ def optimize_targets(
         .then(pl.lit("corridor_top_inelastic"))
         .otherwise(pl.lit("provisional_historical"))
         .alias("target_basis"),
+        pl.lit(objective).alias("objective"),
     )

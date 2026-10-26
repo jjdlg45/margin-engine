@@ -217,6 +217,7 @@ export type MappingSha256 = string;
 export type NoteOnVolatileFields = string;
 export type Notes1 = string[];
 export type RulesSha256 = string;
+export type ExpectedGpTotalCents = number;
 export type ExpectedTotalCents = number;
 export type ExpectedTotalNote = string;
 export type GrossConservativeTotalCents = number | null;
@@ -231,11 +232,13 @@ export type NCostUnavailable = number;
 export type NOutsidePriceSupport = number;
 export type NRecords = number;
 export type NeverSummedNote = string;
+export type OptimizerObjective = string;
 export type CostUnavailable = boolean;
 export type CustomerId4 = string;
 export type CustomerName3 = string | null;
 export type EvidenceStatus1 = string | null;
 export type ExpectedContributionChangeCents = number | null;
+export type ExpectedPocketGrossProfitChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type GrossPriceOpportunityConservativeCents = number | null;
@@ -693,6 +696,7 @@ export interface SoftwareVersions {
   [k: string]: string;
 }
 export interface OpportunitySection {
+  expected_gp_total_cents?: ExpectedGpTotalCents;
   expected_total_cents: ExpectedTotalCents;
   expected_total_note: ExpectedTotalNote;
   gross_conservative_total_cents?: GrossConservativeTotalCents;
@@ -703,6 +707,7 @@ export interface OpportunitySection {
   n_outside_price_support?: NOutsidePriceSupport;
   n_records: NRecords;
   never_summed_note: NeverSummedNote;
+  optimizer_objective?: OptimizerObjective;
   top_opportunities: TopOpportunities;
   window_label: WindowLabel1;
 }
@@ -718,6 +723,7 @@ export interface OpportunityRecord {
   customer_name?: CustomerName3;
   evidence_status: EvidenceStatus1;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
+  expected_pocket_gross_profit_change_cents?: ExpectedPocketGrossProfitChangeCents;
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   gross_price_opportunity_conservative_cents?: GrossPriceOpportunityConservativeCents;

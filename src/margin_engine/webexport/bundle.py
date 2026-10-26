@@ -223,6 +223,11 @@ class OpportunityRecord(BaseModel):
     segment: int | None
     gross_price_opportunity_cents: int
     gross_price_opportunity_conservative_cents: int | None = None
+    # Two expected-change bases (Run 6, Phase 65), never conflated: the pocket
+    # gross profit change (P(1-d) - F - C economics) and the contribution
+    # change (also subtracts estimated per-unit cost-to-serve K; null when no
+    # K is supported for the pair).
+    expected_pocket_gross_profit_change_cents: int | None = None
     expected_contribution_change_cents: int | None
     volume_treatment: str
     cost_unavailable: bool = False
@@ -248,8 +253,12 @@ class OpportunitySection(BaseModel):
     leakage_by_customer: list[CustomerLeakage]
     gross_total_cents: int
     gross_conservative_total_cents: int | None = None
+    # Pocket gross profit basis total (Run 6, Phase 65), beside the
+    # contribution-basis total - two metrics, never conflated or summed.
+    expected_gp_total_cents: int = 0
     expected_total_cents: int
     expected_total_note: str
+    optimizer_objective: str = "pocket_gross_profit"
     n_cost_unavailable: int = 0
     n_outside_price_support: int = 0
     top_opportunities: list[OpportunityRecord]

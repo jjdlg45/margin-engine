@@ -193,6 +193,7 @@ def _pair_base(
         "current_invoice_price_cents",
         "proposed_invoice_price_cents",
         "gross_price_opportunity_cents",
+        "expected_pocket_gross_profit_change_cents",
         "expected_contribution_change_cents",
         "volume_treatment",
         "evidence_status",
@@ -339,15 +340,34 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
     if rows.height == 0:
         return pl.DataFrame()
     expected = pl.col("volume_treatment") == "expected_change"
+    # Two expected-change bases, never conflated (Run 6, Phase 65): the
+    # CONTRIBUTION change (subtracts per-unit cost-to-serve K) when K is
+    # supported, the pocket GROSS PROFIT change otherwise - each named.
+    contrib_col = (
+        pl.col("expected_contribution_change_cents")
+        if "expected_contribution_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    gp_col = (
+        pl.col("expected_pocket_gross_profit_change_cents")
+        if "expected_pocket_gross_profit_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    has_contrib = contrib_col.is_not_null()
+    has_gp = gp_col.is_not_null()
     rows = rows.with_columns(
-        pl.when(expected)
-        .then(pl.col("expected_contribution_change_cents"))
+        pl.when(expected & has_contrib)
+        .then(contrib_col)
+        .when(expected & has_gp)
+        .then(gp_col)
         .otherwise(pl.col("gross_price_opportunity_cents"))
         .round(0)
         .cast(pl.Int64)
         .alias("expected_impact_cents"),
-        pl.when(expected)
+        pl.when(expected & has_contrib)
         .then(pl.lit("expected_contribution_change"))
+        .when(expected & has_gp)
+        .then(pl.lit("expected_pocket_gross_profit_change"))
         .otherwise(pl.lit("gross_price_opportunity_fixed_volume"))
         .alias("impact_basis"),
         pl.col("current_invoice_price_cents").round(0).cast(pl.Int64).alias("_cur"),
@@ -378,12 +398,23 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
             [
                 pl.lit("Current price sits below the segment reference target "),
                 pl.lit("(policy target, never below the floor). "),
-                pl.when(expected)
+                pl.when(expected & has_contrib)
                 .then(
                     pl.lit(
                         "The volume response is causal-supported and inside the "
                         "identified price range, so the impact is the expected "
-                        "contribution change."
+                        "contribution change (unit economics net of estimated "
+                        "cost-to-serve)."
+                    )
+                )
+                .when(expected & has_gp)
+                .then(
+                    pl.lit(
+                        "The volume response is causal-supported and inside the "
+                        "identified price range; no cost-to-serve estimate is "
+                        "supported for this pair, so the impact is the expected "
+                        "pocket gross profit change (named, never conflated with "
+                        "a contribution figure)."
                     )
                 )
                 .otherwise(

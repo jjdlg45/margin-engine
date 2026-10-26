@@ -270,11 +270,6 @@ METRICS: tuple[MetricDef, ...] = (
             "cost; moves outside price support; never summed across levels"
         ),
         amount_status="modeled from actual baselines and estimated elasticity",
-        pending_note=(
-            "Phase 65 lands this as a metric distinct from the expected contribution "
-            "change; today the engine computes this formula and labels it the expected "
-            "contribution change."
-        ),
     ),
     MetricDef(
         code="expected_contribution_change",
@@ -284,27 +279,26 @@ METRICS: tuple[MetricDef, ...] = (
             "causal-supported volume response - never summed with other levels."
         ),
         formula=(
-            "c(P1) x Q(P1) - c(P0) x Q(P0), with unit economics c(P) = P x (1 - d) - F - C today"
+            "c(P1) x Q(P1) - c(P0) x Q(P0), with unit economics "
+            "c(P) = P x (1 - d) - F - C - K (K = estimated per-unit cost-to-serve)"
         ),
         units="pocket cents over the baseline window",
         denominator="none (a dollar total)",
         price_basis="invoice price converted to pocket with (1 - d) and fixed deductions F",
         includes=(
-            "pairs with known cost, causal-supported elasticity and a proposed move "
-            "inside the segment's identifying price support; at instrumented-only "
-            "evidence a labeled sensitivity range is shown instead"
+            "pairs with known cost, a supported cost-to-serve estimate K (labeled "
+            "estimated when it comes from config activity rates), causal-supported "
+            "elasticity and a proposed move inside the segment's identifying price "
+            "support; at instrumented-only evidence a labeled sensitivity range is "
+            "shown instead"
         ),
         excludes=(
-            "pairs without cost (missing cost is never zero); moves outside price "
-            "support; never summed with level 1 or level 2"
+            "pairs without cost (missing cost is never zero) or without a supported "
+            "K (the figure is unavailable, never borrowed from the gross profit "
+            "basis); moves outside price support; never summed with level 1, level 2 "
+            "or the pocket gross profit basis"
         ),
-        amount_status="modeled from actual baselines and estimated elasticity",
-        pending_note=(
-            "Phase 65 subtracts per-unit cost-to-serve K from the unit economics "
-            "(c(P) = P x (1 - d) - F - C - K, K labeled estimated when it comes from "
-            "config rates), making this a true contribution metric and renaming "
-            "today's formula to the expected pocket gross profit change."
-        ),
+        amount_status="modeled from actual baselines and estimated elasticity and K",
     ),
 )
 

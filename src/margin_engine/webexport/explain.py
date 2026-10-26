@@ -104,18 +104,28 @@ def opportunity_summary(row: dict[str, Any]) -> str:
 def opportunity_explanation(row: dict[str, Any]) -> str:
     """Why this opportunity is sized the way it is, from its own numbers."""
     gross = row.get("gross_price_opportunity_cents")
-    expected = row.get("expected_contribution_change_cents")
+    expected_contrib = row.get("expected_contribution_change_cents")
+    expected_gp = row.get("expected_pocket_gross_profit_change_cents")
     treatment = row.get("volume_treatment") or "fixed_volume"
     status = row.get("evidence_status") or "insufficient_data"
     base = (
         f"Closing the gap to the proposed pocket price is worth {_dollars(gross)} "
         "over the baseline window, assuming volume does not change."
     )
-    if treatment == "expected_change" and expected is not None:
+    if treatment == "expected_change" and expected_contrib is not None:
         return (
             base + f" This segment's elasticity is causal-supported, so the engine also "
             f"models the volume response: the expected contribution change is "
-            f"{_dollars(expected)}."
+            f"{_dollars(expected_contrib)} (unit economics net of estimated "
+            f"cost-to-serve; the pocket gross profit basis is "
+            f"{_dollars(expected_gp) if expected_gp is not None else 'unavailable'})."
+        )
+    if treatment == "expected_change" and expected_gp is not None:
+        return (
+            base + f" This segment's elasticity is causal-supported, so the engine also "
+            f"models the volume response: the expected pocket gross profit change is "
+            f"{_dollars(expected_gp)}. No cost-to-serve estimate is supported for "
+            f"this pair, so no contribution figure is shown."
         )
     if treatment == "sensitivity_range_only":
         return (

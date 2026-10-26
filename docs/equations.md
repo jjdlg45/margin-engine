@@ -66,10 +66,17 @@ rebates and concessions that scale with it. F cancels out of price GAPS (it
 is fixed per unit) but not of contribution LEVELS. Conservative variant:
 raise below-P25 pairs to P25 only, reported alongside, never added.
 
-Level 3 — expected change with a volume response [pocket cents]:
+Level 3 — expected change with a volume response [pocket cents], on TWO
+bases that are never conflated or summed (Phase 65):
 
-    unit economics today:  c(P) = P x (1 - d) - F - C
+    pocket gross profit basis:  c(P) = P x (1 - d) - F - C
+    contribution basis:         c(P) = P x (1 - d) - F - C - K
     level3 = c(P1) x Q(P1) - c(P0) x Q(P0)
+
+K is the pair's estimated per-unit cost-to-serve (labeled estimated); a pair
+without a supported K gets NO contribution figure, never a borrowed one. The
+contribution change exceeds the gross profit change by K x (Q0 - Q1): a price
+increase sheds volume and its service cost with it.
 
 Produced only where the elasticity status is causal-supported AND the
 proposed log-price move lies inside the segment's identifying price support;
@@ -77,9 +84,6 @@ at instrumented-only evidence a labeled sensitivity range from the elasticity
 confidence interval is shown instead; below that, fixed-volume numbers only.
 Pairs without a known cost are excluded (missing cost is never zero).
 
-Pending change (Phase 65): `c(P) = P x (1 - d) - F - C` is a pocket GROSS
-PROFIT basis and will be reported under that name; the expected CONTRIBUTION
-change will subtract per-unit cost-to-serve K: `c(P) = P x (1 - d) - F - C - K`.
 
 ## Target optimization
 
@@ -94,10 +98,15 @@ optimum is unbounded, so the corridor top is used and labeled. Applied only
 at causal support inside the identifying price range; everything else keeps
 the provisional historical target (max(P50, floor), start max(P75, floor)).
 
-Assumptions: d and F constant in quantity and price; C constant over the
-move. Pending change (Phase 65): the objective becomes configurable (pocket
-gross profit or contribution, subtracting K), and the optimizer re-optimizes
-numerically when d, F or K depend on quantity.
+The objective is configurable (Phase 65): pocket gross profit (closed form
+above) or contribution, which subtracts the MARGINAL per-unit cost-to-serve.
+Under a fixed ordering cadence the per-order component's total is
+volume-constant and drops out of marginal economics; under fixed order sizes
+it is marginal per unit. The contribution optimum is found numerically
+(coarse grid plus cent-resolution refine), which agrees with the closed form
+where one exists and stays correct under quantity-dependent unit economics.
+Every optimizer output names its objective. Assumptions: d and F constant in
+quantity and price; C constant over the move.
 
 ## Win curve (quotes)
 
@@ -108,17 +117,17 @@ the quote date`:
 
 Win-aware optimal price (grid search over the index, deal size at baseline):
 
-    P*_win = argmax over P of (P - C) x P_win(P / list)
+    P*_win = argmax over P of (P x (1 - d) - F - C [- K]) x P_win(P / list)
 
 clipped to [floor, upper corridor]. ONE volume-response source per record:
 the win curve is never multiplied with a demand elasticity (lost deals are
 the zeros PPML already models). Negotiation start: `start = target / (1 -
 negotiation gap)`, with the gap measured on won deals as `1 - close / quote`.
 
-Pending change (Phase 65): the objective translates the index to a monetary
-price and applies d and F (and K under the contribution objective):
-`(P x (1 - d) - F - C) x P_win`, today it is `(P - C) x P_win` (gross basis,
-no post-invoice deductions).
+Since Phase 65 the objective translates the index into a monetary price and
+applies the pair's post-invoice economics: `(P x (1 - d) - F - C) x P_win`,
+with K also subtracted under the contribution objective (refused, not
+guessed, when no K is supported).
 
 ## Results tracker
 

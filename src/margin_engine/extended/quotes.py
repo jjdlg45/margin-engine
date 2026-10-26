@@ -145,9 +145,19 @@ def optimal_price_win_aware(
     floor_cents: int,
     upper_index: float = 1.2,
     grid_step: float = 0.002,
+    deduction_bp: int = 0,
+    fixed_deduction_cents: int = 0,
+    k_per_unit_cents: int | None = None,
+    objective: str = "pocket_gross_profit",
 ) -> tuple[int, float]:
-    """argmax over a price-index grid of (P - C) x P_win(P), clipped to
-    [floor, upper]. Returns (price_cents, expected win probability there).
+    """argmax over a price-index grid of the POCKET objective x P_win(P),
+    clipped to [floor, upper]. Returns (price_cents, win probability there).
+
+    The quote index is translated to a monetary price and the pair's
+    post-invoice economics apply (Run 6, Phase 65): unit economics are
+    P x (1 - d) - F - C, and under the contribution objective also - K.
+    A contribution call without a supported K raises - the engine never
+    optimizes against a number it does not have.
 
     ONE volume-response source per record (Run 4, 24.13): the win curve is the
     only volume response here — deal size is held at baseline. The demand
@@ -159,10 +169,25 @@ def optimal_price_win_aware(
     combination impossible rather than merely discouraged.
     """
     del p0_cents  # deal size held at baseline; kept for call-site clarity
+    if objective not in ("pocket_gross_profit", "contribution"):
+        msg = f"unknown win-aware objective {objective!r}"
+        raise ValueError(msg)
+    k = 0
+    if objective == "contribution":
+        if k_per_unit_cents is None:
+            msg = (
+                "contribution objective needs the pair's per-unit cost-to-serve K; "
+                "none is supported for this pair, so the contribution optimum is "
+                "unavailable (use the pocket_gross_profit objective instead)"
+            )
+            raise ValueError(msg)
+        k = k_per_unit_cents
+    retain = (10_000 - deduction_bp) / 10_000
     lo = max(floor_cents / list_cents, 0.01)
     grid = np.arange(lo, upper_index, grid_step)
     prices = grid * list_cents
     p_win = 1.0 / (1.0 + np.exp(-(win_intercept + win_price_coef * grid)))
-    profit = (prices - cost_cents) * p_win
+    unit = prices * retain - fixed_deduction_cents - cost_cents - k
+    profit = unit * p_win
     best = int(np.argmax(profit))
     return round(prices[best]), float(p_win[best])
