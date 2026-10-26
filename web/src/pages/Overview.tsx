@@ -101,6 +101,13 @@ function Headline({ app }: { app: AppData }) {
           <StatusChip status="reconciliation_failed" />
         )}
         <span className="ml-2 text-caption secondary">to the cent, every check</span>
+        <span className="block text-caption secondary">
+          {(k.n_visible_residuals ?? 0) > 0
+            ? `${k.n_visible_residuals} visible residual${(k.n_visible_residuals ?? 0) === 1 ? "" : "s"} (${dollarsShort(k.visible_residual_cents ?? 0)}) explained, never forced onto lines`
+            : "no residuals: every allocated amount reached its lines"}
+          {"; cost known on "}
+          {pct(1 - k.missing_cost_revenue_share)} of revenue
+        </span>
       </div>
     </div>
   );
@@ -115,7 +122,7 @@ export function Overview() {
       {/* Headline band */}
       <section aria-labelledby="headline" className="pb-14 pt-12">
         <h1 id="headline" className="heading-rule m-0 max-w-2xl text-display">
-          Every dollar accounted for.
+          Every source dollar reconciled or explained.
         </h1>
         <p className="mb-8 mt-3 max-w-2xl secondary">
           An auditable pricing engine for B2B distributors: it reconciles the

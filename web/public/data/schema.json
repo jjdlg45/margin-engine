@@ -2482,6 +2482,12 @@
      "title": "N Sales Observations",
      "type": "integer"
     },
+    "n_visible_residuals": {
+     "default": 0,
+     "description": "Nonzero reconciliation residuals kept visible",
+     "title": "N Visible Residuals",
+     "type": "integer"
+    },
     "net_revenue_cents": {
      "description": "Gross sales plus returns - matches economics",
      "title": "Net Revenue Cents",
@@ -2517,6 +2523,12 @@
     "returns_cents": {
      "description": "Linked return lines (negative)",
      "title": "Returns Cents",
+     "type": "integer"
+    },
+    "visible_residual_cents": {
+     "default": 0,
+     "description": "Sum of absolute visible residual amounts",
+     "title": "Visible Residual Cents",
      "type": "integer"
     },
     "window_label": {

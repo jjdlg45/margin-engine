@@ -3263,3 +3263,54 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 (strict); full pytest 461 passed 0 failed (exit 0); Playwright static with
 snapshots 225 passed (exit 0) against the re-exported demo bundle. No web
 source changes (tsc/vitest unchanged since Phase 61's runs).
+
+## Phase 64 — Monthly GL variance check and honest headline (2026-10-26, Run 6 branch)
+
+Finding 7: the books comparison is a CONTROL, not a proof, and the headline
+claims exactly what the engine establishes.
+
+1. **Monthly GL variance check** (renamed from books tie-out everywhere a
+   reader sees it): per month-measure the table now carries engine total, GL
+   total, SIGNED and ABSOLUTE variance, guarded variance percent (no percent
+   when the GL amount is at or below the cents tolerance - zero, negative
+   and tiny denominators can never manufacture a percent; the cents
+   tolerance judges those months), the tolerance used, and a per-row status
+   (GL exact / within tolerance / outside). Run-level statuses are distinct
+   and honest: gl_exact, gl_within_tolerance,
+   gl_variances_outside_tolerance, and gl_not_supplied when no GL file is
+   mapped (absence stated, never an implied pass). Net sales and COGS
+   reconcile separately; the result carries the fiscal-period mapping, the
+   account mapping (measure definitions), and unresolved reconciling items
+   (periods missing on either side, the known-cost coverage share). Engine
+   net sales for the comparison use the tax-free product amount, matching a
+   GL that books collected taxes as liabilities.
+2. **Trace evidence**: a deterministic line -> invoice -> period sample with
+   the period's engine and GL totals beside each line, in the HTML report
+   and a new gl_trace_sample export - one dollar can be followed from the
+   source document into the monthly bridge.
+3. **Honest headline**: the Overview h1 is now 'Every source dollar
+   reconciled or explained.' and the reconciliation chip carries the visible
+   residual count and total plus the cost-coverage share (new KPI fields
+   n_visible_residuals / visible_residual_cents; schema and generated types
+   updated). Four overview visual snapshots re-baselined for this deliberate
+   change; design plan updated.
+4. **Exit gate**: tests/test_gl_bridge.py traces TWENTY hand-picked cases
+   (plain/discount/rebate/concession sales, settlement and tiered programs
+   through the rebate subledger, billed and excluded charges, embedded tax,
+   resaleable and damaged returns, price/cost/supplier credits, vendor
+   netting, missing cost, zero cost, zero-quantity fee) from source document
+   through the waterfall, subledger and COGS effect into the monthly GL
+   bridge. One GL difference is PLANTED deliberately (the books carry the
+   missing-cost line's full 330.00) and the test asserts the flagged
+   variance equals that explanation to the cent; a second month differs by
+   80 cents and lands within tolerance; everything else is exact.
+
+Decisions: the row column names changed (variance_cents / variance_pct,
+was diff_*) with tests updated to match - a rename, not a loosening; the
+within_tolerance boolean is kept alongside for continuity.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 469 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0) after re-baselining the 4
+overview snapshots changed by the headline. Demo bundle re-exported with
+the two new KPI fields (schema +12 lines); business figures unchanged.

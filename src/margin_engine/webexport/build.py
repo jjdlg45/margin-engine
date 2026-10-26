@@ -272,6 +272,10 @@ def build_bundle(
             sale.filter(pl.col("gross_list_value_cents").is_not_null()).height / max(sale.height, 1)
         )
         or 0.0,
+        n_visible_residuals=sum(1 for v in res.pipeline.reconciliation.residuals.values() if v),
+        visible_residual_cents=sum(
+            abs(v) for v in res.pipeline.reconciliation.residuals.values() if v
+        ),
     )
 
     # --- reconciliation and residuals ---------------------------------------

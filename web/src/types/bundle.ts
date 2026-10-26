@@ -168,6 +168,10 @@ export type NItems = number;
 export type NLedgerLines = number;
 export type NSalesObservations = number;
 /**
+ * Nonzero reconciliation residuals kept visible
+ */
+export type NVisibleResiduals = number;
+/**
  * Gross sales plus returns - matches economics
  */
 export type NetRevenueCents1 = number;
@@ -188,6 +192,10 @@ export type ReconciliationPass = boolean;
  * Linked return lines (negative)
  */
 export type ReturnsCents = number;
+/**
+ * Sum of absolute visible residual amounts
+ */
+export type VisibleResidualCents = number;
 /**
  * Time window every KPI covers, e.g. '24 months'
  */
@@ -639,12 +647,14 @@ export interface SummaryKpis {
   n_items: NItems;
   n_ledger_lines: NLedgerLines;
   n_sales_observations: NSalesObservations;
+  n_visible_residuals?: NVisibleResiduals;
   net_revenue_cents: NetRevenueCents1;
   pocket_gross_profit_cents: PocketGrossProfitCents;
   pocket_margin_pct?: PocketMarginPct;
   pocket_revenue_cents: PocketRevenueCents;
   reconciliation_pass: ReconciliationPass;
   returns_cents: ReturnsCents;
+  visible_residual_cents?: VisibleResidualCents;
   window_label: WindowLabel;
 }
 /**

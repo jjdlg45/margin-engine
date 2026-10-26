@@ -25,7 +25,7 @@ for (const theme of ["light", "dark"] as const) {
       document.documentElement.dataset.theme = t;
     }, theme);
     // The waterfall is the signature visual; wait for its bars.
-    await expect(page.getByRole("heading", { name: "Every dollar accounted for." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Every source dollar reconciled or explained." })).toBeVisible();
     await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
     await expect(page.getByText("Synthetic demo data", { exact: false }).first()).toBeVisible();
     await page.waitForTimeout(900); // let the single build animation finish

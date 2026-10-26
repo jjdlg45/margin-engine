@@ -186,6 +186,8 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "rebate_subledger": ["customer_id", "rebate_program_id", "period", "entry_type", "source_ref"],
     "rebate_subledger_balances": ["customer_id", "rebate_program_id", "period"],
     "cost_pools": ["cost_pool_id", "detail"],
+    "gl_trace_sample": ["month", "source_line_key"],
+    "books_tieout": ["month", "measure"],
 }
 
 
@@ -501,19 +503,25 @@ def run_full(
     else:
         res.notes.append("win/loss modeling OFF: no quotes table (or no price list) available")
 
-    # Books tie-out (27.3): runs only when a gl_totals table is mapped.
+    # Monthly GL variance check (27.3; reframed as a control in Run 6 Phase
+    # 64): runs only when a gl_totals table is mapped; its absence is a stated
+    # status, never an implied pass.
     tieout_res = None
     gl_totals = res.reference.get("gl_totals")
     if gl_totals is not None:
         tieout_res = run_tieout(res.ledger, gl_totals, rules, fiscal)
         res.notes.extend(tieout_res.notes)
         res.notes.append(
-            f"books tie-out ran: {tieout_res.n_failing} month-measure(s) outside tolerance"
+            f"monthly GL variance check ran: {tieout_res.n_failing} month-measure(s) "
+            f"outside tolerance"
             if tieout_res.n_failing
-            else "books tie-out ran: every month within tolerance"
+            else "monthly GL variance check ran: every compared month-measure within tolerance"
         )
     else:
-        res.notes.append("books tie-out OFF: no gl_totals table in the mapping/data")
+        res.notes.append(
+            "monthly GL variance check not testable: no GL totals table in the "
+            "mapping/data (source-total reconciliation remains exact and always on)"
+        )
 
     cross_estimates: pl.DataFrame | None = None
     if res.reference["substitution_groups"] is not None:
@@ -579,6 +587,11 @@ def run_full(
         ),
         "reconciliation": res.reconciliation.to_frame(),
         **({"books_tieout": tieout_res.table} if tieout_res is not None else {}),
+        **(
+            {"gl_trace_sample": tieout_res.trace_sample}
+            if tieout_res is not None and tieout_res.trace_sample is not None
+            else {}
+        ),
         **(
             {
                 "real_validation_backtest": real_val.backtest,
@@ -922,12 +935,35 @@ def run_full(
                         **r,
                         "engine": _fmt_dollars(r["engine_cents"]),
                         "gl": _fmt_dollars(r["gl_cents"]),
-                        "diff": _fmt_dollars(r["diff_cents"]),
+                        "variance": _fmt_dollars(r["variance_cents"]),
+                        "variance_abs": _fmt_dollars(r["variance_abs_cents"]),
                     }
                     for r in tieout_res.table.to_dicts()
                 ],
                 "n_failing": tieout_res.n_failing,
                 "cost_coverage": f"{tieout_res.cost_coverage_share:.1%}",
+                "status": label_of(tieout_res.status),
+                "fiscal_mapping": tieout_res.fiscal_mapping,
+                "account_mapping": tieout_res.account_mapping,
+                "unresolved_items": tieout_res.unresolved_items,
+                "tolerance": (
+                    f"{rules.reporting.tieout_tolerance_pct}% or "
+                    f"{_fmt_dollars(rules.reporting.tieout_tolerance_cents)}"
+                ),
+                "trace": (
+                    [
+                        {
+                            **t,
+                            "net": _fmt_dollars(t["net_amount_cents"]),
+                            "cost": _fmt_dollars(t["product_cost_cents"]),
+                            "period_engine": _fmt_dollars(t["period_engine_net_sales_cents"]),
+                            "period_gl": _fmt_dollars(t["period_gl_net_sales_cents"]),
+                        }
+                        for t in tieout_res.trace_sample.to_dicts()
+                    ]
+                    if tieout_res.trace_sample is not None
+                    else []
+                ),
             }
             if tieout_res is not None
             else None

@@ -35,6 +35,15 @@ class SummaryKpis(BaseModel):
     reconciliation_pass: bool
     missing_cost_revenue_share: float
     list_price_coverage_share: float
+    # Run 6, Phase 64 (honest headline): the visible residuals that EXPLAIN
+    # dollars the engine would not force onto lines, shown next to the
+    # reconciliation status instead of implying everything allocated cleanly.
+    n_visible_residuals: int = Field(
+        default=0, description="Nonzero reconciliation residuals kept visible"
+    )
+    visible_residual_cents: int = Field(
+        default=0, description="Sum of absolute visible residual amounts"
+    )
 
 
 class ReconciliationCheck(BaseModel):

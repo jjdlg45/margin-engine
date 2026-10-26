@@ -482,6 +482,31 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "A source amount with no matching lines to carry it; kept as a "
         "visible residual, never forced onto lines.",
     },
+    # --- monthly GL variance check (Run 6, Phase 64) ----------------------------
+    "gl_exact": {
+        "label": "GL exact",
+        "description": "Every compared month-measure matches the general ledger to the cent.",
+    },
+    "gl_within_tolerance": {
+        "label": "GL within tolerance",
+        "description": "Every compared month-measure sits inside the configured variance "
+        "tolerance; the variances are shown, never hidden.",
+    },
+    "gl_variances_outside_tolerance": {
+        "label": "GL variances outside tolerance",
+        "description": "At least one month-measure differs from the general ledger beyond "
+        "the tolerance - flagged for review, never suppressed.",
+    },
+    "gl_not_supplied": {
+        "label": "Not testable (no GL supplied)",
+        "description": "No general-ledger totals were mapped, so the variance check could "
+        "not run; source-total reconciliation remains exact and always on.",
+    },
+    "source_totals_reconciled": {
+        "label": "Source totals reconciled",
+        "description": "Ledger totals tie to the source export exactly - the always-on "
+        "check the GL variance control builds on.",
+    },
     # --- statuses used by the report/UI for reconciliation ---------------------
     "reconciled": {
         "label": "Reconciled",

@@ -195,16 +195,40 @@ activity cost-to-serve ${{ economics.activity_cost }} (config rates, labeled est
 {% endif %}
 
 {% if tieout %}
-<h2>Books tie-out</h2>
-<p class="muted">Engine monthly totals vs the general ledger. Engine COGS covers lines with known cost ({{ tieout.cost_coverage }} of sale/return revenue); returns are recognized when they occur (management view, see methodology). {{ tieout.n_failing }} month-measure(s) outside tolerance.</p>
+<h2>Monthly GL variance check</h2>
+<p class="muted">A variance control, not a proof: engine period totals vs the general ledger, net sales and cost of goods sold compared separately. Overall: {{ tieout.status }}. Tolerance: {{ tieout.tolerance }}. Period mapping: {{ tieout.fiscal_mapping }}. Engine COGS covers lines with known cost ({{ tieout.cost_coverage }} of sale/return revenue); returns are recognized when they occur (management view, see methodology). {{ tieout.n_failing }} month-measure(s) outside tolerance.</p>
 <table>
-  <tr><th>Month</th><th>Measure</th><th>Engine ($)</th><th>GL ($)</th><th>Difference ($)</th><th>Difference (%)</th><th>Status</th></tr>
+  <tr><th>Period</th><th>Measure</th><th>Engine ($)</th><th>GL ($)</th><th>Variance ($, signed)</th><th>Variance ($, absolute)</th><th>Variance (%)</th><th>Status</th></tr>
   {% for r in tieout.rows %}
-  <tr><td>{{ r.month }}</td><td>{{ r.measure }}</td><td>{{ r.engine }}</td><td>{{ r.gl }}</td><td>{{ r.diff }}</td>
-      <td>{{ "%.3f%%"|format(r.diff_pct) if r.diff_pct is not none else "-" }}</td>
-      <td><span class="status {{ 'ok' if r.within_tolerance else 'bad' }}">{{ 'PASS' if r.within_tolerance else 'FLAG' }}</span></td></tr>
+  <tr><td>{{ r.month }}</td><td>{{ r.measure }}</td><td>{{ r.engine }}</td><td>{{ r.gl }}</td><td>{{ r.variance }}</td><td>{{ r.variance_abs }}</td>
+      <td>{{ "%.3f%%"|format(r.variance_pct) if r.variance_pct is not none else "- (near-zero GL amount; judged on the cents tolerance)" }}</td>
+      <td><span class="status {{ 'ok' if r.within_tolerance else 'bad' }}">{{ 'EXACT' if r.status == 'gl_exact' else ('WITHIN TOLERANCE' if r.within_tolerance else 'FLAG') }}</span></td></tr>
   {% endfor %}
 </table>
+<h3>Account mapping</h3>
+<ul>
+  {% for measure, definition in tieout.account_mapping.items() %}
+  <li><strong>{{ measure }}</strong>: {{ definition }}</li>
+  {% endfor %}
+</ul>
+{% if tieout.unresolved_items %}
+<h3>Unresolved reconciling items</h3>
+<ul>
+  {% for item in tieout.unresolved_items %}
+  <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if tieout.trace %}
+<h3>Trace evidence (sample)</h3>
+<p class="muted">Follow one dollar from the source line into the monthly bridge: line, invoice, period, and the period's engine and GL totals.</p>
+<table>
+  <tr><th>Period</th><th>Line</th><th>Invoice</th><th>Type</th><th>Net ($)</th><th>Cost ($)</th><th>Period engine net sales ($)</th><th>Period GL net sales ($)</th></tr>
+  {% for t in tieout.trace %}
+  <tr><td>{{ t.month }}</td><td>{{ t.source_line_key }}</td><td>{{ t.invoice_id }}</td><td>{{ t.transaction_type }}</td><td>{{ t.net }}</td><td>{{ t.cost }}</td><td>{{ t.period_engine }}</td><td>{{ t.period_gl }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endif %}
 
 {% if real_validation %}

@@ -486,7 +486,27 @@ recognize, the mapping is:
   a stated presentation difference, not a measurement one.
 - **Returns** are recognized when they occur and linked to originals. GAAP
   books a refund liability and a right-of-return asset at sale; the
-  difference is visible in the books tie-out when one is run.
+  difference is visible in the monthly GL variance check when one is run.
+
+### Monthly GL variance check (Run 6)
+
+The GL comparison is a CONTROL, not a proof. Net sales and cost of goods sold
+reconcile separately per period; every month-measure shows engine total, GL
+total, signed and absolute variance, the variance percentage (no percentage is
+shown when the GL amount is near zero - the cents tolerance judges those
+months, so a tiny denominator can never manufacture a reassuring or alarming
+percent), the tolerance used, the fiscal-period mapping and the account
+mapping. Unresolved reconciling items (periods missing from either side, the
+known-cost coverage share on COGS) are listed, and a deterministic trace
+sample follows individual lines from the source document into the monthly
+bridge. Statuses are distinct and honest: GL exact, GL within tolerance, GL
+variances outside tolerance, and not testable when no GL file is supplied -
+absence of the control is stated, never an implied pass. The engine's
+always-on source-total reconciliation (exact to the cent) is a separate,
+stronger property this check builds on; the headline reads "every source
+dollar reconciled or explained" with the visible residuals and coverage next
+to it, because allocated completeness beyond that would be a claim the data
+does not back.
 
 ## 10. Reproducibility
 

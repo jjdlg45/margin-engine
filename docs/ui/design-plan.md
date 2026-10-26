@@ -84,7 +84,7 @@ subject with its own internal grid.
 | MARGIN ENGINE        overview  waterfall  customers  ...   [D/L] |
 | Synthetic demo data - every figure reconciles to source          |
 +------------------------------------------------------------------+
-| Headline: "Every dollar accounted for."                          |
+| Headline: "Every source dollar reconciled or explained."                          |
 | $12.4M invoiced -> $10.9M pocket     RECONCILED to the cent  OK  |
 |                                                                  |
 |  ############ gross list                                         |
