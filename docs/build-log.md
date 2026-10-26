@@ -3527,3 +3527,65 @@ Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
 mypy src api 0 (strict); full pytest 498 passed 0 failed (exit 0); tsc 0;
 vitest 22/22; vite build 0; Playwright 225 passed (exit 0). Demo bundle
 re-exported; schema and generated types updated.
+
+## Phase 69 — Stale actions and safe transitions (2026-10-26, Run 6 branch)
+
+Findings 19 and 20 (confirmed: neither revalidation nor concurrency control
+existed).
+
+1. **Fingerprints and expiry** - every action stores input_fingerprint
+   (source file content hashes), config_fingerprint (rules hash),
+   model_fingerprint (segment elasticity statuses and estimates) and
+   expires_on (anchor + revalidation.expiry_days, default 90). Manual API
+   proposals carry model_fingerprint='manual_proposal' and no engine
+   fingerprints - stated by their absence.
+2. **Revalidation at approval and export** - new actions/revalidate.py
+   compares the stored key values to the engine's CURRENT guidance: current
+   price, binding floor, list provenance, contract protection, guidance
+   sufficiency, compliance flags, scope duplication, expiry. Verdicts:
+   unchanged / changed_within_tolerance / re_review_required / invalid /
+   not_testable. EVERY move is shown with both versions; only moves beyond
+   the configured thresholds (floor 2%, current price 2%, impact 20%) or
+   hard changes block. A check the available outputs cannot support is
+   NAMED in not_testable - never counted as a pass. Approval returns 409
+   stale_action with the field-by-field differences; export HOLDS OUT stale
+   rows with their reason instead of shipping them.
+3. **Audit trail** - action_revalidations table keeps both versions of every
+   difference with who/when/trigger; new store.revalidations() reader.
+4. **Concurrency** - transitions accept expected_seq; the count check and
+   the insert run inside ONE DuckDB transaction with the count re-read
+   under it, so two simultaneous transitions cannot both land. The loser
+   gets ConcurrencyError -> HTTP 409 sequence_conflict naming the expected
+   and found sequence, and writes nothing. Omitting the token keeps the
+   previous behavior.
+5. **Export recovery** - an export journals its intent (export id, path,
+   action ids) BEFORE writing the file and commits the journal only after
+   the transitions land. A crash in between leaves an open row that the
+   next export or recover_pending_exports() completes for exactly those
+   actions, SKIPPING any that moved past approved - so recovery never
+   re-exports a superseded or implemented price. Idempotent. The CLI
+   reports recovered actions and held-out stale rows.
+
+Tests added: tests/test_stale_actions.py (25): all verdicts incl.
+not-testable and disabled-config paths; sub-threshold moves shown but not
+blocking; floor/current-price/list-staleness/compliance/expiry/scope and
+vanished-pair cases; audit rows keep both versions; expected-sequence
+mismatch writes nothing; the second simultaneous transition loses; journal
+before write and commit after; recovery idempotent and never reintroducing
+an implemented price; export holds out a stale row and audits it.
+
+Two defects found and fixed by the gates, both worth recording: DuckDB
+treats 'at' as a reserved word, so the new audit/journal readers needed it
+quoted; and api/store.py's snapshot property RAISES when no bundle is
+loaded, so the new guidance lookup could not use getattr-with-default -
+action-store requests must not depend on a loaded bundle.
+
+Headline numbers: unchanged (277 actions; same by-basis dollars). Four
+Action-center visual snapshots were re-baselined here for Phase 68's
+overlapping-scopes panel: that phase's Playwright run had passed against a
+build predating the rebuilt bundle, so the panel first appeared in this
+phase's run. Phase 69 itself changed no UI.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 523 passed 0 failed (exit 0);
+Playwright 225 passed 3 skipped (exit 0). Demo bundle re-exported.

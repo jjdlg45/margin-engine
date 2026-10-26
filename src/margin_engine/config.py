@@ -703,6 +703,22 @@ class PriceExportConfig(StrictModel):
         return self
 
 
+class RevalidationConfig(StrictModel):
+    """Stale-action policy (Run 6, Phase 69). A proposal is a claim about the
+    world at generation time; approval and export revalidate it against the
+    engine's current outputs. Moves beyond these thresholds send it back for
+    re-review rather than letting a stale number through."""
+
+    enabled: bool = True
+    # Relative moves (fraction) beyond which re-review is required.
+    floor_change_pct: float = Field(default=0.02, ge=0)
+    impact_change_pct: float = Field(default=0.20, ge=0)
+    current_price_change_pct: float = Field(default=0.02, ge=0)
+    # A proposal older than this many days is expired: it must be regenerated
+    # or re-reviewed, never approved on its original evidence.
+    expiry_days: int = Field(default=90, ge=1)
+
+
 class ActionsConfig(StrictModel):
     """Action generation (Phase 38). Dates are anchored to the data's last
     invoice date so generation is deterministic for a given world."""
@@ -731,6 +747,8 @@ class ActionsConfig(StrictModel):
     tracking_min_control_pairs: int = Field(default=5, ge=1)
     tracking_min_after_sales: int = Field(default=3, ge=1)
     calibration_min_actions: int = Field(default=10, ge=1)
+    # Stale-action revalidation and expiry (Run 6, Phase 69).
+    revalidation: RevalidationConfig = RevalidationConfig()
 
 
 # ---------------------------------------------------------------------------

@@ -80,6 +80,13 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "affected_set": pl.String,
     "scenario_id": pl.String,
     "overlap_group": pl.String,
+    # Staleness metadata (Run 6, Phase 69): the fingerprints of the inputs,
+    # config and models this proposal rests on, plus its expiry. Approval and
+    # export revalidate the key values against the engine's current outputs.
+    "input_fingerprint": pl.String,
+    "config_fingerprint": pl.String,
+    "model_fingerprint": pl.String,
+    "expires_on": pl.Date,
     "priority": pl.String,
     "owner": pl.String,
     "due_date": pl.Date,
@@ -151,12 +158,17 @@ def _priority_expr(rules: Rules) -> pl.Expr:
 
 
 def _finalize(
-    rows: pl.DataFrame, rules: Rules, anchor: dt.date, created: dt.datetime
+    rows: pl.DataFrame,
+    rules: Rules,
+    anchor: dt.date,
+    created: dt.datetime,
+    fingerprints: dict[str, str] | None = None,
 ) -> pl.DataFrame:
-    """Fill priority, owner, due date and created_at; cap per type by impact;
-    stable output order."""
+    """Fill priority, owner, due date, created_at, staleness fingerprints and
+    expiry; cap per type by impact; stable output order."""
     ac = rules.actions
     due_days = {"high": ac.due_days_high, "medium": ac.due_days_medium, "low": ac.due_days_low}
+    fp = fingerprints or {}
     out = rows.with_columns(_priority_expr(rules).alias("priority"))
     out = out.with_columns(
         pl.lit(ac.default_owner).alias("owner"),
@@ -219,6 +231,12 @@ def _finalize(
         .otherwise(pl.lit(None, dtype=pl.String))
         .alias("scenario_id"),
         pl.lit(None, dtype=pl.String).alias("overlap_group"),
+        # Staleness metadata (Phase 69): what this proposal rests on, and when
+        # it expires if nobody acts on it.
+        pl.lit(fp.get("input"), dtype=pl.String).alias("input_fingerprint"),
+        pl.lit(fp.get("config"), dtype=pl.String).alias("config_fingerprint"),
+        pl.lit(fp.get("model"), dtype=pl.String).alias("model_fingerprint"),
+        pl.lit(anchor + dt.timedelta(days=ac.revalidation.expiry_days)).alias("expires_on"),
     )
     out = (
         out.sort(
@@ -784,7 +802,11 @@ def generate_actions(
     sensitivity: pl.DataFrame,
     panel: pl.DataFrame | None,
     rules: Rules,
+    fingerprints: dict[str, str] | None = None,
 ) -> ActionGenerationResult:
+    """`fingerprints` (Run 6, Phase 69) carries the input / config / model
+    identities this generation run rests on; every proposal stores them so
+    approval and export can tell whether the world moved underneath it."""
     notes: list[str] = []
     if not rules.actions.enabled:
         return ActionGenerationResult(
@@ -814,6 +836,10 @@ def generate_actions(
         "owner",
         "due_date",
         "created_at",
+        "input_fingerprint",
+        "config_fingerprint",
+        "model_fingerprint",
+        "expires_on",
         # Scope and overlap metadata (Phase 68) is built in _finalize / the
         # overlap pass, not by the per-type generators.
         "scope_key",
@@ -827,7 +853,7 @@ def generate_actions(
         [f.select([c for c in ACTIONS_SCHEMA if c not in finalize_built]) for f in frames],
         how="vertical_relaxed",
     )
-    actions = _finalize(combined, rules, anchor, created)
+    actions = _finalize(combined, rules, anchor, created, fingerprints)
 
     # Cross-scope overlap (Phase 68): a pass-through scenario and a pair price
     # action on the same items must never both count. Both sides get a shared

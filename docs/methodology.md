@@ -653,6 +653,39 @@ can never become price changes; the Robinson-Patman review flag (section 11)
 travels with the action; priority defaults by impact and evidence, with a
 non-causal evidence status demoting one level.
 
+### Stale actions, safe transitions and export recovery (Run 6)
+
+A proposal is a claim about the world at generation time, so every action
+stores the fingerprints it rests on — the source files' content hashes, the
+config hash, and a model fingerprint derived from the segment elasticity
+statuses and estimates — plus an expiry date. At approval and at export the
+engine REVALIDATES the stored key values against its current outputs: current
+price, binding floor, list provenance, contract protection, guidance
+sufficiency, compliance flags, scope duplication and expiry. Every move is
+shown field by field with both versions written to an append-only
+revalidation audit table; a move inside the configured threshold is reported
+and allowed, a move beyond it or a hard change (contract protection appears,
+guidance goes insufficient, the proposed price now sits below the floor, the
+pair vanishes, another active price takes the scope) refuses the approval and
+sends the action back for re-review. A check the available outputs cannot
+support is NAMED as not revalidated — never counted as a pass. Export applies
+the same test and HOLDS OUT stale rows with their reason rather than shipping
+them on old evidence.
+
+Concurrency: every transition can carry the caller's expected event sequence
+number. The check and the insert run inside one database transaction with the
+count re-read under it, so two simultaneous transitions cannot both land — the
+loser gets a 409 naming the sequence it expected and the one it found, and
+writes nothing.
+
+Export recovery: an export journals its intent (export id, path, the action
+ids it covers) BEFORE writing the file and marks the journal committed only
+after the status transitions land. A crash in between leaves an open journal
+row, which the next export (or an explicit recovery pass) completes for
+exactly those actions — skipping any that have since moved past approved, so
+recovery never re-exports a superseded or implemented price. Recovery is
+idempotent: running it twice changes nothing.
+
 ### Scope keys, overlap and portfolio totals (Run 6)
 
 Every action carries its scope metadata: a scope key (for price actions, the

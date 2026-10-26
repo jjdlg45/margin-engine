@@ -167,6 +167,16 @@ def export_prices(
     result = export_price_file(store, loaded, out, who=who)
     typer.echo(f"Wrote {out} and {out.name}.summary.json beside it")
     typer.echo(f"Actions moved to exported: {result.n_transitioned}")
+    _rec_raw = result.summary.get("n_recovered_exports") or 0
+    n_rec = int(_rec_raw) if isinstance(_rec_raw, int | float | str) else 0
+    if n_rec:
+        typer.echo(
+            f"Recovered {n_rec} action(s) from an export that was interrupted "
+            f"before its statuses were written"
+        )
+    held = list(result.summary.get("held_out_stale") or [])  # type: ignore[call-overload]
+    for h in held:
+        typer.echo(f"  held out (stale): {h['action_id']}: {h['reason']}")
 
 
 @app.command()

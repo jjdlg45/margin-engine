@@ -7,6 +7,7 @@ HTML report, run manifest, DuckDB store. Stage timings recorded.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 import warnings
@@ -31,9 +32,15 @@ from margin_engine.ledger.events import build_events, vendor_rebate_rollforward
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.ledger.rebate_subledger import build_rebate_subledger
 from margin_engine.manifest.run_manifest import (
+    _sha256 as file_sha256,
+)
+from margin_engine.manifest.run_manifest import (
     build_manifest,
     cleaning_decisions_from,
     write_manifest,
+)
+from margin_engine.manifest.run_manifest import (
+    fingerprint_inputs as manifest_inputs,
 )
 from margin_engine.memlog import rss_log
 from margin_engine.money import cents_col_to_dollars
@@ -606,6 +613,21 @@ def run_full(
 
     # ---- actions (Phase 38): findings become proposed actions ---------------
     t = time.perf_counter()
+    # Staleness fingerprints (Run 6, Phase 69): what this generation run rests
+    # on. Input = the source files' content hashes; config = the rules hash;
+    # model = the elasticity evidence the volume response came from, so a
+    # proposal can be told apart from one generated under a different model.
+    _fp_inputs = ";".join(f"{f['file']}:{f['sha256'][:12]}" for f in manifest_inputs(data_dir))
+    fingerprints = {
+        "input": hashlib.sha256(_fp_inputs.encode()).hexdigest()[:16],
+        "config": file_sha256(rules_path)[:16],
+        "model": hashlib.sha256(
+            "|".join(
+                f"{r['segment']}:{r['status']}:{r['iv'] if r['iv'] is not None else 'na'}"
+                for r in sens.sort("segment").select("segment", "status", "iv").to_dicts()
+            ).encode()
+        ).hexdigest()[:16],
+    }
     actions_res = generate_actions(
         ledger=res.ledger,
         guidance=guidance_res.guidance,
@@ -615,6 +637,7 @@ def run_full(
         sensitivity=sens,
         panel=panel,
         rules=rules,
+        fingerprints=fingerprints,
     )
     res.notes.extend(actions_res.notes)
     # Portfolio scenarios for overlapping scopes (Run 6, Phase 68): one row

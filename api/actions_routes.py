@@ -25,19 +25,26 @@ from margin_engine.actions.model import (
     TransitionError,
     replay_status,
 )
+from margin_engine.actions.revalidate import revalidate_action, revalidation_rows
 from margin_engine.actions.review import (
     EDITABLE_FIELDS,
     ReviewError,
     ReviewPolicy,
     check_edit,
 )
-from margin_engine.actions.store import ActionStore
+from margin_engine.actions.store import ActionStore, ConcurrencyError
+from margin_engine.config import RevalidationConfig, Rules, load_rules
 
 router = APIRouter()
 
 
-def _err(status_code: int, code: str, detail: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"code": code, "detail": detail})
+def _err(
+    status_code: int, code: str, detail: str, extra: dict[str, Any] | None = None
+) -> JSONResponse:
+    content: dict[str, Any] = {"code": code, "detail": detail}
+    if extra:
+        content.update(extra)
+    return JSONResponse(status_code=status_code, content=content)
 
 
 _REVIEW_HTTP = {
@@ -63,6 +70,45 @@ def _store(request: Request) -> ActionStore:
 
 def _policy(request: Request) -> ReviewPolicy:
     return request.app.state.review_policy  # type: ignore[no-any-return]
+
+
+def _rules(request: Request) -> Rules:
+    """The loaded policy config (cached on app state after first use)."""
+    cached: Rules | None = getattr(request.app.state, "rules_cache", None)
+    if cached is None:
+        cached = load_rules(request.app.state.settings.rules_path)
+        request.app.state.rules_cache = cached
+    return cached
+
+
+def _revalidation(request: Request) -> RevalidationConfig:
+    return _rules(request).actions.revalidation
+
+
+def _bundle_page(request: Request, name: str) -> dict[str, Any] | None:
+    """One page document from the loaded bundle, or None when no bundle is
+    loaded. `store.snapshot` RAISES in that case, so this catches it rather
+    than letting an action-store request fail on a missing bundle."""
+    store = getattr(request.app.state, "store", None)
+    if store is None:
+        return None
+    try:
+        snap = store.snapshot
+    except RuntimeError:
+        return None
+    page = snap.pages.get(name)
+    return page if isinstance(page, dict) else None
+
+
+def _current_guidance(request: Request) -> pl.DataFrame | None:
+    """The engine's CURRENT guidance frame for revalidation (Run 6, Phase 69),
+    read from the loaded bundle's guidance table. None when no bundle is
+    loaded: the verdict is then `not testable`, never an assumed pass."""
+    page = _bundle_page(request, "tables/guidance")
+    rows = (page or {}).get("items") or []
+    if not rows:
+        return None
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
 def _actions_with_status(store: ActionStore) -> list[dict[str, Any]]:
@@ -117,6 +163,19 @@ def _match_action(r: dict[str, Any], f: dict[str, Any]) -> bool:
     )
 
 
+def _expected_seq(body: dict[str, Any] | None) -> int | None:
+    """Optimistic-concurrency token from the request body (Run 6, Phase 69):
+    the client's view of the action's next event sequence number. Absent means
+    the caller does not care; a mismatch means another change landed first."""
+    raw = (body or {}).get("expected_seq")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _transition(
     request: Request,
     action_id: str,
@@ -124,7 +183,11 @@ def _transition(
     *,
     user: str | None,
     note: str,
+    expected_seq: int | None = None,
 ) -> JSONResponse:
+    """`expected_seq` (Run 6, Phase 69) is the client's view of the action's
+    next event sequence number; a mismatch means another change landed first
+    and this request gets 409 with no state change."""
     if not user:
         return _err(
             400,
@@ -143,6 +206,7 @@ def _transition(
     )[0]
     if current == to_status:
         return JSONResponse({"action_id": action_id, "status": current, "changed": False})
+    revalidation: dict[str, Any] | None = None
     try:
         policy.check_transition(action, events, user=user, to_status=to_status, note=note)
         if to_status == "approved":
@@ -150,12 +214,66 @@ def _transition(
             from margin_engine.actions.review import check_no_duplicate_active_price
 
             check_no_duplicate_active_price(action, store.actions(), replay_status(events))
-        store.transition(action_id, who=user, to_status=to_status, note=note)
+            # Stale-action revalidation (Run 6, Phase 69): approval checks the
+            # proposal's key values against the engine's CURRENT outputs. Both
+            # versions land in the audit trail; a blocking verdict refuses the
+            # approval and names what moved.
+            rev = revalidate_action(
+                action,
+                rules=_rules(request),
+                guidance=_current_guidance(request),
+                as_of=dt.datetime.now(dt.UTC).date(),
+            )
+            if rev.differences or rev.verdict != "unchanged":
+                store.record_revalidation(
+                    revalidation_rows(
+                        action_id,
+                        rev,
+                        who=user,
+                        trigger="approval",
+                        at=dt.datetime.now(dt.UTC),
+                    )
+                )
+            revalidation = {
+                "verdict": rev.verdict,
+                "message": rev.message(),
+                "not_testable": rev.not_testable,
+                "differences": [
+                    {
+                        "field": d.field,
+                        "stored": str(d.stored),
+                        "current": str(d.current),
+                        "reason": d.reason,
+                        "blocking": d.blocking,
+                    }
+                    for d in rev.differences
+                ],
+            }
+            if rev.blocking:
+                return _err(
+                    409,
+                    "stale_action",
+                    f"this proposal no longer matches the engine's current outputs - "
+                    f"{rev.message()}. It must be re-reviewed or regenerated before approval.",
+                    extra={"revalidation": revalidation},
+                )
+        store.transition(
+            action_id,
+            who=user,
+            to_status=to_status,
+            note=note,
+            expected_seq=expected_seq,
+        )
     except ReviewError as exc:
         return _err(_REVIEW_HTTP.get(exc.code, 400), exc.code, str(exc))
+    except ConcurrencyError as exc:
+        return _err(409, "sequence_conflict", str(exc))
     except TransitionError as exc:
         return _err(409, "invalid_transition", str(exc))
-    return JSONResponse({"action_id": action_id, "status": to_status, "changed": True})
+    body: dict[str, Any] = {"action_id": action_id, "status": to_status, "changed": True}
+    if revalidation is not None:
+        body["revalidation"] = revalidation
+    return JSONResponse(body)
 
 
 @router.get("/api/pages/actions")
@@ -214,11 +332,7 @@ async def actions_page(request: Request) -> Any:
         # artifacts computed over the GENERATED action set under one baseline;
         # served from the loaded bundle (manual proposals are not in them,
         # which the note states).
-        "overlap_groups": (
-            request.app.state.store.snapshot.pages.get("actions", {}).get("overlap_groups", [])
-            if getattr(request.app.state.store, "snapshot", None) is not None
-            else []
-        ),
+        "overlap_groups": (_bundle_page(request, "actions") or {}).get("overlap_groups", []),
         "facets": {
             "types": sorted({str(r["action_type"]) for r in rows}),
             "statuses": sorted({str(r["status"]) for r in rows}),
@@ -365,7 +479,12 @@ async def submit(
     x_user: str | None = Header(default=None),
 ) -> Any:
     return _transition(
-        request, action_id, "under_review", user=x_user, note=str((body or {}).get("note", ""))
+        request,
+        action_id,
+        "under_review",
+        user=x_user,
+        note=str((body or {}).get("note", "")),
+        expected_seq=_expected_seq(body),
     )
 
 
@@ -377,7 +496,12 @@ async def approve(
     x_user: str | None = Header(default=None),
 ) -> Any:
     return _transition(
-        request, action_id, "approved", user=x_user, note=str((body or {}).get("reason", ""))
+        request,
+        action_id,
+        "approved",
+        user=x_user,
+        note=str((body or {}).get("reason", "")),
+        expected_seq=_expected_seq(body),
     )
 
 
@@ -389,7 +513,12 @@ async def reject(
     x_user: str | None = Header(default=None),
 ) -> Any:
     return _transition(
-        request, action_id, "rejected", user=x_user, note=str((body or {}).get("reason", ""))
+        request,
+        action_id,
+        "rejected",
+        user=x_user,
+        note=str((body or {}).get("reason", "")),
+        expected_seq=_expected_seq(body),
     )
 
 
@@ -401,7 +530,12 @@ async def rework(
     x_user: str | None = Header(default=None),
 ) -> Any:
     return _transition(
-        request, action_id, "proposed", user=x_user, note=str((body or {}).get("note", ""))
+        request,
+        action_id,
+        "proposed",
+        user=x_user,
+        note=str((body or {}).get("note", "")),
+        expected_seq=_expected_seq(body),
     )
 
 
@@ -413,7 +547,12 @@ async def implement(
     x_user: str | None = Header(default=None),
 ) -> Any:
     return _transition(
-        request, action_id, "implemented", user=x_user, note=str((body or {}).get("note", ""))
+        request,
+        action_id,
+        "implemented",
+        user=x_user,
+        note=str((body or {}).get("note", "")),
+        expected_seq=_expected_seq(body),
     )
 
 
@@ -627,6 +766,14 @@ async def propose(
             ],
             "scenario_id": [None],
             "overlap_group": [None],
+            # Staleness metadata (Run 6, Phase 69): a manual proposal rests on
+            # the reviewer's own judgement, not an engine run, so it carries no
+            # engine fingerprints - stated by their absence - but it does
+            # expire like any other proposal.
+            "input_fingerprint": [None],
+            "config_fingerprint": [None],
+            "model_fingerprint": ["manual_proposal"],
+            "expires_on": [(now.date() + dt.timedelta(days=_revalidation(request).expiry_days))],
             "priority": [str(body.get("priority", "medium"))],
             "owner": [str(body.get("owner", x_user))],
             "due_date": [None],

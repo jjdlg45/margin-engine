@@ -182,6 +182,43 @@ def diff_summary(rows: pl.DataFrame) -> dict[str, object]:
     }
 
 
+def recover_pending_exports(store: ActionStore, *, who: str, at: dt.datetime | None = None) -> int:
+    """Finish any export that was journaled but never committed (Run 6, Phase
+    69): a crash between writing the file and updating statuses leaves the
+    journal row open, so the next export (or an explicit recovery call)
+    completes the status transitions for exactly the actions that file named
+    and marks the journal committed. Idempotent: an action already past
+    'approved' is skipped, so recovery never re-exports a superseded or
+    implemented price.
+    """
+    journal = store.export_journal()
+    if journal.height == 0:
+        return 0
+    pending = journal.filter(~pl.col("committed")).sort("at", "export_id")
+    if pending.height == 0:
+        return 0
+    status = replay_status(store.events())
+    current = dict(status.select("action_id", "status").iter_rows())
+    recovered = 0
+    for row in pending.iter_rows(named=True):
+        for action_id in str(row["action_ids"]).split(";"):
+            if not action_id:
+                continue
+            if current.get(action_id) != "approved":
+                continue  # already exported / implemented / superseded
+            store.transition(
+                action_id,
+                who=who,
+                to_status="exported",
+                note=f"export {row['export_id']} recovered after an interrupted run",
+                at=at,
+            )
+            current[action_id] = "exported"
+            recovered += 1
+        store.commit_export(str(row["export_id"]))
+    return recovered
+
+
 def export_price_file(
     store: ActionStore,
     rules: Rules,
@@ -190,24 +227,84 @@ def export_price_file(
     who: str,
     dry_run: bool = False,
     at: dt.datetime | None = None,
+    guidance: pl.DataFrame | None = None,
 ) -> PriceExportResult:
     """Build the price file and summary; unless dry_run, write both and move
     every still-approved row to 'exported' (logged). Re-running changes no
-    state and rewrites the identical file."""
+    state and rewrites the identical file.
+
+    Crash safety (Run 6, Phase 69): any previously journaled-but-uncommitted
+    export is recovered FIRST, then this export's intent is journaled before
+    the file is written and committed only after the status transitions land.
+
+    Revalidation (Run 6, Phase 69): with `guidance`, every row is revalidated
+    against the engine's current outputs; rows whose verdict blocks are HELD
+    OUT of the file with their reason recorded, never exported on stale
+    evidence.
+    """
     cfg = rules.actions.price_export
+    n_recovered = 0
+    if not dry_run:
+        n_recovered = recover_pending_exports(store, who=who, at=at)
     actions = store.actions()
     events = store.events()
     csv_text, rows = build_price_file(actions, events, cfg)
+
+    held: list[dict[str, object]] = []
+    if guidance is not None and rows.height:
+        from margin_engine.actions.revalidate import revalidate_action, revalidation_rows
+
+        stamp = at if at is not None else dt.datetime.now(dt.UTC)
+        keep: list[str] = []
+        for r in rows.sort("action_id").iter_rows(named=True):
+            rev = revalidate_action(r, rules=rules, guidance=guidance, as_of=stamp.date())
+            if not dry_run and rev.differences:
+                store.record_revalidation(
+                    revalidation_rows(str(r["action_id"]), rev, who=who, trigger="export", at=stamp)
+                )
+            if rev.blocking:
+                held.append(
+                    {
+                        "action_id": str(r["action_id"]),
+                        "verdict": rev.verdict,
+                        "reason": rev.message(),
+                    }
+                )
+            else:
+                keep.append(str(r["action_id"]))
+        if held:
+            rows = rows.filter(pl.col("action_id").is_in(keep))
+            csv_text, rows = build_price_file(
+                actions.filter(pl.col("action_id").is_in(keep)), events, cfg
+            )
+
     summary = diff_summary(rows)
+    summary["held_out_stale"] = held
+    summary["n_recovered_exports"] = n_recovered
     n_transitioned = 0
     if not dry_run:
+        still_approved = rows.filter(pl.col("status") == "approved")["action_id"].to_list()
+        export_id = (
+            "exp_"
+            + hashlib.sha256(
+                f"{out_path}|{';'.join(still_approved)}|{csv_text}".encode()
+            ).hexdigest()[:12]
+        )
+        stamp = at if at is not None else dt.datetime.now(dt.UTC)
+        if still_approved or out_path is not None:
+            store.journal_export(
+                export_id,
+                who=who,
+                path=str(out_path) if out_path is not None else "",
+                action_ids=still_approved,
+                at=stamp,
+            )
         if out_path is not None:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(csv_text, encoding="utf-8", newline="\n")
             out_path.with_suffix(out_path.suffix + ".summary.json").write_text(
                 json.dumps(summary, indent=1) + "\n", encoding="utf-8", newline="\n"
             )
-        still_approved = rows.filter(pl.col("status") == "approved")["action_id"].to_list()
         for action_id in still_approved:
             store.transition(
                 action_id,
@@ -217,4 +314,6 @@ def export_price_file(
                 at=at,
             )
             n_transitioned += 1
+        if still_approved or out_path is not None:
+            store.commit_export(export_id)
     return PriceExportResult(csv_text=csv_text, summary=summary, n_transitioned=n_transitioned)
