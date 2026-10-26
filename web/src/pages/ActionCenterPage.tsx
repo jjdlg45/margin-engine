@@ -247,6 +247,7 @@ function QueueCards({ items }: { items: ActionRow[] }) {
               </span>
             )}
             <span className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusChip status={a.action_type} />
               <StatusChip status={a.status} />
               <StatusChip status={a.evidence_status ?? "insufficient_data"} />
               {a.compliance_flags && <StatusChip status="rp_review_flag" />}
