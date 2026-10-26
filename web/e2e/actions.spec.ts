@@ -1,8 +1,9 @@
-/** Phase 42: the Action center in the STATIC demo - read-only with a
- * simulated, labeled history. Queue filters (alone and combined, URL round
- * trip, parity of counts with the bundle), the detail page with history and
- * evidence links, the results view, and the absence of every mutation
- * affordance. */
+/** Phase 42 + polish round: the Action center in the STATIC demo - a sandbox
+ * with a simulated, labeled history whose workflow changes stay in the
+ * visitor's browser. Queue filters (alone and combined, URL round trip,
+ * parity of counts with the bundle), the detail page with history and
+ * evidence links, and the results view. Sandbox workflow behavior itself is
+ * covered in sandbox.spec.ts. */
 
 import { expect, test } from "@playwright/test";
 import type { WebBundle } from "../src/types/bundle";
@@ -19,7 +20,7 @@ test.beforeEach(async ({ page }) => {
 const showing = (page: import("@playwright/test").Page) =>
   page.getByText(/Showing [\d,]+ of [\d,]+/);
 
-test("queue renders read-only with counts matching the bundle", async ({ page }) => {
+test("queue renders as a sandbox with counts matching the bundle", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -27,9 +28,9 @@ test("queue renders read-only with counts matching the bundle", async ({ page })
   await page.goto("/#/actions");
   await expect(page.getByRole("heading", { level: 1, name: "Action center" })).toBeVisible();
   await expect(page.getByTestId("actions-summary")).toBeVisible();
-  await expect(page.getByText(/read-only/)).toBeVisible();
-  // No mutation affordances in the static demo.
-  await expect(page.getByTestId("actions-toolbar")).toHaveCount(0);
+  // The static demo is a sandbox: banner, workflow toolbar, reset.
+  await expect(page.getByTestId("sandbox-banner")).toBeVisible();
+  await expect(page.getByTestId("actions-toolbar")).toBeVisible();
   const total = bundle.actions_table.length;
   await expect(showing(page)).toContainText(`of ${total.toLocaleString("en-US")}`);
   expect(errors).toEqual([]);
@@ -89,15 +90,19 @@ test("detail: history labeled demo data, compliance note, evidence links, outcom
   await page.goto(`/#/actions/${flagged!.action_id}`);
   await expect(page.getByTestId("compliance-note")).toContainText("review");
   await expect(page.getByTestId("event-history")).toBeVisible();
-  await expect(page.getByText("Simulated review history - demo data.")).toBeVisible();
+  await expect(
+    page.getByText("Simulated demo history plus your sandbox changes", { exact: false }),
+  ).toBeVisible();
   // Evidence deep link to the guidance band for the pair.
   const link = page.getByRole("link", { name: /band chart/ });
   await expect(link).toHaveAttribute(
     "href",
     new RegExp(`guidance\\?customer=${flagged!.customer_id}`),
   );
-  // No workflow buttons in the static demo.
-  await expect(page.getByTestId("workflow")).toHaveCount(0);
+  // The sandbox offers the workflow buttons on open actions.
+  if (["proposed", "under_review", "rejected", "exported"].includes(flagged!.status)) {
+    await expect(page.getByTestId("workflow")).toBeVisible();
+  }
 
   const measured = bundle.actions_table.find(
     (a) => a.outcome && a.outcome.outcome_status === "measured",
@@ -220,5 +225,9 @@ test("demo owners are named people with roles", async ({ page }) => {
     expect(a.owner).toMatch(/^[A-Z][\w'. -]+ \([a-z][\w -]+\)$/);
   }
   await page.goto("/#/actions");
-  await expect(page.getByText(/\([a-z][\w -]+\)/).first()).toBeVisible();
+  // Scoped to the queue itself: the identity picker's hidden options also
+  // carry "(role)" text.
+  await expect(
+    page.locator("tbody, [data-testid=queue-cards]").getByText(/\([a-z][\w -]+\)/).first(),
+  ).toBeVisible();
 });

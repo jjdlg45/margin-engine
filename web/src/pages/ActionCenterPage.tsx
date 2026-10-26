@@ -7,7 +7,7 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
 import { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EntityLabel } from "../components/EntityLabel";
@@ -30,9 +30,10 @@ import {
   usePageData,
   useTableQuery,
 } from "../lib/queries";
-import { dataClient } from "../lib/api/client";
+import { dataClient, isSandbox } from "../lib/api/client";
 import { queryClient } from "../lib/queries";
 import { useCompact } from "../lib/useCompact";
+import { SandboxBanner } from "../components/SandboxBanner";
 
 const FILTER_KEYS = ["types", "statuses", "owner", "priorities", "evidence", "compliance", "impact"];
 
@@ -45,6 +46,12 @@ const inputClass = "rounded-badge border hairline bg-card px-2 py-1 text-sm text
 function UserPicker() {
   const users = useActionUsers();
   const [user, setUser] = useCurrentUser();
+  // Sandbox: start as the dual-role user so every button works immediately,
+  // and never keep an identity that is not on the sandbox roster.
+  useEffect(() => {
+    if (!isSandbox || !users.data?.length) return;
+    if (!user || !users.data.some((u) => u.name === user)) setUser(users.data[0].name);
+  }, [users.data, user, setUser]);
   if (dataClient.actions.readOnly) return null;
   return (
     <label className="flex items-center gap-2 text-caption">
@@ -170,6 +177,8 @@ function ExportButton() {
         URL.revokeObjectURL(a.href);
         await queryClient.invalidateQueries({ queryKey: ["table", "actions"] });
         await queryClient.invalidateQueries({ queryKey: ["page", "actions"] });
+        // The export transitions actions, so cached details are stale too.
+        await queryClient.invalidateQueries({ queryKey: ["action-detail"] });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "export failed");
@@ -275,6 +284,84 @@ function QueueCards({ items }: { items: ActionRow[] }) {
         </button>
       )}
     </>
+  );
+}
+
+function BulkApprovePanel() {
+  const [user] = useCurrentUser();
+  const [note, setNote] = useState("");
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (dataClient.actions.readOnly) return null;
+  const run = async () => {
+    if (!user) {
+      setError("Choose a working identity first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const page = await dataClient.queryTable("actions", {
+        page: 1,
+        page_size: 5000,
+        filters: { statuses: ["under_review"] },
+      });
+      const ids = page.items.map((r) => r.action_id);
+      if (!ids.length) {
+        setResult("Nothing is under review right now.");
+        return;
+      }
+      const out = await dataClient.actions.bulkApprove(ids, user, note);
+      const ok = out.filter((o) => o.outcome === "approved").length;
+      const refused = out.filter((o) => o.outcome === "refused");
+      setResult(
+        `Approved ${ok} of ${out.length}.` +
+          (refused.length
+            ? ` ${refused.length} refused - first reason: ${refused[0].reason}`
+            : ""),
+      );
+      await queryClient.invalidateQueries({ queryKey: ["table", "actions"] });
+      await queryClient.invalidateQueries({ queryKey: ["page", "actions"] });
+      await queryClient.invalidateQueries({ queryKey: ["action-detail"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "bulk approval failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="text-caption">
+        Reason
+        <input
+          className={`${inputClass} ml-2`}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          data-testid="bulk-note"
+        />
+      </label>
+      <button
+        type="button"
+        className={btnClass}
+        disabled={busy}
+        onClick={() => void run()}
+        data-testid="bulk-approve"
+      >
+        Approve everything under review
+      </button>
+      {result && (
+        <span className="text-caption" data-testid="bulk-result">
+          {result}
+        </span>
+      )}
+      {error && (
+        <span className="text-caption text-amber" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -553,9 +640,12 @@ export function ActionCenterPage() {
               lede={
                 p.read_only
                   ? "Findings turned into reviewable actions. This hosted demo is read-only with a simulated review history, labeled demo data; the full propose-review-approve-export workflow runs against the live API."
-                  : "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure what actually happened."
+                  : isSandbox
+                    ? "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure. This demo starts from a simulated review history; your own changes stay in this browser."
+                    : "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure what actually happened."
               }
             />
+            <SandboxBanner />
             <div className="mt-2 grid gap-4 sm:grid-cols-3" data-testid="actions-summary">
               <div className="panel px-5 py-5">
                 <h2 className="m-0 text-section">Open actions</h2>
@@ -613,6 +703,7 @@ export function ActionCenterPage() {
                 <UserPicker />
                 <ProposePanel />
                 <ExportButton />
+                <BulkApprovePanel />
               </div>
             )}
             <Tabs.Root defaultValue="queue" className="mt-4">

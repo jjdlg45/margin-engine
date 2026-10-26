@@ -10,8 +10,9 @@ import { QuerySection } from "../components/Async";
 import { EntityLabel } from "../components/EntityLabel";
 import { Breadcrumbs, EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { dataClient } from "../lib/api/client";
+import { dataClient, isSandbox } from "../lib/api/client";
 import { ApiError, type ActionDetail, type TransitionKind } from "../lib/api/types";
+import { SandboxBanner } from "../components/SandboxBanner";
 import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
 import { useLabels } from "../lib/labels";
@@ -287,6 +288,7 @@ export function ActionDetailPage() {
               trail={[{ label: "Action center", to: "/actions" }, { label: d.action.title }]}
             />
             <PageHeader title={d.action.title} lede={d.action.rationale} />
+            <SandboxBanner />
             <Section title="Where it stands">
               <div className="flex flex-wrap items-center gap-3">
                 <StatusChip status={d.status} />
@@ -435,7 +437,9 @@ export function ActionDetailPage() {
               lede={
                 dataClient.actions.readOnly
                   ? "Simulated review history - demo data."
-                  : "The append-only event log; status is always derived from it."
+                  : isSandbox
+                    ? "Simulated demo history plus your sandbox changes - stored only on this device; status is always derived from the log."
+                    : "The append-only event log; status is always derived from it."
               }
             >
               <ol className="m-0 list-none p-0 text-sm" data-testid="event-history">

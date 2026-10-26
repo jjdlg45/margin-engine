@@ -5,10 +5,15 @@
  * can never silently depend on a server. */
 
 import { httpAdapter } from "./httpAdapter";
-import { staticAdapter } from "./staticAdapter";
+import { sandboxAdapter } from "./sandboxAdapter";
 import type { DataClient } from "./types";
 
 export const dataSource: "static" | "http" =
   import.meta.env.VITE_DATA_SOURCE === "http" ? "http" : "static";
 
-export const dataClient: DataClient = dataSource === "http" ? httpAdapter : staticAdapter;
+/** The static demo runs as a SANDBOX: the full review workflow works with the
+ * same guardrails as the API, but every change stays in the visitor's browser
+ * (localStorage); business numbers still come only from the exported files. */
+export const isSandbox = dataSource !== "http";
+
+export const dataClient: DataClient = dataSource === "http" ? httpAdapter : sandboxAdapter;
