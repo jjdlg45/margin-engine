@@ -28,6 +28,7 @@ from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
 from margin_engine.ledger.events import build_events, vendor_rebate_rollforward
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
+from margin_engine.ledger.rebate_subledger import build_rebate_subledger
 from margin_engine.manifest.run_manifest import (
     build_manifest,
     cleaning_decisions_from,
@@ -182,6 +183,8 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "economic_events": ["event_type", "event_subtype", "source_ref"],
     "economic_event_totals": ["event_type"],
     "vendor_rebate_rollforward": ["supplier_id", "period"],
+    "rebate_subledger": ["customer_id", "rebate_program_id", "period", "entry_type", "source_ref"],
+    "rebate_subledger_balances": ["customer_id", "rebate_program_id", "period"],
 }
 
 
@@ -278,6 +281,17 @@ def run_full(
         res.reference.get("vendor_rebate_programs"),
     )
     res.notes.extend(rollforward_res.notes)
+    # Rebate lifecycle subledger (Run 6, Phase 62): estimate -> revisions ->
+    # settlement -> reversal/true-up, with the balance invariant validated
+    # (a violation raises; it is an accounting bug, never a warning).
+    subledger_res = build_rebate_subledger(
+        res.ledger,
+        res.reference.get("rebate_programs"),
+        res.reference.get("rebate_settlements"),
+        res.tiered_monthly,
+        res.tiered_summary,
+    )
+    res.notes.extend(subledger_res.notes)
     timings["economic_events"] = time.perf_counter() - t
     rss_log("economic_events")
 
@@ -540,6 +554,8 @@ def run_full(
         "service_policy_flags": cts.service_flags,
         "economic_events": events_res.events,
         "economic_event_totals": events_res.totals,
+        "rebate_subledger": subledger_res.entries,
+        "rebate_subledger_balances": subledger_res.balances,
         **(
             {"vendor_rebate_rollforward": rollforward_res.table}
             if rollforward_res.table is not None

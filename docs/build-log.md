@@ -3155,3 +3155,53 @@ snapshots 225 passed (exit 0) against a re-exported demo bundle. Headline
 numbers unchanged (the demo world has no multi-program customers, supplier
 claims or consideration exceptions; FRT_OUT charges now classify as
 freight pass-through in the events export).
+
+## Phase 62 — Rebate lifecycle subledger (2026-10-26, Run 6 branch)
+
+Rebates are now a lifecycle, not a single number (Finding 5C).
+
+1. **Subledger** - src/margin_engine/ledger/rebate_subledger.py holds one
+   entry per lifecycle step (estimate, revision, settlement, reversal) at
+   monthly grain per customer and program, with a balance view enforcing
+   opening + estimates + revisions - settlements - reversals = closing for
+   every period, openings chaining to prior closings, and every settlement
+   source row applied exactly once (unique reference; a violation RAISES -
+   it is an accounting bug, never a warning). New exports: rebate_subledger,
+   rebate_subledger_balances.
+2. **Streams** - settlement-kind programs: monthly estimates (rate x month
+   net) with each quarterly settlement row applied once at the quarter's
+   closing month and a true-up revision replacing the estimates (a
+   retroactively changed settlement is just another settlement row the
+   true-up absorbs). Tiered programs: monthly estimates from the engine's
+   per-line accruals plus a RETROSPECTIVE top-up revision when a tier is
+   crossed (crossing re-rates the whole cumulative basis), year settlements
+   replacing the stream. Line-accrued programs are actual at invoice and
+   stated as outside the subledger. Settlement rows without a program id
+   attribute only where unambiguous (single-program customers); ambiguous
+   rows are stated and never applied twice.
+3. **Clawbacks** - a return referencing an invoice from a prior SETTLED
+   program year books a reversal at that year's effective settled rate
+   (estimated; batch data carries no settlement timestamps, so after
+   settlement means a later period, documented); against a prior UNSETTLED
+   year it books a negative revision lowering the open accrual.
+4. **Tiered monthly stream** - the tiered module now also emits a per
+   customer x program x month frame (basis, accruals, cumulative end, tier
+   rate at month end) that the subledger builds on, carried through the
+   waterfall and pipeline results.
+
+Tests added: tests/test_rebate_subledger.py (9 tests) covering the spec
+fixtures: monthly estimates settled quarterly (true-up zero), a settlement
+retroactively changed (two rows, each applied once, true-up +10.00), tier
+crossing books the +6.00 retrospective revision (closing 24.00 = the true
+liability), settlement replaces estimates (year closes at zero), a return
+after the settled year books a 4.00 clawback at the 2 percent effective
+rate (negative closing = receivable, in plain sight), a return after the
+period but before settlement lowers the accrual instead, the balance
+identity holds on every period, duplicate settlement application raises,
+and line-accrual programs are stated as outside the subledger.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 448 passed 0 failed (exit 0). No web changes (new
+engine exports only; the bundle is untouched). Headline numbers unchanged:
+the subledger is a derived view; pocket math and reconciliation totals are
+byte-identical.

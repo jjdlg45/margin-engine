@@ -48,6 +48,8 @@ class WaterfallResult:
     # Per customer x year x program tiered-rebate summary (Run 6, Phase 61):
     # the grain of the economic-event taxonomy and the rebate subledger.
     tiered_summary: pl.DataFrame | None = None
+    # Per customer x program x month accrual stream (Run 6, Phase 62).
+    tiered_monthly: pl.DataFrame | None = None
 
 
 def normalize_quantity(
@@ -886,4 +888,5 @@ def build_waterfall(
         notes=notes,
         unallocated_settlements=unallocated_settlements,
         tiered_summary=tiered_res.summary if tiered_res is not None else None,
+        tiered_monthly=tiered_res.monthly if tiered_res is not None else None,
     )

@@ -37,6 +37,8 @@ class PipelineResult:
     # Per customer x year x program tiered summary (Run 6, Phase 61), for the
     # economic-event taxonomy and the rebate subledger.
     tiered_summary: pl.DataFrame | None = None
+    # Per customer x program x month tiered accrual stream (Run 6, Phase 62).
+    tiered_monthly: pl.DataFrame | None = None
     # Fully blank input rows dropped per source file (whitespace-only included).
     blank_rows_dropped: dict[str, int] = field(default_factory=dict)
 
@@ -262,6 +264,7 @@ def run_pipeline(
         notes=notes,
         blank_rows_dropped=blank_counts,
         tiered_summary=wf.tiered_summary,
+        tiered_monthly=wf.tiered_monthly,
     )
 
 

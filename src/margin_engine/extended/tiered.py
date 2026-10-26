@@ -63,11 +63,27 @@ TIERED_SUMMARY_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "negative_basis": pl.Boolean,
 }
 
+# Per customer x program x month (Phase 62): the accrual stream the rebate
+# lifecycle subledger builds on. cum_end / rate_end describe the cumulative
+# basis and tier rate at the month's end, so the subledger can derive the
+# RETROSPECTIVE top-up revision when a tier is crossed.
+TIERED_MONTHLY_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "customer_id": pl.String,
+    "rebate_program_id": pl.String,
+    "year": pl.String,
+    "period": pl.String,  # YYYY-MM
+    "basis_cents": pl.Int64,
+    "accrued_cents": pl.Int64,
+    "cum_end_cents": pl.Int64,
+    "rate_end_bp": pl.Int64,
+}
+
 
 @dataclass
 class TieredResult:
     narrow: pl.DataFrame  # (row_col, *TIERED_COLS), one row per basis line
     summary: pl.DataFrame  # TIERED_SUMMARY_SCHEMA
+    monthly: pl.DataFrame  # TIERED_MONTHLY_SCHEMA
 
 
 def tiered_rebate_columns(
@@ -246,6 +262,22 @@ def tiered_rebate_columns(
         settled_rows["_accrued"].sum()
     )
 
+    monthly = (
+        per.sort("customer_id", "_pgm", "_year", "invoice_date", "source_line_key")
+        .with_columns(pl.col("invoice_date").dt.strftime("%Y-%m").alias("_period"))
+        .group_by("customer_id", "_pgm", "_year", "_period", maintain_order=True)
+        .agg(
+            pl.col("net_amount_cents").sum().alias("basis_cents"),
+            pl.col("_accrued").sum().alias("accrued_cents"),
+            pl.col("_cum").last().alias("cum_end_cents"),
+            pl.col("_rate_bp").last().alias("rate_end_bp"),
+        )
+        .rename({"_pgm": "rebate_program_id", "_year": "year", "_period": "period"})
+        .sort("customer_id", "rebate_program_id", "year", "period")
+        .select(list(TIERED_MONTHLY_SCHEMA))
+        .cast(TIERED_MONTHLY_SCHEMA)  # type: ignore[arg-type]
+    )
+
     summary = (
         per.group_by("customer_id", "_year", "_pgm")
         .agg(
@@ -266,4 +298,4 @@ def tiered_rebate_columns(
         .select(list(TIERED_SUMMARY_SCHEMA))
         .cast(TIERED_SUMMARY_SCHEMA)  # type: ignore[arg-type]
     )
-    return TieredResult(narrow=narrow, summary=summary)
+    return TieredResult(narrow=narrow, summary=summary, monthly=monthly)
