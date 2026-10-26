@@ -205,6 +205,58 @@ outliers are excluded from estimation only when the pair has enough history
 a genuine shock-driven price move is indistinguishable from a one-off, and
 excluding those points provably biases sparse-segment elasticities.
 
+### Estimator specification
+
+Each estimator is specified in full so its estimand is never conflated with
+another's (Run 6, 60.3). Shared setup: the panel is customer x item x month
+within one commercial segment; contract pairs and unreliable one-off outliers
+are excluded as described above; no weights are applied (each panel row counts
+once); rows dropped by each estimator are counted and reported.
+
+**Naive FE-OLS.**
+Dependent variable: log quantity. Sample: positive-quantity rows only (zeros
+drop with the log). Endogenous regressor: log price, NOT instrumented — price
+and demand shocks are simultaneously determined, which is the point of
+reporting it. Fixed effects: pair and month (item-role x month when roles are
+known). Clustering: the configured level (default two-way month x customer).
+Named estimand: the ASSOCIATION of price and conditional quantity among buying
+pairs — documents endogeneity bias, never used for decisions.
+
+**FE-Poisson (PPML).**
+Dependent variable: quantity in levels, including true zeros. Sample: all
+active-assortment rows; zero rows carry the pair's last observed price
+(flagged carried-forward; a positive-rows-only variant is estimated and the
+gap joins the robustness criterion). Regressor: log price, not instrumented.
+Fixed effects: pair and month; separated observations (groups whose outcome
+is all zero) are dropped by the estimator and counted. Named estimand: the
+descriptive semi-elasticity of TOTAL expected quantity — extensive and
+intensive margin together — among active-assortment pairs, still subject to
+price endogeneity.
+
+**FE-2SLS.**
+Dependent variable: log quantity. Sample: positive-quantity rows only —
+dropping zeros means the estimand is CONDITIONAL quantity among pairs that
+kept buying, not total volume; this is stated wherever the estimate is used.
+Endogenous regressor: log price. Instrument matrix: supplier cost index and
+category tariff rate (two instruments, overidentified). Fixed effects: pair
+and month (item-role x month when roles are known), applied by within
+transformation to outcome, price and instruments; the optional market-price
+control is partialled out of all of them (Frisch-Waugh). Clustering: the
+configured level for F, the Anderson-Rubin set and the leave-one-cluster-out
+jackknife interval. Dropped observations: zeros, rows with missing price or
+instruments, and singleton groups absorbed by the fixed effects — each
+counted. Named estimand: the own-price elasticity of conditional quantity
+among buying pairs, identified from instrument-induced price variation.
+
+**IV-PPML control function (added by Phase 72).**
+Dependent variable: quantity in levels including zeros. First stage: log
+price on the instruments and fixed effects; its residual enters the PPML
+equation as a control function. Inference: bootstrap or jackknife (the
+control function is generated). Named estimand: the own-price elasticity of
+TOTAL expected quantity, including whether the customer buys at all — the
+estimand the opportunity optimizer needs. Specification details land with
+Phase 72 and are recorded here.
+
 Diagnostics: cluster-robust first-stage F; identifying-variation coverage;
 Sargan-style overidentification J with two instruments; robustness spread
 across IV-with-each-instrument-alone and the joint estimate; Anderson-Rubin

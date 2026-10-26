@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from margin_engine.metrics import metric_label_entries
+
 LABELS: dict[str, dict[str, str]] = {
     # --- evidence statuses (sensitivity, cross-price) ------------------------
     "causal_elasticity_supported": {
@@ -419,6 +421,11 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "At least one reconciliation check did not tie to source totals.",
     },
 }
+
+# Metric definitions (Run 6, 60.1) are authored once in margin_engine.metrics
+# and merged here, so the web bundle, the HTML report and the generated
+# docs/metric-dictionary.md all serve the same words.
+LABELS.update(metric_label_entries())
 
 
 _CODE_TOKEN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")

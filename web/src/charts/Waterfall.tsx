@@ -22,6 +22,7 @@ import {
 } from "recharts";
 import type { WaterfallStage } from "../types/bundle";
 import { dollars, dollarsShort, pct } from "../lib/format";
+import { useLabels } from "../lib/labels";
 
 const DROP_NAMES = [
   "− Discounts",
@@ -125,10 +126,16 @@ function WaterfallTooltip({
   active?: boolean;
   payload?: { payload: Row }[];
 }) {
+  // Stage definitions come from the bundle's central metric dictionary (one
+  // source of truth with docs/metric-dictionary.md); unknown codes fall back
+  // to an empty description, never a raw code.
+  const labelOf = useLabels();
   if (!active || !payload?.length) return null;
   const r = payload[0].payload;
+  const definition =
+    r.kind === "stage" ? labelOf(r.name.toLowerCase().replace(/ /g, "_")).description : "";
   return (
-    <div className="rounded-card border hairline bg-card px-3 py-2 text-caption shadow-lg">
+    <div className="rounded-card border hairline bg-card px-3 py-2 text-caption shadow-lg max-w-72">
       <p className="m-0 font-medium">{r.name}</p>
       <p className="m-0">{dollars(r.kind === "stage" ? r.size : -r.size)}</p>
       {r.pctOfList !== null && (
@@ -137,6 +144,7 @@ function WaterfallTooltip({
         </p>
       )}
       <p className="m-0 secondary">{r.coverage}</p>
+      {definition && <p className="m-0 secondary">{definition}</p>}
     </div>
   );
 }

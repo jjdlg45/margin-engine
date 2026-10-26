@@ -243,6 +243,58 @@ class TreeConfig(StrictModel):
     min_leaf_items: int = Field(default=10, ge=1)
 
 
+class FeatureLineage(StrictModel):
+    """Lineage metadata for one segmentation feature (Run 6, 60.4): where it
+    comes from, how it is computed, over what window, and whether that window
+    overlaps the outcome period. The leakage guard reads this metadata (not
+    only name heuristics), so a feature built from outcome-period dollars is
+    visible as such even when its name says nothing about price."""
+
+    source_columns: tuple[str, ...]
+    formula: str
+    reference_window: str
+    uses_outcome_period_data: bool
+
+
+def _default_feature_lineage() -> dict[str, FeatureLineage]:
+    static_customer = FeatureLineage(
+        source_columns=("customers.*",),
+        formula="customer master attribute, as mapped",
+        reference_window="static attribute (not derived from transactions)",
+        uses_outcome_period_data=False,
+    )
+    static_item = FeatureLineage(
+        source_columns=("items.*",),
+        formula="item master attribute, as mapped",
+        reference_window="static attribute (not derived from transactions)",
+        uses_outcome_period_data=False,
+    )
+    return {
+        "industry": static_customer,
+        "size_band": static_customer,
+        "region": static_customer,
+        "channel": static_customer,
+        "contract_type": static_customer,
+        "item_family": static_item,
+        "item_role": static_item,
+        "order_size_band": FeatureLineage(
+            source_columns=("net_amount_cents", "order_id"),
+            formula="terciles of order net value over the fitting sample",
+            reference_window="fitting sample (same period as the target)",
+            # Order net value embeds realized prices from the outcome period.
+            uses_outcome_period_data=True,
+        ),
+        "revenue_abc": FeatureLineage(
+            source_columns=("net_amount_cents", "customer_id"),
+            formula="cumulative revenue-share classes A/B/C over the fitting sample",
+            reference_window="fitting sample (same period as the target)",
+            # Contemporaneous revenue embeds the target-period prices; Phase 76
+            # replaces this with a pre-period ABC and flips this flag.
+            uses_outcome_period_data=True,
+        ),
+    }
+
+
 class SegmentationConfig(StrictModel):
     # Commercial segments: context features only — leakage guard.
     commercial_tree: TreeConfig = TreeConfig(max_depth=5)
@@ -266,6 +318,9 @@ class SegmentationConfig(StrictModel):
         "rebate",
         "margin",
     )
+    # Lineage metadata per feature (Run 6, 60.4): every context feature must
+    # declare where it comes from and whether it uses outcome-period data.
+    feature_lineage: dict[str, FeatureLineage] = Field(default_factory=_default_feature_lineage)
     bootstrap_resamples: int = Field(default=30, ge=2)
     # Cells whose mean normalized price index differs by less than this are not
     # commercially distinct and are consolidated into one segment.
@@ -273,6 +328,19 @@ class SegmentationConfig(StrictModel):
     # ABC splits by cumulative share: A = top 80%, B = next 15%, C = last 5%.
     abc_a_share: float = 0.80
     abc_b_share: float = 0.15
+
+    @model_validator(mode="after")
+    def _lineage_covers_context_features(self) -> SegmentationConfig:
+        missing = [f for f in self.context_features if f not in self.feature_lineage]
+        if missing:
+            msg = (
+                f"segmentation: context features {missing} have no feature_lineage "
+                "entry (Run 6, 60.4). Every segmentation feature must declare its "
+                "source columns, formula, reference window and whether it uses "
+                "outcome-period data."
+            )
+            raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +401,17 @@ class PriceGuidanceConfig(StrictModel):
 # ---------------------------------------------------------------------------
 
 
+class InstrumentPath(StrictModel):
+    """One plausible path from the instrument to quantity other than through
+    the endogenous price (Run 6, 60.4): the channel (availability, lead times,
+    supplier changes, competitor prices, expectations, substitution, ...) and
+    how the analysis addresses it (a control, an argument for why it is
+    absent, or an honest statement that it is unresolved)."""
+
+    channel: str
+    treatment: str
+
+
 class InstrumentConfig(StrictModel):
     name: str
     column: str
@@ -340,6 +419,11 @@ class InstrumentConfig(StrictModel):
     # Required for causal_elasticity_supported: a documented economic argument
     # for why the instrument is excludable. No rationale, no top status.
     exclusion_rationale: str | None = None
+    # Plausible non-price paths to quantity and how each is addressed (Run 6,
+    # 60.4). The causal gate reads the competitor-price path (Phase 70): an
+    # instrument with no documented treatment of that path cannot support the
+    # top status without a market-price control.
+    paths_to_quantity: tuple[InstrumentPath, ...] = ()
 
 
 class SensitivityConfig(StrictModel):

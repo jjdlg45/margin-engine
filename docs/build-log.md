@@ -3036,3 +3036,50 @@ conditional sandbox skips: this demo world has no blocked action - pinned by
 unit tests instead); Playwright API mode 11/11 including two real pipeline
 runs. Demo bundle re-exported for the new action fields; schema.json and
 generated types updated.
+
+## Phase 60 — Contracts before code (2026-10-26, Run 6 branch)
+
+Run 6 opens with the contracts the later phases implement against.
+
+1. **Metric dictionary (60.1)** - src/margin_engine/metrics.py is the single
+   source of truth for the 11 reader-facing metrics (formula, units,
+   denominator, price basis, includes/excludes, actual/allocated/estimated
+   status). docs/metric-dictionary.md is GENERATED from it and a test asserts
+   the committed file matches byte for byte; the entries merge into the
+   central label dictionary (labels.py), so the web bundle, UI tooltips and
+   the HTML report serve the same words. The waterfall chart tooltip now
+   shows each stage's definition from the dictionary (fallback-safe for old
+   bundles). Entries describe what the engine computes TODAY; where a later
+   Run 6 phase changes a formula (65: pocket-GP vs contribution basis; 66:
+   deduction denominators) the pending change is a note in the generated
+   document, never tooltip text claiming code that does not exist yet.
+2. **Equation sheet (60.2)** - docs/equations.md: floors, the three
+   opportunity levels, the optimizer, the win curve and every tracker metric,
+   each with price basis and deduction/cost assumptions; Phase 65/66/75
+   changes marked as pending.
+3. **Estimator specification (60.3)** - methodology section 7 now specifies
+   naive FE-OLS, PPML, FE-2SLS and the Phase 72 IV-PPML control function:
+   dependent variable, sample, zeros treatment, endogenous regressor,
+   instruments, fixed effects, weights, clustering, dropped observations and
+   the NAMED estimand (conditional quantity among buying pairs vs total
+   expected quantity).
+4. **Feature lineage and instrument paths (60.4)** - config schema gains
+   FeatureLineage (source columns, formula, reference window,
+   uses_outcome_period_data) with a validator requiring lineage for every
+   context feature; revenue_abc and order_size_band are HONESTLY flagged as
+   using outcome-period data until Phase 76 replaces them. InstrumentPath
+   (channel + how addressed) added to InstrumentConfig; both shipped
+   instruments declare six non-price paths each (availability, lead times,
+   supplier changes, competitor prices, expectations, substitution) in
+   rules.yaml. Enforcement lands with the phases that read the metadata
+   (70: competitor-price gate; 76: lineage-based leakage guard).
+
+Tests added: tests/test_metrics.py (doc-in-sync, required metrics, full
+specification, label-dictionary merge, lineage coverage and honesty,
+missing-lineage fail-closed, shipped instrument paths).
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 424 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright static with snapshots 225 passed (exit 0). Demo
+bundle re-exported (labels only; schema content unchanged). No headline
+numbers changed in this phase.

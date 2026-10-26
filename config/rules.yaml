@@ -127,6 +127,49 @@ sensitivity:
         for an item does not depend on the supplier's upstream costs except
         through the price they are charged. Valid unless customers observe and
         react to supplier conditions directly (e.g. anticipated shortages).
+      # Plausible non-price paths to quantity and how each is addressed
+      # (Run 6, 60.4). The causal gate reads the competitor_prices path.
+      paths_to_quantity:
+        - channel: availability
+          treatment: >
+            A cost shock can coincide with a shortage that limits what the
+            distributor can ship. Zero rows exist only where the item was
+            available (sold to anyone that month), so market-wide stockout
+            months carry no zero rows; residual within-month rationing is not
+            observable and remains a stated limitation.
+        - channel: lead_times
+          treatment: >
+            Longer supplier lead times could suppress orders independently of
+            price. Not observed in the data; month and item-role-by-month
+            fixed effects absorb market-wide timing shifts, and the pair fixed
+            effect absorbs stable supplier service differences. Unresolved
+            within-month, pair-specific lead-time shocks remain a limitation.
+        - channel: supplier_changes
+          treatment: >
+            A customer could switch suppliers in response to the shock rather
+            than change total purchases. Estimation is per item, so switching
+            appears as a quantity response to price, which is the estimand's
+            own-item scope; cross-item substitution is modeled only within
+            declared substitution groups.
+        - channel: competitor_prices
+          treatment: >
+            Industry-wide input cost shocks also move competitor prices, so
+            part of the measured response is to the market moving, not to a
+            unilateral move. Addressed by the market price index control when
+            a public index is mapped; without it the estimate understates
+            unilateral own-price sensitivity and the causal gate caps the
+            status (Phase 70).
+        - channel: expectations
+          treatment: >
+            Customers who anticipate further increases may pre-buy. The month
+            fixed effects absorb common anticipation; pair-specific hoarding
+            is not observable and remains a stated limitation.
+        - channel: substitution
+          treatment: >
+            Substitution to other items in the assortment is modeled only
+            within declared substitution groups (cross-price module);
+            elsewhere the estimand is the own-item response including any
+            substitution away.
     - name: category_tariff_shock
       column: category_tariff_shock
       varies_at: "item_category:month"
@@ -136,6 +179,38 @@ sensitivity:
         and tariffs affect purchase quantity only through the realized price.
         Valid unless demand and tariff policy share a driver (e.g. a boom in a
         sector that also triggers protection).
+      paths_to_quantity:
+        - channel: availability
+          treatment: >
+            A tariff can reroute or delay imports for the whole category. The
+            availability proxy (item sold to anyone that month) removes
+            market-wide outage months from the zero rows; partial category
+            shortages are not observable and remain a stated limitation.
+        - channel: lead_times
+          treatment: >
+            Customs changes can slow the whole category at once; month and
+            item-role-by-month fixed effects absorb common timing shifts.
+        - channel: supplier_changes
+          treatment: >
+            Distributors may re-source within the category; the instrument
+            varies at category level, so re-sourcing inside the category does
+            not move it, and the estimand is the own-item response.
+        - channel: competitor_prices
+          treatment: >
+            A tariff raises every seller's landed cost in the category, so
+            competitor prices move with the instrument by construction.
+            Addressed by the market price index control when a public index is
+            mapped; without it the causal gate caps the status (Phase 70).
+        - channel: expectations
+          treatment: >
+            Announced tariffs invite pre-buying before the effective date.
+            Month fixed effects absorb common anticipation; the effective-date
+            semantics put the cost change in the correct month.
+        - channel: substitution
+          treatment: >
+            Substitution toward untariffed categories is outside the own-item
+            estimand; within-category substitution is modeled only inside
+            declared substitution groups.
 
 opportunity:
   baseline_window_months: 12
