@@ -184,3 +184,20 @@ test("evidence shows content for every action type, never an empty heading", asy
     await expect(page.getByText(/Scope: (category|supplier)/)).toBeVisible();
   }
 });
+
+test("summary cards hide zero-value impact lines", async ({ page }) => {
+  await page.goto("/#/actions");
+  const list = page.getByTestId("impact-by-basis");
+  await expect(list.locator("li").first()).toBeVisible();
+  const entries = Object.entries(bundle.actions.summary.impact_by_basis_cents);
+  const nonZero = entries.filter(([, v]) => v !== 0);
+  await expect(list.locator("li")).toHaveCount(Math.max(nonZero.length, 1));
+  for (const [basis, v] of entries) {
+    const label = bundle.labels[basis]?.label ?? basis;
+    if (v === 0) {
+      await expect(list.getByText(label, { exact: true })).toHaveCount(0);
+    } else {
+      await expect(list.getByText(label, { exact: true })).toBeVisible();
+    }
+  }
+});

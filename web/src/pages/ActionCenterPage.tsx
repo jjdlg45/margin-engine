@@ -557,13 +557,19 @@ export function ActionCenterPage() {
               </div>
               <div className="panel px-5 py-5">
                 <h2 className="m-0 text-section">Expected impact by basis</h2>
-                <ul className="m-0 mt-1 list-none p-0 text-caption">
-                  {Object.entries(p.summary.impact_by_basis_cents).map(([k, v]) => (
-                    <li key={k} className="flex justify-between gap-3">
-                      <span className="secondary">{labels(k).label}</span>
-                      <span className="font-medium">{dollarsShort(v)}</span>
-                    </li>
-                  ))}
+                <ul className="m-0 mt-1 list-none p-0 text-caption" data-testid="impact-by-basis">
+                  {/* A zero line says nothing - only bases with dollars show. */}
+                  {Object.entries(p.summary.impact_by_basis_cents)
+                    .filter(([, v]) => v !== 0)
+                    .map(([k, v]) => (
+                      <li key={k} className="flex justify-between gap-3">
+                        <span className="secondary">{labels(k).label}</span>
+                        <span className="font-medium">{dollarsShort(v)}</span>
+                      </li>
+                    ))}
+                  {Object.values(p.summary.impact_by_basis_cents).every((v) => v === 0) && (
+                    <li className="secondary">No expected dollar impact stated yet.</li>
+                  )}
                 </ul>
                 <p className="mb-0 mt-2 text-caption secondary">
                   Different opportunity levels - never summed into one number.
