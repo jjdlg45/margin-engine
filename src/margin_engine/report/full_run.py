@@ -185,6 +185,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "vendor_rebate_rollforward": ["supplier_id", "period"],
     "rebate_subledger": ["customer_id", "rebate_program_id", "period", "entry_type", "source_ref"],
     "rebate_subledger_balances": ["customer_id", "rebate_program_id", "period"],
+    "cost_pools": ["cost_pool_id", "detail"],
 }
 
 
@@ -255,7 +256,20 @@ def run_full(
         )
 
     t = time.perf_counter()
-    cts = run_cost_to_serve(res.ledger, rules, fiscal)
+    # Cost pools covered by ACTUAL expense sources in this run (Run 6, Phase
+    # 63): the pool overlap check switches the per-delivery estimate off when
+    # a freight log exists and refuses any other double-counted pool.
+    actual_pools: set[str] = set()
+    if res.reference.get("freight_log") is not None:
+        actual_pools.add("outbound_freight")
+    if res.reference.get("return_freight_log") is not None:
+        actual_pools.add("return_freight")
+    if (
+        "claims_cost_alloc_cents" in res.ledger.columns
+        and int(res.ledger["claims_cost_alloc_cents"].fill_null(0).abs().sum()) > 0
+    ):
+        actual_pools.add("claims")
+    cts = run_cost_to_serve(res.ledger, rules, fiscal, frozenset(actual_pools))
     res.ledger = cts.lines
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
@@ -272,6 +286,7 @@ def run_full(
         order_charges=res.reference.get("order_charges"),
         vendor_rebate_programs=res.reference.get("vendor_rebate_programs"),
         tiered_summary=res.tiered_summary,
+        charge_declarations=res.mapping.charge_declarations,
     )
     res.notes.extend(events_res.notes)
     rollforward_res = vendor_rebate_rollforward(
@@ -556,6 +571,7 @@ def run_full(
         "economic_event_totals": events_res.totals,
         "rebate_subledger": subledger_res.entries,
         "rebate_subledger_balances": subledger_res.balances,
+        **({"cost_pools": cts.pools} if cts.pools is not None else {}),
         **(
             {"vendor_rebate_rollforward": rollforward_res.table}
             if rollforward_res.table is not None

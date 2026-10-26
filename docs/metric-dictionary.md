@@ -39,24 +39,24 @@ What the baseline window would have billed at list: effective-dated list price t
 
 The realized unit price: net line amount divided by normalized quantity; billed charges are not part of it.
 
-- **Formula:** net line amount / normalized quantity
+- **Formula:** net product amount / normalized quantity
 - **Units:** cents per normalized selling unit
 - **Denominator:** normalized quantity on the line
 - **Price basis:** invoice (after on-invoice discounts)
 - **Includes:** the product's own net amount, with on-invoice discounts already netted
-- **Excludes:** allocated order-level billed charges (freight billed and similar), post-invoice rebates and concessions
+- **Excludes:** allocated order-level billed charges (freight billed and similar), post-invoice rebates and concessions, and embedded taxes (carved out of the product amount)
 - **Amount status:** actual
 
 ## Invoice revenue
 
 Net invoiced amounts plus allocated order-level billed charges - what was billed, before post-invoice deductions.
 
-- **Formula:** net line amount + allocated billed order charges
+- **Formula:** net product amount + allocated billed order charges
 - **Units:** cents
 - **Denominator:** none (a dollar total)
 - **Price basis:** invoice
 - **Includes:** net product amounts (on-invoice discounts already netted) and order-level billed charges allocated to lines by the documented driver
-- **Excludes:** customer rebates, freight concessions, price credits (all post-invoice)
+- **Excludes:** customer rebates, freight concessions, price credits (all post-invoice); taxes, deposits and third-party collections (carved out when embedded, never added when billed separately)
 - **Amount status:** actual, plus allocated for order-level charges
 
 ## Pocket revenue

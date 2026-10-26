@@ -36,6 +36,8 @@ LINE_COLUMNS = [
     "CONTRACT_NO",
     "KIT_ID",
     "CURR",
+    "TAX_AMT",
+    "RTN_DISP",
 ]
 
 LINE_DEFAULTS: dict[str, str] = {
@@ -53,6 +55,8 @@ LINE_DEFAULTS: dict[str, str] = {
     "CONTRACT_NO": "",
     "KIT_ID": "",
     "CURR": "USD",
+    "TAX_AMT": "",
+    "RTN_DISP": "",
     "DISC_AMT": "0.00",
     "LIST_PRC": "",
     "UNIT_CST": "",

@@ -407,6 +407,26 @@ def build_waterfall(
     # --- stage 2: billed charges ---------------------------------------------
     billed_ran = order_charges is not None and "order_id" in lines.columns
     if billed_ran and order_charges is not None:
+        # Charge pool declarations (Run 6, Phase 63): codes declared
+        # excluded_liability (taxes, deposits, third-party collections) never
+        # enter product revenue; their total stays a visible liability.
+        excluded_codes = [
+            code
+            for code, decl in mapping.charge_declarations.items()
+            if decl.pool == "excluded_liability"
+        ]
+        if excluded_codes and "charge_code" in order_charges.columns:
+            excluded_rows = order_charges.filter(pl.col("charge_code").is_in(excluded_codes))
+            if excluded_rows.height:
+                residuals["billed_charges_excluded_liability_cents"] = int(
+                    excluded_rows["amount_cents"].sum()
+                )
+                notes.append(
+                    f"{excluded_rows.height} billed charge(s) declared as taxes, "
+                    f"deposits or third-party collections: excluded from product "
+                    f"revenue, kept as a visible liability total"
+                )
+            order_charges = order_charges.filter(~pl.col("charge_code").is_in(excluded_codes))
         charges = order_charges.group_by("order_id").agg(
             pl.col("amount_cents").sum().alias("amount_cents_grp")
         )
@@ -682,10 +702,37 @@ def build_waterfall(
         else pl.lit(None, dtype=pl.String).alias("freight_expense_status"),
     )
 
-    # --- stage 2: invoice revenue = net + allocated billed charges ----------
+    # --- taxes / deposits / third-party collections (Run 6, Phase 63) --------
+    # Excluded from product revenue by default: an embedded tax is carved OUT
+    # of invoice revenue; a separately billed one is simply never added. The
+    # collected amount stays visible as a liability column, and
+    # net_product_cents carries the tax-free product amount every price
+    # comparison uses.
+    tax_mapped = mapping.lines.tax_amount is not None and "tax_cents" in lines.columns
+    tax_embedded = tax_mapped and mapping.lines.tax_amount.embedded_in_net is True  # type: ignore[union-attr]
+    if tax_mapped:
+        lines = lines.with_columns(pl.col("tax_cents").fill_null(0).alias("tax_collected_cents"))
+        notes.append(
+            "tax amounts are excluded from product revenue (carved out of net "
+            "when embedded; never added when billed separately) and reported "
+            "as a collected-liability column"
+            if tax_embedded
+            else "tax amounts are billed separately: never added to product "
+            "revenue; reported as a collected-liability column"
+        )
+    else:
+        lines = lines.with_columns(pl.lit(0, dtype=pl.Int64).alias("tax_collected_cents"))
+    col_order.append("tax_collected_cents")
+    embedded_tax = pl.col("tax_collected_cents") if tax_embedded else pl.lit(0, dtype=pl.Int64)
+    lines = lines.with_columns(
+        (pl.col("net_amount_cents") - embedded_tax).alias("net_product_cents")
+    )
+    col_order.append("net_product_cents")
+
+    # --- stage 2: invoice revenue = net product + allocated billed charges ----
     lines = lines.with_columns(
         (
-            pl.col("net_amount_cents")
+            pl.col("net_product_cents")
             + pl.col("billed_charge_alloc_cents")
             + pl.col("kit_revenue_realloc_cents")
         ).alias("invoice_revenue_cents")
@@ -847,6 +894,53 @@ def build_waterfall(
         ).alias("cost_build_label"),
     )
     col_order.extend(["vendor_rebate_cents", "product_cost_cents", "cost_build_label"])
+
+    # --- return disposition (Run 6, Phase 63): whether the return recovers
+    # product cost. Resaleable and exchange returns put the product back
+    # (cost recovered, the default and the pre-Phase-63 behavior); damaged,
+    # obsolete and not-received returns do not - their return line carries no
+    # cost recovery, so the loss stays in cost of goods sold. Without a
+    # disposition column the default applies and is stated.
+    if "return_disposition" in lines.columns:
+        recovery_map = dict(rules.returns.disposition_cost_recovery)
+        unknown_disp = (
+            lines.filter(
+                is_ret
+                & pl.col("return_disposition").is_not_null()
+                & ~pl.col("return_disposition").is_in(sorted(recovery_map))
+            )["return_disposition"]
+            .unique()
+            .to_list()
+        )
+        if unknown_disp:
+            notes.append(
+                f"return disposition value(s) {sorted(map(str, unknown_disp))[:5]} have "
+                f"no cost-recovery rule in the returns section of rules.yaml: cost "
+                f"recovery is assumed (stated here; add the disposition to the "
+                f"cost-recovery table to control it)"
+            )
+        recovered = (
+            pl.col("return_disposition")
+            .cast(pl.String)
+            .replace_strict(recovery_map, default=True, return_dtype=pl.Boolean)
+            .fill_null(value=True)
+        )
+        lines = lines.with_columns(
+            pl.when(is_ret).then(recovered).otherwise(None).alias("return_cost_recovered")
+        ).with_columns(
+            pl.when(is_ret & ~pl.col("return_cost_recovered").fill_null(value=True))
+            .then(0)
+            .otherwise(pl.col("product_cost_cents"))
+            .alias("product_cost_cents")
+        )
+    else:
+        lines = lines.with_columns(
+            pl.when(is_ret)
+            .then(pl.lit(value=True))
+            .otherwise(pl.lit(None, dtype=pl.Boolean))
+            .alias("return_cost_recovered")
+        )
+    col_order.append("return_cost_recovered")
 
     # --- stage 5: pocket gross profit ----------------------------------------
     lines = lines.with_columns(

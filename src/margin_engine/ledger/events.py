@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.ingest.mapping import ChargeDecl
 from margin_engine.money import div_half_even_expr
 
 EVENT_TYPES = (
@@ -186,8 +187,14 @@ def build_events(
     order_charges: pl.DataFrame | None = None,
     vendor_rebate_programs: pl.DataFrame | None = None,
     tiered_summary: pl.DataFrame | None = None,
+    charge_declarations: dict[str, ChargeDecl] | None = None,
 ) -> EventsResult:
-    """Classify every adjustment in the ledger into economic events."""
+    """Classify every adjustment in the ledger into economic events.
+
+    `charge_declarations` is the mapping's charge-semantics table (Run 6,
+    Phase 63): a declared pool drives the event type (pass-through revenue ->
+    freight pass-through; excluded liability -> tax/deposit/collection), with
+    the config's charge_event_types as the fallback for undeclared codes."""
     notes: list[str] = []
     led = ledger.with_columns(pl.int_range(pl.len(), dtype=pl.Int64).alias(_ROW))
     sale = pl.col("transaction_type") == "sale"
@@ -518,9 +525,33 @@ def build_events(
                     "amounts are rate-based estimates"
                 )
 
+    # --- taxes / deposits / third-party collections (Run 6, Phase 63) ---------
+    if "tax_collected_cents" in led.columns:
+        frames.append(
+            _line_family(
+                led,
+                pl.col("tax_collected_cents") != 0,
+                id_prefix="tax",
+                event_type="tax_deposit_liability",
+                subtype="tax_collected",
+                counterparty="tax_authority",
+                direction="liability_collection",
+                amount=pl.col("tax_collected_cents"),
+                status="actual",
+            )
+        )
+
     # --- billed order charges -------------------------------------------------
     if order_charges is not None and order_charges.height:
         type_map = dict(rules.transactions.charge_event_types)
+        decls = charge_declarations or {}
+        for code_key, decl in decls.items():
+            if decl.pool == "pass_through_revenue":
+                type_map[code_key] = "freight_pass_through"
+            elif decl.pool == "excluded_liability":
+                type_map[code_key] = "tax_deposit_liability"
+        owner_map = {k: d.economic_owner for k, d in decls.items()}
+        direction_map = {k: str(d.direction) for k, d in decls.items()}
         order_month = (
             led.filter(sale)
             .group_by("order_id")
@@ -549,8 +580,12 @@ def build_events(
             pl.concat_str([pl.lit("billed_order_charge:"), code.fill_null("unknown")]).alias(
                 "event_subtype"
             ),
-            pl.lit("customer").alias("counterparty"),
-            pl.lit("revenue_increase").alias("direction"),
+            code.replace_strict(owner_map, default="customer").alias("counterparty")
+            if owner_map
+            else pl.lit("customer").alias("counterparty"),
+            code.replace_strict(direction_map, default="revenue_increase").alias("direction")
+            if direction_map
+            else pl.lit("revenue_increase").alias("direction"),
             pl.col("amount_cents").cast(pl.Int64),
             pl.lit("actual").alias("amount_status"),
             pl.lit("order_charge_row").alias("source_document"),
@@ -560,7 +595,8 @@ def build_events(
             pl.col("earn_period"),
         )
         frames.append(_finish(oc_events, "chg"))
-        unmapped = oc.filter(~code.is_in(sorted(type_map)) if type_map else pl.lit(value=True))
+        declared = sorted(set(type_map) | set(decls))
+        unmapped = oc.filter(~code.is_in(declared) if declared else pl.lit(value=True))
         if unmapped.height:
             notes.append(
                 f"{unmapped.height} billed order charge(s) have no declared "

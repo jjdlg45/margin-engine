@@ -36,12 +36,91 @@ class CostToServeResult:
     customer_economics: pl.DataFrame
     service_flags: pl.DataFrame
     notes: list[str]
+    # Cost-pool audit (Run 6, Phase 63): which pool is covered by an actual
+    # source, which by an activity estimate, and which rate was switched off
+    # to prevent double counting.
+    pools: pl.DataFrame | None = None
 
 
-def apply_activity_costs(lines: pl.DataFrame, rules: Rules) -> tuple[pl.DataFrame, list[str]]:
-    """Add activity_cts_cents and contribution_after_activity_cents per line.
-    The base contribution and waterfall cost_to_serve stay untouched."""
+class CostPoolOverlapError(ValueError):
+    """A cost pool would be counted twice: an actual expense source covers it
+    AND an activity rate is assigned to it. Fail the run; never double count."""
+
+
+def resolve_activity_rates(
+    rules: Rules, actual_pools: frozenset[str]
+) -> tuple[dict[str, int], pl.DataFrame, list[str]]:
+    """Effective activity rates after the pool overlap check (Run 6, Phase 63).
+
+    Returns (effective rates, the cost-pool audit table, notes). The default
+    overlap - the per-delivery rate proxies outbound freight, which an actual
+    freight log covers - switches the rate off with a note; any other overlap
+    raises, because silently double counting a pool is an accounting bug.
+    """
     c = rules.cost_to_serve
+    configured = {
+        "per_order": c.per_order_cents,
+        "per_line": c.per_line_cents,
+        "per_delivery": c.per_delivery_cents,
+        "special_handling": c.special_handling_per_unit_cents,
+    }
+    effective = dict(configured)
+    notes: list[str] = []
+    rows: list[dict[str, object]] = []
+    for rate_name, pool in sorted(c.activity_pools.items()):
+        rate = configured.get(rate_name, 0)
+        if pool in actual_pools and rate > 0:
+            if rate_name == "per_delivery" and pool == "outbound_freight":
+                effective[rate_name] = 0
+                notes.append(
+                    "per-delivery activity rate switched OFF: actual outbound "
+                    "freight expense is present and covers that cost pool, so "
+                    "estimating it again would double count (Run 6, Phase 63)"
+                )
+                rows.append(
+                    {
+                        "cost_pool_id": pool,
+                        "covered_by": "actual_expense",
+                        "detail": "freight expense log; per-delivery rate switched off",
+                    }
+                )
+                continue
+            msg = (
+                f"cost pool {pool!r} would be counted twice: an actual expense "
+                f"source covers it AND the {rate_name!r} activity rate "
+                f"({rate} cents) is assigned to it. Set the rate to zero or move "
+                f"it to its own pool in cost_to_serve.activity_pools."
+            )
+            raise CostPoolOverlapError(msg)
+        rows.append(
+            {
+                "cost_pool_id": pool,
+                "covered_by": "activity_estimate" if rate > 0 else "no_cost_assigned",
+                "detail": f"{rate_name} rate: {rate} cents",
+            }
+        )
+    for pool in sorted(actual_pools - set(c.activity_pools.values())):
+        rows.append(
+            {"cost_pool_id": pool, "covered_by": "actual_expense", "detail": "from source data"}
+        )
+    pools = pl.DataFrame(rows).sort("cost_pool_id", "detail")
+    return effective, pools, notes
+
+
+def apply_activity_costs(
+    lines: pl.DataFrame, rules: Rules, rates: dict[str, int] | None = None
+) -> tuple[pl.DataFrame, list[str]]:
+    """Add activity_cts_cents and contribution_after_activity_cents per line.
+    The base contribution and waterfall cost_to_serve stay untouched. `rates`
+    carries the pool-resolved effective rates (Run 6, Phase 63); None keeps
+    the configured rates (no actual pools present)."""
+    c = rules.cost_to_serve
+    r = rates or {
+        "per_order": c.per_order_cents,
+        "per_line": c.per_line_cents,
+        "per_delivery": c.per_delivery_cents,
+        "special_handling": c.special_handling_per_unit_cents,
+    }
     notes = [
         "deliveries proxied by orders (no delivery table); per_delivery rate "
         "applied once per order, labeled estimated",
@@ -51,10 +130,10 @@ def apply_activity_costs(lines: pl.DataFrame, rules: Rules) -> tuple[pl.DataFram
     sale = pl.col("transaction_type") == "sale"
     if "order_id" not in lines.columns:
         lines = lines.with_columns(
-            pl.when(sale).then(c.per_line_cents).otherwise(0).alias("activity_cts_cents"),
+            pl.when(sale).then(r["per_line"]).otherwise(0).alias("activity_cts_cents"),
         )
     else:
-        per_order_total = c.per_order_cents + c.per_delivery_cents
+        per_order_total = r["per_order"] + r["per_delivery"]
         # Exact split across the order's SALE lines (largest-remainder with
         # equal weights; returns/credits share the order id but are costed by
         # their own policies).
@@ -75,7 +154,7 @@ def apply_activity_costs(lines: pl.DataFrame, rules: Rules) -> tuple[pl.DataFram
         qty_units = pl.col("quantity_norm").abs().round(0).cast(pl.Int64)
         lines = lines.with_columns(
             pl.when(sale)
-            .then(order_share + c.per_line_cents + c.special_handling_per_unit_cents * qty_units)
+            .then(order_share + r["per_line"] + r["special_handling"] * qty_units)
             .otherwise(0)
             .alias("activity_cts_cents"),
         )
@@ -234,8 +313,14 @@ def service_policy_flags(customers_econ: pl.DataFrame, rules: Rules) -> pl.DataF
 
 
 def run_cost_to_serve(
-    lines: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+    lines: pl.DataFrame,
+    rules: Rules,
+    fiscal: FiscalCalendar | None = None,
+    actual_pools: frozenset[str] = frozenset(),
 ) -> CostToServeResult:
+    """`actual_pools` names the cost pools covered by ACTUAL expense sources in
+    this run (e.g. outbound_freight when a freight log exists); the pool
+    overlap check (Run 6, Phase 63) resolves or refuses double counting."""
     if "order_id" not in lines.columns:
         # Real exports often carry no order number (Online Retail II). The
         # invoice is the natural order proxy - one document, one shipment -
@@ -247,8 +332,9 @@ def run_cost_to_serve(
         ]
     else:
         lines_proxy_note = []
-    lines, notes = apply_activity_costs(lines, rules)
-    notes = lines_proxy_note + notes
+    rates, pools, pool_notes = resolve_activity_rates(rules, actual_pools)
+    lines, notes = apply_activity_costs(lines, rules, rates)
+    notes = lines_proxy_note + pool_notes + notes
     orders = order_economics(lines)
     cust = customer_economics(lines, fiscal)
     flags = service_policy_flags(cust, rules)
@@ -258,4 +344,5 @@ def run_cost_to_serve(
         customer_economics=cust,
         service_flags=flags,
         notes=notes,
+        pools=pools,
     )

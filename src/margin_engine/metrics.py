@@ -82,14 +82,15 @@ METRICS: tuple[MetricDef, ...] = (
             "The realized unit price: net line amount divided by normalized quantity; "
             "billed charges are not part of it."
         ),
-        formula="net line amount / normalized quantity",
+        formula="net product amount / normalized quantity",
         units="cents per normalized selling unit",
         denominator="normalized quantity on the line",
         price_basis="invoice (after on-invoice discounts)",
         includes="the product's own net amount, with on-invoice discounts already netted",
         excludes=(
             "allocated order-level billed charges (freight billed and similar), "
-            "post-invoice rebates and concessions"
+            "post-invoice rebates and concessions, and embedded taxes (carved out of "
+            "the product amount)"
         ),
         amount_status="actual",
     ),
@@ -100,7 +101,7 @@ METRICS: tuple[MetricDef, ...] = (
             "Net invoiced amounts plus allocated order-level billed charges - what was "
             "billed, before post-invoice deductions."
         ),
-        formula="net line amount + allocated billed order charges",
+        formula="net product amount + allocated billed order charges",
         units="cents",
         denominator="none (a dollar total)",
         price_basis="invoice",
@@ -108,7 +109,11 @@ METRICS: tuple[MetricDef, ...] = (
             "net product amounts (on-invoice discounts already netted) and order-level "
             "billed charges allocated to lines by the documented driver"
         ),
-        excludes="customer rebates, freight concessions, price credits (all post-invoice)",
+        excludes=(
+            "customer rebates, freight concessions, price credits (all post-invoice); "
+            "taxes, deposits and third-party collections (carved out when embedded, "
+            "never added when billed separately)"
+        ),
         amount_status="actual, plus allocated for order-level charges",
     ),
     MetricDef(

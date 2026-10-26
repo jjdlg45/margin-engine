@@ -376,6 +376,8 @@ def load_lines(
         )
     if lm.restocking_fee is not None:
         money_raw.append(("restocking_fee", lm.restocking_fee.column, "restocking_fee_cents"))
+    if lm.tax_amount is not None:
+        money_raw.append(("tax_amount", lm.tax_amount.column, "tax_cents"))
     if lm.return_freight_billed is not None:
         money_raw.append(
             (
@@ -541,6 +543,11 @@ def load_lines(
             # segmentation, guidance and the panel), and a mapping without
             # the column must not crash - null means "none declared".
             exprs.append(pl.lit(None, dtype=pl.String).alias(key_field))
+    if lm.return_disposition is not None:
+        disp = pl.col(lm.return_disposition.column).replace("", None)
+        if mapping.return_disposition_map:
+            disp = disp.replace(mapping.return_disposition_map)
+        exprs.append(disp.alias("return_disposition"))
 
     # --- money fields, digit-exact ---------------------------------------
     for _canon, src, cents in money_raw:

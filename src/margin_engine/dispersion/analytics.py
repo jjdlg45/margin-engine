@@ -30,8 +30,17 @@ def normalized_price(observations: pl.DataFrame) -> pl.DataFrame:
     else unit price / item median unit price (labeled). Never both mixed
     silently.
     """
+    # The realized unit price is the PRODUCT net per unit: allocated billed
+    # charges are a separate column and never enter it, and an embedded tax is
+    # already carved out of net_product_cents (Run 6, Phase 63). Frames built
+    # before the tax stage fall back to net_amount_cents.
+    product_net = (
+        pl.col("net_product_cents")
+        if "net_product_cents" in observations.columns
+        else pl.col("net_amount_cents")
+    )
     df = observations.with_columns(
-        (pl.col("net_amount_cents") / pl.col("quantity_norm")).alias("_unit_price_norm")
+        (product_net / pl.col("quantity_norm")).alias("_unit_price_norm")
     )
     df = df.with_columns(
         pl.col("_unit_price_norm").median().over("item_id").alias("_item_median_price")

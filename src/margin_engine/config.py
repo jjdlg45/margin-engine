@@ -132,6 +132,21 @@ class ReturnsConfig(StrictModel):
             ),
         }
     )
+    # Return disposition -> whether product cost is recovered (Run 6, Phase
+    # 63). Resaleable and exchange returns put the product back (recovered,
+    # the historical behavior and the default for unknown or absent
+    # dispositions - stated in the run notes); damaged, obsolete and
+    # not-received returns recover nothing, so the loss stays in cost of
+    # goods sold.
+    disposition_cost_recovery: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "resaleable": True,
+            "exchange": True,
+            "damaged": False,
+            "obsolete": False,
+            "not_received": False,
+        }
+    )
     # Handling cost estimates applied to every return line (labeled estimated).
     default_handling_cost_per_return_cents: int = Field(default=1500, ge=0)
     default_handling_cost_per_unit_cents: int = Field(default=50, ge=0)
@@ -179,9 +194,32 @@ class CostToServeConfig(StrictModel):
     per_line_cents: int = Field(default=150, ge=0)
     per_delivery_cents: int = Field(default=900, ge=0)
     special_handling_per_unit_cents: int = Field(default=0, ge=0)
+    # Cost pools (Run 6, Phase 63): every activity rate belongs to exactly one
+    # named pool, and a pool covered by an ACTUAL expense source must never
+    # also be estimated by a rate. The engine resolves the default overlap -
+    # the per-delivery rate proxies outbound freight, so it switches OFF
+    # whenever an actual freight log exists (stated in the run notes); any
+    # OTHER rate assigned to an actually-covered pool fails the run.
+    activity_pools: dict[str, str] = Field(
+        default_factory=lambda: {
+            "per_order": "order_service",
+            "per_line": "line_service",
+            "per_delivery": "outbound_freight",
+            "special_handling": "special_handling",
+        }
+    )
     # Service-policy flag thresholds (separate from pricing opportunities).
     min_order_value_cents: int = Field(default=50_000, ge=0)
     max_orders_per_month: float = Field(default=6.0, gt=0)
+
+    @model_validator(mode="after")
+    def _pools_cover_known_rates(self) -> CostToServeConfig:
+        known = {"per_order", "per_line", "per_delivery", "special_handling"}
+        bad = set(self.activity_pools) - known
+        if bad:
+            msg = f"cost_to_serve.activity_pools names unknown rates {sorted(bad)}; known: {sorted(known)}"
+            raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------

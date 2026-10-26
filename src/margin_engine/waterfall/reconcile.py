@@ -110,17 +110,20 @@ def reconcile(
             )
             rep.add(f"net_amount_conservation_{cur}", total, ledger_src + removed_src)
 
-    # 3. Billed charges: allocated + residual == source table total.
+    # 3. Billed charges: allocated + unallocated residual + charges declared
+    # as excluded liabilities (Run 6, Phase 63: taxes, deposits, third-party
+    # collections never enter product revenue) == source table total.
     if order_charges is not None:
         alloc = int(wf["billed_charge_alloc_cents"].fill_null(0).sum())
         resid = residuals.get("billed_charges_unallocated_cents", 0)
+        excl = residuals.get("billed_charges_excluded_liability_cents", 0)
         total = int(order_charges["amount_cents"].sum())
         rep.add(
             "billed_charges_allocation",
             total,
-            alloc + resid,
+            alloc + resid + excl,
             allocated_cents=alloc,
-            residual_cents=resid,
+            residual_cents=resid + excl,
             source_total_cents=total,
         )
     # 4. Settlement rebates: allocated + residual == settlement table total.

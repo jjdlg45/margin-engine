@@ -3205,3 +3205,61 @@ Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
 engine exports only; the bundle is untouched). Headline numbers unchanged:
 the subledger is a derived view; pocket math and reconciliation totals are
 byte-identical.
+
+## Phase 63 — Freight, charges and non-overlapping cost pools (2026-10-26, Run 6 branch)
+
+Finding 6: every charge now declares what it is, taxes never masquerade as
+product revenue, and no cost pool is counted twice.
+
+1. **Charge declarations** - the mapping can declare, per charge code:
+   economic owner, direction, pool (billed revenue / pass-through revenue /
+   excluded liability), amount basis, and embedded-ness (order charges can
+   never claim embedded). Excluded-liability charges (deposits, third-party
+   collections) never enter product revenue: their total is the visible
+   residual billed_charges_excluded_liability_cents and the billed-charges
+   reconciliation still ties the source table exactly (alloc + unallocated +
+   excluded == total). Declarations drive economic-event typing
+   (pass-through -> freight pass-through; excluded -> tax/deposit), with
+   the config charge map as fallback for undeclared codes.
+2. **Taxes** - new optional tax_amount line field; embedded_in_net is
+   MANDATORY (refused otherwise, never guessed). Embedded tax is carved out
+   of invoice revenue; separately billed tax is never added; either way the
+   collected amount is a labeled liability column and an event
+   (tax/deposit/third-party collection, counterparty tax authority). New
+   net_product_cents carries the tax-free product amount.
+3. **Price index basis** - [already correct, add test]: the realized unit
+   price is net product / quantity. Tests prove billed freight never enters
+   the price index, and the index now uses net_product_cents, so an
+   embedded tax never inflates a realized price.
+4. **Cost pools** - every activity rate belongs to a named pool
+   (cost_to_serve.activity_pools); actual expense sources cover their own
+   pools. With an actual freight log the per-delivery estimate (a proxy for
+   outbound freight) switches OFF with a stated note; any OTHER rate
+   assigned to an actually-covered pool raises CostPoolOverlapError. New
+   cost_pools export audits pool coverage. The per-unit cost-to-serve K
+   (contribution floor) inherits the resolved rates automatically.
+5. **Return dispositions** - optional return_disposition line field with a
+   normalization map; returns recover product cost only when the
+   disposition says so (resaleable/exchange yes; damaged/obsolete/
+   not-received no - the loss stays in cost of goods sold). Absent or
+   unknown dispositions keep the stated historical default (recovered).
+
+Tests added: tests/test_charges_pools.py (13 tests): price-index exclusion;
+embedded and separately billed tax; missing embedded declaration refused;
+excluded-liability charge with exact reconciliation and event typing;
+charge declarations never embedded; per-delivery switch-off with actual
+freight (18.00 + 1.50, no 9.00 estimate); estimate applies without actual
+freight; non-default pool overlap raises; damaged/resaleable/unknown/
+absent disposition fixtures.
+
+Before/after headline numbers (demo world, deliberate change per the
+run-6 rules): negative-contribution orders 486 -> 452 (the per-delivery
+activity estimate no longer double counts delivery cost on top of actual
+freight expense; contribution after activity rises by 9.00 per order).
+Action counts and impact totals unchanged (277 actions; same by-status and
+by-basis dollars). Reconciliation and all planted-truth targets unchanged.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 461 passed 0 failed (exit 0); Playwright static with
+snapshots 225 passed (exit 0) against the re-exported demo bundle. No web
+source changes (tsc/vitest unchanged since Phase 61's runs).

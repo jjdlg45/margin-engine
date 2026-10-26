@@ -88,6 +88,38 @@ Reconciliation checks (row conservation, net-amount conservation, allocation
 conservation for charges / settlements / freight incl. the return freight log,
 stage identities) are exact to the cent and raise on failure.
 
+### Charges, taxes and cost pools (Run 6)
+
+Every billed charge code can declare its semantics in the mapping (economic
+owner, direction, pool, amount basis, and that order-level charges are never
+embedded in net amounts): pass-through charges stay revenue with an honest
+label, while charges declared as taxes, deposits or third-party collections
+NEVER enter product revenue — their total stays a visible liability and the
+billed-charges reconciliation still ties to the source table exactly. A
+line-level tax column declares whether it is embedded in net (carved out of
+product revenue) or billed separately (never added); the tax-free
+net_product amount is what every realized-price comparison uses, and the
+collected tax is a labeled liability column. The realized unit price is net
+product / quantity: allocated billed charges never enter the price index
+(tested), and neither does an embedded tax.
+
+Cost pools are counted once. Every activity rate belongs to a named pool
+(order service, line service, outbound freight, special handling) and every
+actual expense source covers its own pool. When an actual freight-expense log
+exists, the per-delivery activity rate — which proxies outbound freight — is
+switched OFF with a stated note, so delivery cost is never estimated on top
+of the actual; any other rate assigned to an actually-covered pool fails the
+run. The cost-pool audit table (cost_pools export) shows which pool is
+covered by an actual source, which by an estimate, and which rate was
+switched off.
+
+Returns carry a disposition (resaleable, damaged, obsolete, not received,
+exchange — normalized by the mapping) that controls whether the return
+recovers product cost: resaleable and exchange returns put the product back;
+damaged, obsolete and not-received returns recover nothing, so the loss
+stays in cost of goods sold. Without a disposition column, cost recovery is
+assumed and stated — the historical behavior, never a silent change.
+
 ### Economic event taxonomy (Run 6)
 
 Every adjustment is also classified by its ECONOMICS, independently of raw ERP

@@ -63,6 +63,11 @@ class AmountField(StrictModel):
     sign_convention: SignConvention
     # Only meaningful for revenue-like amounts.
     discounts_embedded: bool | None = None
+    # Whether this amount is ALREADY part of net_amount (Run 6, Phase 63).
+    # Mandatory for tax_amount: an embedded tax must be carved OUT of product
+    # revenue, a separately billed one must never be added in — the engine
+    # refuses to guess which.
+    embedded_in_net: bool | None = None
 
 
 class UnitPriceField(StrictModel):
@@ -135,6 +140,14 @@ class LinesMapping(StrictModel):
     # customer and return freight billed to the customer, both recovery revenue.
     restocking_fee: AmountField | None = None
     return_freight_billed: AmountField | None = None
+    # Taxes / deposits / third-party collections billed on lines (Run 6,
+    # Phase 63): excluded from product revenue by default. embedded_in_net is
+    # mandatory (see AmountField).
+    tax_amount: AmountField | None = None
+    # Return disposition (Run 6, Phase 63): resaleable / damaged / obsolete /
+    # not_received / exchange, normalized via return_disposition_map. Controls
+    # whether the return recovers product cost.
+    return_disposition: KeyField | None = None
     credit_reason: KeyField | None = None
     original_invoice_ref: KeyField | None = None
     sales_rep_id: KeyField | None = None
@@ -142,6 +155,17 @@ class LinesMapping(StrictModel):
     contract_id: KeyField | None = None
     currency: KeyField | None = None
     kit_parent_id: KeyField | None = None
+
+    @model_validator(mode="after")
+    def _tax_semantics_declared(self) -> LinesMapping:
+        if self.tax_amount is not None and self.tax_amount.embedded_in_net is None:
+            msg = (
+                "tax_amount must declare embedded_in_net: true (the tax sits inside "
+                "net_amount and is carved out of product revenue) or false (billed "
+                "separately and never added to revenue). The engine never guesses."
+            )
+            raise MappingError(msg)
+        return self
 
     @model_validator(mode="after")
     def _price_or_net(self) -> LinesMapping:
@@ -204,6 +228,34 @@ class ReferenceTable(StrictModel):
     public_source: bool | None = None
 
 
+class ChargeDecl(StrictModel):
+    """What one billed charge code MEANS (Run 6, Phase 63): its economic
+    owner, direction, which pool its dollars belong to, the amount basis, and
+    whether it is already embedded in net_amount. Order-level charges live in
+    their own table, so embedded_in_net must be false for them."""
+
+    economic_owner: str  # e.g. "customer", "carrier", "tax_authority"
+    direction: Literal["revenue_increase", "revenue_reduction", "cost_increase", "cost_reduction"]
+    # billed_revenue: allocated into invoice revenue (the default treatment);
+    # pass_through_revenue: same math, labeled a pass-through (e.g. freight
+    # billed at cost); excluded_liability: taxes, deposits and third-party
+    # collections - NEVER product revenue, kept as a visible liability total.
+    pool: Literal["billed_revenue", "pass_through_revenue", "excluded_liability"]
+    amount_basis: str  # e.g. "per order", "per shipment"
+    embedded_in_net: bool = False
+
+    @model_validator(mode="after")
+    def _order_charges_never_embedded(self) -> ChargeDecl:
+        if self.embedded_in_net:
+            msg = (
+                "charge_declarations describe the order_charges table, which is "
+                "separate from line net amounts; embedded_in_net must be false "
+                "(an embedded tax belongs to the lines' tax_amount field)."
+            )
+            raise MappingError(msg)
+        return self
+
+
 class DisplayConfig(StrictModel):
     """Phase 46: how categorical DATA values render for a reader. Values get
     word capitalization; tokens in `acronyms` render fully upper-case ("OEM",
@@ -233,6 +285,14 @@ class SourceMapping(StrictModel):
     # (customer_error, distributor_error, defective). Unmapped codes become
     # "unspecified" and receive only estimated default handling costs.
     return_reason_map: dict[str, str] = Field(default_factory=dict)
+    # Return disposition normalization (Run 6, Phase 63): source code ->
+    # canonical disposition (resaleable, damaged, obsolete, not_received,
+    # exchange). Unmapped codes keep the raw value and are reported.
+    return_disposition_map: dict[str, str] = Field(default_factory=dict)
+    # Billed-charge semantics by charge code (Run 6, Phase 63). Codes without
+    # a declaration keep the default treatment (allocated into invoice
+    # revenue) and the economic-event taxonomy labels them other adjustments.
+    charge_declarations: dict[str, ChargeDecl] = Field(default_factory=dict)
     # Honest no-cost declaration (Run 4, 28.2): some real exports carry no
     # cost at all (Online Retail II). The engine still refuses a mapping that
     # merely OMITS unit_cost — this flag is the explicit, reviewed statement
