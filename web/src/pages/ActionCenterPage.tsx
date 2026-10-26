@@ -259,6 +259,7 @@ function QueueCards({ items }: { items: ActionRow[] }) {
             <span className="block text-caption secondary">
               Owner: {a.owner}
               {a.due_date ? `. Due ${a.due_date}` : ""}
+              {a.overdue && <span className="font-medium text-garnet"> (overdue)</span>}
             </span>
           </li>
         ))}
@@ -376,7 +377,18 @@ function Queue({ page }: { page: ActionsSection }) {
         ),
       },
       { header: "Owner", accessorKey: "owner", cell: (c) => c.row.original.owner },
-      { header: "Due", accessorKey: "due_date", cell: (c) => c.row.original.due_date ?? "—" },
+      {
+        header: "Due",
+        accessorKey: "due_date",
+        cell: (c) => (
+          <span>
+            {c.row.original.due_date ?? "—"}
+            {c.row.original.overdue && (
+              <span className="block text-caption font-medium text-garnet">Overdue</span>
+            )}
+          </span>
+        ),
+      },
     ],
     [labels],
   );

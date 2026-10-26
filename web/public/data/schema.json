@@ -438,6 +438,12 @@
      ],
      "default": null
     },
+    "overdue": {
+     "default": false,
+     "description": "True when the status still needs someone to act and the due date lies before the data's as-of date",
+     "title": "Overdue",
+     "type": "boolean"
+    },
     "owner": {
      "title": "Owner",
      "type": "string"

@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 
 from api.filters import apply_sort
 from margin_engine.actions.model import (
+    ACTIONABLE_STATUSES,
     EVENTS_SCHEMA,
     TransitionError,
     replay_status,
@@ -70,7 +71,17 @@ def _actions_with_status(store: ActionStore) -> list[dict[str, Any]]:
         pl.col("status").fill_null("proposed")
     )
     rows = joined.to_dicts()
+    # The newest generation anchor is the data's as-of date: an actionable
+    # action due before it is overdue (same rule the static bundle applies).
+    created = [r["created_at"] for r in rows if r.get("created_at") is not None]
+    as_of = max(created).date() if created else None
     for r in rows:
+        r["overdue"] = bool(
+            as_of is not None
+            and str(r.get("status")) in ACTIONABLE_STATUSES
+            and r.get("due_date") is not None
+            and r["due_date"] < as_of
+        )
         for k in ("due_date",):
             if r.get(k) is not None:
                 r[k] = str(r[k])
@@ -258,9 +269,15 @@ async def action_detail(action_id: str, request: Request) -> Any:
     events = store.events().filter(pl.col("action_id") == action_id)
     status = (events.sort("seq")["to_status"].to_list() or ["proposed"])[-1]
     row = dict(action)
+    created = row.get("created_at")
+    row["overdue"] = bool(
+        status in ACTIONABLE_STATUSES
+        and row.get("due_date") is not None
+        and isinstance(created, dt.datetime)
+        and row["due_date"] < created.date()  # type: ignore[operator]
+    )
     if row.get("due_date") is not None:
         row["due_date"] = str(row["due_date"])
-    created = row.get("created_at")
     if isinstance(created, dt.datetime):
         row["created_at"] = created.isoformat()
     ev_rows = events.sort("seq").to_dicts()

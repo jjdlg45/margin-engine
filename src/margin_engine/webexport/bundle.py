@@ -432,6 +432,11 @@ class ActionRow(BaseModel):
     priority: str
     owner: str
     due_date: str | None
+    overdue: bool = Field(
+        default=False,
+        description="True when the status still needs someone to act and the "
+        "due date lies before the data's as-of date",
+    )
     compliance_flags: str
     blocked: bool
     blocked_reason: str | None

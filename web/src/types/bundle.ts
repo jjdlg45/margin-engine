@@ -73,6 +73,10 @@ export type RealizationPct = number | null;
 export type TreatedVolumeRatio = number | null;
 export type VolumeErrorLogPoints = number | null;
 export type WindowDays = number;
+/**
+ * True when the status still needs someone to act and the due date lies before the data's as-of date
+ */
+export type Overdue = boolean;
 export type Owner = string;
 /**
  * cost_pass_through only: the chosen pass-through level
@@ -502,6 +506,7 @@ export interface ActionRow {
   item_id: ItemId;
   item_name?: ItemName;
   outcome?: ActionOutcome | null;
+  overdue?: Overdue;
   owner: Owner;
   pass_through_level?: PassThroughLevel;
   predicted_volume_ratio: PredictedVolumeRatio1;

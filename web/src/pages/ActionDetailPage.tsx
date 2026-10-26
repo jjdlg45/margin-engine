@@ -296,6 +296,9 @@ export function ActionDetailPage() {
                 <span className="text-caption secondary">
                   Priority {labels(d.action.priority).label.toLowerCase()} · owner {d.action.owner}
                   {d.action.due_date ? ` · due ${d.action.due_date}` : ""}
+                  {d.action.overdue && (
+                    <span className="font-medium text-garnet"> (overdue)</span>
+                  )}
                 </span>
                 {d.action.expected_impact_cents !== null &&
                   d.action.expected_impact_cents !== undefined && (

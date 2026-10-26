@@ -201,3 +201,24 @@ test("summary cards hide zero-value impact lines", async ({ page }) => {
     }
   }
 });
+
+test("overdue open actions carry a visible marker", async ({ page }) => {
+  const overdue = bundle.actions_table.find((a) => a.overdue);
+  test.skip(!overdue, "this bundle has no overdue action");
+  await page.goto(`/#/actions/${overdue!.action_id}`);
+  await expect(page.getByText("(overdue)")).toBeVisible();
+  // In the queue (desktop table), sorting by due date surfaces the marker.
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.goto(`/#/actions?statuses=${overdue!.status}`);
+  await page.getByRole("button", { name: "Sort by Due" }).click();
+  await expect(page.getByText("Overdue", { exact: true }).first()).toBeVisible();
+});
+
+test("demo owners are named people with roles", async ({ page }) => {
+  // Every owner reads "Name (role)" - never a placeholder like "unassigned".
+  for (const a of bundle.actions_table) {
+    expect(a.owner).toMatch(/^[A-Z][\w'. -]+ \([a-z][\w -]+\)$/);
+  }
+  await page.goto("/#/actions");
+  await expect(page.getByText(/\([a-z][\w -]+\)/).first()).toBeVisible();
+});

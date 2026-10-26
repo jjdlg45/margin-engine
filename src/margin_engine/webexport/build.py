@@ -721,13 +721,14 @@ def build_bundle(
     # The static demo ships the generated actions READ-ONLY with a simulated,
     # lifecycle-valid review history (labeled demo data) and real measured
     # outcomes computed by the Phase 41 tracker against this bundle's ledger.
-    from margin_engine.actions.demo import simulate_demo_history
-    from margin_engine.actions.model import replay_status
+    from margin_engine.actions.demo import apply_demo_realism, simulate_demo_history
+    from margin_engine.actions.model import ACTIONABLE_STATUSES, replay_status
     from margin_engine.actions.tracking import track_outcomes
 
     act_frame = res.actions if res.actions is not None else pl.DataFrame()
     actions_table: list[ActionRow] = []
     if act_frame.height:
+        act_frame = apply_demo_realism(act_frame, rules)
         demo_events = simulate_demo_history(act_frame)
         tracked = track_outcomes(
             act_frame,
@@ -775,6 +776,12 @@ def build_bundle(
             )
         for a in act_frame.sort(["action_type", "action_id"]).iter_rows(named=True):
             aid = str(a["action_id"])
+            a_status = statuses.get(aid, "proposed")
+            is_overdue = (
+                a_status in ACTIONABLE_STATUSES
+                and a["due_date"] is not None
+                and a["due_date"] < a["created_at"].date()  # created_at = as-of anchor
+            )
             actions_table.append(
                 ActionRow(
                     action_id=aid,
@@ -804,10 +811,11 @@ def build_bundle(
                     priority=str(a["priority"]),
                     owner=str(a["owner"]),
                     due_date=str(a["due_date"]) if a["due_date"] is not None else None,
+                    overdue=is_overdue,
                     compliance_flags=str(a["compliance_flags"] or ""),
                     blocked=bool(a["blocked"]),
                     blocked_reason=a["blocked_reason"],
-                    status=statuses.get(aid, "proposed"),
+                    status=a_status,
                     events=events_by_action.get(aid, []),
                     outcome=outcomes_by_action.get(aid),
                 )
