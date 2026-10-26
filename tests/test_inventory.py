@@ -143,6 +143,15 @@ def test_scenario_timing_statements() -> None:
     assert "policy" in scenario_timing_statement("standard", "new_receipts")
     assert "revaluation" in scenario_timing_statement("fifo", "existing_pool")
     assert "blend" in scenario_timing_statement("average", "blend")
+    # The statements render verbatim in the UI: plain-English sentences that
+    # expand the COGS acronym, start with a capital and end with a period.
+    for method in ("fifo", "lifo", "average", "standard"):
+        for pool in ("new_receipts", "existing_pool", "blend"):
+            s = scenario_timing_statement(method, pool)
+            assert s[0].isupper(), s
+            assert s.endswith("."), s
+            assert "cost of goods sold (COGS)" in s, s
+            assert s.strip()[-1] != ":", s
 
 
 def test_generated_receipts_cost_the_ledger(tmp_path) -> None:

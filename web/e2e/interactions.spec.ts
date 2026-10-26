@@ -70,3 +70,30 @@ test("keyboard: tab reaches the nav and focus is visible", async ({ page }) => {
   const outline = await focused.evaluate((el) => getComputedStyle(el).outlineStyle);
   expect(outline).not.toBe("none");
 });
+
+test("dark mode follows the system setting; the Theme button overrides", async ({ page }) => {
+  // Theme changes settle a frame later (the reduced-motion rule turns every
+  // property change into a 0.01 ms transition), so assertions must retry:
+  // toHaveCSS polls, a bare getComputedStyle read races.
+  const body = page.locator("body");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/#/");
+  const darkBg = await body.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(body, "system light renders differently").not.toHaveCSS(
+    "background-color",
+    darkBg,
+  );
+  const lightBg = await body.evaluate((el) => getComputedStyle(el).backgroundColor);
+  // The Theme button overrides the system preference, both ways.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(body).toHaveCSS("background-color", darkBg);
+  const toggle = page.getByRole("button", { name: "Toggle light and dark theme" });
+  await toggle.click();
+  await expect(body, "one click from system-dark gives light").toHaveCSS(
+    "background-color",
+    lightBg,
+  );
+  await toggle.click();
+  await expect(body, "a second click returns to dark").toHaveCSS("background-color", darkBg);
+});

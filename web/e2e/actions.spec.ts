@@ -1,8 +1,9 @@
-/** Phase 42: the Action center in the STATIC demo - read-only with a
- * simulated, labeled history. Queue filters (alone and combined, URL round
- * trip, parity of counts with the bundle), the detail page with history and
- * evidence links, the results view, and the absence of every mutation
- * affordance. */
+/** Phase 42 + polish round: the Action center in the STATIC demo - a sandbox
+ * with a simulated, labeled history whose workflow changes stay in the
+ * visitor's browser. Queue filters (alone and combined, URL round trip,
+ * parity of counts with the bundle), the detail page with history and
+ * evidence links, and the results view. Sandbox workflow behavior itself is
+ * covered in sandbox.spec.ts. */
 
 import { expect, test } from "@playwright/test";
 import type { WebBundle } from "../src/types/bundle";
@@ -19,7 +20,7 @@ test.beforeEach(async ({ page }) => {
 const showing = (page: import("@playwright/test").Page) =>
   page.getByText(/Showing [\d,]+ of [\d,]+/);
 
-test("queue renders read-only with counts matching the bundle", async ({ page }) => {
+test("queue renders as a sandbox with counts matching the bundle", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -27,9 +28,9 @@ test("queue renders read-only with counts matching the bundle", async ({ page })
   await page.goto("/#/actions");
   await expect(page.getByRole("heading", { level: 1, name: "Action center" })).toBeVisible();
   await expect(page.getByTestId("actions-summary")).toBeVisible();
-  await expect(page.getByText(/read-only/)).toBeVisible();
-  // No mutation affordances in the static demo.
-  await expect(page.getByTestId("actions-toolbar")).toHaveCount(0);
+  // The static demo is a sandbox: banner, workflow toolbar, reset.
+  await expect(page.getByTestId("sandbox-banner")).toBeVisible();
+  await expect(page.getByTestId("actions-toolbar")).toBeVisible();
   const total = bundle.actions_table.length;
   await expect(showing(page)).toContainText(`of ${total.toLocaleString("en-US")}`);
   expect(errors).toEqual([]);
@@ -89,15 +90,19 @@ test("detail: history labeled demo data, compliance note, evidence links, outcom
   await page.goto(`/#/actions/${flagged!.action_id}`);
   await expect(page.getByTestId("compliance-note")).toContainText("review");
   await expect(page.getByTestId("event-history")).toBeVisible();
-  await expect(page.getByText("Simulated review history - demo data.")).toBeVisible();
+  await expect(
+    page.getByText("Simulated demo history plus your sandbox changes", { exact: false }),
+  ).toBeVisible();
   // Evidence deep link to the guidance band for the pair.
   const link = page.getByRole("link", { name: /band chart/ });
   await expect(link).toHaveAttribute(
     "href",
     new RegExp(`guidance\\?customer=${flagged!.customer_id}`),
   );
-  // No workflow buttons in the static demo.
-  await expect(page.getByTestId("workflow")).toHaveCount(0);
+  // The sandbox offers the workflow buttons on open actions.
+  if (["proposed", "under_review", "rejected", "exported"].includes(flagged!.status)) {
+    await expect(page.getByTestId("workflow")).toBeVisible();
+  }
 
   const measured = bundle.actions_table.find(
     (a) => a.outcome && a.outcome.outcome_status === "measured",
@@ -139,4 +144,114 @@ test("summary impact by basis equals the bundle sums (parity)", async ({ page })
     void cents;
   }
   await expect(page.getByText("never summed", { exact: false }).first()).toBeVisible();
+});
+
+test("queue never overflows sideways at desktop or phone width", async ({ page }) => {
+  // Desktop: the queue table fits its region - no inner sideways scroll.
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.goto("/#/actions");
+  const region = page.getByRole("region", { name: "Table" });
+  await expect(region.locator("tbody tr").first()).toBeVisible();
+  const inner = await region.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(inner, "queue table fits at 1440 px").toBeLessThanOrEqual(0);
+
+  // Phone: stacked cards replace the table; the page never scrolls sideways.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(page.getByTestId("queue-cards").locator("li").first()).toBeVisible();
+  for (const width of [1440, 375] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(200);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `no page overflow at ${width} px`).toBeLessThanOrEqual(0);
+  }
+});
+
+test("evidence shows content for every action type, never an empty heading", async ({ page }) => {
+  const byType = new Map<string, (typeof bundle.actions_table)[number]>();
+  for (const a of bundle.actions_table) {
+    if (!byType.has(a.action_type)) byType.set(a.action_type, a);
+  }
+  expect(byType.size).toBeGreaterThan(1);
+  for (const a of byType.values()) {
+    await page.goto(`/#/actions/${a.action_id}`);
+    const items = page.getByTestId("evidence-list").locator("li");
+    await expect(items.first()).toBeVisible();
+  }
+  // A pass-through action names its scenario, scope, level and incremental cost.
+  const pt = bundle.actions_table.find((a) => a.action_type === "cost_pass_through");
+  if (pt) {
+    await page.goto(`/#/actions/${pt.action_id}`);
+    await expect(page.getByText("Pass-through level:")).toBeVisible();
+    await expect(page.getByText("Incremental cost:")).toBeVisible();
+    await expect(page.getByRole("link", { name: "open the pass-through grid" })).toBeVisible();
+    await expect(page.getByText(/Scope: (category|supplier)/)).toBeVisible();
+  }
+});
+
+test("summary cards hide zero-value impact lines", async ({ page }) => {
+  await page.goto("/#/actions");
+  const list = page.getByTestId("impact-by-basis");
+  await expect(list.locator("li").first()).toBeVisible();
+  const entries = Object.entries(bundle.actions.summary.impact_by_basis_cents);
+  const nonZero = entries.filter(([, v]) => v !== 0);
+  await expect(list.locator("li")).toHaveCount(Math.max(nonZero.length, 1));
+  for (const [basis, v] of entries) {
+    const label = bundle.labels[basis]?.label ?? basis;
+    if (v === 0) {
+      await expect(list.getByText(label, { exact: true })).toHaveCount(0);
+    } else {
+      await expect(list.getByText(label, { exact: true })).toBeVisible();
+    }
+  }
+});
+
+test("overdue open actions carry a visible marker", async ({ page }) => {
+  const overdue = bundle.actions_table.find((a) => a.overdue);
+  test.skip(!overdue, "this bundle has no overdue action");
+  await page.goto(`/#/actions/${overdue!.action_id}`);
+  await expect(page.getByText("(overdue)")).toBeVisible();
+  // In the queue (desktop table), sorting by due date surfaces the marker.
+  await page.setViewportSize({ width: 1440, height: 940 });
+  await page.goto(`/#/actions?statuses=${overdue!.status}`);
+  await page.getByRole("button", { name: "Sort by Due" }).click();
+  await expect(page.getByText("Overdue", { exact: true }).first()).toBeVisible();
+});
+
+test("demo owners are named people with roles", async ({ page }) => {
+  // Every owner reads "Name (role)" - never a placeholder like "unassigned".
+  for (const a of bundle.actions_table) {
+    expect(a.owner).toMatch(/^[A-Z][\w'. -]+ \([a-z][\w -]+\)$/);
+  }
+  await page.goto("/#/actions");
+  // Scoped to the queue itself: the identity picker's hidden options also
+  // carry "(role)" text.
+  await expect(
+    page.locator("tbody, [data-testid=queue-cards]").getByText(/\([a-z][\w -]+\)/).first(),
+  ).toBeVisible();
+});
+
+test("process view: step tracker and the process explainer", async ({ page }) => {
+  // The explainer names the steps outside the tool.
+  await page.goto("/#/actions");
+  await expect(page.getByRole("heading", { name: "How this fits your pricing process" })).toBeVisible();
+  await expect(page.getByTestId("process-explainer")).toContainText("ERP");
+  await expect(page.getByTestId("process-explainer")).toContainText("sales reps");
+  // The tracker marks the current step for each lifecycle stage present.
+  const byStatus = new Map<string, string>();
+  for (const a of bundle.actions_table) {
+    if (!byStatus.has(a.status)) byStatus.set(a.status, a.action_id);
+  }
+  for (const [status, id] of byStatus) {
+    await page.goto(`/#/actions/${id}`);
+    const tracker = page.getByTestId("step-tracker");
+    await expect(tracker).toBeVisible();
+    await expect(tracker.getByText("Loaded into ERP")).toBeVisible();
+    if (status === "rejected") {
+      await expect(tracker.getByText(/Rejected at review/)).toBeVisible();
+    } else {
+      await expect(tracker.locator('[aria-current="step"]')).toHaveCount(1);
+    }
+  }
 });

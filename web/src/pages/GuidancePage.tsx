@@ -9,7 +9,7 @@
 import { BandChart } from "../charts/Band";
 import { QuerySection, Skeleton } from "../components/Async";
 import { EntityLabel, entityText } from "../components/EntityLabel";
-import { EmptyState, PageHeader } from "../components/Page";
+import { Breadcrumbs, EmptyState, PageHeader } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import { VirtualTable } from "../components/VirtualTable";
 import { EntityCombobox } from "../components/filters/Combobox";
@@ -70,6 +70,14 @@ function PairDetail({
           }
           return (
             <>
+              <div className="-mt-3 pb-2">
+                <Breadcrumbs
+                  trail={[
+                    { label: "Guidance", onClick: onBack },
+                    { label: pair.customer_name ?? pair.customer_id },
+                  ]}
+                />
+              </div>
               <div className="row items-center">
                 <span className="font-medium">
                   <EntityLabel name={pair.customer_name} id={pair.customer_id} />
@@ -79,16 +87,11 @@ function PairDetail({
                 <StatusChip status={pair.status} />
                 {pair.target_label && <StatusChip status={pair.target_label} />}
                 <span className="text-caption secondary">
-                  {segmentName(segments, pair.segment) ?? "no segment"}
-                  {" · "}
-                  {dollars(pair.annual_net_revenue_cents)} baseline revenue
+                  Segment: {segmentName(segments, pair.segment) ?? "none"}
                 </span>
-                <button
-                  onClick={onBack}
-                  className="ml-auto cursor-pointer rounded-badge border hairline bg-transparent px-2 py-1 text-caption secondary hover:text-ink"
-                >
-                  Back to results
-                </button>
+                <span className="text-caption secondary">
+                  Baseline revenue: {dollars(pair.annual_net_revenue_cents)}
+                </span>
               </div>
               <div className="mt-4">
                 <BandChart

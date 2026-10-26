@@ -391,6 +391,19 @@
      "title": "Impact Basis",
      "type": "string"
     },
+    "incremental_cost_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "cost_pass_through only: the scenario's incremental cost",
+     "title": "Incremental Cost Cents"
+    },
     "item_id": {
      "anyOf": [
       {
@@ -425,9 +438,28 @@
      ],
      "default": null
     },
+    "overdue": {
+     "default": false,
+     "description": "True when the status still needs someone to act and the due date lies before the data's as-of date",
+     "title": "Overdue",
+     "type": "boolean"
+    },
     "owner": {
      "title": "Owner",
      "type": "string"
+    },
+    "pass_through_level": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "cost_pass_through only: the chosen pass-through level",
+     "title": "Pass Through Level"
     },
     "predicted_volume_ratio": {
      "anyOf": [

@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from api.actions_routes import router as actions_router
 from api.filters import paginate
+from api.load_routes import router as load_router
 from api.ratelimit import TokenBucketLimiter
 from api.refresh import RefreshScheduler
 from api.settings import Settings
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.action_store = action_store
     app.state.review_policy = review_policy
     app.include_router(actions_router)
+    app.include_router(load_router)
 
     @app.middleware("http")
     async def rate_limit(request: Request, call_next: Any) -> Response:

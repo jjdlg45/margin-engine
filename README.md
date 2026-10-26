@@ -193,10 +193,37 @@ closes the loop from finding to decision to measured outcome:
   recovery error is 0.039 log points (see the validation table), and on a
   sparse world it measures nothing and says why.
 
-The hosted demo shows the Action center read-only with a simulated,
-lifecycle-valid review history (labeled as such); the full workflow — queue,
-transitions, bulk approval, edits with audit trail, manual proposals and the
-price-file download — runs in API/live mode.
+The hosted demo runs the Action center as a **sandbox**: it starts from a
+simulated, lifecycle-valid review history (labeled as such), and every
+workflow button works — propose, edit, approve, reject, bulk approve, price
+export and mark implemented — under the same guardrails as the API. Sandbox
+changes live only in the visitor's browser (a banner says so, with a Reset
+demo button and an analyst/approver identity switcher); business numbers
+still come only from the engine's exports. In API/live mode the same
+workflow runs server-side with the review history in DuckDB.
+
+## Use it with your own data
+
+The short path from a raw ERP export to results (the hosted demo also walks
+through it on its "Use it with your own data" page):
+
+1. **Install:** `uv sync` from a clone, or `docker compose up --build` for
+   the full stack ([Run with Docker](#run-with-docker)).
+2. **Map the export:** `margin-engine profile <file>` reports what each
+   column looks like; `margin-engine draft-mapping <file>` writes a mapping
+   draft in which every guess is marked `# CONFIRM` — the engine refuses to
+   run until a person has confirmed each one
+   ([Running on real data](#running-on-real-data)).
+3. **Run:** `margin-engine run --data <file> --mapping <yaml> --out output`
+   and open `output/report.html`; add `export-web` to browse results in the
+   web app.
+4. **Tie out to the books:** map an optional `gl_totals` table and the
+   report compares engine monthly totals to the general ledger, flagging
+   failing months instead of hiding them.
+5. **Go live:** `uv run python scripts/live_mode.py` serves the UI in API
+   mode with scheduled refreshes and drift flags ([Live mode](#live-mode)).
+6. **Work the actions:** the [Action center](#action-center) turns findings
+   into reviewed, exported, measured price actions.
 
 ## Supported input formats
 

@@ -7,7 +7,7 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
 import { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EntityLabel } from "../components/EntityLabel";
@@ -30,8 +30,10 @@ import {
   usePageData,
   useTableQuery,
 } from "../lib/queries";
-import { dataClient } from "../lib/api/client";
+import { dataClient, isSandbox } from "../lib/api/client";
 import { queryClient } from "../lib/queries";
+import { useCompact } from "../lib/useCompact";
+import { SandboxBanner } from "../components/SandboxBanner";
 
 const FILTER_KEYS = ["types", "statuses", "owner", "priorities", "evidence", "compliance", "impact"];
 
@@ -44,6 +46,12 @@ const inputClass = "rounded-badge border hairline bg-card px-2 py-1 text-sm text
 function UserPicker() {
   const users = useActionUsers();
   const [user, setUser] = useCurrentUser();
+  // Sandbox: start as the dual-role user so every button works immediately,
+  // and never keep an identity that is not on the sandbox roster.
+  useEffect(() => {
+    if (!isSandbox || !users.data?.length) return;
+    if (!user || !users.data.some((u) => u.name === user)) setUser(users.data[0].name);
+  }, [users.data, user, setUser]);
   if (dataClient.actions.readOnly) return null;
   return (
     <label className="flex items-center gap-2 text-caption">
@@ -169,6 +177,8 @@ function ExportButton() {
         URL.revokeObjectURL(a.href);
         await queryClient.invalidateQueries({ queryKey: ["table", "actions"] });
         await queryClient.invalidateQueries({ queryKey: ["page", "actions"] });
+        // The export transitions actions, so cached details are stale too.
+        await queryClient.invalidateQueries({ queryKey: ["action-detail"] });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "export failed");
@@ -196,8 +206,168 @@ function ExportButton() {
   );
 }
 
+/** Linked action title: type + entities when the action targets a pair or a
+ * customer, otherwise the generated title. Shared by the desktop table and
+ * the compact card list so both read identically. */
+function ActionTitle({ a }: { a: ActionRow }) {
+  const labels = useLabels();
+  return (
+    <Link to={`/actions/${a.action_id}`} className="font-medium">
+      {a.customer_id ? (
+        <>
+          {labels(a.action_type).label}:{" "}
+          <EntityLabel name={a.customer_name} id={a.customer_id} />
+          {a.item_id && (
+            <>
+              {" / "}
+              <EntityLabel name={a.item_name} id={a.item_id} />
+            </>
+          )}
+        </>
+      ) : (
+        a.title
+      )}
+    </Link>
+  );
+}
+
+/** Compact (below 640 px) queue: stacked cards instead of a nine-column
+ * table, so the page never overflows sideways on a phone. */
+function QueueCards({ items }: { items: ActionRow[] }) {
+  const labels = useLabels();
+  const [shown, setShown] = useState(15);
+  const sorted = useMemo(
+    () =>
+      [...items].sort(
+        (x, y) => (y.expected_impact_cents ?? -Infinity) - (x.expected_impact_cents ?? -Infinity),
+      ),
+    [items],
+  );
+  const slice = sorted.slice(0, shown);
+  return (
+    <>
+      <ul className="m-0 list-none p-0" data-testid="queue-cards">
+        {slice.map((a) => (
+          <li key={a.action_id} className="border-t hairline py-4 first:border-t-0">
+            <ActionTitle a={a} />
+            {a.blocked && (
+              <span className="mt-1 block text-caption text-amber">
+                Blocked: {a.blocked_reason}
+              </span>
+            )}
+            <span className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusChip status={a.action_type} />
+              <StatusChip status={a.status} />
+              <StatusChip status={a.evidence_status ?? "insufficient_data"} />
+              {a.compliance_flags && <StatusChip status="rp_review_flag" />}
+            </span>
+            <span className="mt-1.5 block text-caption secondary">
+              Expected impact:{" "}
+              {a.expected_impact_cents !== null ? dollars(a.expected_impact_cents) : "none stated"}{" "}
+              ({labels(a.impact_basis).label.toLowerCase()})
+            </span>
+            <span className="block text-caption secondary">
+              Owner: {a.owner}
+              {a.due_date ? `. Due ${a.due_date}` : ""}
+              {a.overdue && <span className="font-medium text-garnet"> (overdue)</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {sorted.length > shown && (
+        <button
+          type="button"
+          className={`${btnClass} mt-2`}
+          onClick={() => setShown(shown + 15)}
+        >
+          Show more ({sorted.length - shown} remaining)
+        </button>
+      )}
+    </>
+  );
+}
+
+function BulkApprovePanel() {
+  const [user] = useCurrentUser();
+  const [note, setNote] = useState("");
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (dataClient.actions.readOnly) return null;
+  const run = async () => {
+    if (!user) {
+      setError("Choose a working identity first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const page = await dataClient.queryTable("actions", {
+        page: 1,
+        page_size: 5000,
+        filters: { statuses: ["under_review"] },
+      });
+      const ids = page.items.map((r) => r.action_id);
+      if (!ids.length) {
+        setResult("Nothing is under review right now.");
+        return;
+      }
+      const out = await dataClient.actions.bulkApprove(ids, user, note);
+      const ok = out.filter((o) => o.outcome === "approved").length;
+      const refused = out.filter((o) => o.outcome === "refused");
+      setResult(
+        `Approved ${ok} of ${out.length}.` +
+          (refused.length
+            ? ` ${refused.length} refused - first reason: ${refused[0].reason}`
+            : ""),
+      );
+      await queryClient.invalidateQueries({ queryKey: ["table", "actions"] });
+      await queryClient.invalidateQueries({ queryKey: ["page", "actions"] });
+      await queryClient.invalidateQueries({ queryKey: ["action-detail"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "bulk approval failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="text-caption">
+        Reason
+        <input
+          className={`${inputClass} ml-2`}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          data-testid="bulk-note"
+        />
+      </label>
+      <button
+        type="button"
+        className={btnClass}
+        disabled={busy}
+        onClick={() => void run()}
+        data-testid="bulk-approve"
+      >
+        Approve everything under review
+      </button>
+      {result && (
+        <span className="text-caption" data-testid="bulk-result">
+          {result}
+        </span>
+      )}
+      {error && (
+        <span className="text-caption text-amber" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Queue({ page }: { page: ActionsSection }) {
   const labels = useLabels();
+  const compact = useCompact();
   const f = useFilterParams();
   const types = f.getList("types");
   const statuses = f.getList("statuses");
@@ -245,29 +415,16 @@ function Queue({ page }: { page: ActionsSection }) {
         accessorKey: "title",
         meta: { left: true },
         cell: (c) => (
-          <span className="left block min-w-[18rem]">
-            <Link to={`/actions/${c.row.original.action_id}`} className="font-medium">
-              {c.row.original.customer_id ? (
-                <>
-                  {labels(c.row.original.action_type).label}:{" "}
-                  <EntityLabel
-                    name={c.row.original.customer_name}
-                    id={c.row.original.customer_id}
-                  />
-                  {c.row.original.item_id && (
-                    <>
-                      {" / "}
-                      <EntityLabel name={c.row.original.item_name} id={c.row.original.item_id} />
-                    </>
-                  )}
-                </>
-              ) : (
-                c.row.original.title
-              )}
-            </Link>
+          <span className="left block min-w-[16rem]">
+            <ActionTitle a={c.row.original} />
             {c.row.original.blocked && (
               <span className="mt-1 block text-caption text-amber">
                 Blocked: {c.row.original.blocked_reason}
+              </span>
+            )}
+            {c.row.original.compliance_flags && (
+              <span className="mt-1 block">
+                <StatusChip status="rp_review_flag" />
               </span>
             )}
           </span>
@@ -308,16 +465,17 @@ function Queue({ page }: { page: ActionsSection }) {
         ),
       },
       { header: "Owner", accessorKey: "owner", cell: (c) => c.row.original.owner },
-      { header: "Due", accessorKey: "due_date", cell: (c) => c.row.original.due_date ?? "—" },
       {
-        header: "Compliance",
-        accessorKey: "compliance_flags",
-        cell: (c) =>
-          c.row.original.compliance_flags ? (
-            <StatusChip status="rp_review_flag" />
-          ) : (
-            <span className="secondary">—</span>
-          ),
+        header: "Due",
+        accessorKey: "due_date",
+        cell: (c) => (
+          <span>
+            {c.row.original.due_date ?? "—"}
+            {c.row.original.overdue && (
+              <span className="block text-caption font-medium text-garnet">Overdue</span>
+            )}
+          </span>
+        ),
       },
     ],
     [labels],
@@ -355,12 +513,16 @@ function Queue({ page }: { page: ActionsSection }) {
       <QuerySection query={table} label="action queue" lines={8}>
         {(data) =>
           data.items.length ? (
-            <SortableTable
-              data={data.items}
-              columns={columns}
-              pageSize={15}
-              initialSort={[{ id: "expected_impact_cents", desc: true }]}
-            />
+            compact ? (
+              <QueueCards items={data.items} />
+            ) : (
+              <SortableTable
+                data={data.items}
+                columns={columns}
+                pageSize={15}
+                initialSort={[{ id: "expected_impact_cents", desc: true }]}
+              />
+            )
           ) : (
             <EmptyState title="No actions match these filters">
               Clear a filter or two; the engine generated {count(page.summary.n_actions)} actions
@@ -478,9 +640,12 @@ export function ActionCenterPage() {
               lede={
                 p.read_only
                   ? "Findings turned into reviewable actions. This hosted demo is read-only with a simulated review history, labeled demo data; the full propose-review-approve-export workflow runs against the live API."
-                  : "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure what actually happened."
+                  : isSandbox
+                    ? "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure. This demo starts from a simulated review history; your own changes stay in this browser."
+                    : "Findings turned into reviewable actions: propose, review, approve, export to the ERP, implement, then measure what actually happened."
               }
             />
+            <SandboxBanner />
             <div className="mt-2 grid gap-4 sm:grid-cols-3" data-testid="actions-summary">
               <div className="panel px-5 py-5">
                 <h2 className="m-0 text-section">Open actions</h2>
@@ -495,13 +660,19 @@ export function ActionCenterPage() {
               </div>
               <div className="panel px-5 py-5">
                 <h2 className="m-0 text-section">Expected impact by basis</h2>
-                <ul className="m-0 mt-1 list-none p-0 text-caption">
-                  {Object.entries(p.summary.impact_by_basis_cents).map(([k, v]) => (
-                    <li key={k} className="flex justify-between gap-3">
-                      <span className="secondary">{labels(k).label}</span>
-                      <span className="font-medium">{dollarsShort(v)}</span>
-                    </li>
-                  ))}
+                <ul className="m-0 mt-1 list-none p-0 text-caption" data-testid="impact-by-basis">
+                  {/* A zero line says nothing - only bases with dollars show. */}
+                  {Object.entries(p.summary.impact_by_basis_cents)
+                    .filter(([, v]) => v !== 0)
+                    .map(([k, v]) => (
+                      <li key={k} className="flex justify-between gap-3">
+                        <span className="secondary">{labels(k).label}</span>
+                        <span className="font-medium">{dollarsShort(v)}</span>
+                      </li>
+                    ))}
+                  {Object.values(p.summary.impact_by_basis_cents).every((v) => v === 0) && (
+                    <li className="secondary">No expected dollar impact stated yet.</li>
+                  )}
                 </ul>
                 <p className="mb-0 mt-2 text-caption secondary">
                   Different opportunity levels - never summed into one number.
@@ -532,6 +703,7 @@ export function ActionCenterPage() {
                 <UserPicker />
                 <ProposePanel />
                 <ExportButton />
+                <BulkApprovePanel />
               </div>
             )}
             <Tabs.Root defaultValue="queue" className="mt-4">
@@ -552,6 +724,30 @@ export function ActionCenterPage() {
                 <Results page={p} />
               </Tabs.Content>
             </Tabs.Root>
+            <Section
+              title="How this fits your pricing process"
+              lede="Each action walks one path: proposed, under review, approved, exported, loaded into the ERP, implemented, then measured. Two steps happen outside this tool."
+            >
+              <div className="max-w-2xl text-sm" data-testid="process-explainer">
+                <p className="mt-0">
+                  Proposal and review happen here, with the engine's evidence attached. Approving a
+                  price action makes it eligible for the price export: a file in your ERP's import
+                  format, carrying the effective date, both prices, the approval and the action id.
+                </p>
+                <p>
+                  Loading that file is your ERP team's step, not this tool's. Before the effective
+                  date, tell the people the change touches: sales reps who own the accounts, and
+                  customers where your notice policy or contract requires it. Nothing here sends a
+                  price to a customer.
+                </p>
+                <p className="mb-0">
+                  Once the new prices are live in the ERP, mark the action implemented. After the
+                  measurement window the engine compares what actually happened - price realization
+                  and volume against untreated comparison pairs - and the result lands in the
+                  Results view, feeding the calibration table.
+                </p>
+              </div>
+            </Section>
           </>
         )}
       </QuerySection>

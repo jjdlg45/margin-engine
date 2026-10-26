@@ -2950,3 +2950,89 @@ docker.yml, pages.yml, ci.yml, compose.yaml; tsc 0; vitest 0 (11/11); build
 no re-baselining; Playwright API mode 9/9 twice; node lighthouse.mjs gate
 exit 0 (performance 100). Docker itself remains CI-validated (no local
 Docker), now with the export fix proven by the filesystem simulation.
+
+## Final polish round (branch final-polish, one commit per item)
+
+Fourteen owner-listed items, each its own commit (polish-1 .. polish-14).
+
+1. **Queue overflow** - compliance flag folded into the Action cell (table
+   fits 1056 px at 1440) and stacked cards below 640 px; Playwright asserts
+   no inner or page overflow at either width.
+2. **Evidence per action type** - pass-through actions carry engine fields
+   pass_through_level and incremental_cost_cents (generation schema, bundle,
+   API, propose row); the detail shows scenario link/scope/level/cost for
+   pass-throughs, drill-down links for service and rebate actions, and a
+   generation-rules line for every type - never an empty heading.
+3. **Scenario picker** - the selection renders as the input's value (normal
+   ink, deep links included) and the page states the full selection in
+   wrapping text; the open list is unfiltered while the input shows the
+   selection verbatim.
+4. **COGS timing** - scenario_timing_statement rewritten as plain-English
+   sentences expanding the acronym; tests assert sentence form for every
+   method-and-pool combination; section retitled "When the cost increase
+   reaches COGS".
+5. **Zero impact lines** - hidden in the summary card ("contribution at
+   stake" read $0 in the demo); all-zero case states itself in words.
+6. **Demo realism** - four named fictional people with roles own the demo
+   actions; proposal dates staggered per hash bucket (implemented walks keep
+   the full 90-day window inside the data); due = proposal + priority lead
+   time; engine-computed overdue flag (bundle + API) with a visible marker.
+7. **Dark mode** - follows prefers-color-scheme via
+   :root:not([data-theme="light"]); the Theme button overrides both ways.
+   Test lesson: under reduced motion every property change is a 0.01 ms
+   transition settling a frame later, so theme assertions must poll
+   (toHaveCSS), never read getComputedStyle in the same frame.
+8. **Navigation groups** - Margin / Pricing / Actions / Data with hairline
+   separators at desktop; Menu button with grouped collapsible list below
+   640 px, closing on navigation; Customers listed as "Customers & orders".
+9. **Breadcrumbs and labeled fields** - shared Breadcrumbs on action detail,
+   customer drill-down (filter-preserving) and guidance pair view; the
+   dot-joined meta lines became labeled field grids.
+10. **Demo sandbox** - the static demo runs the whole workflow in the
+    visitor's browser: sandboxLogic mirrors the API guardrails (roles,
+    lifecycle, self-approval via a dual-role identity, compliance
+    justification, blocked contracts, floor-checked price edits; 13 vitest
+    cases), localStorage state with in-memory fallback, a serializing
+    mutation queue (rapid clicks lost read-modify-writes before it), banner
+    + Reset demo, identity picker as the role switcher, bulk approve (new,
+    also in API mode), and a price-file download in the CLI's exact template
+    (approval ids derived identically). Business numbers remain engine-only.
+11. **Process view** - seven-step tracker (incl. "Loaded into ERP (in your
+    ERP)") on every action detail, aria-current on the current step, a
+    rejected/rework note, and an Action center explainer naming the steps
+    outside the tool (ERP import; rep and customer notice).
+12. **Guide** - "Use it with your own data" page in the Data group (install,
+    profile/draft-mapping, run, tie-out, live mode, Action center) plus a
+    matching README section; README's Action center paragraph updated for
+    the sandbox.
+13. **Load your data** - API-mode-only /load page and five /api/load
+    endpoints (upload, profile with txn-column repoint, click-confirmed
+    mapping validated by the engine's loader, background run with status,
+    bundle swap + action merge). Confirmables include an explicit
+    cost_unavailable declaration when no cost column is detected; unknown
+    paths are refused (no YAML injection). Proven end to end on the
+    committed sample: 10,661 rows, mapping confirmed by clicks, run done,
+    site serving "Your data: invoice_lines.csv (local run)", 203 actions
+    merged. pytest 6 new tests; API-mode Playwright runs the real UI flow
+    and a fail-fast run whose engine message renders verbatim.
+14. **Tests and re-baseline** - sandbox/nav/mobile/load-data Playwright
+    specs landed with their items; this commit re-baselines ALL 44 visual
+    snapshots (the grouped navigation header deliberately changed every
+    page; actions, scenarios, modules, customers, guidance and overview also
+    changed content per items 1-11) and adds the guide page to the quality
+    gates (axe found its scrollable code blocks needed keyboard focus -
+    fixed) with 4 new baselines.
+
+The first full-pytest run of this commit caught a gap item 2 left behind:
+tests/test_price_export.py and tests/test_tracking.py build action frames by
+hand and lacked the two new schema columns (pass_through_level,
+incremental_cost_cents) - 10 failures, fixed by adding the null columns to
+both fixtures, exactly as test_actions_api.py was fixed in item 2.
+
+Checks on the final tree: ruff 0; ruff format 0; mypy src api 0 (strict);
+full pytest 0 (rerun after the fixture fix); openapi.yaml parses; tsc/build 0; vitest 22/22; Playwright
+static WITH snapshots 225 passed + 3 skips (1 intentional live-data skip, 2
+conditional sandbox skips: this demo world has no blocked action - pinned by
+unit tests instead); Playwright API mode 11/11 including two real pipeline
+runs. Demo bundle re-exported for the new action fields; schema.json and
+generated types updated.

@@ -17,6 +17,10 @@
   --shadow: 0 1px 2px rgb(34 49 58 / 0.06), 0 2px 8px rgb(34 49 58 / 0.05);
   color-scheme: light;
 }
+/* Dark tokens apply two ways: explicitly through the Theme button
+   (data-theme="dark"), and from the OS preference unless the button chose
+   light - dark mode follows the system by default. Keep the two blocks
+   identical. */
 [data-theme="dark"] {
   --ink: 244 247 248; /* #F4F7F8 - primary text lands >= 7:1 on card */
   --paper: 16 20 24; /* #101418, page ground */
@@ -28,6 +32,20 @@
   --garnet: 240 141 153; /* #F08D99 */
   --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 10px rgb(0 0 0 / 0.35);
   color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: 244 247 248;
+    --paper: 16 20 24;
+    --card: 26 32 38;
+    --inset: 35 43 51;
+    --petrol: 123 208 226;
+    --verdigris: 127 220 171;
+    --amber: 240 188 85;
+    --garnet: 240 141 153;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 10px rgb(0 0 0 / 0.35);
+    color-scheme: dark;
+  }
 }
 
 html {

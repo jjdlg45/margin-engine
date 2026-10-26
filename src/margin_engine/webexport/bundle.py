@@ -423,9 +423,20 @@ class ActionRow(BaseModel):
     current_price_cents: int | None
     proposed_price_cents: int | None
     floor_price_cents: int | None
+    pass_through_level: float | None = Field(
+        default=None, description="cost_pass_through only: the chosen pass-through level"
+    )
+    incremental_cost_cents: int | None = Field(
+        default=None, description="cost_pass_through only: the scenario's incremental cost"
+    )
     priority: str
     owner: str
     due_date: str | None
+    overdue: bool = Field(
+        default=False,
+        description="True when the status still needs someone to act and the "
+        "due date lies before the data's as-of date",
+    )
     compliance_flags: str
     blocked: bool
     blocked_reason: str | None

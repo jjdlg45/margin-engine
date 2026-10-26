@@ -272,10 +272,44 @@ def test_demo_history_is_deterministic_and_valid(sample_run: FullRunResult) -> N
     if approvals.height:
         assert (approvals["note"].str.len_chars() > 0).all()
     # The simulated reviewer and approver are distinct people.
+    from margin_engine.actions.demo import DEMO_APPROVER
+
     assert h1.filter(pl.col("to_status") == "approved")["who"].unique().to_list() in (
         [],
-        ["Demo approver"],
+        [DEMO_APPROVER],
     )
+
+
+def test_demo_realism_owners_and_due_dates(sample_run: FullRunResult) -> None:
+    """Demo owners come from the named roster, and due dates follow the
+    proposal-date-plus-lead-time rule, giving a mix of overdue and upcoming
+    open actions relative to the as-of date (the generation anchor)."""
+    from margin_engine.actions.demo import (
+        DEMO_PEOPLE,
+        apply_demo_realism,
+        simulate_demo_history,
+    )
+    from margin_engine.actions.model import ACTIONABLE_STATUSES
+
+    actions = sample_run.actions
+    assert actions is not None and actions.height > 0
+    d1 = apply_demo_realism(actions, RULES)
+    d2 = apply_demo_realism(actions, RULES)
+    assert_frame_equal(d1, d2)
+    roster = {f"{name} ({role})" for name, role in DEMO_PEOPLE}
+    assert set(d1["owner"].to_list()) <= roster
+    assert d1["owner"].n_unique() > 1, "owners spread across several people"
+    assert d1["due_date"].null_count() == 0
+    # Overdue mix among still-actionable actions.
+    status = {r[0]: r[1] for r in replay_status(simulate_demo_history(d1)).iter_rows()}
+    anchor = d1["created_at"].max().date()  # type: ignore[union-attr]
+    open_due = [
+        (r["due_date"], r["due_date"] < anchor)
+        for r in d1.iter_rows(named=True)
+        if status.get(str(r["action_id"]), "proposed") in ACTIONABLE_STATUSES
+    ]
+    assert any(over for _, over in open_due), "some open actions are overdue"
+    assert any(not over for _, over in open_due), "some open actions are upcoming"
 
 
 def test_store_migrates_older_schema(tmp_path: Path) -> None:
@@ -316,3 +350,20 @@ def test_merge_new_into_older_schema_store(tmp_path: Path) -> None:
     from margin_engine.actions.generate import ACTIONS_SCHEMA
 
     assert list(merged.columns) == list(ACTIONS_SCHEMA)
+
+
+def test_pass_through_actions_carry_scenario_evidence(sample_run: FullRunResult) -> None:
+    """cost_pass_through actions carry the chosen level and the scenario's
+    incremental cost, so the UI's evidence section shows engine numbers
+    without re-deriving anything; every other type leaves both null."""
+    actions = sample_run.actions
+    assert actions is not None
+    pt = actions.filter(pl.col("action_type") == "cost_pass_through")
+    assert pt.height > 0
+    for r in pt.iter_rows(named=True):
+        assert r["pass_through_level"] == RULES.actions.pass_through_level
+        assert r["incremental_cost_cents"] is not None
+        assert r["incremental_cost_cents"] > 0
+    others = actions.filter(pl.col("action_type") != "cost_pass_through")
+    assert others["pass_through_level"].null_count() == others.height
+    assert others["incremental_cost_cents"].null_count() == others.height

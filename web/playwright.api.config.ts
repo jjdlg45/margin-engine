@@ -30,6 +30,12 @@ export default defineConfig({
         MARGIN_API_ACTIONS_SEED: "web/public/data",
         MARGIN_API_ACTIONS_DB: ".api_state/e2e-actions.duckdb",
         MARGIN_API_ACTIONS_RESET: "1",
+        // The load-your-data suite uploads files and swaps the served bundle;
+        // dedicated paths keep that churn out of any real local state. The
+        // bundle always reloads from web/public/data at server start, so the
+        // next run is hermetic regardless.
+        MARGIN_API_DB: ".api_state/e2e-api.duckdb",
+        MARGIN_API_UPLOADS_DIR: ".api_state/e2e-uploads",
       },
     },
     {

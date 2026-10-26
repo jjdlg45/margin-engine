@@ -4,10 +4,12 @@
 
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Boundary } from "./components/Async";
+import { dataSource } from "./lib/api/client";
 import { queryClient, useAppData } from "./lib/queries";
+import { useCompact } from "./lib/useCompact";
 import { Overview } from "./pages/Overview";
 
 const Customers = lazy(() => import("./pages/Customers").then((m) => ({ default: m.Customers })));
@@ -25,10 +27,14 @@ const ActionCenterPage = lazy(() =>
 const ActionDetailPage = lazy(() =>
   import("./pages/ActionDetailPage").then((m) => ({ default: m.ActionDetailPage })),
 );
+const GuidePage = lazy(() => import("./pages/GuidePage").then((m) => ({ default: m.GuidePage })));
+const LoadDataPage = lazy(() =>
+  import("./pages/LoadDataPage").then((m) => ({ default: m.LoadDataPage })),
+);
 
 const PAGES = [
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
-  { path: "/customers", label: "Customers", el: <Customers /> },
+  { path: "/customers", label: "Customers & orders", el: <Customers /> },
   { path: "/segments", label: "Segments", el: <SegmentsPage /> },
   { path: "/guidance", label: "Guidance", el: <GuidancePage /> },
   { path: "/sensitivity", label: "Sensitivity", el: <SensitivityPage /> },
@@ -37,7 +43,51 @@ const PAGES = [
   { path: "/scenarios", label: "Scenarios", el: <ScenariosPage /> },
   { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
   { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
+  { path: "/guide", label: "Use it with your own data", el: <GuidePage /> },
+  // API/local mode only: the static demo has no server to upload to, so the
+  // public site never lists or routes this page.
+  ...(dataSource === "http"
+    ? [{ path: "/load", label: "Load your data", el: <LoadDataPage /> }]
+    : []),
 ];
+
+/** Navigation grouped by the question a page answers. Paths reference PAGES
+ * (the route table) so a page can never be reachable but unlisted. */
+const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: boolean }[] }[] = [
+  {
+    label: "Margin",
+    items: [
+      { path: "/", label: "Overview", end: true },
+      { path: "/waterfall", label: "Waterfall" },
+      { path: "/customers", label: "Customers & orders" },
+    ],
+  },
+  {
+    label: "Pricing",
+    items: [
+      { path: "/segments", label: "Segments" },
+      { path: "/guidance", label: "Guidance" },
+      { path: "/sensitivity", label: "Sensitivity" },
+      { path: "/opportunity", label: "Opportunity" },
+      { path: "/scenarios", label: "Scenarios" },
+    ],
+  },
+  { label: "Actions", items: [{ path: "/actions", label: "Action center" }] },
+  {
+    label: "Data",
+    items: [
+      { path: "/methodology", label: "Data & methodology" },
+      { path: "/modules", label: "Optional modules" },
+      { path: "/guide", label: "Use it with your own data" },
+      ...(dataSource === "http" ? [{ path: "/load", label: "Load your data" }] : []),
+    ],
+  },
+];
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `whitespace-nowrap rounded-badge px-2 py-1 text-sm no-underline ${
+    isActive ? "bg-petrol text-paper" : "text-ink/70 hover:text-ink"
+  }`;
 
 function ThemeToggle() {
   const toggle = () => {
@@ -58,8 +108,73 @@ function ThemeToggle() {
   );
 }
 
+/** Desktop navigation: four labeled groups in one row (wrapping to a second
+ * line where needed), separated by hairlines. */
+function DesktopNav() {
+  return (
+    <nav
+      aria-label="Primary"
+      className="order-last -mx-1 flex w-full flex-wrap items-center gap-y-1 pb-2"
+    >
+      {NAV_GROUPS.map((g, i) => (
+        <span key={g.label} className="flex items-center">
+          {i > 0 && <span aria-hidden="true" className="mx-2 h-4 w-px bg-ink/[0.12]" />}
+          <span className="mr-1 px-1 text-caption secondary">{g.label}</span>
+          {g.items.map((p) => (
+            <NavLink key={p.path} to={p.path} end={p.end} className={navLinkClass}>
+              {p.label}
+            </NavLink>
+          ))}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+/** Mobile navigation: a Menu button opening a grouped, collapsible list that
+ * closes again on navigation. */
+function MobileNav() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="rounded-badge border hairline px-2 py-1 text-caption secondary hover:text-ink"
+        aria-expanded={open}
+        aria-controls="mobile-nav"
+        onClick={() => setOpen(!open)}
+      >
+        Menu
+      </button>
+      {open && (
+        <nav id="mobile-nav" aria-label="Primary" className="order-last w-full pb-3">
+          {NAV_GROUPS.map((g) => (
+            <div key={g.label} className="mt-2 first:mt-0">
+              <p className="m-0 mb-1 text-caption font-semibold secondary">{g.label}</p>
+              <div className="flex flex-wrap gap-1">
+                {g.items.map((p) => (
+                  <NavLink
+                    key={p.path}
+                    to={p.path}
+                    end={p.end}
+                    className={navLinkClass}
+                    onClick={() => setOpen(false)}
+                  >
+                    {p.label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+      )}
+    </>
+  );
+}
+
 function Shell() {
   const app = useAppData();
+  const compact = useCompact();
   return (
     <div className="mx-auto min-h-screen max-w-[1120px] px-4 sm:px-8">
       <a
@@ -73,32 +188,6 @@ function Shell() {
           <Link to="/" className="text-ink no-underline">
             <span className="text-section font-semibold tracking-tight">Margin engine</span>
           </Link>
-          <nav aria-label="Primary" className="order-last -mx-1 flex w-full flex-wrap gap-1 pb-2 sm:order-none sm:w-auto sm:pb-0">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                `whitespace-nowrap rounded-badge px-2 py-1 text-sm no-underline ${
-                  isActive ? "bg-petrol text-paper" : "text-ink/70 hover:text-ink"
-                }`
-              }
-            >
-              Overview
-            </NavLink>
-            {PAGES.map((p) => (
-              <NavLink
-                key={p.path}
-                to={p.path}
-                className={({ isActive }) =>
-                  `whitespace-nowrap rounded-badge px-2 py-1 text-sm no-underline ${
-                    isActive ? "bg-petrol text-paper" : "text-ink/70 hover:text-ink"
-                  }`
-                }
-              >
-                {p.label}
-              </NavLink>
-            ))}
-          </nav>
           <span className="ml-auto flex items-center gap-3">
             <a
               href="https://github.com/jjdlg45/margin-engine"
@@ -108,6 +197,7 @@ function Shell() {
             </a>
             <ThemeToggle />
           </span>
+          {compact ? <MobileNav /> : <DesktopNav />}
         </div>
         <p className="mb-2 mt-1 text-caption secondary" data-testid="data-notice">
           {app.data?.data_label ??

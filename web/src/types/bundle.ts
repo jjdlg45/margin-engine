@@ -47,6 +47,10 @@ export type ExpectedImpactCents = number | null;
 export type FloorPriceCents = number | null;
 export type GuidanceStatus = string | null;
 export type ImpactBasis = string;
+/**
+ * cost_pass_through only: the scenario's incremental cost
+ */
+export type IncrementalCostCents = number | null;
 export type ItemId = string | null;
 export type ItemName = string | null;
 export type ContributionAfterCents = number | null;
@@ -69,7 +73,15 @@ export type RealizationPct = number | null;
 export type TreatedVolumeRatio = number | null;
 export type VolumeErrorLogPoints = number | null;
 export type WindowDays = number;
+/**
+ * True when the status still needs someone to act and the due date lies before the data's as-of date
+ */
+export type Overdue = boolean;
 export type Owner = string;
+/**
+ * cost_pass_through only: the chosen pass-through level
+ */
+export type PassThroughLevel = number | null;
 export type PredictedVolumeRatio1 = number | null;
 export type Priority = string;
 export type ProposedPriceCents1 = number | null;
@@ -284,7 +296,7 @@ export type Name1 = string;
 export type PctIncrease = number;
 export type ContributionEffectCents = number | null;
 export type ContributionEffectSupportedEverywhere = boolean;
-export type IncrementalCostCents = number;
+export type IncrementalCostCents1 = number;
 export type PassThrough = number;
 export type ProtectedExposureCents = number;
 export type RecoveredCents = number;
@@ -490,10 +502,13 @@ export interface ActionRow {
   floor_price_cents: FloorPriceCents;
   guidance_status: GuidanceStatus;
   impact_basis: ImpactBasis;
+  incremental_cost_cents?: IncrementalCostCents;
   item_id: ItemId;
   item_name?: ItemName;
   outcome?: ActionOutcome | null;
+  overdue?: Overdue;
   owner: Owner;
+  pass_through_level?: PassThroughLevel;
   predicted_volume_ratio: PredictedVolumeRatio1;
   priority: Priority;
   proposed_price_cents: ProposedPriceCents1;
@@ -769,7 +784,7 @@ export interface ScenarioGrid {
 export interface ScenarioGridPoint {
   contribution_effect_cents: ContributionEffectCents;
   contribution_effect_supported_everywhere: ContributionEffectSupportedEverywhere;
-  incremental_cost_cents: IncrementalCostCents;
+  incremental_cost_cents: IncrementalCostCents1;
   pass_through: PassThrough;
   protected_exposure_cents: ProtectedExposureCents;
   recovered_cents: RecoveredCents;

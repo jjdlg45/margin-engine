@@ -350,6 +350,119 @@ paths:
               schema: { $ref: "#/components/schemas/BulkApproveResult" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /load/upload:
+    post:
+      summary: Upload a CSV/.xlsx invoice-line export (raw body)
+      description: >
+        Load-your-own-data flow (API/local mode only - the static demo has no
+        API). The file bytes are the request body; the original filename is a
+        query parameter. 200 MB cap; .csv and .xlsx only.
+      parameters:
+        - { name: filename, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_id, filename, n_bytes]
+                properties:
+                  upload_id: { type: string }
+                  filename: { type: string }
+                  n_bytes: { type: integer }
+        "413": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+  /load/profile/{upload_id}:
+    post:
+      summary: Profile the upload and list every confirmable mapping value
+      description: >
+        Runs the Phase 27 profiler; the response carries per-column guesses
+        (candidate canonical fields with confidence and reason) and
+        "confirmables": one entry per guessed mapping value, each with its
+        current guess, the kind of answer it takes (column / choice / text)
+        and the choices. txn_column repoints the transaction-code column to
+        another detected candidate and re-derives the code list.
+      parameters:
+        - { name: upload_id, in: path, required: true, schema: { type: string } }
+        - { name: txn_column, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoadProfile" }
+        "404": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+  /load/mapping/{upload_id}:
+    post:
+      summary: Save the mapping after every guess is human-confirmed
+      description: >
+        values maps each confirmable's value_path to its confirmed value.
+        Refused while any confirmable is missing (named in the message), for
+        any path that is not confirmable, and when the engine's own mapping
+        loader rejects the result - its actionable message is returned
+        verbatim. Suggestions never become silent decisions.
+      parameters:
+        - { name: upload_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [values]
+              properties:
+                values: { type: object, additionalProperties: { type: string } }
+                txn_column: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_id, ok]
+                properties:
+                  upload_id: { type: string }
+                  ok: { type: boolean }
+        "404": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+  /load/run/{upload_id}:
+    post:
+      summary: Run the pipeline on the confirmed upload (background)
+      description: >
+        Starts the full engine run in a background thread; when it finishes
+        the served bundle switches to the results and new actions merge into
+        the review queue. One run at a time; 409 while another is in
+        progress or when no confirmed mapping exists.
+      parameters:
+        - { name: upload_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_id, state]
+                properties:
+                  upload_id: { type: string }
+                  state: { type: string }
+        "404": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /load/status/{upload_id}:
+    get:
+      summary: Background run state (idle / running / done / failed)
+      parameters:
+        - { name: upload_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, message]
+                properties:
+                  state: { type: string, enum: [idle, running, done, failed] }
+                  message: { type: string }
+
 components:
   parameters:
     XUser:
@@ -359,6 +472,50 @@ components:
       description: Configured user name (local identity, NOT authentication).
       schema: { type: string }
   schemas:
+    LoadProfile:
+      type: object
+      required: [upload_id, filename, n_rows, columns, txn_candidates, confirmables]
+      properties:
+        upload_id: { type: string }
+        filename: { type: string }
+        n_rows: { type: integer }
+        n_blank_rows: { type: integer }
+        encoding: { type: string }
+        delimiter: { type: string }
+        decimal_separator: { type: string }
+        columns:
+          type: array
+          items:
+            type: object
+            required: [name, dtype_guess, null_rate, n_distinct, candidates]
+            properties:
+              name: { type: string }
+              dtype_guess: { type: string }
+              null_rate: { type: number }
+              n_distinct: { type: integer }
+              date_formats: { type: array, items: { type: string } }
+              candidates:
+                type: array
+                items:
+                  type: object
+                  required: [canonical, confidence, reason]
+                  properties:
+                    canonical: { type: string }
+                    confidence: { type: number }
+                    reason: { type: string }
+        txn_candidates: { type: array, items: { type: string } }
+        confirmables:
+          type: array
+          items:
+            type: object
+            required: [path, value_path, current, kind, choices, note]
+            properties:
+              path: { type: string }
+              value_path: { type: string }
+              current: { type: string }
+              kind: { type: string, enum: [column, choice, text] }
+              choices: { type: array, items: { type: string } }
+              note: { type: string }
     AppData:
       type: object
       required: [bundle_version, engine_version, data_label, honest_labels, labels, kpis]

@@ -55,7 +55,7 @@ async function fetchKeyedShards(path: string): Promise<Record<string, string>> {
   return out;
 }
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 type Predicate = (row: Row, filters: Record<string, unknown>) => boolean;
 
 /** Nullable guidance-row fields whose nulls the exported file omits. */
@@ -91,8 +91,10 @@ function range(value: number | null, lo: unknown, hi: unknown): boolean {
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 
-/** Named filters per table - the same vocabulary the OpenAPI spec declares. */
-const FILTERS: Record<TableName, Predicate> = {
+/** Named filters per table - the same vocabulary the OpenAPI spec declares.
+ * Exported for the demo sandbox, which re-filters after overlaying its
+ * browser-local workflow state. */
+export const FILTERS: Record<TableName, Predicate> = {
   guidance: (r, f) =>
     (!f.customer || r.customer_id === f.customer) &&
     (!f.item || r.item_id === f.item) &&
@@ -183,7 +185,7 @@ const staticActions: ActionsClient = {
   priceExport: READ_ONLY,
 };
 
-function applySort(rows: Row[], sort?: string): Row[] {
+export function applySort(rows: Row[], sort?: string): Row[] {
   if (!sort) return rows;
   const desc = sort.startsWith("-");
   const field = desc ? sort.slice(1) : sort;

@@ -8,10 +8,13 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EntityLabel } from "../components/EntityLabel";
-import { EmptyState, PageHeader, Section } from "../components/Page";
+import { Breadcrumbs, EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
-import { dataClient } from "../lib/api/client";
+import { dataClient, isSandbox } from "../lib/api/client";
 import { ApiError, type ActionDetail, type TransitionKind } from "../lib/api/types";
+import { SandboxBanner } from "../components/SandboxBanner";
+import { StepTracker } from "../components/StepTracker";
+import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
 import { useLabels } from "../lib/labels";
 import { queryClient, useActionDetail, useCurrentUser } from "../lib/queries";
@@ -235,6 +238,44 @@ function OutcomeCard({ detail }: { detail: ActionDetail }) {
   );
 }
 
+/** Pass-through actions have no customer-item pair, so their evidence is the
+ * scenario itself: the grid it came from, its scope, the chosen pass-through
+ * level and the incremental cost - all from the engine's exports. */
+function PassThroughEvidence({ action }: { action: ActionRow }) {
+  if (action.action_type !== "cost_pass_through") return null;
+  const sep = action.scope.indexOf(":");
+  const scopeType = sep > 0 ? action.scope.slice(0, sep) : null;
+  const scopeValue = sep > 0 ? action.scope.slice(sep + 1) : action.scope;
+  return (
+    <>
+      {scopeType && (
+        <li>
+          Scenario:{" "}
+          <Link
+            to={`/scenarios?scenario=${encodeURIComponent(`+10% landed cost: ${scopeType} ${scopeValue}`)}`}
+          >
+            open the pass-through grid
+          </Link>{" "}
+          (every point precomputed by the engine)
+        </li>
+      )}
+      <li className="mt-1">
+        Scope: {scopeType === "supplier" ? "supplier" : "category"} {scopeValue}
+      </li>
+      {action.pass_through_level !== null && action.pass_through_level !== undefined && (
+        <li className="mt-1">
+          Pass-through level: {pct(action.pass_through_level)} of the cost increase priced through
+        </li>
+      )}
+      {action.incremental_cost_cents !== null && action.incremental_cost_cents !== undefined && (
+        <li className="mt-1">
+          Incremental cost: {dollars(action.incremental_cost_cents)} over the baseline window
+        </li>
+      )}
+    </>
+  );
+}
+
 export function ActionDetailPage() {
   const { actionId } = useParams();
   const labels = useLabels();
@@ -244,28 +285,55 @@ export function ActionDetailPage() {
       <QuerySection query={detail} label="action detail" lines={10}>
         {(d) => (
           <>
+            <Breadcrumbs
+              trail={[{ label: "Action center", to: "/actions" }, { label: d.action.title }]}
+            />
             <PageHeader title={d.action.title} lede={d.action.rationale} />
-            <p className="m-0 mt-2">
-              <Link to="/actions" className="text-caption">
-                Back to the Action center
-              </Link>
-            </p>
+            <SandboxBanner />
             <Section title="Where it stands">
+              <div className="mb-4">
+                <StepTracker status={d.status} />
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <StatusChip status={d.status} />
                 <StatusChip status={d.action.action_type} />
-                <span className="text-caption secondary">
-                  Priority {labels(d.action.priority).label.toLowerCase()} · owner {d.action.owner}
-                  {d.action.due_date ? ` · due ${d.action.due_date}` : ""}
-                </span>
-                {d.action.expected_impact_cents !== null &&
-                  d.action.expected_impact_cents !== undefined && (
-                    <span className="text-caption">
-                      Expected impact {dollars(d.action.expected_impact_cents)} (
-                      {labels(d.action.impact_basis).label.toLowerCase()})
-                    </span>
-                  )}
               </div>
+              {/* Labeled fields, never a dot-separated meta string. */}
+              <dl className="m-0 mt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-caption secondary">Priority</dt>
+                  <dd className="m-0 font-medium">{labels(d.action.priority).label}</dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Owner</dt>
+                  <dd className="m-0 font-medium">{d.action.owner}</dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Due date</dt>
+                  <dd className="m-0 font-medium">
+                    {d.action.due_date ?? "None set"}
+                    {d.action.overdue && (
+                      <span className="font-medium text-garnet"> (overdue)</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-caption secondary">Expected impact</dt>
+                  <dd className="m-0 font-medium">
+                    {d.action.expected_impact_cents !== null &&
+                    d.action.expected_impact_cents !== undefined ? (
+                      <>
+                        {dollars(d.action.expected_impact_cents)}{" "}
+                        <span className="font-normal secondary">
+                          {labels(d.action.impact_basis).label.toLowerCase()}
+                        </span>
+                      </>
+                    ) : (
+                      "None stated"
+                    )}
+                  </dd>
+                </div>
+              </dl>
               {d.action.compliance_flags && (
                 <p className="mb-0 mt-3 max-w-2xl text-caption text-amber" data-testid="compliance-note">
                   {labels("rp_review_flag").label}: {labels("rp_review_flag").description}
@@ -282,7 +350,7 @@ export function ActionDetailPage() {
               </div>
             </Section>
             <Section title="Evidence" lede="Every number traces to engine output.">
-              <ul className="m-0 list-none p-0 text-sm">
+              <ul className="m-0 list-none p-0 text-sm" data-testid="evidence-list">
                 {d.action.customer_id && d.action.item_id && (
                   <li>
                     Guidance band for{" "}
@@ -308,15 +376,64 @@ export function ActionDetailPage() {
                   </li>
                 )}
                 {d.action.current_price_cents !== null && (
-                  <li className="mt-1 secondary">
-                    Current price {dollars(d.action.current_price_cents)}
-                    {d.action.proposed_price_cents !== null &&
-                      ` · proposed ${dollars(d.action.proposed_price_cents)}`}
-                    {d.action.floor_price_cents !== null &&
-                      ` · binding floor ${dollars(d.action.floor_price_cents)}`}
-                    {d.action.uom ? ` · per ${d.action.uom}` : ""}
+                  <li className="mt-3">
+                    <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-4">
+                      <div>
+                        <dt className="text-caption secondary">Current price</dt>
+                        <dd className="m-0 font-medium">
+                          {dollars(d.action.current_price_cents)}
+                        </dd>
+                      </div>
+                      {d.action.proposed_price_cents !== null && (
+                        <div>
+                          <dt className="text-caption secondary">Proposed price</dt>
+                          <dd className="m-0 font-medium">
+                            {dollars(d.action.proposed_price_cents)}
+                          </dd>
+                        </div>
+                      )}
+                      {d.action.floor_price_cents !== null && (
+                        <div>
+                          <dt className="text-caption secondary">Binding floor</dt>
+                          <dd className="m-0 font-medium">{dollars(d.action.floor_price_cents)}</dd>
+                        </div>
+                      )}
+                      {d.action.uom && (
+                        <div>
+                          <dt className="text-caption secondary">Unit</dt>
+                          <dd className="m-0 font-medium">{d.action.uom}</dd>
+                        </div>
+                      )}
+                    </dl>
                   </li>
                 )}
+                <PassThroughEvidence action={d.action} />
+                {d.action.action_type === "service_policy" && d.action.customer_id && (
+                  <li className="mt-1">
+                    Order and activity economics for{" "}
+                    <EntityLabel name={d.action.customer_name} id={d.action.customer_id} />:{" "}
+                    <Link to={`/customers?customer=${encodeURIComponent(d.action.customer_id)}`}>
+                      open the customer drill-down
+                    </Link>{" "}
+                    (contribution after activity costs, order sizes, service flags)
+                  </li>
+                )}
+                {d.action.action_type === "rebate_discount_review" && d.action.customer_id && (
+                  <li className="mt-1">
+                    Leakage for{" "}
+                    <EntityLabel name={d.action.customer_name} id={d.action.customer_id} /> against
+                    its segment:{" "}
+                    <Link to={`/opportunity?customer=${encodeURIComponent(d.action.customer_id)}`}>
+                      open the opportunity view
+                    </Link>{" "}
+                    (observed leakage by component, reconciled dollars)
+                  </li>
+                )}
+                {/* Every action type shows evidence - never an empty heading. */}
+                <li className="mt-1 secondary">
+                  Generation rules and guardrails for every action type:{" "}
+                  <Link to="/methodology">Data & methodology</Link>
+                </li>
               </ul>
             </Section>
             <Section
@@ -324,7 +441,9 @@ export function ActionDetailPage() {
               lede={
                 dataClient.actions.readOnly
                   ? "Simulated review history - demo data."
-                  : "The append-only event log; status is always derived from it."
+                  : isSandbox
+                    ? "Simulated demo history plus your sandbox changes - stored only on this device; status is always derived from the log."
+                    : "The append-only event log; status is always derived from it."
               }
             >
               <ol className="m-0 list-none p-0 text-sm" data-testid="event-history">

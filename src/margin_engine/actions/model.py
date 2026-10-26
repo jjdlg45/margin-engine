@@ -25,6 +25,11 @@ STATUSES = (
     "measured",
 )
 
+# Statuses where a due date still binds someone to act: an action here with a
+# due date before the data's as-of date is overdue. Rejected and implemented/
+# measured actions carry no open obligation.
+ACTIONABLE_STATUSES = ("proposed", "under_review", "approved", "exported")
+
 ALLOWED_TRANSITIONS: dict[str | None, tuple[str, ...]] = {
     None: ("proposed",),  # birth
     "proposed": ("under_review",),

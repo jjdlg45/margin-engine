@@ -80,6 +80,12 @@ class Settings:
     rules_path: Path = field(
         default_factory=lambda: _env_path("MARGIN_API_RULES", REPO / "config" / "rules.yaml")
     )
+    # Load-your-own-data workspace (polish round): uploads, drafted mappings
+    # and per-upload engine runs live here. API/local mode only - the static
+    # demo has no API, so this never exists in the public demo.
+    uploads_dir: Path = field(
+        default_factory=lambda: _env_path("MARGIN_API_UPLOADS_DIR", REPO / ".api_state" / "uploads")
+    )
     users_spec: str = field(
         default_factory=lambda: os.environ.get(
             "MARGIN_API_USERS",
