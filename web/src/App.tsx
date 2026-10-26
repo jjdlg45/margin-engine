@@ -7,6 +7,7 @@ import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { lazy, Suspense, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Boundary } from "./components/Async";
+import { dataSource } from "./lib/api/client";
 import { queryClient, useAppData } from "./lib/queries";
 import { useCompact } from "./lib/useCompact";
 import { Overview } from "./pages/Overview";
@@ -27,6 +28,9 @@ const ActionDetailPage = lazy(() =>
   import("./pages/ActionDetailPage").then((m) => ({ default: m.ActionDetailPage })),
 );
 const GuidePage = lazy(() => import("./pages/GuidePage").then((m) => ({ default: m.GuidePage })));
+const LoadDataPage = lazy(() =>
+  import("./pages/LoadDataPage").then((m) => ({ default: m.LoadDataPage })),
+);
 
 const PAGES = [
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
@@ -40,6 +44,11 @@ const PAGES = [
   { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
   { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
   { path: "/guide", label: "Use it with your own data", el: <GuidePage /> },
+  // API/local mode only: the static demo has no server to upload to, so the
+  // public site never lists or routes this page.
+  ...(dataSource === "http"
+    ? [{ path: "/load", label: "Load your data", el: <LoadDataPage /> }]
+    : []),
 ];
 
 /** Navigation grouped by the question a page answers. Paths reference PAGES
@@ -70,6 +79,7 @@ const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: b
       { path: "/methodology", label: "Data & methodology" },
       { path: "/modules", label: "Optional modules" },
       { path: "/guide", label: "Use it with your own data" },
+      ...(dataSource === "http" ? [{ path: "/load", label: "Load your data" }] : []),
     ],
   },
 ];
