@@ -47,6 +47,8 @@ def _action(aid: str, atype: str = "price_change", **over: Any) -> dict[str, Any
         "current_price_cents": 1_000,
         "proposed_price_cents": 1_250,
         "floor_price_cents": 900,
+        "pass_through_level": None,
+        "incremental_cost_cents": None,
         "priority": "medium",
         "owner": "unassigned",
         "due_date": dt.date(2026, 2, 25),

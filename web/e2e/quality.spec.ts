@@ -23,6 +23,7 @@ const ROUTES = [
   "/scenarios",
   "/modules",
   "/methodology",
+  "/guide",
 ];
 
 const slug = (r: string) => (r === "/" ? "overview" : r.slice(1));

@@ -49,6 +49,8 @@ def _action_frame(**over: Any) -> pl.DataFrame:
         "current_price_cents": 1_000,
         "proposed_price_cents": 1_200,
         "floor_price_cents": 800,
+        "pass_through_level": None,
+        "incremental_cost_cents": None,
         "priority": "medium",
         "owner": "unassigned",
         "due_date": IMPL,

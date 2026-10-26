@@ -6,8 +6,15 @@ import { Link } from "react-router-dom";
 import { PageHeader, Section } from "../components/Page";
 
 function Code({ children }: { children: string }) {
+  // Scrollable on narrow screens, so it must be keyboard-reachable (axe:
+  // scrollable-region-focusable) - the same pattern as the shared ScrollX.
   return (
-    <pre className="overflow-x-auto rounded-[8px] bg-inset/60 px-4 py-3 font-mono text-sm leading-relaxed">
+    <pre
+      tabIndex={0}
+      role="region"
+      aria-label="Command example"
+      className="overflow-x-auto rounded-[8px] bg-inset/60 px-4 py-3 font-mono text-sm leading-relaxed"
+    >
       <code>{children}</code>
     </pre>
   );
