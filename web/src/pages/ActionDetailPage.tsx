@@ -13,6 +13,7 @@ import { StatusChip } from "../components/StatusChip";
 import { dataClient, isSandbox } from "../lib/api/client";
 import { ApiError, type ActionDetail, type TransitionKind } from "../lib/api/types";
 import { SandboxBanner } from "../components/SandboxBanner";
+import { StepTracker } from "../components/StepTracker";
 import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
 import { useLabels } from "../lib/labels";
@@ -290,6 +291,9 @@ export function ActionDetailPage() {
             <PageHeader title={d.action.title} lede={d.action.rationale} />
             <SandboxBanner />
             <Section title="Where it stands">
+              <div className="mb-4">
+                <StepTracker status={d.status} />
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <StatusChip status={d.status} />
                 <StatusChip status={d.action.action_type} />

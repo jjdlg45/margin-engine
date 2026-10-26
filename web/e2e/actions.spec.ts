@@ -231,3 +231,27 @@ test("demo owners are named people with roles", async ({ page }) => {
     page.locator("tbody, [data-testid=queue-cards]").getByText(/\([a-z][\w -]+\)/).first(),
   ).toBeVisible();
 });
+
+test("process view: step tracker and the process explainer", async ({ page }) => {
+  // The explainer names the steps outside the tool.
+  await page.goto("/#/actions");
+  await expect(page.getByRole("heading", { name: "How this fits your pricing process" })).toBeVisible();
+  await expect(page.getByTestId("process-explainer")).toContainText("ERP");
+  await expect(page.getByTestId("process-explainer")).toContainText("sales reps");
+  // The tracker marks the current step for each lifecycle stage present.
+  const byStatus = new Map<string, string>();
+  for (const a of bundle.actions_table) {
+    if (!byStatus.has(a.status)) byStatus.set(a.status, a.action_id);
+  }
+  for (const [status, id] of byStatus) {
+    await page.goto(`/#/actions/${id}`);
+    const tracker = page.getByTestId("step-tracker");
+    await expect(tracker).toBeVisible();
+    await expect(tracker.getByText("Loaded into ERP")).toBeVisible();
+    if (status === "rejected") {
+      await expect(tracker.getByText(/Rejected at review/)).toBeVisible();
+    } else {
+      await expect(tracker.locator('[aria-current="step"]')).toHaveCount(1);
+    }
+  }
+});

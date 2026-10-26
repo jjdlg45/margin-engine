@@ -724,6 +724,30 @@ export function ActionCenterPage() {
                 <Results page={p} />
               </Tabs.Content>
             </Tabs.Root>
+            <Section
+              title="How this fits your pricing process"
+              lede="Each action walks one path: proposed, under review, approved, exported, loaded into the ERP, implemented, then measured. Two steps happen outside this tool."
+            >
+              <div className="max-w-2xl text-sm" data-testid="process-explainer">
+                <p className="mt-0">
+                  Proposal and review happen here, with the engine's evidence attached. Approving a
+                  price action makes it eligible for the price export: a file in your ERP's import
+                  format, carrying the effective date, both prices, the approval and the action id.
+                </p>
+                <p>
+                  Loading that file is your ERP team's step, not this tool's. Before the effective
+                  date, tell the people the change touches: sales reps who own the accounts, and
+                  customers where your notice policy or contract requires it. Nothing here sends a
+                  price to a customer.
+                </p>
+                <p className="mb-0">
+                  Once the new prices are live in the ERP, mark the action implemented. After the
+                  measurement window the engine compares what actually happened - price realization
+                  and volume against untreated comparison pairs - and the result lands in the
+                  Results view, feeding the calibration table.
+                </p>
+              </div>
+            </Section>
           </>
         )}
       </QuerySection>
