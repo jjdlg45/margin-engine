@@ -16,9 +16,9 @@ LABELS: dict[str, dict[str, str]] = {
     # --- evidence statuses (sensitivity, cross-price) ------------------------
     "causal_elasticity_supported": {
         "label": "Causal, supported",
-        "description": "Every causal criterion passed: strong first stage, overidentification "
-        "not rejected, robust across specifications, tight interval, documented "
-        "exclusion rationale.",
+        "description": "The prespecified diagnostics and documented assumptions passed for "
+        "this estimand and scope; it does not prove the instruments are valid or that "
+        "the result transfers to other customers, markets or times.",
     },
     "iv_estimated_elasticity": {
         "label": "Instrumented estimate",
@@ -282,6 +282,11 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "This customer's tiered arrangement has no usable tier table, so a "
         "flat rate stands in - labeled, never silent.",
     },
+    "competitor_path_uncontrolled": {
+        "label": "Competitor path uncontrolled",
+        "description": "This segment's elasticity answers a market-wide question, so it is "
+        "not applied to a unilateral price move: the figure assumes unchanged volume.",
+    },
     "cost_unavailable": {
         "label": "Cost unavailable",
         "description": "No unit cost is known for this pair: cost-dependent figures are not "
@@ -426,6 +431,136 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "real-data validation",
         "description": "The no-planted-truth checks (temporal backtest, placebo tests, "
         "rolling stability) run as a pipeline stage.",
+    },
+    # --- estimands and the competitor-price path (Run 6, Phase 70) --------------
+    "unilateral_own_price_response": {
+        "label": "Unilateral own-price response",
+        "description": "The volume response to moving THIS price while observed "
+        "competitor-price conditions are held constant - the quantity a pricing "
+        "decision actually needs.",
+    },
+    "market_wide_cost_shock_response": {
+        "label": "Market-wide cost-shock response",
+        "description": "The volume response to an industry-wide cost movement, which also "
+        "moved competitor prices. It understates how customers react to a unilateral "
+        "increase, because they had nowhere cheaper to go.",
+    },
+    "descriptive_association": {
+        "label": "Descriptive association",
+        "description": "A measured relationship between price and quantity with no "
+        "instrument behind it, so no causal reading is claimed.",
+    },
+    "understates_sensitivity": {
+        "label": "Understates price sensitivity",
+        "description": "The known direction of the remaining bias: the true unilateral "
+        "response is at least as strong as the figure shown.",
+    },
+    "market_control_adequate": {
+        "label": "Market index adequate",
+        "description": "The public market price index is current, covers the estimation "
+        "window, varies within each period and explains price movement, so it can hold "
+        "competitor-price conditions constant.",
+    },
+    "market_control_absent": {
+        "label": "No market index",
+        "description": "No market price index is mapped, so competitor-price conditions are "
+        "not held constant.",
+    },
+    "market_control_not_public": {
+        "label": "Market index not public",
+        "description": "A market price index is mapped but not declared a public source, so "
+        "it is refused as a control.",
+    },
+    "market_control_stale": {
+        "label": "Market index stale",
+        "description": "The index stops before the estimation window ends, so it cannot "
+        "describe current competitor-price conditions.",
+    },
+    "market_control_incomplete": {
+        "label": "Market index incomplete",
+        "description": "The index covers too few of the segment's estimation rows to hold "
+        "conditions constant across it.",
+    },
+    "market_control_absorbed_by_time_effects": {
+        "label": "Market index absorbed",
+        "description": "The index takes one value per period, so the time fixed effects "
+        "remove it exactly; it needs category or regional detail to control anything.",
+    },
+    "market_control_uninformative": {
+        "label": "Market index uninformative",
+        "description": "The index explains too little price movement to count as evidence of "
+        "a competitor-price condition.",
+    },
+    "market_control_restates_instrument": {
+        "label": "Market index restates an instrument",
+        "description": "The index almost exactly repeats an instrument, so controlling for it "
+        "would remove the identifying variation rather than a separate confound.",
+    },
+    "controlled_by_market_index": {
+        "label": "Competitor path controlled",
+        "description": "Every instrument that needs it has its competitor-price path held "
+        "constant by the public market index.",
+    },
+    "no_competitor_price_path": {
+        "label": "No competitor-price path",
+        "description": "Every instrument's competitor-price path is documented as absent, "
+        "with a written argument in configuration.",
+    },
+    "not_controlled": {
+        "label": "Competitor path not controlled",
+        "description": "At least one instrument's competitor-price path is neither controlled "
+        "nor documented as absent, so the estimate answers a market-wide question.",
+    },
+    "control_coarser_than_instrument": {
+        "label": "Market index too coarse",
+        "description": "The index is coarser than an instrument's own variation, so it cannot "
+        "absorb that instrument's competitor-price movement.",
+    },
+    # --- causal gates (Run 6, Phase 70) ----------------------------------------
+    "exclusion_rationale_documented": {
+        "label": "Exclusion argument documented",
+        "description": "Every instrument carries a written economic argument for why it "
+        "affects quantity only through price.",
+    },
+    "competitor_price_path_addressed": {
+        "label": "Competitor-price path addressed",
+        "description": "Competitor-price conditions are held constant, or every instrument's "
+        "competitor-price path is documented as absent.",
+    },
+    "first_stage_strength": {
+        "label": "First stage strong enough",
+        "description": "The instruments move price hard enough for the estimate to mean "
+        "something; the figure before controlling is shown beside it.",
+    },
+    "overidentification_not_rejected": {
+        "label": "Overidentification not rejected",
+        "description": "The two instruments agree. This test cannot detect a violation they "
+        "both share.",
+    },
+    "robust_across_specifications": {
+        "label": "Robust across specifications",
+        "description": "Using each instrument alone, and the alternatives, lands close enough "
+        "to the headline estimate.",
+    },
+    "carried_forward_price_robustness": {
+        "label": "Robust to carried-forward prices",
+        "description": "Including zero-quantity months at carried-forward prices does not "
+        "move the estimate materially.",
+    },
+    "interval_precise_enough": {
+        "label": "Interval precise enough",
+        "description": "The 95% interval is narrow enough to act on.",
+    },
+    "weak_instrument_robust_agreement": {
+        "label": "Weak-instrument-robust agreement",
+        "description": "The weak-instrument-robust set is bounded and agrees with the primary "
+        "interval.",
+    },
+    "pass": {"label": "Passed", "description": "This criterion was met."},
+    "fail": {"label": "Not met", "description": "This criterion was not met."},
+    "not_evaluated": {
+        "label": "Not evaluated",
+        "description": "The data could not support this check, so it is not counted as passed.",
     },
     # --- economic event taxonomy (Run 6, Phase 61) ------------------------------
     "customer_price_concession": {

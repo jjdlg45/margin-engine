@@ -48,12 +48,16 @@ from margin_engine.opportunity.deductions import (
     TieredDeductionContext,
 )
 from margin_engine.sensitivity.estimate import STATUS_CAUSAL, STATUS_IV
+from margin_engine.sensitivity.market_control import PATH_CONTROLLED, PATH_NO_PATH
 
 TREATMENT_EXPECTED = "expected_change"
 TREATMENT_RANGE = "sensitivity_range_only"
 TREATMENT_FIXED = "fixed_volume_only"
 TREATMENT_OUTSIDE_SUPPORT = "outside_price_support"
 TREATMENT_COST_UNAVAILABLE = "cost_unavailable"
+# The segment's elasticity answers a market-wide question, so no volume
+# response is applied to a unilateral move (Run 6, Phase 70).
+TREATMENT_PATH_UNCONTROLLED = "competitor_path_uncontrolled"
 
 
 @dataclass
@@ -156,6 +160,16 @@ def price_opportunities(
         pl.col("iv_ci_high").cast(pl.Float64).alias("elasticity_ci_high"),
         pl.col("status").alias("evidence_status"),
     ]
+    # Competitor-price path (Run 6, Phase 70): a market-wide estimand's
+    # interval is not a confidence interval for the UNILATERAL move being
+    # priced, and its bias direction is known and adverse (|beta| understated
+    # -> volume loss understated -> expected gain overstated). So a segment
+    # whose competitor-price path is uncontrolled gets no two-sided range.
+    has_path = "competitor_path_resolution" in sensitivity.columns
+    if has_path:
+        sens_cols.append(pl.col("competitor_path_resolution"))
+    if "estimand" in sensitivity.columns:
+        sens_cols.append(pl.col("estimand").alias("elasticity_estimand"))
     # Identifying price support (24.6): the 5th-95th percentile range of
     # instrument-predicted within log-price movement per segment. Proposed
     # moves outside it are extrapolation and get no volume response.
@@ -169,6 +183,10 @@ def price_opportunities(
             pl.lit(None, dtype=pl.Float64).alias("support_log_lo"),
             pl.lit(None, dtype=pl.Float64).alias("support_log_hi"),
         )
+    if not has_path:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("competitor_path_resolution"))
+    if "elasticity_estimand" not in g.columns:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("elasticity_estimand"))
 
     # Proposed INVOICE price: target index x the index DENOMINATOR. With a
     # valid effective list that is the list price; without one (real exports
@@ -279,6 +297,12 @@ def price_opportunities(
 
     causal = pl.col("evidence_status") == STATUS_CAUSAL
     ivonly = pl.col("evidence_status") == STATUS_IV
+    # A range is only shown when the interval belongs to the estimand being
+    # priced: a resolved competitor-price path, or no path information at all
+    # (older sensitivity frames, where the engine says nothing either way).
+    path_ok = pl.col("competitor_path_resolution").is_null() | pl.col(
+        "competitor_path_resolution"
+    ).is_in([PATH_CONTROLLED, PATH_NO_PATH])
     # Extrapolation guard (24.6): the proposed log-price move must lie inside
     # the segment's identifying support; outside it no volume response is
     # produced at any status.
@@ -295,11 +319,11 @@ def price_opportunities(
         .then(delta)
         .otherwise(None)
         .alias("expected_pocket_gross_profit_change_cents"),
-        pl.when((causal | ivonly) & has_cost & in_support)
+        pl.when((causal | ivonly) & has_cost & in_support & path_ok)
         .then(pl.min_horizontal(delta_lo, delta_hi))
         .otherwise(None)
         .alias("gp_change_low_cents"),
-        pl.when((causal | ivonly) & has_cost & in_support)
+        pl.when((causal | ivonly) & has_cost & in_support & path_ok)
         .then(pl.max_horizontal(delta_lo, delta_hi))
         .otherwise(None)
         .alias("gp_change_high_cents"),
@@ -307,16 +331,18 @@ def price_opportunities(
         .then(delta_contrib)
         .otherwise(None)
         .alias("expected_contribution_change_cents"),
-        pl.when((causal | ivonly) & has_cost & has_k & in_support)
+        pl.when((causal | ivonly) & has_cost & has_k & in_support & path_ok)
         .then(pl.min_horizontal(delta_contrib_lo, delta_contrib_hi))
         .otherwise(None)
         .alias("contribution_change_low_cents"),
-        pl.when((causal | ivonly) & has_cost & has_k & in_support)
+        pl.when((causal | ivonly) & has_cost & has_k & in_support & path_ok)
         .then(pl.max_horizontal(delta_contrib_lo, delta_contrib_hi))
         .otherwise(None)
         .alias("contribution_change_high_cents"),
         pl.when(has_cost.not_())
         .then(pl.lit(TREATMENT_COST_UNAVAILABLE))
+        .when((causal | ivonly) & ~path_ok)
+        .then(pl.lit(TREATMENT_PATH_UNCONTROLLED))
         .when((causal | ivonly) & ~in_support)
         .then(pl.lit(TREATMENT_OUTSIDE_SUPPORT))
         .when(causal)
@@ -377,6 +403,8 @@ def price_opportunities(
         "contribution_change_high_cents",
         "k_per_unit_cents",
         "k_status",
+        "competitor_path_resolution",
+        "elasticity_estimand",
         "cost_unavailable",
         "volume_treatment",
         "deduction_treatment",

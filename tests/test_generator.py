@@ -281,16 +281,31 @@ def test_preset_nonconstant_elasticity(tmp_path: Path) -> None:
 
 
 def test_preset_competitor_comovement(tmp_path: Path) -> None:
-    """24.9/24.10: the market index file exists ONLY on this preset and its
-    log co-moves with the planted cost/tariff shocks."""
+    """24.9/24.10 and Run 6 Phase 70: a PUBLISHED market index now exists on
+    every world (the causal gate needs competitor-price conditions held
+    constant, and a world without a published series could never demonstrate
+    that path). On THIS preset the published series is deliberately national
+    and monthly - one value per period, which the estimator's time fixed
+    effects absorb exactly - so the world where competitor prices move with
+    the instruments is also the world whose published series cannot control
+    them. Its log still co-moves with the planted cost/tariff shocks."""
     import numpy as np
 
     out, _ = _gen(tmp_path / "c", Preset.COMPETITOR_COMOVEMENT)
     mkt_path = out / "erp" / "market_price_index.csv"
     assert mkt_path.exists()
     out_base, _ = _gen(tmp_path / "b", Preset.WELL_IDENTIFIED)
-    assert not (out_base / "erp" / "market_price_index.csv").exists()
+    base_path = out_base / "erp" / "market_price_index.csv"
+    assert base_path.exists(), "every world publishes an index since Phase 70"
+    base_mkt = pl.read_csv(base_path)
+    # The well-identified world's index varies ACROSS categories within a
+    # month, so time fixed effects cannot absorb it.
+    per_period = base_mkt.group_by("PERIOD").agg(pl.col("MKT_IDX").n_unique().alias("n"))
+    assert int(per_period["n"].min()) > 1
+    # This preset's index is national: one value per period.
     mkt = pl.read_csv(mkt_path)
+    national = mkt.group_by("PERIOD").agg(pl.col("MKT_IDX").n_unique().alias("n"))
+    assert int(national["n"].max()) == 1
     panel = pl.read_parquet(out / "ground_truth" / "panel_truth.parquet")
     # Join by month index: PERIOD is YYYY-MM from the world start.
     shocks = (

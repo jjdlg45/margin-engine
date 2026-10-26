@@ -28,11 +28,36 @@ import pandas as pd
 import polars as pl
 
 from margin_engine.config import Rules
+from margin_engine.sensitivity.market_control import (
+    CONTROL_ABSENT,
+    ESTIMAND_DESCRIPTIVE,
+    PATH_NOT_CONTROLLED,
+    SOURCE_ABSENT,
+    assess_market_control,
+    estimand_for,
+    resolve_competitor_path,
+)
 
 STATUS_INSUFFICIENT = "insufficient_data"
 STATUS_DESCRIPTIVE = "descriptive_elasticity"
 STATUS_IV = "iv_estimated_elasticity"
 STATUS_CAUSAL = "causal_elasticity_supported"
+
+GATE_PASS = "pass"
+GATE_FAIL = "fail"
+GATE_NOT_EVALUATED = "not_evaluated"
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """One causal criterion's outcome (Run 6, Phase 70). The spec's
+    `causal_status_reasons`: machine-readable, ordered, each with a
+    plain-English detail so the UI never has to parse prose."""
+
+    order: int
+    gate: str
+    result: str
+    detail: str
 
 
 @dataclass
@@ -55,11 +80,17 @@ class SegmentEstimate:
     iv_ci_high: float | None = None
     first_stage_f: float | None = None
     overid_j: float | None = None
+    # Instruments still identifying after the market control (Phase 70).
+    n_identified_instruments: int | None = None
     overid_p: float | None = None
     ar_ci_low: float | None = None
     ar_ci_high: float | None = None
     ar_bounded: bool | None = None
     robustness_spread: float | None = None
+    # How many IDENTIFIED specifications the spread covers, and which
+    # alternatives were excluded as unidentified (Run 6, Phase 70).
+    robustness_n_specifications: int | None = None
+    robustness_excluded_weak: str = ""
     identifying_coverage: float | None = None
     # Identifying price support (24.6): 5th-95th percentile of the
     # instrument-predicted within log-price movement. Proposed moves outside
@@ -67,13 +98,51 @@ class SegmentEstimate:
     support_log_lo: float | None = None
     support_log_hi: float | None = None
     market_control_used: bool = False
+    # Competitor-price path (Run 6, Phase 70). The estimand is named, the
+    # control's adequacy statistics are reported, and the first stage is
+    # reported both before and after the control so the cost of controlling is
+    # visible rather than implied.
+    estimand: str = ESTIMAND_DESCRIPTIVE
+    estimand_bias_direction: str | None = None
+    market_control_status: str = CONTROL_ABSENT
+    market_control_coverage: float | None = None
+    market_control_lag_periods: int | None = None
+    market_control_within_cell_values: float | None = None
+    market_control_price_r2: float | None = None
+    market_control_instrument_r2: float | None = None
+    market_control_detail: str = ""
+    competitor_path_resolution: str = PATH_NOT_CONTROLLED
+    competitor_path_detail: str = ""
+    first_stage_f_uncontrolled: float | None = None
     status: str = STATUS_INSUFFICIENT
     status_reasons: list[str] = field(default_factory=list)
+    # Machine-readable per-gate record (the spec's `causal_status_reasons`):
+    # every causal criterion with pass / fail / not evaluated and a
+    # plain-English detail, in a stable order for the UI and the exports.
+    causal_status_reasons: list[GateResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Flat row for the CSV/Parquet exports: the gate list rides its own
+        long-form export (a List/Struct column breaks the CSV sink), with the
+        failed codes kept here as a pipe-joined string."""
         d = self.__dict__.copy()
         d["status_reasons"] = "; ".join(self.status_reasons)
+        gates = d.pop("causal_status_reasons", [])
+        d["causal_gate_fail_codes"] = "|".join(g.gate for g in gates if g.result == GATE_FAIL)
         return d
+
+    def gate_rows(self) -> list[dict[str, Any]]:
+        """Long-form rows for the `sensitivity_gates` export."""
+        return [
+            {
+                "segment": self.segment,
+                "gate_order": g.order,
+                "gate": g.gate,
+                "result": g.result,
+                "detail": g.detail,
+            }
+            for g in self.causal_status_reasons
+        ]
 
 
 def _to_pandas(df: pl.DataFrame) -> pd.DataFrame:
@@ -93,6 +162,16 @@ def _two_way_demean(
         if np.max(np.abs(out.to_numpy() - before)) < tol:
             break
     return out
+
+
+def _resid(v: np.ndarray, m: np.ndarray) -> np.ndarray:
+    """Residualize v on a single column m (Frisch-Waugh). A degenerate control
+    (no variation) returns v unchanged - the adequacy assessment has already
+    refused it as absorbed, so this is never a silent pass."""
+    denom = float(m @ m)
+    if denom <= 1e-12:
+        return v
+    return v - m * (float(m @ v) / denom)
 
 
 def _cluster_codes(clusters: np.ndarray) -> tuple[np.ndarray, int]:
@@ -149,17 +228,27 @@ def _cluster_ols(y: np.ndarray, x: np.ndarray, spec: ClusterSpec) -> tuple[np.nd
         parts.append(sign * dof * xtx_inv @ meat @ xtx_inv)
     vcov = np.sum(np.stack(parts), axis=0)
     if k == 1 and float(vcov[0, 0]) <= 0 and len(parts) > 1:
-        vcov = np.array([[max(float(p[0, 0]) for p in parts if float(p[0, 0]) > 0)]])
+        # Standard CGM practice for the scalar case: fall back to the largest
+        # positive one-way component. When NO component is positive the
+        # clustered variance is not estimable, so it is reported as infinite -
+        # which fails the strength and precision gates instead of passing them
+        # on a variance of zero.
+        positives = [float(p[0, 0]) for p in parts if float(p[0, 0]) > 0]
+        vcov = np.array([[max(positives)]]) if positives else np.array([[np.inf]])
     return beta, vcov
 
 
 def _first_stage_f(p: np.ndarray, z: np.ndarray, spec: ClusterSpec) -> float:
     beta, vcov = _cluster_ols(p, z, spec)
+    if not np.all(np.isfinite(vcov)):
+        # An inestimable clustered variance is no evidence of strength, so it
+        # must read as a WEAK first stage rather than passing the gate.
+        return 0.0
     try:
         f = float(beta @ np.linalg.pinv(vcov) @ beta / z.shape[1])
     except np.linalg.LinAlgError:
         f = 0.0
-    return f
+    return 0.0 if not np.isfinite(f) else f
 
 
 def _ar_confidence_set(
@@ -226,7 +315,19 @@ def _overid_j(y: np.ndarray, p: np.ndarray, z: np.ndarray, beta_iv: float) -> tu
     return j, pval
 
 
-def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> SegmentEstimate:
+def estimate_segment(
+    panel_seg: pl.DataFrame,
+    rules: Rules,
+    segment: int,
+    *,
+    market_control_source: str = SOURCE_ABSENT,
+    market_control_grain: str | None = None,
+) -> SegmentEstimate:
+    """`market_control_source` is the public-source decision from
+    `select_market_index` (Run 6, Phase 70) and `market_control_grain` the
+    index's join grain (e.g. "item_category:month"). Passing the default means
+    no control is in evidence, which caps the status - never a silent pass.
+    """
     sc = rules.sensitivity
     est = SegmentEstimate(segment=segment)
 
@@ -268,9 +369,22 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     # items are broadly co-carried and co-move within a month, and absorbing
     # that common component keeps cluster-robust standard errors honest.
     time_fe = "role_month" if "role_month" in pos.columns else "month_idx"
-    # Optional market/competitor price index control (24.10).
+    # Market/competitor price index control (24.10, gated in Run 6 Phase 70).
+    # Coverage is measured here, on this segment's own estimation rows; a
+    # partially covered index is INCOMPLETE rather than silently switched off
+    # (the pre-Phase-70 code dropped the control on any null with no reason
+    # recorded and still reported it as used).
+    mkt_coverage: float | None = None
+    mkt_lag: int | None = None
+    if "log_mkt" in pos.columns and pos.height:
+        mkt_coverage = float(1.0 - (pos["log_mkt"].null_count() / pos.height))
+        covered = pos.filter(pl.col("log_mkt").is_not_null())
+        if covered.height:
+            _last_all = pos["month_idx"].max()
+            _last_cov = covered["month_idx"].max()
+            if _last_all is not None and _last_cov is not None:
+                mkt_lag = int(_last_all) - int(_last_cov)  # type: ignore[arg-type]
     has_mkt = "log_mkt" in pos.columns and pos["log_mkt"].null_count() == 0
-    est.market_control_used = bool(has_mkt)
     # Instruments can be absent entirely (no supplier/tariff reference data):
     # select them only when the panel carries them; `have_z` below caps the
     # status at descriptive in that case.
@@ -294,26 +408,18 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
 
     spec = _make_cluster_spec(*(pdf[c].to_numpy() for c in cluster_cols))
 
-    def _partial_out(dm_frame: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-        """Residualize cols on the demeaned market control (FWL)."""
-        if not has_mkt:
-            return dm_frame
-        m = dm_frame["log_mkt"].to_numpy()
-        denom = float(m @ m)
-        if denom < 1e-12:
-            return dm_frame
-        out = dm_frame.copy()
-        for c in cols:
-            v = out[c].to_numpy()
-            out[c] = v - m * (float(m @ v) / denom)
-        return out
-
     # --- naive FE-OLS ------------------------------------------------------
+    # The naive estimate documents endogeneity bias, so it is reported on the
+    # SAME design as the headline: controlled when the control is usable.
     dm_cols = ["log_qty", "log_price"] + (["log_mkt"] if has_mkt else [])
     dm = _two_way_demean(pdf, dm_cols, "pair", time_fe)
-    dm = _partial_out(dm, ["log_qty", "log_price"])
     y = dm["log_qty"].to_numpy()
-    p = dm[["log_price"]].to_numpy()
+    p_raw = dm["log_price"].to_numpy()
+    if has_mkt:
+        m_naive = dm["log_mkt"].to_numpy()
+        y = _resid(y, m_naive)
+        p_raw = _resid(p_raw, m_naive)
+    p = p_raw.reshape(-1, 1)
     beta, vcov = _cluster_ols(y, p, spec)
     est.naive_fe_ols = float(beta[0])
     est.naive_se = float(np.sqrt(vcov[0, 0]))
@@ -339,15 +445,51 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     if not have_z:
         est.status = STATUS_DESCRIPTIVE
         est.status_reasons.append("instruments unavailable in the data")
+        est.estimand, est.estimand_bias_direction = estimand_for(iv_ran=False, path_resolved=False)
         return est
 
     dmz = _two_way_demean(
         pdf, ["log_qty", "log_price", *z_cols] + (["log_mkt"] if has_mkt else []), "pair", time_fe
     )
-    dmz = _partial_out(dmz, ["log_qty", "log_price", *z_cols])
-    yz = dmz["log_qty"].to_numpy()
-    pz = dmz["log_price"].to_numpy()
-    z = dmz[z_cols].to_numpy()
+    # --- market control adequacy (Run 6, Phase 70) ---------------------------
+    # Assessed on the within-transformed sample BEFORE partialling, because
+    # that is the space the control operates in, and reported in full.
+    yz_raw = dmz["log_qty"].to_numpy()
+    pz_raw = dmz["log_price"].to_numpy()
+    z_raw = dmz[z_cols].to_numpy()
+    mkt_raw = dmz["log_mkt"].to_numpy() if has_mkt else None
+    time_cell = pdf[time_fe].to_numpy() if time_fe in pdf.columns else pdf["month_idx"].to_numpy()
+    assessment = assess_market_control(
+        source=market_control_source,
+        log_mkt=mkt_raw,
+        log_price_within=pz_raw,
+        instruments_within=z_raw,
+        time_cell=time_cell,
+        coverage=mkt_coverage,
+        lag_periods=mkt_lag,
+        rules=rules,
+    )
+    est.market_control_status = assessment.status
+    est.market_control_coverage = assessment.coverage
+    est.market_control_lag_periods = assessment.lag_periods
+    est.market_control_within_cell_values = assessment.within_cell_values
+    est.market_control_price_r2 = assessment.price_relevance_r2
+    est.market_control_instrument_r2 = assessment.instrument_r2
+    est.market_control_detail = assessment.detail
+    use_control = bool(has_mkt and assessment.usable)
+    est.market_control_used = use_control
+    # The first stage WITHOUT the control, so the cost of controlling is
+    # visible rather than implied.
+    est.first_stage_f_uncontrolled = _first_stage_f(pz_raw, z_raw, spec)
+
+    if use_control and mkt_raw is not None:
+        yz = _resid(yz_raw, mkt_raw)
+        pz = _resid(pz_raw, mkt_raw)
+        z = np.column_stack([_resid(z_raw[:, j], mkt_raw) for j in range(z_raw.shape[1])])
+        mkt_within: np.ndarray | None = mkt_raw
+    else:
+        yz, pz, z = yz_raw, pz_raw, z_raw
+        mkt_within = None
 
     if len(pdf) < sc.min_iv_observations or est.n_pairs < sc.min_iv_pairs:
         est.status = STATUS_DESCRIPTIVE
@@ -355,6 +497,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
             f"IV support too thin ({len(pdf)} obs / {est.n_pairs} pairs); "
             f"status capped at descriptive"
         )
+        est.estimand, est.estimand_bias_direction = estimand_for(iv_ran=False, path_resolved=False)
         return est
 
     est.first_stage_f = _first_stage_f(pz, z, spec)
@@ -374,6 +517,7 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     if abs(denom) < 1e-12:
         est.status = STATUS_DESCRIPTIVE
         est.status_reasons.append("first stage has no identifying variation")
+        est.estimand, est.estimand_bias_direction = estimand_for(iv_ran=False, path_resolved=False)
         return est
     beta_iv = float((p_hat @ yz) / denom)
     est.iv = beta_iv
@@ -391,24 +535,64 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
     # jackknives with CGM signs: V = V_A + V_B - V_AxB (24.5); a non-positive
     # combination falls back to the larger one-way variance.
     def _jackknife_var(codes: np.ndarray, n_g: int) -> float | None:
+        """Leave-one-cluster-out IV variance with the market control RE-FITTED
+        in every replicate (Run 6, Phase 70).
+
+        Partialling the control out once on the full sample and then
+        jackknifing the residuals treats the partialling coefficient as known
+        and understates the variance by the control's own sampling
+        contribution. Here the Frisch-Waugh residualization is redone inside
+        each replicate. It stays exact and cheap because every moment needed
+        is a leave-one-out sum: with s = control, the residualized moments are
+            Z'y - (Z's)(s'y)/(s's),   Z'p - (Z's)(s'p)/(s's)
+        all taken over the retained rows, so per-cluster partial sums suffice
+        and no re-regression loop is required.
+        """
         k_z = z.shape[1]
         zz_g = np.zeros((n_g, k_z, k_z))
         zp_g = np.zeros((n_g, k_z))
         zy_g = np.zeros((n_g, k_z))
+        has_ctl = mkt_within is not None
+        zs_g = np.zeros((n_g, k_z))
+        ss_g = np.zeros(n_g)
+        sy_g = np.zeros(n_g)
+        sp_g = np.zeros(n_g)
         for g in range(n_g):
             m = codes == g
             zg = z[m]
             zz_g[g] = zg.T @ zg
             zp_g[g] = zg.T @ pz[m]
             zy_g[g] = zg.T @ yz[m]
+            if has_ctl:
+                sg = mkt_within[m]  # type: ignore[index]
+                zs_g[g] = zg.T @ sg
+                ss_g[g] = float(sg @ sg)
+                sy_g[g] = float(sg @ yz[m])
+                sp_g[g] = float(sg @ pz[m])
         zz_tot = zz_g.sum(axis=0)
         zp_tot = zp_g.sum(axis=0)
         zy_tot = zy_g.sum(axis=0)
+        zs_tot, ss_tot, sy_tot, sp_tot = (
+            zs_g.sum(axis=0),
+            float(ss_g.sum()),
+            float(sy_g.sum()),
+            float(sp_g.sum()),
+        )
         loco_list = []
         for g in range(n_g):
-            a = np.linalg.pinv(zz_tot - zz_g[g])
+            zz = zz_tot - zz_g[g]
             bz = zp_tot - zp_g[g]
             by = zy_tot - zy_g[g]
+            if has_ctl:
+                zs = zs_tot - zs_g[g]
+                ss = ss_tot - ss_g[g]
+                if ss > 1e-12:
+                    # Residualize y, p and Z on the control within this
+                    # replicate (FWL), re-estimating its coefficient here.
+                    zz = zz - np.outer(zs, zs) / ss
+                    bz = bz - zs * ((sp_tot - sp_g[g]) / ss)
+                    by = by - zs * ((sy_tot - sy_g[g]) / ss)
+            a = np.linalg.pinv(zz)
             d = float(bz @ a @ bz)
             if abs(d) > 1e-12:
                 loco_list.append(float(bz @ a @ by) / d)
@@ -452,42 +636,191 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         and est.ar_ci_high < float(grid[-1]) - 0.021
     )
 
-    if len(z_cols) >= 2:
-        est.overid_j, est.overid_p = _overid_j(yz, pz, z, beta_iv)
+    # Overidentification over the instruments that are still IDENTIFIED after
+    # controlling (Run 6, Phase 70). A J test run against an instrument with
+    # no remaining variation tests nothing: its p-value would be noise
+    # presented as agreement. With fewer than two identified instruments the
+    # model is just-identified and the test is reported as not evaluated -
+    # which the spec's own criterion contemplates ("when 2 instruments").
+    identified_cols = [
+        j for j in range(z.shape[1]) if _first_stage_f(pz, z[:, [j]], spec) >= sc.min_first_stage_f
+    ]
+    est.n_identified_instruments = len(identified_cols)
+    if len(identified_cols) >= 2:
+        est.overid_j, est.overid_p = _overid_j(yz, pz, z[:, identified_cols], beta_iv)
 
-    # Robustness: IV with each instrument alone + FE-OLS + PPML.
+    # Robustness: the joint IV against each instrument ALONE - but only over
+    # alternatives that are themselves identified (Run 6, Phase 70).
+    #
+    # Why the filter exists, measured not assumed: holding the category market
+    # price constant removes nearly all of a CATEGORY-level tariff
+    # instrument's variation (its own first stage falls to F < 6 on the demo
+    # world), because a category tariff IS a category market-price mover. What
+    # still identifies a unilateral response is the SUPPLIER-specific cost
+    # shock, which moves this distributor's cost without moving the category
+    # market price. A single-instrument specification whose own first stage is
+    # weak is not evidence that the headline is unstable - it is an
+    # unidentified specification, and judging the headline by it would report
+    # weak-instrument noise as instability. Excluded alternatives are counted
+    # and named, never dropped silently.
     alt: list[float] = [beta_iv]
+    weak_alts: list[str] = []
     for j in range(z.shape[1]):
         zj = z[:, [j]]
+        f_j = _first_stage_f(pz, zj, spec)
+        name = z_cols[j] if j < len(z_cols) else f"instrument {j + 1}"
+        if f_j < sc.min_first_stage_f:
+            weak_alts.append(f"{name} (own first-stage F {f_j:.1f})")
+            continue
         pj = zj @ (np.linalg.pinv(zj.T @ zj) @ (zj.T @ pz))
         dj = float(pj @ pz)
         if abs(dj) > 1e-12:
             alt.append(float((pj @ yz) / dj))
-    est.robustness_spread = float(max(alt) - min(alt)) if len(alt) > 1 else 0.0
+    est.robustness_n_specifications = len(alt)
+    est.robustness_excluded_weak = "; ".join(weak_alts)
+    # With no identified alternative there is nothing to compare the headline
+    # against: the spread stays UNKNOWN rather than collapsing to a
+    # reassuring zero.
+    est.robustness_spread = float(max(alt) - min(alt)) if len(alt) > 1 else None
 
     # --- status ---------------------------------------------------------------
     reasons: list[str] = []
+    gates: list[GateResult] = []
+
+    def gate(order: int, name: str, ok: bool | None, detail: str) -> None:
+        """Record one criterion. `ok=None` means it could not be evaluated -
+        never reported as a pass."""
+        gates.append(
+            GateResult(
+                order=order,
+                gate=name,
+                result=GATE_NOT_EVALUATED if ok is None else (GATE_PASS if ok else GATE_FAIL),
+                detail=detail,
+            )
+        )
+
     rationale_ok = all(i.exclusion_rationale for i in instruments) and len(instruments) >= 1
+    gate(
+        1,
+        "exclusion_rationale_documented",
+        rationale_ok,
+        "every instrument carries a written exclusion argument in config"
+        if rationale_ok
+        else "at least one instrument has no documented exclusion rationale",
+    )
     if not rationale_ok:
         reasons.append("exclusion rationale missing in config")
-    if est.first_stage_f is None or est.first_stage_f < sc.min_first_stage_f:
-        reasons.append(f"first-stage F {est.first_stage_f:.1f} below {sc.min_first_stage_f}")
+
+    # Competitor-price path (Run 6, Phase 70): the estimand is a UNILATERAL
+    # move, so industry-wide cost instruments need competitor-price conditions
+    # held constant - by an adequate public index, or by a documented argument
+    # that the instrument has no such path.
+    path = resolve_competitor_path(
+        tuple(instruments),
+        control_adequate=assessment.adequate,
+        control_grain=market_control_grain,
+    )
+    est.competitor_path_resolution = path.code
+    est.competitor_path_detail = path.detail
+    gate(2, "competitor_price_path_addressed", path.resolved, path.detail)
+    if not path.resolved:
+        reasons.append(f"competitor-price path not controlled: {path.detail}")
+
+    f_ok = est.first_stage_f is not None and est.first_stage_f >= sc.min_first_stage_f
+    gate(
+        3,
+        "first_stage_strength",
+        f_ok,
+        (
+            f"first-stage F {est.first_stage_f:.1f} against the {sc.min_first_stage_f} "
+            f"threshold (uncontrolled F {est.first_stage_f_uncontrolled:.1f})"
+            if est.first_stage_f is not None and est.first_stage_f_uncontrolled is not None
+            else "the first stage could not be computed"
+        ),
+    )
+    if not f_ok:
+        f_txt = f"{est.first_stage_f:.1f}" if est.first_stage_f is not None else "n/a"
+        reasons.append(f"first-stage F {f_txt} below {sc.min_first_stage_f}")
         est.status = STATUS_DESCRIPTIVE
         est.status_reasons = reasons
+        est.causal_status_reasons = gates
+        est.estimand, est.estimand_bias_direction = estimand_for(
+            iv_ran=False, path_resolved=path.resolved
+        )
         return est
+    overid_ok = est.overid_p is None or est.overid_p >= sc.overid_alpha
+    gate(
+        4,
+        "overidentification_not_rejected",
+        None if est.overid_p is None else overid_ok,
+        (
+            f"overidentification test p={est.overid_p:.4f} against alpha {sc.overid_alpha} "
+            f"over {est.n_identified_instruments} identified instruments; it cannot detect "
+            "a violation those instruments share"
+            if est.overid_p is not None
+            else (
+                f"only {est.n_identified_instruments or 0} instrument(s) still identify "
+                "price after the market control, so the model is just-identified and "
+                "there is nothing to overidentify"
+            )
+        ),
+    )
     if est.overid_p is not None and est.overid_p < sc.overid_alpha:
         reasons.append(f"overidentification rejected (p={est.overid_p:.4f})")
-    if est.robustness_spread is not None and est.robustness_spread > sc.robustness_max_spread:
-        reasons.append(f"robustness spread {est.robustness_spread:.2f} exceeds maximum")
+    excluded_txt = (
+        f"; excluded as unidentified: {est.robustness_excluded_weak}"
+        if est.robustness_excluded_weak
+        else ""
+    )
+    if est.robustness_spread is None:
+        # No identified alternative exists, so the headline has nothing to be
+        # checked against. That is not a pass.
+        gate(
+            5,
+            "robust_across_specifications",
+            None,
+            "no alternative specification is identified, so the headline estimate "
+            "could not be checked against one" + excluded_txt,
+        )
+        reasons.append(
+            "robustness could not be assessed: no alternative specification is "
+            "identified" + excluded_txt
+        )
+    else:
+        spread_ok = est.robustness_spread <= sc.robustness_max_spread
+        gate(
+            5,
+            "robust_across_specifications",
+            spread_ok,
+            f"estimates span {est.robustness_spread:.2f} across "
+            f"{est.robustness_n_specifications} identified specifications against a "
+            f"{sc.robustness_max_spread} maximum" + excluded_txt,
+        )
+        if not spread_ok:
+            reasons.append(f"robustness spread {est.robustness_spread:.2f} exceeds maximum")
     # Carried-forward-price robustness (24.8): the PPML gap between the full
     # panel (zeros at carried-forward prices) and positive rows only.
-    if est.ppml is not None and est.ppml_positive is not None:
-        cf_gap = abs(est.ppml - est.ppml_positive)
-        if cf_gap > sc.robustness_max_spread:
-            reasons.append(
-                f"carried-forward robustness gap {cf_gap:.2f} exceeds maximum "
-                f"(PPML with zeros {est.ppml:.2f} vs positive-only {est.ppml_positive:.2f})"
-            )
+    cf_gap = (
+        abs(est.ppml - est.ppml_positive)
+        if est.ppml is not None and est.ppml_positive is not None
+        else None
+    )
+    gate(
+        6,
+        "carried_forward_price_robustness",
+        None if cf_gap is None else cf_gap <= sc.robustness_max_spread,
+        f"the PPML estimate moves {cf_gap:.2f} between the full panel (zeros at "
+        f"carried-forward prices) and positive rows only, against a "
+        f"{sc.robustness_max_spread} maximum; note PPML is fitted WITHOUT the "
+        f"market control, so this compares a controlled headline to uncontrolled fits"
+        if cf_gap is not None
+        else "one of the two PPML fits did not converge, so the gap is unknown",
+    )
+    if cf_gap is not None and cf_gap > sc.robustness_max_spread:
+        reasons.append(
+            f"carried-forward robustness gap {cf_gap:.2f} exceeds maximum "
+            f"(PPML with zeros {est.ppml:.2f} vs positive-only {est.ppml_positive:.2f})"
+        )
     # The primary 95% interval is the cluster-robust Wald CI with t(G-1)
     # critical values (nominal coverage confirmed by simulation); the
     # Anderson-Rubin set is reported alongside as the weak-IV-robust interval
@@ -496,6 +829,14 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
         (est.iv_ci_high - est.iv_ci_low)
         if est.iv_ci_high is not None and est.iv_ci_low is not None
         else None
+    )
+    gate(
+        7,
+        "interval_precise_enough",
+        None if ci_width is None else ci_width <= sc.max_ci_width,
+        f"the 95% interval spans {ci_width:.2f} against a {sc.max_ci_width} maximum"
+        if ci_width is not None
+        else "the primary interval could not be computed",
     )
     if ci_width is None or ci_width > sc.max_ci_width:
         reasons.append(f"CI width {ci_width if ci_width is not None else 'n/a'} exceeds maximum")
@@ -517,8 +858,34 @@ def estimate_segment(panel_seg: pl.DataFrame, rules: Rules, segment: int) -> Seg
                 f"Anderson-Rubin set width {ar_width:.2f} exceeds "
                 f"{sc.ar_max_width_ratio}x the primary interval ({ci_width:.2f})"
             )
+    ar_detail = (
+        "the weak-instrument-robust set is bounded and agrees with the primary interval"
+        if est.ar_bounded
+        else (
+            "the weak-instrument-robust set is empty: the instruments jointly reject "
+            "every candidate elasticity, which is evidence of misspecification"
+            if est.ar_ci_low is None
+            else "the weak-instrument-robust set runs to the edge of the search range, "
+            "so it is reported as unbounded rather than compressed into an interval"
+        )
+    )
+    ar_ok = bool(est.ar_bounded)
+    if ar_ok and ci_width is not None and est.ar_ci_low is not None and est.ar_ci_high is not None:
+        ar_ok = (est.ar_ci_high - est.ar_ci_low) <= sc.ar_max_width_ratio * ci_width
+        if not ar_ok:
+            ar_detail = (
+                f"the weak-instrument-robust set spans "
+                f"{est.ar_ci_high - est.ar_ci_low:.2f}, beyond {sc.ar_max_width_ratio}x "
+                f"the primary interval ({ci_width:.2f})"
+            )
+    gate(8, "weak_instrument_robust_agreement", ar_ok, ar_detail)
+
     est.status = STATUS_CAUSAL if not reasons else STATUS_IV
     est.status_reasons = reasons
+    est.causal_status_reasons = gates
+    est.estimand, est.estimand_bias_direction = estimand_for(
+        iv_ran=True, path_resolved=path.resolved
+    )
     return est
 
 
@@ -539,11 +906,66 @@ def _ppml(panel_seg: pl.DataFrame, rules: Rules) -> float | None:
         return None
 
 
-def run_sensitivity(panel: pl.DataFrame, rules: Rules) -> pl.DataFrame:
-    """Estimate every segment; returns one row per segment with diagnostics."""
+@dataclass
+class SensitivityResult:
+    """Per-segment estimates plus the long-form causal-gate record (Run 6,
+    Phase 70): one row per segment and criterion, so the UI and the exports
+    read machine-readable outcomes instead of parsing prose."""
+
+    estimates: pl.DataFrame
+    gates: pl.DataFrame
+
+
+GATES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "segment": pl.Int64,
+    "gate_order": pl.Int64,
+    "gate": pl.String,
+    "result": pl.String,
+    "detail": pl.String,
+}
+
+
+def run_sensitivity_full(
+    panel: pl.DataFrame,
+    rules: Rules,
+    *,
+    market_control_source: str = SOURCE_ABSENT,
+    market_control_grain: str | None = None,
+) -> SensitivityResult:
+    """Estimate every segment; returns the estimates and the gate record."""
     segs = [s for s in panel["segment_leaf"].unique().to_list() if s is not None]
     rows = []
+    gate_rows: list[dict[str, Any]] = []
     for s in sorted(segs):
         seg_panel = panel.filter(pl.col("segment_leaf") == s)
-        rows.append(estimate_segment(seg_panel, rules, int(s)).to_dict())
-    return pl.DataFrame(rows)
+        est = estimate_segment(
+            seg_panel,
+            rules,
+            int(s),
+            market_control_source=market_control_source,
+            market_control_grain=market_control_grain,
+        )
+        rows.append(est.to_dict())
+        gate_rows.extend(est.gate_rows())
+    gates = (
+        pl.DataFrame(gate_rows, schema=GATES_SCHEMA).sort("segment", "gate_order")
+        if gate_rows
+        else pl.DataFrame(schema=GATES_SCHEMA)
+    )
+    return SensitivityResult(estimates=pl.DataFrame(rows), gates=gates)
+
+
+def run_sensitivity(
+    panel: pl.DataFrame,
+    rules: Rules,
+    *,
+    market_control_source: str = SOURCE_ABSENT,
+    market_control_grain: str | None = None,
+) -> pl.DataFrame:
+    """Estimates only (the long-standing signature)."""
+    return run_sensitivity_full(
+        panel,
+        rules,
+        market_control_source=market_control_source,
+        market_control_grain=market_control_grain,
+    ).estimates

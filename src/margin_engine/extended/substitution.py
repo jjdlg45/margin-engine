@@ -187,6 +187,15 @@ def estimate_cross_effects(panel: pl.DataFrame, groups: pl.DataFrame, rules: Rul
             )
             if not rationale_ok:
                 reasons.append("exclusion rationale missing in config")
+            # Competitor-price path (Run 6, Phase 70): the market control is
+            # not wired into the cross-price design, so this status cannot
+            # claim a unilateral estimand. The cap is explicit rather than
+            # implied - the own-price gate would refuse the same evidence.
+            reasons.append(
+                "competitor-price path not controlled in the cross-price design: the "
+                "market price index is partialled into the own-price estimator only, "
+                "so a cross-price estimate answers a market-wide question"
+            )
             est.status = STATUS_CROSS_CAUSAL if not reasons else STATUS_CROSS
             est.reasons = "; ".join(reasons)
             out.append(est.to_dict())

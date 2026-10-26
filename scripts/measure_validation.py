@@ -48,6 +48,7 @@ from margin_engine.sensitivity.estimate import (  # noqa: E402
     STATUS_INSUFFICIENT,
     run_sensitivity,
 )
+from margin_engine.sensitivity.market_control import SOURCE_MAPPED  # noqa: E402
 
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
 
@@ -172,7 +173,12 @@ def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
                 seed,
                 use_engine_segments=engine_seg,
             )
-            sens = run_sensitivity(panel, rules)
+            sens = run_sensitivity(
+                panel,
+                rules,
+                market_control_source=SOURCE_MAPPED,
+                market_control_grain="item_category:month",
+            )
             for r in sens.to_dicts():
                 pseg = seg_map.get(r["segment"])
                 if pseg is None:
@@ -206,12 +212,38 @@ def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
         )
     )
     reachable = any(r["status"] == STATUS_CAUSAL for r in study)
+    causal_rows = [r for r in study if r["status"] == STATUS_CAUSAL]
+    paths = sorted({str(r.get("competitor_path_resolution")) for r in causal_rows})
+    controls = sorted({str(r.get("market_control_status")) for r in causal_rows})
     rows.append(
         _row(
             "Causal support reachable",
             "Reached on the well-identified preset with all criteria enforced",
-            "Reached" if reachable else "Never reached",
+            (
+                f"Reached; competitor-price path {', '.join(paths)}; "
+                f"market index {', '.join(controls)}"
+                if reachable
+                else "Never reached"
+            ),
             reachable,
+        )
+    )
+    # Informational (Run 6, Phase 70): what the competitor-price gate does to
+    # the status ladder, measured rather than asserted.
+    ident = [r["n_identified_instruments"] for r in study if r.get("n_identified_instruments")]
+    just_identified = sum(1 for n in ident if int(n) < 2)
+    rows.append(
+        _row(
+            "Competitor-price path gate",
+            "Informational: how the Phase 70 gate lands on the well-identified preset",
+            (
+                f"{len(causal_rows)}/{len(study)} segment-seeds reach causal support; "
+                f"{just_identified}/{len(ident)} are just-identified after controlling "
+                "(a category tariff instrument is itself a category market-price mover, "
+                "so holding the market price constant leaves the supplier cost shock as "
+                "the identifying variation)"
+            ),
+            None,
         )
     )
     return rows
@@ -225,7 +257,12 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
         panel, truth, _ = build_world_panel(
             tmp / "cov", Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         for r in sens.to_dicts():
             if r["iv_ci_low"] is None:
                 continue
@@ -260,7 +297,12 @@ def persistent_demand_coverage(tmp: Path) -> list[dict[str, Any]]:
             rules = base.model_copy(
                 update={"sensitivity": base.sensitivity.model_copy(update={"cluster_level": level})}
             )
-            sens = run_sensitivity(panel, rules)
+            sens = run_sensitivity(
+                panel,
+                rules,
+                market_control_source=SOURCE_MAPPED,
+                market_control_grain="item_category:month",
+            )
             for r in sens.to_dicts():
                 if r["iv_ci_low"] is None:
                     continue
@@ -305,7 +347,12 @@ def misspecified_checks(tmp: Path) -> list[dict[str, Any]]:
             panel, truth, _ = build_world_panel(
                 tmp / "miss", preset, seed, use_engine_segments=False
             )
-            sens = run_sensitivity(panel, rules)
+            sens = run_sensitivity(
+                panel,
+                rules,
+                market_control_source=SOURCE_MAPPED,
+                market_control_grain="item_category:month",
+            )
             for r in sens.to_dicts():
                 statuses[r["status"]] = statuses.get(r["status"], 0) + 1
                 if r["iv"] is not None and r["segment"] in truth:
@@ -331,7 +378,12 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     panel, _, _ = build_world_panel(
         tmp / "weak", Preset.WEAK_INSTRUMENT, 3, use_engine_segments=False
     )
-    sens = run_sensitivity(panel, rules)
+    sens = run_sensitivity(
+        panel,
+        rules,
+        market_control_source=SOURCE_MAPPED,
+        market_control_grain="item_category:month",
+    )
     weak_ok = all(r["status"] != STATUS_CAUSAL for r in sens.to_dicts())
     rows.append(
         _row(
@@ -353,7 +405,12 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
             use_engine_segments=False,
             size={"n_customers": 250, "n_items": 400},
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         seg_rows = [r for r in sens.to_dicts() if r["overid_p"] is not None]
         n += 1
         if any(r["overid_p"] < 0.05 for r in seg_rows):
@@ -371,7 +428,12 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     for preset, name in ((Preset.PRICE_CONSTANT, "price_constant"), (Preset.SPARSE, "sparse")):
         print(f"{name} preset (seed 3)...")
         panel, _, _ = build_world_panel(tmp / name, preset, 3, use_engine_segments=False)
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         ok = all(r["status"] in (STATUS_INSUFFICIENT, STATUS_DESCRIPTIVE) for r in sens.to_dicts())
         rows.append(
             _row(
@@ -522,6 +584,21 @@ def main() -> None:
         "results": results,
     }
     out_path = REPO / "docs" / "validation.json"
+    # Other measurement scripts (measure_hybrid_world, measure_tracker,
+    # measure_scale, measure_scenario_matrix) contribute their own rows to
+    # this file. Re-running THIS script must not delete their evidence, so
+    # any pre-existing row this run did not produce is carried forward.
+    carried: list[dict[str, Any]] = []
+    if out_path.exists():
+        try:
+            previous = json.loads(out_path.read_text(encoding="utf-8")).get("results", [])
+        except (OSError, json.JSONDecodeError):
+            previous = []
+        mine = {str(r["check"]) for r in results}
+        carried = [r for r in previous if str(r.get("check")) not in mine]
+        if carried:
+            print(f"  carrying forward {len(carried)} row(s) from other measurement scripts")
+    payload["results"] = results + carried
     out_path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8", newline="\n")
     n_pass = sum(r["passed"] for r in results)
     print(f"\nwrote {out_path} - {n_pass}/{len(results)} checks passed, {payload['runtime_s']}s")

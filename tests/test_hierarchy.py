@@ -17,6 +17,7 @@ from margin_engine.ledger.pipeline import PipelineResult, run_pipeline
 from margin_engine.opportunity.sizing import price_opportunities
 from margin_engine.panel.build import build_panel
 from margin_engine.sensitivity.estimate import run_sensitivity
+from margin_engine.sensitivity.market_control import SOURCE_MAPPED, select_market_index
 
 REPO = Path(__file__).resolve().parents[1]
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
@@ -121,8 +122,20 @@ def test_protected_lines_never_get_price_increase_recommendations(
         res.reference["supplier_cost_index"],
         res.reference["tariff_schedule"],
         rules,
+        market_price_index=select_market_index(
+            res.reference.get("market_price_index"),
+            public_source=res.mapping.reference_tables["market_price_index"].public_source
+            if "market_price_index" in res.mapping.reference_tables
+            else None,
+            rules=rules,
+        )[0],
     )
-    sens = run_sensitivity(panel, rules)
+    sens = run_sensitivity(
+        panel,
+        rules,
+        market_control_source=SOURCE_MAPPED,
+        market_control_grain="item_category:month",
+    )
     opps = price_opportunities(guidance.guidance, panel, sens, rules)
     protected_pairs = guidance.guidance.filter(pl.col("contract_protected")).select(
         "customer_id", "item_id"

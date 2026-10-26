@@ -30,6 +30,7 @@ from margin_engine.webexport.bundle import (
     ActionsSection,
     ActionsSummary,
     CalibrationRow,
+    CausalGate,
     CrossPriceEstimate,
     CustomerEconomics,
     CustomerLeakage,
@@ -497,6 +498,11 @@ def build_bundle(
     ]
 
     # --- sensitivity ----------------------------------------------------------
+    # Causal gates grouped by segment, in a stable order (Run 6, Phase 70).
+    gates_by_segment: dict[int, list[dict[str, Any]]] = {}
+    if res.sensitivity_gates is not None and res.sensitivity_gates.height:
+        for g in res.sensitivity_gates.sort("segment", "gate_order").to_dicts():
+            gates_by_segment.setdefault(int(g["segment"]), []).append(g)
     sens_rows = []
     for r in res.sensitivity.sort("segment").to_dicts():
         naive, iv = r.get("naive_fe_ols"), r.get("iv")
@@ -535,6 +541,30 @@ def build_bundle(
                 ppml_positive=_r(r.get("ppml_positive")),
                 carried_forward_share=_r(r.get("carried_forward_share")),
                 market_control_used=bool(r.get("market_control_used") or False),
+                estimand=r.get("estimand"),
+                estimand_bias_direction=r.get("estimand_bias_direction"),
+                market_control_status=r.get("market_control_status"),
+                market_control_coverage=_r(r.get("market_control_coverage")),
+                market_control_lag_periods=r.get("market_control_lag_periods"),
+                market_control_within_cell_values=_r(r.get("market_control_within_cell_values")),
+                market_control_price_r2=_r(r.get("market_control_price_r2")),
+                market_control_instrument_r2=_r(r.get("market_control_instrument_r2")),
+                market_control_detail=r.get("market_control_detail") or None,
+                competitor_path_resolution=r.get("competitor_path_resolution"),
+                competitor_path_detail=r.get("competitor_path_detail") or None,
+                first_stage_f_uncontrolled=_r(r.get("first_stage_f_uncontrolled")),
+                n_identified_instruments=r.get("n_identified_instruments"),
+                robustness_n_specifications=r.get("robustness_n_specifications"),
+                robustness_excluded_weak=r.get("robustness_excluded_weak") or None,
+                causal_gates=[
+                    CausalGate(
+                        order=int(g["gate_order"]),
+                        gate=str(g["gate"]),
+                        result=str(g["result"]),
+                        detail=str(g["detail"]),
+                    )
+                    for g in gates_by_segment.get(int(r["segment"]), [])
+                ],
                 status=str(r["status"]),
                 status_reasons=str(r.get("status_reasons") or ""),
                 naive_vs_iv_note=note,

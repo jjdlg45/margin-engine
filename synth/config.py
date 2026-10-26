@@ -8,6 +8,7 @@ defaults so presets are comparable.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,6 +94,17 @@ class DemandParams(BaseModel):
     tariff_shock_sd: float = 0.04
     # Pass-through of instrument shocks into realized price (first-stage strength).
     price_passthrough: float = 0.75
+    # Published market price index (Run 6, Phase 70). Emitted on EVERY world so
+    # the causal gate's supported path stays demonstrable. category_monthly
+    # varies across categories within a month (usable as a control);
+    # national_monthly is one value per month, which the estimator's time
+    # fixed effects absorb exactly - the deliberately inadequate variant.
+    market_passthrough: float = 0.75
+    market_noise_sd: float = 0.02
+    market_index_granularity: Literal["category_monthly", "national_monthly"] = "category_monthly"
+    # Dedicated RNG seed offset: drawing the index's noise from the world rng
+    # would shift every existing world's prices and planted truth.
+    market_index_seed: int = 90_001
     # Endogenous rep discounting: d(log price)/d(demand shock). Positive means
     # reps cut price when demand is weak -> naive OLS biased TOWARD ZERO.
     endogeneity_gamma: float = 0.08
@@ -250,7 +262,16 @@ class GeneratorConfig(BaseModel):
         elif preset is Preset.NONCONSTANT_ELASTICITY:
             demand = demand.model_copy(update={"elasticity_curvature": -1.5})
         elif preset is Preset.COMPETITOR_COMOVEMENT:
-            demand = demand.model_copy(update={"competitor_comovement": 0.8})
+            # The published index is also made inadequate here (one national
+            # value per month): the world where competitor prices move with
+            # the instruments is exactly the world whose published series
+            # cannot hold those conditions constant, so the gate must refuse.
+            demand = demand.model_copy(
+                update={
+                    "competitor_comovement": 0.8,
+                    "market_index_granularity": "national_monthly",
+                }
+            )
         base["demand"] = demand
         if preset is Preset.SPARSE:
             base["n_customers"] = 40

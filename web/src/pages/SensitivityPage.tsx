@@ -8,10 +8,12 @@ import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
 import type { SensitivityData } from "../lib/api/types";
+import { useLabels } from "../lib/labels";
 import { usePageData } from "../lib/queries";
 import { count, num, pct } from "../lib/format";
 
 function SensitivityBody({ d }: { d: SensitivityData }) {
+  const labels = useLabels();
   const rankOf = new Map(d.segment_names.map((r) => [r.leaf_id, r.display_rank]));
   const disp = (seg: number) => `Segment ${rankOf.get(seg) ?? seg}`;
   const rows = [...d.rows].sort(
@@ -64,8 +66,16 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">First-stage F</dt>
-                      <dd className="m-0">{r.first_stage_f !== null ? num(r.first_stage_f, 1) : "—"}</dd>
+                      <dt className="text-caption secondary">
+                        First-stage F (before controlling)
+                      </dt>
+                      <dd className="m-0">
+                        {r.first_stage_f !== null ? num(r.first_stage_f, 1) : "—"}
+                        {r.first_stage_f_uncontrolled !== null &&
+                        r.first_stage_f_uncontrolled !== undefined
+                          ? ` (${num(r.first_stage_f_uncontrolled, 1)})`
+                          : ""}
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-caption secondary">Overidentification p</dt>
@@ -128,6 +138,63 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                   </dl>
+                  {/* Competitor-price path and the per-gate checklist (Run 6,
+                      Phase 70). Pass/fail/not-evaluated is carried by a glyph
+                      AND words, never colour alone. */}
+                  {(r.estimand || r.market_control_status) && (
+                    <dl className="m-0 mt-3 grid grid-cols-1 gap-x-8 gap-y-2 rounded-[8px] bg-inset/60 px-4 py-3 sm:grid-cols-2">
+                      {r.estimand && (
+                        <div>
+                          <dt className="text-caption secondary">What this measures</dt>
+                          <dd className="m-0">
+                            {labels(r.estimand).label}
+                            {r.estimand_bias_direction ? (
+                              <span className="secondary">
+                                {" — "}
+                                {labels(r.estimand_bias_direction).description}
+                              </span>
+                            ) : null}
+                          </dd>
+                        </div>
+                      )}
+                      {r.market_control_status && (
+                        <div>
+                          <dt className="text-caption secondary">Market price index</dt>
+                          <dd className="m-0">
+                            {labels(r.market_control_status).label}
+                            {r.market_control_price_r2 !== null &&
+                            r.market_control_price_r2 !== undefined ? (
+                              <span className="secondary">
+                                {" — explains "}
+                                {pct(r.market_control_price_r2)}
+                                {" of price movement"}
+                              </span>
+                            ) : null}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  )}
+                  {(r.causal_gates ?? []).length > 0 && (
+                    <ul
+                      className="m-0 mt-3 list-none p-0 text-caption"
+                      data-testid="causal-gates"
+                    >
+                      {(r.causal_gates ?? []).map((g) => (
+                        <li key={g.gate} className="flex gap-2 py-0.5">
+                          <span aria-hidden="true" className="w-4 shrink-0">
+                            {g.result === "pass" ? "✓" : g.result === "fail" ? "✕" : "–"}
+                          </span>
+                          <span>
+                            <span className="font-medium">{labels(g.gate).label}</span>
+                            {": "}
+                            <span className="secondary">{labels(g.result).label}</span>
+                            {g.detail ? <span className="secondary"> — {g.detail}</span> : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <p className="mb-0 mt-2 max-w-2xl text-caption secondary">{r.naive_vs_iv_note}</p>
                 </Collapsible.Content>
               </Collapsible.Root>

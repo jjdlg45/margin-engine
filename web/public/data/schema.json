@@ -740,6 +740,35 @@
    "title": "CalibrationRow",
    "type": "object"
   },
+  "CausalGate": {
+   "description": "One causal criterion's outcome (Run 6, Phase 70). Machine-readable so\nthe UI renders a checklist instead of parsing prose.",
+   "properties": {
+    "detail": {
+     "title": "Detail",
+     "type": "string"
+    },
+    "gate": {
+     "title": "Gate",
+     "type": "string"
+    },
+    "order": {
+     "title": "Order",
+     "type": "integer"
+    },
+    "result": {
+     "title": "Result",
+     "type": "string"
+    }
+   },
+   "required": [
+    "order",
+    "gate",
+    "result",
+    "detail"
+   ],
+   "title": "CausalGate",
+   "type": "object"
+  },
   "CrossPriceEstimate": {
    "properties": {
     "cross_elasticity": {
@@ -2285,6 +2314,61 @@
      "default": null,
      "title": "Carried Forward Share"
     },
+    "causal_gates": {
+     "items": {
+      "$ref": "#/$defs/CausalGate"
+     },
+     "title": "Causal Gates",
+     "type": "array"
+    },
+    "competitor_path_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Competitor Path Detail"
+    },
+    "competitor_path_resolution": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Competitor Path Resolution"
+    },
+    "estimand": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Estimand"
+    },
+    "estimand_bias_direction": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Estimand Bias Direction"
+    },
     "first_stage_f": {
      "anyOf": [
       {
@@ -2295,6 +2379,18 @@
       }
      ],
      "title": "First Stage F"
+    },
+    "first_stage_f_uncontrolled": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "First Stage F Uncontrolled"
     },
     "identifying_coverage": {
      "anyOf": [
@@ -2351,10 +2447,106 @@
      ],
      "title": "Iv Se"
     },
+    "market_control_coverage": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Coverage"
+    },
+    "market_control_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Detail"
+    },
+    "market_control_instrument_r2": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Instrument R2"
+    },
+    "market_control_lag_periods": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Lag Periods"
+    },
+    "market_control_price_r2": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Price R2"
+    },
+    "market_control_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Status"
+    },
     "market_control_used": {
      "default": false,
      "title": "Market Control Used",
      "type": "boolean"
+    },
+    "market_control_within_cell_values": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Within Cell Values"
+    },
+    "n_identified_instruments": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Identified Instruments"
     },
     "n_obs": {
      "title": "N Obs",
@@ -2442,6 +2634,30 @@
     "price_cv_within": {
      "title": "Price Cv Within",
      "type": "number"
+    },
+    "robustness_excluded_weak": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Robustness Excluded Weak"
+    },
+    "robustness_n_specifications": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Robustness N Specifications"
     },
     "robustness_spread": {
      "anyOf": [

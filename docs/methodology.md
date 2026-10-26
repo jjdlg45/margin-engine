@@ -354,6 +354,79 @@ TOTAL expected quantity, including whether the customer buys at all — the
 estimand the opportunity optimizer needs. Specification details land with
 Phase 72 and are recorded here.
 
+### Estimand and the competitor-price path (Run 6)
+
+The estimand is the **unilateral own-price response holding observed
+competitor-price conditions constant** — the quantity a pricing decision
+needs. Both shipped instruments are industry-wide cost shocks, so they move
+competitor prices too; without those conditions held constant, the IV
+identifies a response to a market-wide cost shock, which UNDERSTATES
+unilateral price sensitivity (a customer facing an industry-wide increase has
+nowhere cheaper to go). Three estimands are therefore reported and labeled:
+unilateral own-price response (the gate passed), market-wide cost-shock
+response (IV ran, the path is uncontrolled — with the bias direction stated),
+and descriptive association (no instrument behind it).
+
+`causal_elasticity_supported` now additionally requires the competitor-price
+path to be ADDRESSED: either an adequate public market price index, or every
+instrument's competitor-price path documented as absent with a written
+argument. Otherwise the status caps at `iv_estimated_elasticity` with the
+reason, and downstream the two-sided expected-change range is withheld —
+an interval for a market-wide estimand is not a confidence interval for the
+unilateral move being priced, and its bias direction flatters price increases.
+There is deliberately no configuration switch that disables this gate.
+
+Control adequacy is structural and relevance-based, never a threshold on
+collinearity. A faithful market-price control MUST correlate with
+industry-wide cost instruments — that correlation is the confound it exists to
+absorb — so rejecting a control for being correlated with them would reward a
+column of noise and punish an informative series. The checks, each reported
+with its statistic: freshness (trailing lag in periods, evaluated first on
+the covered periods); coverage (share of the segment's estimation rows);
+absorption (distinct control values per time fixed-effect cell — a national
+monthly series is removed exactly by month effects, a structural fact tested
+structurally); grain (the control must be at least as fine as the CHANNEL's
+grain, which config declares and argues: customers compare sellers of the
+same item class, so a category-level index is the right grain even for a
+supplier-level instrument); relevance (the share of within-pair price
+movement the index explains, with the right sign — a series unrelated to
+prices is not evidence of a competitor-price condition); and restatement
+(only near-exact collinearity is refused, because controlling for a restated
+instrument removes identification rather than a confound).
+
+The first stage is reported both before and after controlling, because
+controlling costs identification. Measured on the demo world: holding the
+category market price constant removes nearly all of the CATEGORY tariff
+instrument's variation (its own first stage falls to F below 6) while the
+SUPPLIER-specific cost shock keeps F in the high hundreds. That is the
+economics, not an artifact: a category tariff *is* a category market-price
+mover, whereas a supplier-specific cost shock moves this distributor's cost
+without moving the category market price — which is exactly what identifies a
+unilateral move. Two consequences, both made explicit rather than hidden:
+the overidentification test runs only over instruments that still identify
+price (fewer than two leaves the model just-identified and the test reported
+as not evaluated, which the spec's own criterion contemplates), and the
+robustness spread is computed only over IDENTIFIED alternative
+specifications, with the excluded ones named together with their first-stage
+F. A specification whose own first stage is weak is not evidence that the
+headline is unstable — it is an unidentified specification. When NO
+alternative is identified the spread is reported as unknown and the top
+status is refused, rather than collapsing to a reassuring zero.
+
+Every criterion is recorded machine-readably (`causal_status_reasons`: order,
+gate, pass / not met / not evaluated, and a plain-English detail), exported
+long-form as `sensitivity_gates`, and shown in the UI as a checklist whose
+outcome is carried by a glyph and words, never colour alone. A check the data
+could not support is reported as NOT EVALUATED and never counted as a pass.
+
+The gate does not discharge shared-exclusion risk in general: once a control
+is present, a violation that both instruments share through some other
+channel still passes every criterion with a non-rejected overidentification
+test. That limitation is stated here and in the status tooltip, which is why
+`causal_elasticity_supported` means "the prespecified diagnostics and
+documented assumptions passed for this estimand and scope" — not that the
+instruments are valid, nor that the result transfers elsewhere.
+
 Diagnostics: cluster-robust first-stage F; identifying-variation coverage;
 Sargan-style overidentification J with two instruments; robustness spread
 across IV-with-each-instrument-alone and the joint estimate; Anderson-Rubin

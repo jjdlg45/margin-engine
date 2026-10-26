@@ -481,6 +481,32 @@ class InstrumentPath(StrictModel):
 
     channel: str
     treatment: str
+    # Machine-readable half of `treatment` (Run 6, Phase 70). The causal gate
+    # reads this for the competitor_prices channel. Defaults to `unresolved`
+    # so omitting documentation can never be rewarded, and `no_path` requires
+    # a written treatment to count (enforced by the resolver).
+    resolved_by: Literal["market_price_control", "fixed_effects", "no_path", "unresolved"] = (
+        "unresolved"
+    )
+    # The grain at which THIS CHANNEL operates (Run 6, Phase 70), e.g.
+    # "item_category:month" when the competitor-price condition a customer
+    # faces is the market price for the item class rather than the supplier's
+    # own. A control must be at least as fine as the CHANNEL's grain, not the
+    # instrument's: an instrument can vary more finely than the confound it
+    # travels through. Unset falls back to the instrument's own variation,
+    # which is the conservative reading.
+    channel_grain: str | None = None
+
+    @model_validator(mode="after")
+    def _no_path_needs_an_argument(self) -> InstrumentPath:
+        if self.resolved_by == "no_path" and not self.treatment.strip():
+            msg = (
+                f"instrument path '{self.channel}' declares resolved_by: no_path but "
+                "gives no treatment text. Claiming a channel does not exist requires "
+                "a written argument - a one-word switch must not lift a causal gate."
+            )
+            raise ValueError(msg)
+        return self
 
 
 class InstrumentConfig(StrictModel):
@@ -519,6 +545,23 @@ class SensitivityConfig(StrictModel):
     # causal_elasticity_supported additionally requires the Anderson-Rubin set
     # to be bounded and no wider than this multiple of the primary CI (24.7).
     ar_max_width_ratio: float = Field(default=1.5, gt=0)
+    # Market/competitor price control adequacy (Run 6, Phase 70). There is
+    # deliberately NO switch to disable the competitor-price gate: the only
+    # routes to the top status are an adequate control or an instrument whose
+    # competitor-price path is documented as absent with a written argument.
+    # Share of a segment's estimation rows the index must cover.
+    market_control_min_coverage: float = Field(default=1.0, gt=0, le=1)
+    # How many periods the index may stop short of the estimation window.
+    market_control_max_staleness_periods: int = Field(default=1, ge=0)
+    # RELEVANCE, not magnitude: the share of within-pair price movement the
+    # index must explain to count as evidence of a competitor-price condition.
+    # A control that explains nothing cannot hold anything constant - and a
+    # faithful control is EXPECTED to correlate with industry-wide cost
+    # instruments, so correlation is never itself disqualifying.
+    market_control_min_price_r2: float = Field(default=0.01, ge=0, le=1)
+    # Only NEAR-EXACT restatement of an instrument is refused: controlling for
+    # it would remove the identifying variation rather than a confound.
+    market_control_restatement_r2: float = Field(default=0.99, gt=0, le=1)
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)

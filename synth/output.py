@@ -324,9 +324,11 @@ def export_reference_tables(
     ]
     pl.DataFrame(tar_rows).write_csv(out / "tariff_schedule.csv")
 
-    # Market / competitor price index (24.9/24.10): written only when the
-    # competitor-co-movement mechanism is on, so every other world is unchanged
-    # and the engine's optional control switches off with the absent file.
+    # Published market / competitor price index (24.9/24.10; emitted on EVERY
+    # world since Run 6 Phase 70, because the causal gate needs competitor-price
+    # conditions held constant and a world without a published series can never
+    # demonstrate that path). The series is a noisy category-monthly proxy of
+    # the market condition, never the planted condition itself.
     if world.market_index is not None:
         mkt_rows = [
             {

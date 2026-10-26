@@ -29,6 +29,7 @@ from margin_engine.sensitivity.estimate import (
     estimate_segment,
     run_sensitivity,
 )
+from margin_engine.sensitivity.market_control import SOURCE_MAPPED, select_market_index
 from margin_engine.sensitivity.shrinkage import shrink_to_segment
 
 REPO = Path(__file__).resolve().parents[1]
@@ -94,6 +95,16 @@ def build_world_panel(
         res.reference["supplier_cost_index"],
         res.reference["tariff_schedule"],
         rules_full(),
+        # The published market price index goes through the SAME public-source
+        # decision production uses (Run 6, Phase 70), so these worlds exercise
+        # the competitor-price gate instead of bypassing it.
+        market_price_index=select_market_index(
+            res.reference.get("market_price_index"),
+            public_source=res.mapping.reference_tables["market_price_index"].public_source
+            if "market_price_index" in res.mapping.reference_tables
+            else None,
+            rules=rules,
+        )[0],
     )
     return panel, truth, seg_map
 
@@ -120,7 +131,12 @@ def study(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
         panel, truth, seg_map = build_world_panel(
             tmp, Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         for r in sens.to_dicts():
             planted = seg_map.get(r["segment"])
             if planted is None:
@@ -158,7 +174,12 @@ def study_end_to_end(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str,
         panel, truth, seg_map = build_world_panel(
             tmp, Preset.WELL_IDENTIFIED, seed, use_engine_segments=True
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         for r in sens.to_dicts():
             planted = seg_map.get(r["segment"])
             if planted is None:
@@ -217,8 +238,37 @@ def test_diagnostics_reported(study: list[dict[str, Any]]) -> None:
             assert r["first_stage_f"] is not None
             assert r["iv_ci_low"] is not None and r["iv_ci_high"] is not None
             assert r["identifying_coverage"] is not None
-            assert r["robustness_spread"] is not None
-            assert r["overid_p"] is not None  # two instruments configured
+            # Overidentification and robustness are reported against the
+            # instruments that still IDENTIFY price after the market control
+            # (Run 6, Phase 70). Holding the category market price constant
+            # removes nearly all of a category-level tariff instrument's
+            # variation, which leaves the model just-identified: the test is
+            # then reported as not evaluated, and the instrument count says
+            # so. A missing figure must therefore be accompanied by its
+            # reason, never left blank.
+            assert r["n_identified_instruments"] is not None
+            if int(r["n_identified_instruments"]) >= 2:
+                assert r["overid_p"] is not None
+            else:
+                assert r["overid_p"] is None
+                assert r["robustness_excluded_weak"] or r["status_reasons"]
+            if r["robustness_spread"] is None:
+                # No identified alternative exists, so the spread is unknown -
+                # which must cap the status, not pass silently.
+                assert r["status"] == "iv_estimated_elasticity"
+                assert "robustness could not be assessed" in r["status_reasons"]
+            # The estimand is always named, and a causal status requires the
+            # competitor-price path to be addressed.
+            assert r["estimand"] in (
+                "unilateral_own_price_response",
+                "market_wide_cost_shock_response",
+            )
+            if r["status"] == "causal_elasticity_supported":
+                assert r["estimand"] == "unilateral_own_price_response"
+                assert r["competitor_path_resolution"] in (
+                    "controlled_by_market_index",
+                    "no_competitor_price_path",
+                )
             # AR fields exist as the weak-IV-robust companion (an empty set,
             # both bounds null, is itself a reported outcome).
             assert "ar_ci_low" in r and "ar_ci_high" in r
@@ -240,7 +290,12 @@ def test_ci_coverage_50_simulations(tmp_path: Path) -> None:
         panel, truth, _ = build_world_panel(
             tmp_path, Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         for r in sens.to_dicts():
             if r["iv_ci_low"] is None:
                 continue
@@ -260,7 +315,12 @@ def test_ci_coverage_50_simulations(tmp_path: Path) -> None:
 def test_weak_instrument_never_causal(tmp_path: Path) -> None:
     rules = rules_full()
     panel, _, _ = build_world_panel(tmp_path, Preset.WEAK_INSTRUMENT, 3, use_engine_segments=False)
-    sens = run_sensitivity(panel, rules)
+    sens = run_sensitivity(
+        panel,
+        rules,
+        market_control_source=SOURCE_MAPPED,
+        market_control_grain="item_category:month",
+    )
     for r in sens.to_dicts():
         assert r["status"] != STATUS_CAUSAL, r
         # The weak-IV-robust (AR) fields are always part of the record: a wide
@@ -280,7 +340,12 @@ def test_invalid_instrument_overid_rejects(tmp_path: Path) -> None:
             use_engine_segments=False,
             size={"n_customers": 250, "n_items": 400},
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         seg_rows = [r for r in sens.to_dicts() if r["overid_p"] is not None]
         if any(r["overid_p"] < 0.05 for r in seg_rows):
             rejected += 1
@@ -294,7 +359,12 @@ def test_invalid_instrument_overid_rejects(tmp_path: Path) -> None:
 def test_price_constant_never_above_descriptive(tmp_path: Path) -> None:
     rules = rules_full()
     panel, _, _ = build_world_panel(tmp_path, Preset.PRICE_CONSTANT, 3, use_engine_segments=False)
-    sens = run_sensitivity(panel, rules)
+    sens = run_sensitivity(
+        panel,
+        rules,
+        market_control_source=SOURCE_MAPPED,
+        market_control_grain="item_category:month",
+    )
     for r in sens.to_dicts():
         assert r["status"] in (STATUS_INSUFFICIENT, STATUS_DESCRIPTIVE), r
 
@@ -302,7 +372,12 @@ def test_price_constant_never_above_descriptive(tmp_path: Path) -> None:
 def test_sparse_never_above_descriptive(tmp_path: Path) -> None:
     rules = rules_full()
     panel, _, _ = build_world_panel(tmp_path, Preset.SPARSE, 3, use_engine_segments=False)
-    sens = run_sensitivity(panel, rules)
+    sens = run_sensitivity(
+        panel,
+        rules,
+        market_control_source=SOURCE_MAPPED,
+        market_control_grain="item_category:month",
+    )
     for r in sens.to_dicts():
         assert r["status"] in (STATUS_INSUFFICIENT, STATUS_DESCRIPTIVE), r
 
@@ -369,7 +444,12 @@ def test_realistic_noise_preset_informational(tmp_path: Path) -> None:
         panel, truth, seg_map = build_world_panel(
             tmp_path, Preset.REALISTIC_NOISE, seed, use_engine_segments=False
         )
-        sens = run_sensitivity(panel, rules)
+        sens = run_sensitivity(
+            panel,
+            rules,
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
         for r in sens.to_dicts():
             assert r["status"] in (
                 STATUS_INSUFFICIENT,

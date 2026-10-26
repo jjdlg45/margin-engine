@@ -182,6 +182,16 @@ class GuidancePair(BaseModel):
     explanation: str
 
 
+class CausalGate(BaseModel):
+    """One causal criterion's outcome (Run 6, Phase 70). Machine-readable so
+    the UI renders a checklist instead of parsing prose."""
+
+    order: int
+    gate: str
+    result: str  # pass | fail | not_evaluated
+    detail: str
+
+
 class SensitivitySegment(BaseModel):
     segment: int
     n_obs: int
@@ -210,6 +220,25 @@ class SensitivitySegment(BaseModel):
     ppml_positive: float | None = None
     carried_forward_share: float | None = None
     market_control_used: bool = False
+    # Run 6, Phase 70: the named estimand, the market control's adequacy
+    # statistics, the competitor-price path resolution and the per-gate
+    # record. All optional so an older bundle stays loadable.
+    estimand: str | None = None
+    estimand_bias_direction: str | None = None
+    market_control_status: str | None = None
+    market_control_coverage: float | None = None
+    market_control_lag_periods: int | None = None
+    market_control_within_cell_values: float | None = None
+    market_control_price_r2: float | None = None
+    market_control_instrument_r2: float | None = None
+    market_control_detail: str | None = None
+    competitor_path_resolution: str | None = None
+    competitor_path_detail: str | None = None
+    first_stage_f_uncontrolled: float | None = None
+    n_identified_instruments: int | None = None
+    robustness_n_specifications: int | None = None
+    robustness_excluded_weak: str | None = None
+    causal_gates: list[CausalGate] = Field(default_factory=list)
     status: str
     status_reasons: str
     naive_vs_iv_note: str

@@ -375,13 +375,31 @@ export type ArBounded = boolean | null;
 export type ArCiHigh = number | null;
 export type ArCiLow = number | null;
 export type CarriedForwardShare = number | null;
+export type Detail = string;
+export type Gate = string;
+export type Order = number;
+export type Result = string;
+export type CausalGates = CausalGate[];
+export type CompetitorPathDetail = string | null;
+export type CompetitorPathResolution = string | null;
+export type Estimand = string | null;
+export type EstimandBiasDirection = string | null;
 export type FirstStageF = number | null;
+export type FirstStageFUncontrolled = number | null;
 export type IdentifyingCoverage = number | null;
 export type Iv = number | null;
 export type IvCiHigh = number | null;
 export type IvCiLow = number | null;
 export type IvSe = number | null;
+export type MarketControlCoverage = number | null;
+export type MarketControlDetail = string | null;
+export type MarketControlInstrumentR2 = number | null;
+export type MarketControlLagPeriods = number | null;
+export type MarketControlPriceR2 = number | null;
+export type MarketControlStatus = string | null;
 export type MarketControlUsed = boolean;
+export type MarketControlWithinCellValues = number | null;
+export type NIdentifiedInstruments = number | null;
 export type NObs1 = number;
 export type NPairs2 = number;
 export type NPositive = number;
@@ -393,6 +411,8 @@ export type OveridP = number | null;
 export type Ppml = number | null;
 export type PpmlPositive = number | null;
 export type PriceCvWithin = number;
+export type RobustnessExcludedWeak = string | null;
+export type RobustnessNSpecifications = number | null;
 export type RobustnessSpread = number | null;
 export type Segment5 = number;
 export type Status5 = string;
@@ -862,13 +882,27 @@ export interface SensitivitySegment {
   ar_ci_high: ArCiHigh;
   ar_ci_low: ArCiLow;
   carried_forward_share?: CarriedForwardShare;
+  causal_gates?: CausalGates;
+  competitor_path_detail?: CompetitorPathDetail;
+  competitor_path_resolution?: CompetitorPathResolution;
+  estimand?: Estimand;
+  estimand_bias_direction?: EstimandBiasDirection;
   first_stage_f: FirstStageF;
+  first_stage_f_uncontrolled?: FirstStageFUncontrolled;
   identifying_coverage: IdentifyingCoverage;
   iv: Iv;
   iv_ci_high: IvCiHigh;
   iv_ci_low: IvCiLow;
   iv_se: IvSe;
+  market_control_coverage?: MarketControlCoverage;
+  market_control_detail?: MarketControlDetail;
+  market_control_instrument_r2?: MarketControlInstrumentR2;
+  market_control_lag_periods?: MarketControlLagPeriods;
+  market_control_price_r2?: MarketControlPriceR2;
+  market_control_status?: MarketControlStatus;
   market_control_used?: MarketControlUsed;
+  market_control_within_cell_values?: MarketControlWithinCellValues;
+  n_identified_instruments?: NIdentifiedInstruments;
   n_obs: NObs1;
   n_pairs: NPairs2;
   n_positive: NPositive;
@@ -880,12 +914,24 @@ export interface SensitivitySegment {
   ppml: Ppml;
   ppml_positive?: PpmlPositive;
   price_cv_within: PriceCvWithin;
+  robustness_excluded_weak?: RobustnessExcludedWeak;
+  robustness_n_specifications?: RobustnessNSpecifications;
   robustness_spread: RobustnessSpread;
   segment: Segment5;
   status: Status5;
   status_reasons: StatusReasons;
   support_log_hi?: SupportLogHi;
   support_log_lo?: SupportLogLo;
+}
+/**
+ * One causal criterion's outcome (Run 6, Phase 70). Machine-readable so
+ * the UI renders a checklist instead of parsing prose.
+ */
+export interface CausalGate {
+  detail: Detail;
+  gate: Gate;
+  order: Order;
+  result: Result;
 }
 export interface UnallocatedSettlement {
   amount_cents: AmountCents2;

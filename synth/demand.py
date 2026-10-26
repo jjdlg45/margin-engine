@@ -183,6 +183,34 @@ def build_pairs(
     )
 
 
+def _category_cost_shock(
+    z_cost: np.ndarray, items: pl.DataFrame, *, n_categories: int
+) -> np.ndarray:
+    """Mean supplier cost shock per CATEGORY and month (Run 6, Phase 70).
+
+    Built from the items table's category/supplier pairs, so the published
+    market index varies across categories within a month and survives the
+    estimator's time fixed effects. Note what this deliberately does NOT
+    contain: the supplier-specific component. A category average cannot
+    absorb supplier-specific competitor movement, which is exactly the grain
+    mismatch real deployments face and the gate must detect.
+    """
+    out = np.zeros((n_categories, z_cost.shape[1]))
+    cats = items["item_category"].to_list()
+    sups = items["supplier_id"].to_list()
+    sup_index = {s: i for i, s in enumerate(sorted(set(sups)))}
+    by_cat: dict[int, set[int]] = {}
+    for cat, sup in zip(cats, sups, strict=True):
+        g = int(str(cat).removeprefix("CAT"))
+        if g < n_categories and sup in sup_index:
+            by_cat.setdefault(g, set()).add(sup_index[sup])
+    for g in range(n_categories):
+        idx = sorted(by_cat.get(g, set()))
+        if idx:
+            out[g] = z_cost[idx, :].mean(axis=0)
+    return out
+
+
 def simulate_panel(
     cfg: GeneratorConfig,
     pairs: pl.DataFrame,
@@ -349,12 +377,38 @@ def simulate_panel(
     # the industry-wide cost shocks (same pass-through as own prices) and
     # shifts demand. This violates the exclusion restriction for BOTH
     # instruments in the same direction, which overidentification cannot see.
-    market_index: np.ndarray | None = None
+    # A PUBLISHED market price index exists on every world (Run 6, Phase 70):
+    # the causal gate needs competitor-price conditions held constant, and a
+    # world with no published index can never demonstrate the supported path.
+    # Construction, chosen so the series is usable as a control:
+    #   - per CATEGORY and month, so month fixed effects cannot absorb it
+    #     (a national monthly series is removed exactly by those effects);
+    #   - driven by the same cost and tariff movements that pass through to
+    #     every seller's prices, so it is genuinely informative about prices;
+    #   - with its own measurement noise, so it is not an exact restatement of
+    #     an instrument (which would destroy identification rather than
+    #     control a confound);
+    #   - drawn from a DEDICATED generator, so adding it leaves every existing
+    #     world's prices, quantities and planted truth byte-identical.
+    cat_cost = _category_cost_shock(z_cost, items, n_categories=z_tariff.shape[0])
+    mkt_rng = np.random.default_rng(d.market_index_seed)
+    eta = mkt_rng.normal(0.0, d.market_noise_sd, size=z_tariff.shape)
+    log_mkt_published = d.market_passthrough * (cat_cost + z_tariff) + eta
+    if d.market_index_granularity == "national_monthly":
+        # A deliberately inadequate index for the misspecification presets:
+        # one value per month, which the time fixed effects absorb exactly.
+        log_mkt_published = np.tile(
+            log_mkt_published.mean(axis=0, keepdims=True), (z_tariff.shape[0], 1)
+        )
+    market_index: np.ndarray | None = np.exp(log_mkt_published)
     if d.competitor_comovement > 0:
+        # The TRUE competitor price path that shifts demand (the exclusion
+        # violation the misspecified preset plants). Kept separate from the
+        # published index: a real published series is a noisy, lagged proxy of
+        # the true market condition, never the condition itself.
         zbar_cost = z_cost.mean(axis=0)  # industry cost shock per month
-        log_mkt = d.price_passthrough * (zbar_cost[np.newaxis, :] + z_tariff)
-        market_index = np.exp(log_mkt)  # (n_categories, months)
-        log_mu = log_mu + d.competitor_comovement * log_mkt[ca, t_tile]
+        log_mkt_true = d.price_passthrough * (zbar_cost[np.newaxis, :] + z_tariff)
+        log_mu = log_mu + d.competitor_comovement * log_mkt_true[ca, t_tile]
 
     # Cross-price effects (Phase 17): for substitution-group partners, demand
     # for A rises with B's relative price when the same customer carries both.

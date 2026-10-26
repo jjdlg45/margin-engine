@@ -55,7 +55,8 @@ from margin_engine.segment.trees import (
     fit_margin_driver_tree,
     prepare_segmentation_frame,
 )
-from margin_engine.sensitivity.estimate import run_sensitivity
+from margin_engine.sensitivity.estimate import run_sensitivity_full
+from margin_engine.sensitivity.market_control import select_market_index
 
 
 @dataclass
@@ -90,6 +91,8 @@ class FullRunResult:
     action_events: pl.DataFrame | None = None  # their birth event log (Phase 38)
     # Overlap-group portfolio estimates (Run 6, Phase 68).
     action_portfolio: pl.DataFrame | None = None
+    # Long-form causal-gate record per segment (Run 6, Phase 70).
+    sensitivity_gates: pl.DataFrame | None = None
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -183,6 +186,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "action_events": ["action_id", "seq"],
     "action_portfolio_groups": ["overlap_group"],
     "sensitivity": ["segment"],
+    "sensitivity_gates": ["segment", "gate_order"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
     "customer_economics": ["customer_id"],
@@ -409,22 +413,16 @@ def run_full(
     rss_log("guidance")
 
     t = time.perf_counter()
-    # Public-data-only rule (Phase 37): the market/competitor price index is
-    # accepted as an elasticity control only when the mapping declares its
-    # source PUBLIC. Algorithmic use of competitors' non-public prices raises
-    # antitrust concerns; the engine refuses the control rather than assume.
-    market_idx = res.reference.get("market_price_index")
-    if market_idx is not None and rules.compliance.market_index_public_source_required:
-        mpi_spec = res.mapping.reference_tables.get("market_price_index")
-        if mpi_spec is None or mpi_spec.public_source is not True:
-            market_idx = None
-            res.notes.append(
-                "market price index NOT used as an elasticity control: the "
-                "mapping does not declare public_source: true for it. Only "
-                "public sources are accepted (sharing competitors' non-public "
-                "prices through a pricing algorithm raises antitrust concerns; "
-                "see docs/methodology.md, Pricing-law considerations)"
-            )
+    # Public-data-only rule (Phase 37) + competitor-path control selection
+    # (Run 6, Phase 70), in one shared function so tests and the validation
+    # scripts exercise the same decision production does.
+    mpi_spec = res.mapping.reference_tables.get("market_price_index")
+    market_idx, mkt_source, mkt_notes = select_market_index(
+        res.reference.get("market_price_index"),
+        public_source=mpi_spec.public_source if mpi_spec is not None else None,
+        rules=rules,
+    )
+    res.notes.extend(mkt_notes)
     # Instrument builder (27.6): the supplier cost instrument can come from a
     # mapped index table, be BUILT from receipt history, or map an external
     # public series - config decides, the engine never guesses.
@@ -473,7 +471,15 @@ def run_full(
     rss_log("panel")
 
     t = time.perf_counter()
-    sens = run_sensitivity(panel, rules)
+    # The index joins at category x month; the gate compares that grain to
+    # each instrument's declared variation (Run 6, Phase 70).
+    sens_res = run_sensitivity_full(
+        panel,
+        rules,
+        market_control_source=mkt_source,
+        market_control_grain="item_category:month",
+    )
+    sens, sens_gates = sens_res.estimates, sens_res.gates
     timings["sensitivity"] = time.perf_counter() - t
     rss_log("sensitivity")
 
@@ -663,6 +669,7 @@ def run_full(
         "action_events": actions_res.events,
         "action_portfolio_groups": action_portfolio,
         "sensitivity": sens,
+        "sensitivity_gates": sens_gates,
         "opportunities": opps,
         "leakage": leak,
         "order_economics": cts.order_economics,
@@ -1103,6 +1110,7 @@ def run_full(
         segments=seg,
         guidance=guidance_res.guidance,
         sensitivity=sens,
+        sensitivity_gates=sens_gates,
         opportunities=opps,
         leakage=leak,
         timings=timings,

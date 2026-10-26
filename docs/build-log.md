@@ -3589,3 +3589,148 @@ phase's run. Phase 69 itself changed no UI.
 Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
 mypy src api 0 (strict); full pytest 523 passed 0 failed (exit 0);
 Playwright 225 passed 3 skipped (exit 0). Demo bundle re-exported.
+
+## Phase 70 — Competitor-price path in the causal gate (2026-10-26, Run 6 branch)
+
+Findings 2 and 13. The estimand is now NAMED and the top status requires the
+competitor-price path to be addressed.
+
+**Design note (a planning critique changed the approach before any code was
+written).** The obvious adequacy test — reject a market control that
+correlates too highly with the instruments — is BACKWARDS. A faithful
+market-price control must correlate with industry-wide cost instruments,
+because that correlation IS the confound it absorbs; an R-squared ceiling
+would have rewarded a column of noise and rejected an informative series.
+Adequacy is therefore structural and relevance-based.
+
+1. **New module sensitivity/market_control.py**: `select_market_index` moves
+   Phase 37's public-source rule out of the pipeline so tests and the
+   validation scripts exercise the same decision production does (they
+   previously bypassed it entirely). `assess_market_control` checks, in
+   order: freshness (trailing lag on covered periods), coverage, ABSORPTION
+   (more than one distinct value per time fixed-effect cell — a national
+   monthly series is removed exactly by month effects, a structural fact
+   tested structurally, not by an epsilon on a variance), RELEVANCE (share of
+   within-pair price movement explained, with the right sign), and
+   restatement (only near-exact collinearity, R-squared >= 0.99, is refused).
+   `resolve_competitor_path` reads each instrument's declared path and
+   requires EVERY instrument to clear it, since the estimate uses them
+   jointly.
+2. **Grain is the CHANNEL's, not the instrument's** — new
+   `InstrumentPath.channel_grain` with its argument in config: customers
+   compare sellers of the same item class, so a category-level index is the
+   right grain even for a supplier-level instrument. A control coarser than
+   the declared channel grain is refused
+   (`control_coarser_than_instrument`).
+3. **No fail-open switch.** There is deliberately no config flag that
+   disables the gate. The only routes to the top status are an adequate
+   control or `resolved_by: no_path` WITH a written treatment (enforced by a
+   validator — a one-word switch must not lift a causal claim).
+4. **Three estimands** (not two): `unilateral_own_price_response`,
+   `market_wide_cost_shock_response` (with
+   `estimand_bias_direction=understates_sensitivity`) and
+   `descriptive_association` — because calling a non-IV estimate a
+   market-wide cost-shock response would assert a reading no instrument
+   supported.
+5. **causal_status_reasons**: eight machine-readable gates (order, gate,
+   pass / fail / not_evaluated, plain-English detail), exported long-form as
+   `sensitivity_gates` and rendered as a UI checklist carrying its outcome in
+   a glyph AND words. A check the data cannot support is NOT EVALUATED, never
+   a pass.
+6. **Variance fixed as the critique required**: the leave-one-cluster-out
+   jackknife now RE-FITS the control inside every replicate (algebraically,
+   via leave-one-out moment sums), instead of partialling once and treating
+   the coefficient as known. Measured effect: 95% CI coverage 92.7% -> 94.7%.
+7. **Two consequences of controlling, measured and made explicit.** Holding
+   the category market price constant removes nearly all of the CATEGORY
+   tariff instrument's variation (its own first stage falls to F 0.0-5.8 on
+   the demo world) while the SUPPLIER cost shock keeps F 880-2000. That is
+   the economics, not an artifact: a category tariff IS a category
+   market-price mover, while a supplier-specific shock moves this
+   distributor's cost without moving the category market price — which is
+   exactly what identifies a UNILATERAL move. So (a) overidentification now
+   runs only over instruments that still identify price (fewer than two
+   leaves the model just-identified and the test reported as not evaluated,
+   which the spec's own criterion contemplates), and (b) the robustness
+   spread covers only IDENTIFIED alternatives, with excluded ones named and
+   their first-stage F reported. A specification whose own first stage is
+   weak is not evidence the headline is unstable — it is an unidentified
+   specification. With NO identified alternative the spread is UNKNOWN and
+   the top status is refused, rather than collapsing to a reassuring zero.
+8. **Downstream hole closed**: at instrumented-only status with an
+   uncontrolled path, the two-sided expected-change range is withheld
+   (volume treatment `competitor_path_uncontrolled`). An interval for a
+   market-wide estimand is not a confidence interval for the unilateral move
+   being priced, and its bias direction flatters price increases.
+9. **Cross-price** top status is explicitly capped: the market control is not
+   wired into that design, so `causal_cross_elasticity_supported` cannot be
+   claimed while the path is uncontrolled.
+10. **Generator (demo continuity, as the spec requires)**: every world now
+    publishes a market price index, built per CATEGORY and month from the
+    category-mean supplier cost shock plus the tariff plus its own noise,
+    drawn from a DEDICATED generator so no existing world's prices or planted
+    truth shift. The `competitor_comovement` preset gets a deliberately
+    INADEQUATE national-monthly series — the world where competitor prices
+    move with the instruments is also the world whose published series cannot
+    control them. The planted true competitor path stays separate from the
+    published proxy, because a real published series is a noisy proxy of the
+    market condition, never the condition itself.
+
+Latent bug found by the new design: in the two-way (Cameron-Gelbach-Miller)
+variance, when NO per-dimension component was positive the fallback called
+max() on an empty sequence and raised. It now reports an infinite variance,
+which fails the strength and precision gates instead of passing them on a
+variance of zero; the first-stage F guards non-finite input the same way.
+
+Tests added: tests/test_competitor_path.py (22): source selection; adequacy
+including the two cases that matter most — heavy correlation with an
+instrument is NOT disqualifying, and a pure-noise control IS refused as
+uninformative; structural absorption; staleness evaluated before coverage;
+path resolution including undocumented, no-path-without-argument, grain too
+coarse, declared channel grain, and one-unresolved-instrument-contaminates;
+the three estimands; plus structural checks that no fail-open switch exists
+and that the shipped instruments declare their resolution and grain.
+
+Two existing tests were deliberately updated (premises the spec changed, not
+weakened): test_generator's market-index assertion now checks that EVERY
+world publishes an index, that the well-identified one varies within each
+period, and that the co-movement preset's is national; and
+test_diagnostics_reported now asserts the stronger honest behavior —
+overidentification present only with two identified instruments, a missing
+figure accompanied by its reason, an unknown robustness spread capping the
+status, the estimand always named, and a causal status implying a resolved
+path.
+
+Before/after (validation.json, regenerated, 2305s):
+
+| Check | Before | After | Target |
+|---|---|---|---|
+| Elasticity recovery, planted grain | median 0.019, P90 0.051, worst 0.110 | median 0.019, P90 0.077, worst 0.095 | median <= 0.10, P90 <= 0.15 — PASS |
+| Elasticity recovery, engine segments | median 0.019, P90 0.072, worst 0.110 | median 0.022, P90 0.077, worst 0.095 | PASS |
+| 95% CI coverage, 50 simulations | 278/300 = 92.7% | 284/300 = 94.7% | 90-98% — PASS |
+| CI coverage, persistent demand (shipped default) | 280/300 = 93.3% | 278/300 = 92.7% | 90-98% — PASS |
+| Naive estimator bias | toward zero on 5/5 seeds | unchanged | PASS |
+| Causal support reachable | "Reached" | "Reached; competitor-price path controlled by market index; market index adequate" | PASS |
+| Competitor-price path gate (new, informational) | — | 13/30 segment-seeds reach causal support; 17/30 just-identified after controlling | informational |
+
+Demo world: segment 6 KEEPS `causal_elasticity_supported`, now earned against
+the gate (control adequate, path controlled, estimand named). Expected
+contribution change 7,966,738 -> 4,993,815 cents and the pocket gross profit
+basis 7,923,208 -> 4,963,644 cents, because the control is now partialled out
+of the elasticity. Causal segments 1 of 3 — unchanged in count, stronger in
+meaning.
+
+Process fix found while regenerating: `measure_validation.py` overwrote
+validation.json wholesale, silently deleting the five rows the other
+measurement scripts contribute (hybrid world, results tracker, scale,
+scenario matrix). It now carries forward any row it did not produce, the way
+`measure_tracker.py` already did, and the five rows were restored. The one
+failing row, Scale (10M-line pipeline), is the pre-existing Run 4 KNOWN GAP
+that Phase 83 addresses.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 545 passed 0 failed (exit 0); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed 3 skipped (exit 0) after
+re-baselining 8 snapshots on the three pages whose content deliberately
+changed (sensitivity gains the gate checklist; opportunity and actions carry
+the new expected-change numbers). validation.json regenerated.
