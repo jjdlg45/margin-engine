@@ -82,10 +82,42 @@ contribution change exceeds the gross profit change by K x (Q0 - Q1): a price
 increase sheds volume and its service cost with it.
 
 Produced only where the elasticity status is causal-supported AND the
-proposed log-price move lies inside the segment's identifying price support;
-at instrumented-only evidence a labeled sensitivity range from the elasticity
-confidence interval is shown instead; below that, fixed-volume numbers only.
-Pairs without a known cost are excluded (missing cost is never zero).
+proposed log-price move satisfies the identification-support rule below; at
+instrumented-only evidence a sensitivity analysis from the elasticity
+confidence interval is shown instead - a span of plausible price responses,
+not a confidence interval around the dollar impact; below that, fixed-volume
+numbers only. Pairs without a known cost are excluded (missing cost is never
+zero).
+
+
+## The identification-support rule
+
+Units: log price, dimensionless. Let `m = log(P1 / P0)` be the proposed move
+and `x_i` the instrument-predicted within log-price movement of estimation
+row `i`, residualized for the pair and period fixed effects and the market
+control.
+
+Outer bounds, at the configured quantiles q_lo and q_hi (5% and 95%):
+
+    lo = quantile(x, q_lo),   hi = quantile(x, q_hi)
+
+Density test at a candidate move `m`, with window `w` and minimum count `n`:
+
+    dense(m)  =  |{ i : |x_i - m| <= w }|  >=  n
+
+Supported regions are the maximal intervals of `[lo, hi]` on which `dense`
+holds, evaluated on a grid across the bounds:
+
+    R = { [a_k, b_k] }  with  dense(m) for all m in [a_k, b_k]
+
+The rule passes when `m` lies in some `[a_k, b_k]`. Distance to support,
+reported on every record and zero when the rule passes:
+
+    dist(m) = min_k max(a_k - m, m - b_k, 0)
+
+One connected region reduces to the outer-bounds test the rule used before.
+Two or more mean the instruments moved price in separate clusters, and a move
+between them is refused however comfortably it sits inside `[lo, hi]`.
 
 
 ## Target optimization
@@ -98,8 +130,9 @@ the first-order condition gives the interior optimum on the invoice basis:
 `(C + F) / (1 - d)` is the pocket-aware marginal cost of an invoice dollar.
 P* is clipped to [binding floor, band P75]. For beta >= -1 the unconstrained
 optimum is unbounded, so the corridor top is used and labeled. Applied only
-at causal support inside the identifying price range; everything else keeps
-the provisional historical target (max(P50, floor), start max(P75, floor)).
+at causal support and where the move satisfies the identification-support
+rule; everything else keeps the provisional historical target (max(P50,
+floor), start max(P75, floor)).
 
 The objective is configurable (Phase 65): pocket gross profit (closed form
 above) or contribution, which subtracts the MARGINAL per-unit cost-to-serve.

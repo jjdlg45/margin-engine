@@ -167,6 +167,29 @@ sensitivity:
   # persistent-demand study measured inside the 90-98% band, and withdraws
   # supplier (about 8.5) and product category (about 7.0), which it cannot
   # measure because they are too few to produce an interval at all.
+  # Identification-support rule (Run 6, Phase 74). A volume forecast is only
+  # worth making where cost and tariff movements actually moved price. The
+  # outer bounds are these quantiles of the instrument-predicted within
+  # log-price movement - residualized for the fixed effects and the market
+  # control, so it is movement around each pair's own price path.
+  price_support_lo_quantile: 0.05
+  price_support_hi_quantile: 0.95
+  # Inside those bounds support is not assumed uniform. A proposed move needs
+  # at least `min_support_observations` of those movements within
+  # `price_support_window` log units of it. A segment whose instruments pushed
+  # price around -6% and around +4%, with nothing between, supports neither a
+  # flat price nor a 1% change, and the rule refuses both even though they sit
+  # inside the outer bounds. Where support is one connected stretch - every
+  # segment on the demo world - this is exactly the outer-bounds test it
+  # replaces.
+  #
+  # 2% is roughly a third of the movement the instruments induce on these
+  # panels (about -6% to +6%), so the window is wide enough to accumulate a
+  # count and narrow enough that two genuinely separate clusters stay
+  # separate. 30 is the smallest count at which the local density is being
+  # measured rather than guessed.
+  price_support_window: 0.02
+  min_support_observations: 30
   min_assignment_clusters: 15
   small_cluster_method: wild_bootstrap
   # Below this RAW count the bootstrap stops being a remedy. 8 is the lowest

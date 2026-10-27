@@ -47,7 +47,11 @@ from margin_engine.opportunity.deductions import (
     TREATMENT_RECOMPUTED,
     TieredDeductionContext,
 )
-from margin_engine.sensitivity.estimate import STATUS_CAUSAL, STATUS_IV
+from margin_engine.sensitivity.estimate import (
+    STATUS_CAUSAL,
+    STATUS_IV,
+    parse_support_regions,
+)
 from margin_engine.sensitivity.market_control import PATH_CONTROLLED, PATH_NO_PATH
 
 TREATMENT_EXPECTED = "expected_change"
@@ -170,12 +174,16 @@ def price_opportunities(
         sens_cols.append(pl.col("competitor_path_resolution"))
     if "estimand" in sensitivity.columns:
         sens_cols.append(pl.col("estimand").alias("elasticity_estimand"))
-    # Identifying price support (24.6): the 5th-95th percentile range of
-    # instrument-predicted within log-price movement per segment. Proposed
-    # moves outside it are extrapolation and get no volume response.
+    # Identification support (24.6, refined in Run 6 Phase 74): the stretches
+    # of within log-price movement the segment's instruments actually induced,
+    # densely enough to inform a response. Proposed moves outside them are
+    # extrapolation and get no volume response.
     has_support = {"support_log_lo", "support_log_hi"}.issubset(sensitivity.columns)
     if has_support:
         sens_cols += [pl.col("support_log_lo"), pl.col("support_log_hi")]
+    has_regions = "support_regions" in sensitivity.columns
+    if has_regions:
+        sens_cols.append(pl.col("support_regions"))
     # Total-quantity elasticity (Run 6, Phase 72). The elasticity priced above
     # is the CONDITIONAL one, estimated on months a customer bought, so a
     # forecast built on it holds buying incidence fixed - it answers "they buy
@@ -202,6 +210,8 @@ def price_opportunities(
             pl.lit(None, dtype=pl.Float64).alias("support_log_lo"),
             pl.lit(None, dtype=pl.Float64).alias("support_log_hi"),
         )
+    if not has_regions:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("support_regions"))
     if not has_path:
         g = g.with_columns(pl.lit(None, dtype=pl.String).alias("competitor_path_resolution"))
     if "elasticity_estimand" not in g.columns:
@@ -329,12 +339,101 @@ def price_opportunities(
     path_ok = pl.col("competitor_path_resolution").is_null() | pl.col(
         "competitor_path_resolution"
     ).is_in([PATH_CONTROLLED, PATH_NO_PATH])
-    # Extrapolation guard (24.6): the proposed log-price move must lie inside
-    # the segment's identifying support; outside it no volume response is
-    # produced at any status.
+    # Identification-support rule (24.6, refined in Run 6 Phase 74). The
+    # proposed log-price move must land where the segment's instruments
+    # actually moved price, densely enough to say anything about the response;
+    # outside that, no volume response is produced at any status.
+    #
+    # The test is against REGIONS rather than a single outer range, because
+    # support is not uniform between the outer bounds. A segment whose
+    # instrument-induced movement clusters around -6% and +4%, with nothing in
+    # between, supports neither a 0% nor a -1% move however wide its outer
+    # bounds look. Each region is a stretch where enough movements sit within
+    # the configured window; a segment whose support is one connected stretch
+    # produces one region and behaves exactly as before.
     move = (p1 / p0).log()
-    in_support = pl.col("support_log_lo").is_null() | (
-        (move >= pl.col("support_log_lo")) & (move <= pl.col("support_log_hi"))
+    regions_by_segment = {
+        row["segment_leaf"]: parse_support_regions(row["support_regions"] or "")
+        for row in g.select("segment_leaf", "support_regions").unique().to_dicts()
+    }
+    max_regions = max((len(r) for r in regions_by_segment.values()), default=0)
+    if max_regions:
+        # Widen the regions into fixed columns so the test stays a vectorized
+        # expression: segments have at most a handful of them.
+        region_cols: list[pl.Expr] = []
+        for k in range(max_regions):
+            lo_map = {
+                seg: (r[k][0] if len(r) > k else None) for seg, r in regions_by_segment.items()
+            }
+            hi_map = {
+                seg: (r[k][1] if len(r) > k else None) for seg, r in regions_by_segment.items()
+            }
+            region_cols += [
+                pl.col("segment_leaf")
+                .replace_strict(lo_map, default=None, return_dtype=pl.Float64)
+                .alias(f"_sup_lo_{k}"),
+                pl.col("segment_leaf")
+                .replace_strict(hi_map, default=None, return_dtype=pl.Float64)
+                .alias(f"_sup_hi_{k}"),
+            ]
+        g = g.with_columns(region_cols)
+        in_regions = pl.any_horizontal(
+            *[
+                (move >= pl.col(f"_sup_lo_{k}")) & (move <= pl.col(f"_sup_hi_{k}"))
+                for k in range(max_regions)
+            ]
+        ).fill_null(False)
+        # How far beyond the nearest supported stretch the proposal reaches,
+        # in log-price units. Zero inside; reported so a reader can see
+        # whether a refusal was marginal or nowhere near.
+        region_gap = pl.min_horizontal(
+            *[
+                pl.max_horizontal(
+                    pl.col(f"_sup_lo_{k}") - move, move - pl.col(f"_sup_hi_{k}"), pl.lit(0.0)
+                )
+                for k in range(max_regions)
+            ]
+        )
+    else:
+        in_regions = pl.lit(False)
+        region_gap = pl.lit(None, dtype=pl.Float64)
+
+    # Three cases, in order. A segment whose regions were measured is held to
+    # them. A segment carrying only the outer bounds comes from a sensitivity
+    # frame written before the regions existed, and is held to the bounds, as
+    # it was then. A segment with neither was never measured against this rule
+    # at all - no instruments, or an older frame - and is not refused by it;
+    # whatever evidence status it carries is what limits it.
+    measured_regions = pl.col("support_regions").is_not_null()
+    has_bounds = pl.col("support_log_lo").is_not_null()
+    in_bounds = (move >= pl.col("support_log_lo")) & (move <= pl.col("support_log_hi"))
+    bounds_gap = pl.max_horizontal(
+        pl.col("support_log_lo") - move, move - pl.col("support_log_hi"), pl.lit(0.0)
+    )
+    in_support = (
+        pl.when(measured_regions)
+        .then(in_regions)
+        .when(has_bounds)
+        .then(in_bounds.fill_null(False))
+        .otherwise(True)
+    )
+    g = g.with_columns(
+        pl.when(measured_regions)
+        .then(region_gap)
+        .when(has_bounds)
+        .then(bounds_gap)
+        .otherwise(pl.lit(None, dtype=pl.Float64))
+        .alias("price_support_distance"),
+        pl.when(in_support)
+        .then(
+            pl.when(measured_regions | has_bounds)
+            .then(pl.lit("inside the movement the instruments induced"))
+            .otherwise(pl.lit("not measured for this segment"))
+        )
+        .when(measured_regions & pl.lit(max_regions == 0))
+        .then(pl.lit("the instruments induced no densely supported movement in this segment"))
+        .otherwise(pl.lit("beyond the movement the instruments induced"))
+        .alias("price_support_reason"),
     )
 
     g = g.with_columns(
@@ -457,6 +556,8 @@ def price_opportunities(
         "elasticity_estimand",
         "cost_unavailable",
         "volume_treatment",
+        "price_support_distance",
+        "price_support_reason",
         "total_quantity_elasticity",
         "total_quantity_status",
         "gp_change_total_quantity_basis_cents",

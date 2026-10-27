@@ -87,9 +87,11 @@ def opportunity_summary(row: dict[str, Any]) -> str:
     tail = {
         "expected_change": "causal evidence models the volume response.",
         "sensitivity_range_only": "instrument-level evidence limits the volume "
-        "response to a labeled range.",
-        "outside_price_support": "the move exceeds the segment's identified "
-        "price range, so no volume response is modeled.",
+        "response to a sensitivity analysis, not a confidence interval around "
+        "the dollar impact.",
+        "outside_price_support": "the move lands where cost and tariff "
+        "movements never moved this segment's prices, so no volume response is "
+        "modeled.",
         "cost_unavailable": "no unit cost is known, so cost-dependent figures are not produced.",
     }.get(treatment, "no volume response is modeled.")
     if cur is not None and target is not None and target > 0:
@@ -130,14 +132,21 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
     if treatment == "sensitivity_range_only":
         return (
             base + f" The segment's elasticity evidence is {_label(status).lower()}, so "
-            "the volume response is shown only as a labeled sensitivity range, not as "
-            "a point estimate."
+            "the volume response is shown as a sensitivity analysis across a span of "
+            "plausible price responses - not as a point estimate, and not as a "
+            "confidence interval around the dollar impact."
         )
     if treatment == "outside_price_support":
+        distance = row.get("price_support_distance")
+        how_far = (
+            f" The nearest movement of that kind is {abs(float(distance)):.1%} away."
+            if distance is not None and float(distance) > 0
+            else ""
+        )
         return (
-            base + " The proposed move lies outside the price variation the "
-            "instruments ever induced in this segment, so the engine refuses to "
-            "extrapolate a volume response - the figure assumes unchanged volume."
+            base + " Cost and tariff movements never moved this segment's prices by "
+            "anything like the amount proposed, so the engine has nothing to base a "
+            "volume response on and the figure assumes unchanged volume." + how_far
         )
     if treatment == "cost_unavailable":
         return (

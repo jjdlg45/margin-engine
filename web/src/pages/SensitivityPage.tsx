@@ -314,17 +314,46 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">Identified price range</dt>
+                      {/* How far cost and tariff movements actually moved
+                          price here. A proposed change beyond it, or in a gap
+                          inside it, gets no volume response. */}
+                      <dt className="text-caption secondary">Price movement measured</dt>
                       <dd className="m-0">
-                        {r.support_log_lo !== null &&
-                        r.support_log_lo !== undefined &&
-                        r.support_log_hi !== null &&
-                        r.support_log_hi !== undefined
-                          ? `${(100 * (Math.exp(r.support_log_lo) - 1)).toFixed(1)}% to +${(
+                        <span title={r.support_detail || undefined}>
+                          {r.support_log_lo !== null &&
+                          r.support_log_lo !== undefined &&
+                          r.support_log_hi !== null &&
+                          r.support_log_hi !== undefined
+                            ? `${(100 * (Math.exp(r.support_log_lo) - 1)).toFixed(1)}% to +${(
+                                100 *
+                                (Math.exp(r.support_log_hi) - 1)
+                              ).toFixed(1)}%`
+                            : "\u2014"}
+                        </span>
+                        {r.support_n !== null && r.support_n !== undefined
+                          ? `, over ${count(r.support_n)} rows`
+                          : ""}
+                        {r.support_n_regions !== null &&
+                        r.support_n_regions !== undefined &&
+                        r.support_n_regions !== 1
+                          ? r.support_n_regions === 0
+                            ? ", none of it dense enough to use"
+                            : ` in ${count(r.support_n_regions)} separate stretches`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">Price movement observed</dt>
+                      <dd className="m-0">
+                        {r.observed_log_lo !== null &&
+                        r.observed_log_lo !== undefined &&
+                        r.observed_log_hi !== null &&
+                        r.observed_log_hi !== undefined
+                          ? `${(100 * (Math.exp(r.observed_log_lo) - 1)).toFixed(1)}% to +${(
                               100 *
-                              (Math.exp(r.support_log_hi) - 1)
+                              (Math.exp(r.observed_log_hi) - 1)
                             ).toFixed(1)}%`
-                          : "—"}
+                          : "\u2014"}
                       </dd>
                     </div>
                   </dl>

@@ -571,6 +571,16 @@ class SensitivityConfig(StrictModel):
     #                   analytic one for reporting AND for the precision gate
     #   fail_closed     no instrumented status at all below the threshold
     # Either way the count and the method are reported.
+    # Identification support (Run 6, Phase 74). The outer bounds are these
+    # quantiles of the instrument-predicted within log-price movement. Inside
+    # them support is not assumed uniform: a proposed move must have at least
+    # `min_support_observations` of those movements within
+    # `price_support_window` log units of it, so a move landing in a gap
+    # between two clusters of movement is refused like one beyond the bounds.
+    price_support_lo_quantile: float = Field(default=0.05, gt=0, lt=1)
+    price_support_hi_quantile: float = Field(default=0.95, gt=0, lt=1)
+    price_support_window: float = Field(default=0.02, gt=0)
+    min_support_observations: int = Field(default=30, ge=1)
     min_assignment_clusters: int = Field(default=15, ge=2)
     small_cluster_method: Literal["wild_bootstrap", "fail_closed"] = "wild_bootstrap"
     # Below this many RAW clusters the bootstrap stops being a remedy and the

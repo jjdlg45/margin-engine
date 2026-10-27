@@ -217,6 +217,16 @@ class SensitivitySegment(BaseModel):
     ar_bounded: bool | None = None
     support_log_lo: float | None = None
     support_log_hi: float | None = None
+    # Run 6, Phase 74: where inside those bounds the movement is dense enough
+    # to inform a response, and how the observed spread compares.
+    support_n: int | None = None
+    support_regions: str | None = None
+    support_n_regions: int | None = None
+    support_window: float | None = None
+    support_min_observations: int | None = None
+    observed_log_lo: float | None = None
+    observed_log_hi: float | None = None
+    support_detail: str | None = None
     ppml_positive: float | None = None
     carried_forward_share: float | None = None
     imputed_price_share: float | None = None

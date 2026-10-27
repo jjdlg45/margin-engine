@@ -214,11 +214,26 @@ class SegmentEstimate:
     robustness_n_specifications: int | None = None
     robustness_excluded_weak: str = ""
     identifying_coverage: float | None = None
-    # Identifying price support (24.6): 5th-95th percentile of the
-    # instrument-predicted within log-price movement. Proposed moves outside
-    # this range are extrapolation and get no volume response downstream.
+    # Identification support (24.6, refined in Run 6 Phase 74). The outer
+    # bounds are quantiles of the instrument-predicted WITHIN log-price
+    # movement - residualized for pair and period fixed effects and for the
+    # market control, so they describe movement the instruments induced around
+    # a pair's own price path, not the spread of price levels across pairs.
     support_log_lo: float | None = None
     support_log_hi: float | None = None
+    # How many estimation rows the support rests on, and where it is actually
+    # dense: a proposed move inside the outer bounds but in a gap between two
+    # clusters of movement is as much an extrapolation as one beyond them.
+    support_n: int | None = None
+    support_regions: str = ""
+    support_n_regions: int | None = None
+    support_window: float | None = None
+    support_min_observations: int | None = None
+    # The same quantiles of the OBSERVED within price movement, so the report
+    # can show how much of the price variation the instruments account for.
+    observed_log_lo: float | None = None
+    observed_log_hi: float | None = None
+    support_detail: str = ""
     market_control_used: bool = False
     # Competitor-price path (Run 6, Phase 70). The estimand is named, the
     # control's adequacy statistics are reported, and the first stage is
@@ -516,6 +531,142 @@ def wild_cluster_bootstrap_iv(
     return beta0 - q * se0, beta0 + q * se0, int(t.size), detail
 
 
+@dataclass(frozen=True)
+class SupportProfile:
+    """Where a segment's instruments actually moved price, and how densely."""
+
+    lo: float
+    hi: float
+    n: int
+    regions: tuple[tuple[float, float], ...]
+    observed_lo: float
+    observed_hi: float
+    detail: str
+
+    @property
+    def regions_text(self) -> str:
+        """Compact, parseable form for the exports: a:b|a:b."""
+        return "|".join(f"{a:.6f}:{b:.6f}" for a, b in self.regions)
+
+
+def identification_support(
+    predicted: np.ndarray,
+    observed: np.ndarray,
+    *,
+    lo_quantile: float,
+    hi_quantile: float,
+    window: float,
+    min_observations: int,
+    n_bins: int = 60,
+) -> SupportProfile:
+    """Profile the price movement the instruments induced in one segment.
+
+    `predicted` is the instrument-predicted within log-price movement and
+    `observed` the within log-price movement itself, both already residualized
+    for the fixed effects and for the market control where one is used. The
+    outer bounds are the configured quantiles of `predicted`.
+
+    Inside those bounds the support is not assumed uniform. A proposed move is
+    supported only where at least `min_observations` predicted movements sit
+    within `window` of it, and the maximal runs of moves meeting that test are
+    returned as REGIONS. Skewed support yields one off-centre region; support
+    that clusters in two places with a gap between them yields two, and a move
+    landing in the gap is refused even though it lies between the outer bounds.
+    """
+    n = int(predicted.size)
+    lo = float(np.quantile(predicted, lo_quantile))
+    hi = float(np.quantile(predicted, hi_quantile))
+    obs_lo = float(np.quantile(observed, lo_quantile)) if observed.size else lo
+    obs_hi = float(np.quantile(observed, hi_quantile)) if observed.size else hi
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return SupportProfile(
+            lo, hi, n, (), obs_lo, obs_hi, "the instruments induced no usable price movement"
+        )
+    # Evaluate the "enough movements nearby" test on a grid across the bounds.
+    # Sorting once makes every window count a pair of binary searches.
+    grid = np.linspace(lo, hi, n_bins + 1)
+    order = np.sort(predicted)
+    left = np.searchsorted(order, grid - window, side="left")
+    right = np.searchsorted(order, grid + window, side="right")
+    dense = (right - left) >= min_observations
+    regions: list[tuple[float, float]] = []
+    start: float | None = None
+    for i, ok in enumerate(dense):
+        if ok and start is None:
+            start = float(grid[i])
+        elif not ok and start is not None:
+            regions.append((start, float(grid[i - 1])))
+            start = None
+    if start is not None:
+        regions.append((start, float(grid[-1])))
+    # A single grid point is an artefact of the grid, not a region of support.
+    regions = [(a, b) for a, b in regions if b > a]
+    if not regions:
+        detail = (
+            f"no part of the {lo:+.1%} to {hi:+.1%} range carries "
+            f"{min_observations} instrument-induced movements within "
+            f"{window:.1%} of it, over {n} rows"
+        )
+    else:
+        spans = ", ".join(f"{a:+.1%} to {b:+.1%}" for a, b in regions)
+        gap = (
+            ""
+            if len(regions) == 1
+            else f", in {len(regions)} separate stretches with gaps between them"
+        )
+        detail = (
+            f"instrument-induced price movement spans {lo:+.1%} to {hi:+.1%} over {n} rows; "
+            f"moves are supported where at least {min_observations} of those movements sit "
+            f"within {window:.1%}, which holds for {spans}{gap}. Observed price movement "
+            f"over the same rows spans {obs_lo:+.1%} to {obs_hi:+.1%}"
+        )
+    return SupportProfile(lo, hi, n, tuple(regions), obs_lo, obs_hi, detail)
+
+
+def support_distance(move: float, regions: Sequence[tuple[float, float]]) -> float:
+    """Zero when the move sits in a supported region, otherwise the log-price
+    distance to the nearest one. Positive numbers say how far the proposal
+    reaches beyond anything the instruments induced."""
+    if not regions:
+        return float("inf")
+    return min(max(a - move, move - b, 0.0) for a, b in regions)
+
+
+def parse_support_regions(text: str) -> tuple[tuple[float, float], ...]:
+    """Read back the compact export form written by `SupportProfile`."""
+    if not text:
+        return ()
+    out: list[tuple[float, float]] = []
+    for part in text.split("|"):
+        a, _, b = part.partition(":")
+        out.append((float(a), float(b)))
+    return tuple(out)
+
+
+def price_source_mix(work: pl.DataFrame) -> str:
+    """Where the prices on a segment's estimation rows came from, largest
+    share first.
+
+    The NAME breaks ties on the count. `group_by` output order is not
+    guaranteed, so sorting on the count alone leaves two equal counts in
+    whichever order the hash table happened to produce - which makes this
+    string, and the parquet export carrying it, differ between identical runs.
+    The scenario matrix caught it on a world where observed and
+    carried-forward prices each take 49% of the rows, about six runs in ten.
+    """
+    if not work.height:
+        return ""
+    rows = (
+        work.group_by("price_status")
+        .agg(pl.len().alias("n"))
+        .sort(["n", "price_status"], descending=[True, False])
+        .to_dicts()
+    )
+    return "; ".join(
+        f"{r['price_status'].replace('_', ' ')} {r['n'] / work.height:.0%}" for r in rows
+    )
+
+
 def _spec_min_groups(spec: ClusterSpec) -> int:
     """Degrees of freedom driver: the smallest positive-sign group count."""
     return min(n_g for _, n_g, sign in spec if sign > 0)
@@ -728,15 +879,7 @@ def estimate_segment(
         est.imputed_price_share = float(
             work["price_status"].is_in(["carried_forward", "list_x_pair_discount"]).mean() or 0.0  # type: ignore[arg-type]
         )
-        mix = (
-            work.group_by("price_status")
-            .agg(pl.len().alias("n"))
-            .sort("n", descending=True)
-            .to_dicts()
-        )
-        est.price_source_mix = "; ".join(
-            f"{r['price_status'].replace('_', ' ')} {r['n'] / work.height:.0%}" for r in mix
-        )
+        est.price_source_mix = price_source_mix(work)
     if est.n_positive < sc.min_observations:
         est.status_reasons.append(f"only {est.n_positive} positive observations")
         return est
@@ -969,11 +1112,29 @@ def estimate_segment(
         return est
     beta_iv = float((p_hat @ yz) / denom)
     est.iv = beta_iv
-    # Identifying price support (24.6): the range of instrument-predicted
-    # within log-price movement. Downstream, proposed moves outside this range
-    # are extrapolation beyond what the instruments ever induced.
-    est.support_log_lo = float(np.quantile(p_hat, 0.05))
-    est.support_log_hi = float(np.quantile(p_hat, 0.95))
+    # Identification support (24.6, refined in Run 6 Phase 74). `p_hat` is the
+    # instrument-predicted WITHIN log-price movement: pair and period fixed
+    # effects, and the market control where one is used, have already been
+    # taken out of both sides, so this is movement the instruments induced
+    # around each pair's own price path.
+    prof = identification_support(
+        p_hat,
+        pz,
+        lo_quantile=sc.price_support_lo_quantile,
+        hi_quantile=sc.price_support_hi_quantile,
+        window=sc.price_support_window,
+        min_observations=sc.min_support_observations,
+    )
+    est.support_log_lo = prof.lo
+    est.support_log_hi = prof.hi
+    est.support_n = prof.n
+    est.support_regions = prof.regions_text
+    est.support_n_regions = len(prof.regions)
+    est.support_window = sc.price_support_window
+    est.support_min_observations = sc.min_support_observations
+    est.observed_log_lo = prof.observed_lo
+    est.observed_log_hi = prof.observed_hi
+    est.support_detail = prof.detail
 
     # Full cluster-jackknife IV standard error: leave-one-cluster-out betas
     # with the FIRST STAGE re-estimated each time. Fixed-projection sandwiches

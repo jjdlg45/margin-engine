@@ -3167,6 +3167,30 @@
      "title": "Naive Vs Iv Note",
      "type": "string"
     },
+    "observed_log_hi": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Observed Log Hi"
+    },
+    "observed_log_lo": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Observed Log Lo"
+    },
     "overid_j": {
      "anyOf": [
       {
@@ -3352,6 +3376,18 @@
      "title": "Status Reasons",
      "type": "string"
     },
+    "support_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Detail"
+    },
     "support_log_hi": {
      "anyOf": [
       {
@@ -3375,6 +3411,66 @@
      ],
      "default": null,
      "title": "Support Log Lo"
+    },
+    "support_min_observations": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Min Observations"
+    },
+    "support_n": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support N"
+    },
+    "support_n_regions": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support N Regions"
+    },
+    "support_regions": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Regions"
+    },
+    "support_window": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Window"
     },
     "wild_bootstrap_reps_used": {
      "anyOf": [

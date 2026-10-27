@@ -255,19 +255,21 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "sensitivity_range_only": {
         "label": "Range only",
-        "description": "Instrument-level evidence: the volume response is shown only as a "
-        "labeled sensitivity range, and it covers how much buying customers buy rather "
-        "than whether they keep buying.",
+        "description": "Instrument-level evidence: the volume response is shown as a "
+        "sensitivity analysis - what the figure would be across a span of plausible price "
+        "responses - and not as a confidence interval around the dollar impact. It also "
+        "covers how much buying customers buy rather than whether they keep buying.",
     },
     "fixed_volume_only": {
         "label": "Fixed volume",
         "description": "No supported elasticity: the figure assumes unchanged volume.",
     },
     "outside_price_support": {
-        "label": "Outside price support",
-        "description": "The proposed move lies outside the price variation the instruments "
-        "ever induced in this segment, so no volume response is modeled - the figure "
-        "assumes unchanged volume.",
+        "label": "Outside measured price movement",
+        "description": "Cost and tariff movements never moved this segment's prices by "
+        "anything like the amount proposed - or moved them either side of it but not at it "
+        "- so there is nothing to base a volume response on. The figure assumes unchanged "
+        "volume.",
     },
     # --- deduction treatments (Run 6, Phase 66) ---------------------------------
     "flat_rate_exact": {

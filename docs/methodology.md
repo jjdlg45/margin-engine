@@ -529,12 +529,49 @@ row reports how often the option produced no interval at all beside how often
 it covered, because an option that covers well by refusing to answer is not
 the better option.
 
-Each segment also records its identifying price support: the 5th-95th
-percentile range of instrument-predicted within log-price movement
-[dimensionless, log price units]. Downstream volume-response math refuses
-proposed price moves outside that range (`outside_price_support`):
-extrapolating a demand curve beyond the variation the instruments ever
-induced would be a claim the data cannot back.
+### The identification-support rule
+
+Each segment records where its instruments actually moved price, and the
+opportunity module refuses to model a volume response for a proposed move that
+lands anywhere else. The rule is named for what it is: not a claim about which
+prices are achievable, but a statement that beyond a certain distance the
+engine is extrapolating a relationship it never observed.
+
+**What the support is measured on.** The instrument-predicted log-price
+movement, after the pair and period fixed effects and the market control have
+been taken out of both sides. It is therefore movement around each pair's own
+price path over time, not the spread of price levels across pairs. A segment
+whose customers pay very different prices but whose prices never move has
+almost no support, and the rule says so.
+
+**Outer bounds.** The configured quantiles of that movement, 5th to 95th by
+default.
+
+**Density inside the bounds.** Support is not assumed uniform between them. A
+proposed move is supported only where at least `min_support_observations` of
+the predicted movements sit within `price_support_window` log units of it, and
+the maximal runs of moves passing that test are reported as regions. Skewed
+support produces one off-centre region. Support that clusters in two places
+with nothing between them produces two, and a move landing in the gap is
+refused even though it sits between the outer bounds - which is the point:
+movements of -6% and +4% say nothing about what a 0% change would do.
+
+**What is reported.** The outer bounds, the number of estimation rows behind
+them, the regions, the configured window and minimum count, and the same
+quantiles of the *observed* price movement so a reader can see how much of the
+price variation the instruments account for. Each opportunity record carries
+its distance to the nearest supported region - zero inside - so a refusal can
+be read as marginal or as nowhere near.
+
+**Backwards compatibility.** A sensitivity frame written before the regions
+existed carries only the outer bounds, and is held to those. A segment with no
+support record at all - no instruments, or an older frame - is not refused by
+a rule it was never measured against; its evidence status is what limits it.
+
+At `iv_estimated_elasticity` the resulting range is a **sensitivity analysis**:
+what the impact would be across a span of plausible price responses. It is not
+a confidence interval around the dollar impact, and the report never calls it
+one.
 
 Carried-forward-price robustness: zero-quantity rows carry the pair's last
 observed price, which is an assumption, so PPML runs twice — on the full

@@ -4494,3 +4494,126 @@ files pass.** Two did not:
   runs in CI, which has the memory for it, and the figure is recorded here
   rather than reported as a pass. Phase 83's spill-to-Parquet work is where
   this gets fixed.
+
+## Phase 74 — The identification-support rule (2026-10-27, Run 6 branch)
+
+Finding 14. The engine already refused to model a volume response for a price
+move beyond the variation its instruments induced — a range from the 5th to
+the 95th percentile of instrument-predicted within log-price movement. Two
+things were wrong with it: the name suggested a claim about achievable prices
+rather than about where the estimate can speak, and everything between the two
+ends was treated as equally supported.
+
+### Named for what it is
+
+"Identification-support rule" throughout, and the methodology now states the
+basis explicitly: the support is measured on **instrument-predicted within
+log-price movement, after the pair and period fixed effects and the market
+control have been taken out of both sides**. It is movement around each pair's
+own price path over time, not the spread of price levels across pairs. A
+segment whose customers pay very different prices but whose prices never move
+has almost no support, and saying which of the two is being measured is the
+difference between a rule and a slogan.
+
+### Support is not uniform between its ends
+
+The ends alone get a particular case badly wrong. A segment whose cost shocks
+pushed price around -6% in some months and around +4% in others has said
+nothing about what holding price flat would do — and the old rule waved a 0%
+move through, because 0% sits between -6% and +4%.
+
+So the rule now works on **regions**. A proposed move is supported where at
+least `min_support_observations` of the predicted movements sit within
+`price_support_window` log units of it, and the maximal runs passing that test
+are the regions. One connected region reduces exactly to the old outer-bounds
+test. Skewed support produces one off-centre region — cost shocks that only
+ever pushed prices down support downward moves and not upward ones, however
+symmetric a min-max range looks. Two regions mean the movement came in
+separate clusters, and a move landing between them is refused.
+
+Defaults: quantiles 0.05 and 0.95 as before, window 0.02 log units, minimum
+count 30. The window is about a third of the movement the instruments induce
+on these panels, wide enough to accumulate a count and narrow enough that two
+genuinely separate clusters stay separate.
+
+### What is reported
+
+Per segment: the outer bounds, the number of estimation rows behind them, the
+regions, the window and minimum count in force, and **the same quantiles of
+the observed price movement** — so a reader can see how much of the price
+variation in the data the instruments actually account for. The sensitivity
+page shows both spans side by side.
+
+Per opportunity record: `price_support_distance`, the log-price distance to
+the nearest supported region and zero inside it, so a refusal reads as
+marginal or as nowhere near; and `price_support_reason` in plain words. The
+explanation text names the distance when there is one.
+
+Three cases, in order, and the third is the one worth stating: a segment whose
+regions were measured is held to them; a segment carrying only the outer
+bounds comes from a sensitivity frame written before the regions existed and
+is held to the bounds as it was then; and a segment with neither — no
+instruments, or an older frame — was never measured against this rule at all
+and is not refused by it. An empty regions string is a measurement, not a
+missing value: it says the instruments moved price nowhere densely enough to
+use, and it refuses everything.
+
+### Ranges at instrumented evidence
+
+At `iv_estimated_elasticity` the range shown is a **sensitivity analysis** —
+what the impact would be across a span of plausible price responses — and the
+labels, explanations and methodology now say so and say what it is not: a
+confidence interval around the dollar impact. The old wording called it "a
+labeled sensitivity range, not a point estimate", which ruled out the wrong
+misreading.
+
+### What changed in the outputs
+
+Demo world: **unchanged**. 660 opportunity records, 202 outside price support,
+expected gross-profit change $49,636.44, gross opportunity $396,296.75 — all
+identical to before. Each of its three segments has support in one connected
+region spanning essentially the whole of its outer bounds (8,312, 9,437 and
+716 estimation rows), so the density test changes nothing there. That is the
+intended shape of this change: it bites where support is genuinely thin or
+split, and is silent where it is not.
+
+### A determinism bug the matrix caught while this was being checked
+
+Not caused by this phase. `price_source_mix` - the string naming where a
+segment's estimation prices came from - sorted on the row count alone, and
+`group_by` output order is not guaranteed, so two categories with equal counts
+came out in whichever order the hash table produced. The scenario matrix found
+it on a world where observed and carried-forward prices each take 49% of the
+rows: `sensitivity.parquet` differed between identical runs **six times in
+ten**, at both one worker and three, so the thread pool was not the cause.
+
+Measured before and after: 6 of 10 reruns differing, then 0 of 10. The sort now
+breaks ties on the name, and the string-building moved into a named function
+with a unit test, because a 60%-flaky integration test is a poor guard for a
+rule this simple.
+
+### Tests added
+
+`tests/test_price_support.py`, 14 tests. The shapes support can take: one
+dense stretch, a skewed one whose supported region sits off centre, two
+clusters with a gap where the outer bounds contain a move that nothing near it
+does, too little movement anywhere, and no movement at all. The distance
+function inside, outside and between regions. Both knobs changing the regions,
+because configuration that cannot change an outcome is decoration. The compact
+export form surviving a round trip. And the rule as the opportunity module
+applies it: the gap case end to end, a pre-regions frame keeping its old
+behaviour, a measured-but-empty segment refusing everything, and an unmeasured
+segment not being refused by a rule nobody measured it against.
+
+### Checks
+
+ruff 0; ruff format clean (192 files); mypy src api 0 (91 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed, 3 skipped, exit 0, with no
+snapshot re-baselining.
+
+The Python suite was run in batches, each its own process: **all 59 test files
+pass**, 1,377s, worst batch peak 4.65 GB. `tests/test_full_run.py`, the known
+gap from the last two phases, completed this time - nothing else was competing
+for memory, so free RAM stayed above the 2 GB floor throughout. Its peak is
+still 4.65 GB, so it will keep stopping whenever something else is running
+beside it; Phase 83 is where that gets fixed rather than scheduled around.
