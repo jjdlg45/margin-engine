@@ -195,7 +195,7 @@ def track(
 ) -> None:
     """Measure implemented actions against the ledger (Phase 41): price
     realization, volume vs prediction with an untreated same-segment comparison
-    group (difference-in-differences), margin before vs after. Newly measured
+    group (a control-adjusted volume change), margin before vs after. Newly measured
     actions move implemented -> measured; gates fail closed with reasons."""
     import tempfile
 

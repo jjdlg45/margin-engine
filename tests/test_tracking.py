@@ -163,7 +163,7 @@ def test_realization_and_did_fixture() -> None:
     assert row["realization_pct"] == pytest.approx(0.5)
     assert row["treated_volume_ratio"] == pytest.approx(1.3 * 0.8, rel=1e-6)
     assert row["control_volume_ratio"] == pytest.approx(1.3, rel=1e-6)
-    assert row["did_volume_ratio"] == pytest.approx(0.8, rel=1e-6)
+    assert row["control_adjusted_volume_ratio"] == pytest.approx(0.8, rel=1e-6)
     assert row["volume_error_log_points"] == pytest.approx(math.log(0.8), rel=1e-5)
     assert row["n_control_pairs"] == 6
     # Margin outcome present on both sides.

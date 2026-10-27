@@ -875,6 +875,22 @@ class RevalidationConfig(StrictModel):
 
 
 class ActionsConfig(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_tracking_key(cls, data: object) -> object:
+        if isinstance(data, dict) and "tracking_min_after_sales" in data:
+            msg = (
+                "actions.tracking_min_after_sales was renamed to "
+                "tracking_min_before_sales (Run 6, Phase 75). It used to gate on "
+                "sales AFTER implementation, which refused to measure exactly the "
+                "pairs that stopped buying - the outcome that matters most. The "
+                "minimum now applies to the BEFORE window, which is the baseline; "
+                "an empty after window is recorded as a volume ratio of zero and a "
+                "stopped-buying flag. Rename the key in rules.yaml."
+            )
+            raise ValueError(msg)
+        return data
+
     """Action generation (Phase 38). Dates are anchored to the data's last
     invoice date so generation is deterministic for a given world."""
 
@@ -895,13 +911,29 @@ class ActionsConfig(StrictModel):
     # Deterministic cap per action type (largest expected impact first).
     max_actions_per_type: int = Field(default=200, ge=1)
     price_export: PriceExportConfig = PriceExportConfig()
-    # Results tracking (Phase 41): measurement window after implementation,
-    # evidence gates for the difference-in-differences comparison, and the
-    # minimum measured actions before a calibration number is shown.
+    # Results tracking (Phase 41, reworked in Run 6 Phase 75): the measurement
+    # window either side of implementation, the evidence gates for the
+    # control-adjusted comparison, and the minimum measured actions before a
+    # calibration number is shown.
     tracking_window_days: int = Field(default=90, ge=1)
     tracking_min_control_pairs: int = Field(default=5, ge=1)
-    tracking_min_after_sales: int = Field(default=3, ge=1)
+    # The BEFORE window is the baseline and has to be real. The AFTER window is
+    # the outcome, and an empty one is the most informative outcome there is -
+    # the customer stopped buying - so it is never a reason to refuse to
+    # measure. That is the whole point of the Run 6 Phase 75 rename.
+    tracking_min_before_sales: int = Field(default=3, ge=1)
     calibration_min_actions: int = Field(default=10, ge=1)
+    # Pooled event-study estimate (Run 6, Phase 75). Treated pairs are compared
+    # with never-treated and NOT-YET-treated pairs over event time, so an
+    # already-treated pair is never used as somebody else's control.
+    event_study_leads: int = Field(default=3, ge=1)
+    event_study_lags: int = Field(default=3, ge=1)
+    event_study_min_treated_pairs: int = Field(default=20, ge=2)
+    event_study_min_control_pairs: int = Field(default=20, ge=2)
+    # A pre-trend coefficient this far from zero (log points) is reported as a
+    # failed parallel-trends check. A pre-trend that is merely not significant
+    # is never reported as a pass: the test's power is reported beside it.
+    event_study_max_pretrend: float = Field(default=0.10, gt=0)
     # Stale-action revalidation and expiry (Run 6, Phase 69).
     revalidation: RevalidationConfig = RevalidationConfig()
 

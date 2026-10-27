@@ -4,12 +4,34 @@ export type Bucket = string;
 export type MedianAbsVolumeErrorLogPoints = number | null;
 export type MedianRealizationPct = number | null;
 export type NMeasured = number;
+export type NStoppedBuying = number | null;
 export type Status = string;
 export type Calibration = CalibrationRow[];
 /**
  * True when the event history is simulated demo data
  */
 export type DemoHistory = boolean;
+export type AttCiHigh = number | null;
+export type AttCiLow = number | null;
+export type AttPct = number | null;
+export type AttSe = number | null;
+export type CiHighPct = number | null;
+export type CiLowPct = number | null;
+export type CoefficientPct = number;
+export type EventTime = number;
+export type NTreatedPairs = number;
+export type Period = string;
+export type SePct = number | null;
+export type Coefficients = EventStudyCoefficient[];
+export type Estimand = string;
+export type NCohorts = number;
+export type NControlPairs = number;
+export type NRows = number;
+export type NTreatedPairs1 = number;
+export type PretrendDetail = string;
+export type PretrendStatus = string;
+export type Reason = string;
+export type Status1 = string;
 export type Notes = string[];
 export type ActionIds = string[];
 export type NActions = number;
@@ -22,14 +44,21 @@ export type OverlapGroups = OverlapGroup[];
  * True in the static demo: the review workflow needs the API
  */
 export type ReadOnly = boolean;
+export type Dimension = string;
+export type MedianControlAdjustedVolumeRatio = number | null;
+export type MedianRealizationPct1 = number | null;
+export type NMeasured1 = number;
+export type NStoppedBuying1 = number;
+export type Value = string;
+export type ResultsBreakdown = ResultsBreakdownRow[];
 /**
  * Across measured outcomes; null below the minimum count
  */
-export type MedianRealizationPct1 = number | null;
+export type MedianRealizationPct2 = number | null;
 export type NActions1 = number;
 export type NBlocked = number;
 export type NComplianceFlagged = number;
-export type NMeasured1 = number;
+export type NMeasured2 = number;
 export type ActionId = string;
 export type ActionType = string;
 export type Blocked = boolean;
@@ -62,10 +91,13 @@ export type ItemId = string | null;
 export type ItemName = string | null;
 export type ContributionAfterCents = number | null;
 export type ContributionBeforeCents = number | null;
+export type ControlAdjustedVolumeRatio = number | null;
+export type ControlExclusions = string | null;
 export type ControlVolumeRatio = number | null;
-export type DidVolumeRatio = number | null;
+export type ImplementationCompliance = string | null;
 export type ImplementedOn = string;
-export type NControlPairs = number;
+export type NControlPairs1 = number;
+export type NControlPairsExcluded = number | null;
 export type OutcomeReason = string;
 export type OutcomeStatus = string;
 export type PocketMarginAfter = number | null;
@@ -77,8 +109,10 @@ export type ProposedPriceCents = number | null;
 export type QtyAfter = number | null;
 export type QtyBefore = number | null;
 export type RealizationPct = number | null;
+export type StoppedBuying = boolean | null;
 export type TreatedVolumeRatio = number | null;
 export type VolumeErrorLogPoints = number | null;
+export type Wave = string | null;
 export type WindowDays = number;
 /**
  * True when the status still needs someone to act and the due date lies before the data's as-of date
@@ -95,7 +129,7 @@ export type ProposedPriceCents1 = number | null;
 export type Rationale = string;
 export type Scope = string;
 export type Segment = number | null;
-export type Status1 = string;
+export type Status2 = string;
 export type Title = string;
 export type Uom = string | null;
 export type VolumeTreatment = string | null;
@@ -154,7 +188,7 @@ export type ItemName1 = string | null;
 export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
 export type Segment1 = number | null;
-export type Status2 = string;
+export type Status3 = string;
 export type TargetIndex = number | null;
 export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
@@ -280,7 +314,7 @@ export type NAbsorbedParameters = number | null;
 export type NClusters = number | null;
 export type NObs = number;
 export type Reasons = string;
-export type Status3 = string;
+export type Status4 = string;
 export type CrossPriceAbsentReason = string | null;
 export type CogsTotalCents = number;
 export type Method = string;
@@ -297,7 +331,7 @@ export type PriceCoef = number | null;
 export type PriceCoefSe = number | null;
 export type Reasons1 = string;
 export type Segment3 = number;
-export type Status4 = string;
+export type Status5 = string;
 export type WinRate = number;
 export type WinCurvesAbsentReason = string | null;
 export type ActualCents = number;
@@ -402,7 +436,7 @@ export type EffectiveClusters = number | null;
 export type EffectiveFDetail = string | null;
 export type EffectiveFirstStageF = number | null;
 export type EffectiveK = number | null;
-export type Estimand = string | null;
+export type Estimand1 = string | null;
 export type EstimandBiasDirection = string | null;
 export type FirstStageF = number | null;
 export type FirstStageFUncontrolled = number | null;
@@ -474,7 +508,7 @@ export type RobustnessSpread = number | null;
 export type Segment5 = number;
 export type SmallClusterDetail = string | null;
 export type SmallClusterMethodUsed = string | null;
-export type Status5 = string;
+export type Status6 = string;
 export type StatusReasons = string;
 export type SupportDetail = string | null;
 export type SupportLogHi = number | null;
@@ -490,7 +524,7 @@ export type WildCiLow = number | null;
 export type Sensitivity = SensitivitySegment[];
 export type AmountCents2 = number;
 export type CustomerId5 = string;
-export type Period = string;
+export type Period1 = string;
 export type RebateProgramId = string;
 export type UnallocatedSettlements = UnallocatedSettlement[];
 export type Achieved = string;
@@ -547,10 +581,12 @@ export interface WebBundle {
 export interface ActionsSection {
   calibration: Calibration;
   demo_history: DemoHistory;
+  event_study?: EventStudySection | null;
   facets: Facets;
   notes: Notes;
   overlap_groups?: OverlapGroups;
   read_only: ReadOnly;
+  results_breakdown?: ResultsBreakdown;
   summary: ActionsSummary;
 }
 /**
@@ -562,7 +598,37 @@ export interface CalibrationRow {
   median_abs_volume_error_log_points: MedianAbsVolumeErrorLogPoints;
   median_realization_pct: MedianRealizationPct;
   n_measured: NMeasured;
+  n_stopped_buying?: NStoppedBuying;
   status: Status;
+}
+/**
+ * The pooled estimate, separate from the per-action control-adjusted
+ * changes because it rests on assumptions they do not (Run 6, Phase 75).
+ */
+export interface EventStudySection {
+  att_ci_high?: AttCiHigh;
+  att_ci_low?: AttCiLow;
+  att_pct?: AttPct;
+  att_se?: AttSe;
+  coefficients?: Coefficients;
+  estimand: Estimand;
+  n_cohorts: NCohorts;
+  n_control_pairs: NControlPairs;
+  n_rows: NRows;
+  n_treated_pairs: NTreatedPairs1;
+  pretrend_detail: PretrendDetail;
+  pretrend_status: PretrendStatus;
+  reason: Reason;
+  status: Status1;
+}
+export interface EventStudyCoefficient {
+  ci_high_pct: CiHighPct;
+  ci_low_pct: CiLowPct;
+  coefficient_pct: CoefficientPct;
+  event_time: EventTime;
+  n_treated_pairs: NTreatedPairs;
+  period: Period;
+  se_pct: SePct;
 }
 export interface Facets {
   [k: string]: string[];
@@ -580,15 +646,28 @@ export interface OverlapGroup {
   overlap_group: OverlapGroup1;
   portfolio_estimate_cents: PortfolioEstimateCents;
 }
+/**
+ * Measured results split by wave, segment, action type, evidence and how
+ * faithfully the price actually moved (Run 6, Phase 75). One pooled median
+ * hides where a number came from.
+ */
+export interface ResultsBreakdownRow {
+  dimension: Dimension;
+  median_control_adjusted_volume_ratio: MedianControlAdjustedVolumeRatio;
+  median_realization_pct: MedianRealizationPct1;
+  n_measured: NMeasured1;
+  n_stopped_buying: NStoppedBuying1;
+  value: Value;
+}
 export interface ActionsSummary {
   by_status: ByStatus;
   impact_by_basis_cents: ImpactByBasisCents;
   impact_by_evidence_cents: ImpactByEvidenceCents;
-  median_realization_pct?: MedianRealizationPct1;
+  median_realization_pct?: MedianRealizationPct2;
   n_actions: NActions1;
   n_blocked: NBlocked;
   n_compliance_flagged: NComplianceFlagged;
-  n_measured: NMeasured1;
+  n_measured: NMeasured2;
 }
 export interface ByStatus {
   [k: string]: number;
@@ -636,7 +715,7 @@ export interface ActionRow {
   rationale: Rationale;
   scope: Scope;
   segment: Segment;
-  status: Status1;
+  status: Status2;
   title: Title;
   uom: Uom;
   volume_treatment: VolumeTreatment;
@@ -660,10 +739,13 @@ export interface ActionEventRow {
 export interface ActionOutcome {
   contribution_after_cents: ContributionAfterCents;
   contribution_before_cents: ContributionBeforeCents;
+  control_adjusted_volume_ratio: ControlAdjustedVolumeRatio;
+  control_exclusions?: ControlExclusions;
   control_volume_ratio: ControlVolumeRatio;
-  did_volume_ratio: DidVolumeRatio;
+  implementation_compliance?: ImplementationCompliance;
   implemented_on: ImplementedOn;
-  n_control_pairs: NControlPairs;
+  n_control_pairs: NControlPairs1;
+  n_control_pairs_excluded?: NControlPairsExcluded;
   outcome_reason: OutcomeReason;
   outcome_status: OutcomeStatus;
   pocket_margin_after: PocketMarginAfter;
@@ -675,8 +757,10 @@ export interface ActionOutcome {
   qty_after: QtyAfter;
   qty_before: QtyBefore;
   realization_pct: RealizationPct;
+  stopped_buying?: StoppedBuying;
   treated_volume_ratio: TreatedVolumeRatio;
   volume_error_log_points: VolumeErrorLogPoints;
+  wave?: Wave;
   window_days: WindowDays;
 }
 export interface DispersionSection {
@@ -746,7 +830,7 @@ export interface GuidancePair {
   list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
   segment: Segment1;
-  status: Status2;
+  status: Status3;
   target_index: TargetIndex;
   target_label: TargetLabel;
 }
@@ -866,7 +950,7 @@ export interface CrossPriceEstimate {
   n_clusters?: NClusters;
   n_obs: NObs;
   reasons: Reasons;
-  status: Status3;
+  status: Status4;
 }
 export interface InventorySection {
   cogs_total_cents: CogsTotalCents;
@@ -884,7 +968,7 @@ export interface WinCurve {
   price_coef_se: PriceCoefSe;
   reasons: Reasons1;
   segment: Segment3;
-  status: Status4;
+  status: Status5;
   win_rate: WinRate;
 }
 export interface ReconciliationCheck {
@@ -973,7 +1057,7 @@ export interface SensitivitySegment {
   effective_f_detail?: EffectiveFDetail;
   effective_first_stage_f?: EffectiveFirstStageF;
   effective_k?: EffectiveK;
-  estimand?: Estimand;
+  estimand?: Estimand1;
   estimand_bias_direction?: EstimandBiasDirection;
   first_stage_f: FirstStageF;
   first_stage_f_uncontrolled?: FirstStageFUncontrolled;
@@ -1045,7 +1129,7 @@ export interface SensitivitySegment {
   segment: Segment5;
   small_cluster_detail?: SmallClusterDetail;
   small_cluster_method_used?: SmallClusterMethodUsed;
-  status: Status5;
+  status: Status6;
   status_reasons: StatusReasons;
   support_detail?: SupportDetail;
   support_log_hi?: SupportLogHi;
@@ -1072,7 +1156,7 @@ export interface CausalGate {
 export interface UnallocatedSettlement {
   amount_cents: AmountCents2;
   customer_id: CustomerId5;
-  period: Period;
+  period: Period1;
   rebate_program_id: RebateProgramId;
 }
 export interface ValidationResult {

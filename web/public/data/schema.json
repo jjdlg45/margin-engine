@@ -72,6 +72,29 @@
      ],
      "title": "Contribution Before Cents"
     },
+    "control_adjusted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Control Adjusted Volume Ratio"
+    },
+    "control_exclusions": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Control Exclusions"
+    },
     "control_volume_ratio": {
      "anyOf": [
       {
@@ -83,16 +106,17 @@
      ],
      "title": "Control Volume Ratio"
     },
-    "did_volume_ratio": {
+    "implementation_compliance": {
      "anyOf": [
       {
-       "type": "number"
+       "type": "string"
       },
       {
        "type": "null"
       }
      ],
-     "title": "Did Volume Ratio"
+     "default": null,
+     "title": "Implementation Compliance"
     },
     "implemented_on": {
      "title": "Implemented On",
@@ -101,6 +125,18 @@
     "n_control_pairs": {
      "title": "N Control Pairs",
      "type": "integer"
+    },
+    "n_control_pairs_excluded": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Control Pairs Excluded"
     },
     "outcome_reason": {
      "title": "Outcome Reason",
@@ -209,6 +245,18 @@
      ],
      "title": "Realization Pct"
     },
+    "stopped_buying": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Stopped Buying"
+    },
     "treated_volume_ratio": {
      "anyOf": [
       {
@@ -231,6 +279,18 @@
      ],
      "title": "Volume Error Log Points"
     },
+    "wave": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wave"
+    },
     "window_days": {
      "title": "Window Days",
      "type": "integer"
@@ -249,7 +309,7 @@
     "treated_volume_ratio",
     "control_volume_ratio",
     "n_control_pairs",
-    "did_volume_ratio",
+    "control_adjusted_volume_ratio",
     "volume_error_log_points",
     "pocket_margin_before",
     "pocket_margin_after",
@@ -582,6 +642,17 @@
      "title": "Demo History",
      "type": "boolean"
     },
+    "event_study": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/EventStudySection"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "facets": {
      "additionalProperties": {
       "items": {
@@ -610,6 +681,13 @@
      "description": "True in the static demo: the review workflow needs the API",
      "title": "Read Only",
      "type": "boolean"
+    },
+    "results_breakdown": {
+     "items": {
+      "$ref": "#/$defs/ResultsBreakdownRow"
+     },
+     "title": "Results Breakdown",
+     "type": "array"
     },
     "summary": {
      "$ref": "#/$defs/ActionsSummary"
@@ -724,6 +802,18 @@
     "n_measured": {
      "title": "N Measured",
      "type": "integer"
+    },
+    "n_stopped_buying": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Stopped Buying"
     },
     "status": {
      "title": "Status",
@@ -1055,6 +1145,179 @@
     "orders"
    ],
    "title": "EconomicsSection",
+   "type": "object"
+  },
+  "EventStudyCoefficient": {
+   "properties": {
+    "ci_high_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci High Pct"
+    },
+    "ci_low_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci Low Pct"
+    },
+    "coefficient_pct": {
+     "title": "Coefficient Pct",
+     "type": "number"
+    },
+    "event_time": {
+     "title": "Event Time",
+     "type": "integer"
+    },
+    "n_treated_pairs": {
+     "title": "N Treated Pairs",
+     "type": "integer"
+    },
+    "period": {
+     "title": "Period",
+     "type": "string"
+    },
+    "se_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Se Pct"
+    }
+   },
+   "required": [
+    "event_time",
+    "coefficient_pct",
+    "se_pct",
+    "ci_low_pct",
+    "ci_high_pct",
+    "n_treated_pairs",
+    "period"
+   ],
+   "title": "EventStudyCoefficient",
+   "type": "object"
+  },
+  "EventStudySection": {
+   "description": "The pooled estimate, separate from the per-action control-adjusted\nchanges because it rests on assumptions they do not (Run 6, Phase 75).",
+   "properties": {
+    "att_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Ci High"
+    },
+    "att_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Ci Low"
+    },
+    "att_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Pct"
+    },
+    "att_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Se"
+    },
+    "coefficients": {
+     "items": {
+      "$ref": "#/$defs/EventStudyCoefficient"
+     },
+     "title": "Coefficients",
+     "type": "array"
+    },
+    "estimand": {
+     "title": "Estimand",
+     "type": "string"
+    },
+    "n_cohorts": {
+     "title": "N Cohorts",
+     "type": "integer"
+    },
+    "n_control_pairs": {
+     "title": "N Control Pairs",
+     "type": "integer"
+    },
+    "n_rows": {
+     "title": "N Rows",
+     "type": "integer"
+    },
+    "n_treated_pairs": {
+     "title": "N Treated Pairs",
+     "type": "integer"
+    },
+    "pretrend_detail": {
+     "title": "Pretrend Detail",
+     "type": "string"
+    },
+    "pretrend_status": {
+     "title": "Pretrend Status",
+     "type": "string"
+    },
+    "reason": {
+     "title": "Reason",
+     "type": "string"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "status",
+    "reason",
+    "estimand",
+    "pretrend_status",
+    "pretrend_detail",
+    "n_treated_pairs",
+    "n_control_pairs",
+    "n_cohorts",
+    "n_rows"
+   ],
+   "title": "EventStudySection",
    "type": "object"
   },
   "GroupWaterfall": {
@@ -2034,6 +2297,59 @@
     "where_listed"
    ],
    "title": "Residual",
+   "type": "object"
+  },
+  "ResultsBreakdownRow": {
+   "description": "Measured results split by wave, segment, action type, evidence and how\nfaithfully the price actually moved (Run 6, Phase 75). One pooled median\nhides where a number came from.",
+   "properties": {
+    "dimension": {
+     "title": "Dimension",
+     "type": "string"
+    },
+    "median_control_adjusted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Control Adjusted Volume Ratio"
+    },
+    "median_realization_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Realization Pct"
+    },
+    "n_measured": {
+     "title": "N Measured",
+     "type": "integer"
+    },
+    "n_stopped_buying": {
+     "title": "N Stopped Buying",
+     "type": "integer"
+    },
+    "value": {
+     "title": "Value",
+     "type": "string"
+    }
+   },
+   "required": [
+    "dimension",
+    "value",
+    "n_measured",
+    "n_stopped_buying",
+    "median_control_adjusted_volume_ratio",
+    "median_realization_pct"
+   ],
+   "title": "ResultsBreakdownRow",
    "type": "object"
   },
   "ScenarioGrid": {

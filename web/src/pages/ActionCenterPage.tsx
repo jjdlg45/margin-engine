@@ -541,8 +541,108 @@ function Results({ page }: { page: ActionsSection }) {
   return (
     <>
       <Section
+        title="Pooled estimate"
+        lede="One estimate across every implemented price change, with the assumptions written down. It compares treated pairs with pairs that are untreated in the same month - never with pairs already treated - and it is separate from the per-action figures below, which rest on less."
+      >
+        {page.event_study && page.event_study.status === "estimated" ? (
+          <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+            <div>
+              {/* When treated customers were already moving before the price
+                  did, this number is a description of what happened and not
+                  an effect of the price change. It is labeled that way rather
+                  than shown as a headline, because a figure in large type
+                  beside a caveat is read as the figure. */}
+              <dt className="text-caption secondary">
+                {page.event_study.pretrend_status === "pretrend_detected"
+                  ? "Volume change afterwards (not an effect of the price change)"
+                  : "Average volume change after the change"}
+              </dt>
+              <dd
+                className={
+                  page.event_study.pretrend_status === "pretrend_detected"
+                    ? "m-0 secondary"
+                    : "m-0 text-figure"
+                }
+              >
+                {pct(page.event_study.att_pct)}
+                {page.event_study.att_ci_low !== null &&
+                page.event_study.att_ci_low !== undefined &&
+                page.event_study.att_ci_high !== null &&
+                page.event_study.att_ci_high !== undefined
+                  ? ` (${pct(page.event_study.att_ci_low)} to ${pct(page.event_study.att_ci_high)})`
+                  : ""}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">Were they already moving?</dt>
+              <dd className="m-0">
+                <span title={page.event_study.pretrend_detail}>
+                  {labels(page.event_study.pretrend_status).label}
+                </span>
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-caption secondary">What this measures</dt>
+              <dd className="m-0 secondary">{page.event_study.estimand}.</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dd className="m-0 secondary">{page.event_study.pretrend_detail}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dd className="m-0 secondary">{page.event_study.reason}.</dd>
+            </div>
+          </div>
+        ) : (
+          <EmptyState title="Not enough implemented actions for a pooled estimate">
+            {page.event_study?.reason ||
+              "The pooled estimate appears once enough actions are implemented and measured."}
+          </EmptyState>
+        )}
+      </Section>
+      <Section
+        title="Where the results come from"
+        lede="Measured results split by implementation wave, segment, action type, evidence level, and how faithfully the invoiced price actually moved. A single median would hide all of it."
+      >
+        {page.results_breakdown && page.results_breakdown.length ? (
+          <div className="overflow-x-auto">
+            <table>
+              <thead>
+                <tr>
+                  <th className="left">Split by</th>
+                  <th className="left">Group</th>
+                  <th>Measured</th>
+                  <th>Stopped buying</th>
+                  <th>Median volume change</th>
+                  <th>Median price realization</th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.results_breakdown.map((g) => (
+                  <tr key={`${g.dimension}|${g.value}`}>
+                    <td className="left">{g.dimension}</td>
+                    <td className="left">
+                      {g.dimension === "price actually moved" || g.dimension === "evidence"
+                        ? labels(g.value).label
+                        : g.value}
+                    </td>
+                    <td>{count(g.n_measured)}</td>
+                    <td>{count(g.n_stopped_buying)}</td>
+                    <td>{num(g.median_control_adjusted_volume_ratio, 3)}</td>
+                    <td>{pct(g.median_realization_pct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState title="Nothing measured yet">
+            Splits appear once actions are implemented and the measurement window elapses.
+          </EmptyState>
+        )}
+      </Section>
+      <Section
         title="Model calibration"
-        lede="Prediction error by evidence level, measured against untreated same-segment pairs (a difference-in-differences comparison). Levels are never summed."
+        lede="Prediction error by evidence level. The measured figure each prediction is checked against is a control-adjusted volume change: the treated pair's volume ratio divided by the trend in untreated pairs in the same segment. Levels are never summed."
       >
         {page.calibration.length === 0 ||
         page.calibration[0].status === "not_enough_implemented_actions" ? (
@@ -559,6 +659,7 @@ function Results({ page }: { page: ActionsSection }) {
               <tr>
                 <th className="left">Evidence level</th>
                 <th>Measured actions</th>
+                <th>Stopped buying</th>
                 <th>Median volume error (log points)</th>
                 <th>Median price realization</th>
               </tr>
@@ -568,6 +669,11 @@ function Results({ page }: { page: ActionsSection }) {
                 <tr key={c.bucket}>
                   <td className="left">{labels(c.bucket).label}</td>
                   <td>{count(c.n_measured)}</td>
+                  <td
+                    title="Pairs that bought nothing after the change. They count in the figures beside this, at a volume ratio of zero; their volume error is undefined, so it is left out of the median rather than treated as zero error."
+                  >
+                    {count(c.n_stopped_buying)}
+                  </td>
                   <td>{num(c.median_abs_volume_error_log_points, 3)}</td>
                   <td>{pct(c.median_realization_pct)}</td>
                 </tr>
@@ -578,7 +684,7 @@ function Results({ page }: { page: ActionsSection }) {
       </Section>
       <Section
         title="Realized vs predicted"
-        lede="Every tracked action: how far the invoiced price actually moved, and the volume outcome against the engine's prediction. Insufficient evidence is stated with its reason, never hidden."
+        lede="Every tracked action: how far the invoiced price actually moved, and the volume outcome against the engine's prediction. The volume figure divides out the trend in untreated pairs in the same segment, and claims nothing more than that. A pair that stopped buying shows a change of zero, not a blank. Insufficient evidence is stated with its reason, never hidden."
       >
         <QuerySection query={outcomes} label="outcomes" lines={6}>
           {(rows) =>
@@ -590,7 +696,7 @@ function Results({ page }: { page: ActionsSection }) {
                       <th className="left">Action</th>
                       <th>Price realization</th>
                       <th>Predicted volume ratio</th>
-                      <th>Measured volume ratio</th>
+                      <th>Control-adjusted volume change</th>
                       <th>Outcome</th>
                     </tr>
                   </thead>
@@ -602,7 +708,7 @@ function Results({ page }: { page: ActionsSection }) {
                         </td>
                         <td>{pct(r.outcome.realization_pct)}</td>
                         <td>{num(r.outcome.predicted_volume_ratio, 3)}</td>
-                        <td>{num(r.outcome.did_volume_ratio, 3)}</td>
+                        <td>{num(r.outcome.control_adjusted_volume_ratio, 3)}</td>
                         <td className="left">
                           <StatusChip
                             status={r.outcome.outcome_status}

@@ -215,11 +215,11 @@ function OutcomeCard({ detail }: { detail: ActionDetail }) {
       <div className="panel px-5 py-4">
         <h3 className="m-0 text-section">Volume vs prediction</h3>
         <p className="m-0 mt-1 text-title font-semibold text-petrol">
-          {num(o.did_volume_ratio, 3)} measured
+          {num(o.control_adjusted_volume_ratio, 3)} measured
         </p>
         <p className="m-0 text-caption secondary">
           Predicted {num(o.predicted_volume_ratio, 3)}; the measured ratio compares this pair with{" "}
-          {o.n_control_pairs} untreated same-segment pairs (difference-in-differences), so the
+          {o.n_control_pairs} untreated same-segment pairs, so the
           general trend never reads as a price effect.
         </p>
       </div>

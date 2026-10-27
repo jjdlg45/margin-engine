@@ -110,7 +110,39 @@ test("detail: history labeled demo data, compliance note, evidence links, outcom
   expect(measured).toBeTruthy();
   await page.goto(`/#/actions/${measured!.action_id}`);
   await expect(page.getByTestId("outcome")).toBeVisible();
-  await expect(page.getByText("difference-in-differences")).toBeVisible();
+  // The outcome names what it compared against and does NOT claim to be a
+  // difference-in-differences estimate (Run 6, Phase 75): it is a
+  // control-adjusted volume change, and the wording has to stay that way.
+  await expect(page.getByText("untreated same-segment pairs").first()).toBeVisible();
+  await expect(page.getByText("difference-in-differences")).toHaveCount(0);
+});
+
+test("results view: the pooled estimate states its estimand and its pre-trend check", async ({
+  page,
+}) => {
+  await page.goto("/#/actions");
+  await page.getByRole("tab", { name: "Results" }).click();
+  const study = bundle.actions.event_study;
+  expect(study).toBeTruthy();
+  if (study!.status === "estimated") {
+    await expect(page.getByText(study!.estimand, { exact: false })).toBeVisible();
+    await expect(page.getByText(study!.pretrend_detail, { exact: false })).toBeVisible();
+    // A detected pre-trend must not be presented as an effect of the price.
+    if (study!.pretrend_status === "pretrend_detected") {
+      await expect(
+        page.getByText("not an effect of the price change", { exact: false }).first(),
+      ).toBeVisible();
+    }
+  } else {
+    await expect(
+      page.getByText("Not enough implemented actions for a pooled estimate"),
+    ).toBeVisible();
+  }
+  // Results are split rather than pooled into one median.
+  const dims = new Set((bundle.actions.results_breakdown ?? []).map((g) => g.dimension));
+  for (const d of dims) {
+    await expect(page.getByRole("cell", { name: d, exact: true }).first()).toBeVisible();
+  }
 });
 
 test("results view: calibration table and outcomes match the bundle", async ({ page }) => {

@@ -36,6 +36,8 @@ from margin_engine.webexport.bundle import (
     CustomerLeakage,
     DispersionSection,
     EconomicsSection,
+    EventStudyCoefficient,
+    EventStudySection,
     GroupWaterfall,
     GuidancePair,
     InventorySection,
@@ -50,6 +52,7 @@ from margin_engine.webexport.bundle import (
     PeerGroupStat,
     ReconciliationCheck,
     Residual,
+    ResultsBreakdownRow,
     ScenarioGrid,
     ScenarioGridPoint,
     SegmentIndexStats,
@@ -886,7 +889,12 @@ def build_bundle(
                 treated_volume_ratio=o["treated_volume_ratio"],
                 control_volume_ratio=o["control_volume_ratio"],
                 n_control_pairs=int(o["n_control_pairs"] or 0),
-                did_volume_ratio=o["did_volume_ratio"],
+                control_adjusted_volume_ratio=o["control_adjusted_volume_ratio"],
+                stopped_buying=o["stopped_buying"],
+                n_control_pairs_excluded=o["n_control_pairs_excluded"],
+                control_exclusions=o["control_exclusions"] or None,
+                wave=o["wave"],
+                implementation_compliance=o["implementation_compliance"],
                 volume_error_log_points=o["volume_error_log_points"],
                 pocket_margin_before=o["pocket_margin_before"],
                 pocket_margin_after=o["pocket_margin_after"],
@@ -948,9 +956,49 @@ def build_bundle(
                 median_abs_volume_error_log_points=c["median_abs_volume_error_log_points"],
                 median_realization_pct=c["median_realization_pct"],
                 status=str(c["status"]),
+                n_stopped_buying=c.get("n_stopped_buying"),
             )
             for c in tracked.calibration.iter_rows(named=True)
         ]
+        breakdown_rows = [
+            ResultsBreakdownRow(
+                dimension=str(g["dimension"]),
+                value=str(g["value"]),
+                n_measured=int(g["n_measured"]),
+                n_stopped_buying=int(g["n_stopped_buying"] or 0),
+                median_control_adjusted_volume_ratio=g["median_control_adjusted_volume_ratio"],
+                median_realization_pct=g["median_realization_pct"],
+            )
+            for g in tracked.by_group.iter_rows(named=True)
+        ]
+        study = tracked.event_study
+        event_study_section = EventStudySection(
+            status=study.status,
+            reason=study.reason,
+            estimand=study.estimand,
+            att_pct=study.att_pct,
+            att_se=study.att_se,
+            att_ci_low=study.att_ci_low,
+            att_ci_high=study.att_ci_high,
+            coefficients=[
+                EventStudyCoefficient(
+                    event_time=int(c["event_time"]),
+                    coefficient_pct=float(c["coefficient_pct"]),
+                    se_pct=c["se_pct"],
+                    ci_low_pct=c["ci_low_pct"],
+                    ci_high_pct=c["ci_high_pct"],
+                    n_treated_pairs=int(c["n_treated_pairs"] or 0),
+                    period=str(c["period"]),
+                )
+                for c in study.coefficients.iter_rows(named=True)
+            ],
+            pretrend_status=study.pretrend_status,
+            pretrend_detail=study.pretrend_detail,
+            n_treated_pairs=study.n_treated_pairs,
+            n_control_pairs=study.n_control_pairs,
+            n_cohorts=study.n_cohorts,
+            n_rows=study.n_rows,
+        )
         measured_rows = [
             a.outcome for a in actions_table if a.outcome and a.outcome.outcome_status == "measured"
         ]
@@ -987,6 +1035,8 @@ def build_bundle(
                 ),
             ),
             calibration=calibration_rows,
+            results_breakdown=breakdown_rows,
+            event_study=event_study_section,
             facets={
                 "types": sorted({a.action_type for a in actions_table}),
                 "statuses": sorted({a.status for a in actions_table}),

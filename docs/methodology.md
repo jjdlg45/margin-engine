@@ -1281,43 +1281,105 @@ through the engine's own ingest and matches every price to the cent.
 ### Results tracking and its limits
 
 After an action is marked implemented, the tracker measures it over a
-configurable window (default 90 days on each side of the implementation date):
+configurable window (default 90 days on each side of the implementation date).
+Two different things are produced, and keeping them apart is most of the point
+of this section.
 
-- **Price realization** = (P_after − P_before) / (P_new − P_before) on the
+#### Per action: a control-adjusted volume change
+
+- **Price realization** = (P_after - P_before) / (P_new - P_before) on the
   pair's invoiced prices: 1.0 fully realized, 0 no move, negative eroded
   further. This is the strongest per-action signal, because it is directly
-  observable.
-- **Volume against prediction.** The treated pair's volume ratio
-  (after/before) is compared to the median ratio of untreated same-segment
-  pairs with sales in both windows — a difference-in-differences design, so a
-  market-wide trend never reads as a price effect. The prediction is the
-  `predicted_volume_ratio` stored on the action **at generation time**
-  ((P1/P0)^elasticity for causal-supported volume responses, 1.0 for
-  fixed-volume actions), so the engine is graded on what it claimed when the
-  action was proposed, not on a number chosen after the fact.
+  observable. Each action is bucketed by it - moved in full, part way, not at
+  all, or the other way - because an action whose price never moved says
+  nothing about price response and should not be pooled with one that did.
+- **Control-adjusted volume change.** The treated pair's volume ratio
+  (after/before) divided by the median ratio of clean untreated pairs in the
+  same segment. It removes the general trend and claims nothing more. It is
+  deliberately **not** called a difference-in-differences estimate: a single
+  pair's ratio against a median of untreated ratios does not carry the
+  assumptions that name implies, and calling it one invited the reader to
+  believe more than the number supports.
+- The prediction it is graded against is the `predicted_volume_ratio` stored
+  on the action **at generation time** ((P1/P0)^elasticity for
+  causal-supported volume responses, 1.0 for fixed-volume actions), so the
+  engine is graded on what it claimed when the action was proposed.
 - **Margin outcome**: pocket margin and contribution, before vs after.
 
-Every gate fails closed with its reason on the outcome row: window not yet
-elapsed, too few after-window sales (a pair that stopped buying is reported as
-exactly that), too few comparison pairs. Calibration — prediction error by
-evidence bucket (causal-supported / IV-estimated / fixed-volume) — appears
-only once a configured minimum of actions is measured; below it the table says
-"not enough implemented actions yet" instead of any number.
+**A pair that stops buying is a result, not a missing value.** An earlier
+version refused to measure an action whose pair had too few sales after the
+change, which refused exactly the pairs where a price increase did the most
+and biased every pooled figure toward the survivors. An empty after window is
+now a volume ratio of zero with a `stopped_buying` flag. The same rule applies
+to the comparison group: a control pair that bought before and not after
+contributes a zero, because restricting controls to pairs that bought in both
+windows compares every treated pair against a group that could not fall to
+zero.
 
-**Limits, stated plainly.**
+**Clean controls.** A comparison pair must be untreated for the whole window
+and untouched by anything that moves with the treatment. Three things
+disqualify one, each counted and named on the outcome row: it carries a price
+action of its own (whenever that action lands - including later in the same
+window, which is the staggered-adoption trap); it shares a campaign with the
+treated action; or its item is in the same substitution group as the treated
+item, so volume shifting out of the treated pair lands in the control and
+doubles the apparent effect.
 
-- A single pair's 90-day window carries roughly 0.2–0.3 log points of Poisson
+Results are reported split by implementation wave, segment, action type,
+evidence level and how faithfully the price moved, because a single pooled
+median hides all of it.
+
+#### Pooled: an event study with its assumptions written down
+
+The formal counterpart is one estimate across every implemented action.
+
+**The estimand:** the average proportional change in monthly quantity for
+treated customer-item pairs over the periods after their price change,
+relative to what those pairs would have bought otherwise, with the
+counterfactual taken from pairs not treated in that period. It is an average
+over the treated pairs that appear, not over a population.
+
+Actions are implemented on different dates, so the panel has cohorts, and the
+control group for a period is every **never-treated** pair plus every **not
+yet treated** pair. An already-treated pair is never used as a control for a
+later one - the comparison that makes two-way fixed-effects estimates on
+staggered adoption go wrong, sometimes in sign, as set out in Baker, Callaway,
+Cunningham, Goodman-Bacon and Sant'Anna's practitioner's guide in the *Journal
+of Economic Literature*. This is an event-study specification with that
+restriction imposed and estimated by Poisson pseudo-likelihood; it is **not**
+the Callaway-Sant'Anna group-time estimator, and the report does not call it
+one.
+
+Poisson, because the outcome includes zeros: a pair that stopped buying is the
+result that matters most here and logs cannot represent it.
+
+**Pre-trends.** The lead coefficients are reported and never summarised into a
+pass. A materially non-zero lead is reported as a failure, and the post-change
+numbers are then labeled as not an effect of the price change rather than
+shown as a headline. A lead near zero is reported with **what size of
+pre-trend the data could have detected**, because a quiet test with no power
+is not evidence of anything. Parallel trends is an assumption; nothing here
+establishes it.
+
+**Where the design can be improved, do that instead.** A phased rollout, a
+randomized one, or a matched holdout turns these comparisons into estimates.
+The tracker says so in its notes rather than leaving the reader to infer that
+an observational comparison was the best available.
+
+#### Limits, stated plainly
+
+- A single pair's 90-day window carries roughly 0.2-0.3 log points of Poisson
   noise, which usually exceeds the planted effect of a realistic price change.
-  Per-action volume verdicts are therefore weak evidence; the *pooled*
-  comparison is the meaningful read. On a synthetic world with 30 planted +8%
+  Per-action volume verdicts are therefore weak evidence; the pooled estimate
+  is the meaningful read. On a synthetic world with 30 planted +8%
   interventions the pooled recovery error is 0.039 log points while the
-  per-pair median absolute error is 0.26 — both reported in
+  per-pair median absolute error is 0.26 - both reported in
   `docs/validation.json`.
-- The difference-in-differences comparison assumes untreated same-segment
-  pairs carry the treated pair's counterfactual trend (parallel trends). A
-  shock specific to the treated customer biases the measured effect, in either
-  direction.
+- Both the per-action comparison and the pooled estimate assume untreated
+  pairs carry the treated pair's counterfactual trend. A shock specific to the
+  treated customer biases the result in either direction.
 - Only implemented actions are measured, and which proposals get implemented
-  is a human choice — measured outcomes are a selected sample, not a random
+  is a human choice - measured outcomes are a selected sample, not a random
   one, so calibration describes the actions that were taken, not all actions
-  the engine could propose.
+  the engine could propose. The pre-trend check is what catches the worst form
+  of this, where actions were taken on pairs that were already moving.

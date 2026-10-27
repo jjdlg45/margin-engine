@@ -182,18 +182,50 @@ on the pair's invoiced average prices (net amount / quantity, invoice basis);
     volume error          = log(control-adjusted) - log(predicted ratio)
 
 with `predicted ratio = (P1/P0)^beta` stored on the action at generation time
-(1.0 for fixed-volume actions). Gates fail closed: window not elapsed, too
-few after-window sales, or too few control pairs produce a reason, not a
-number. Calibration reports the median absolute volume error and median
-realization by evidence bucket, only once the configured minimum of measured
-actions exists.
+(1.0 for fixed-volume actions).
 
-Pending change (Phase 75): treated pairs with zero after-window purchases
-will count as a volume ratio of 0 with a stopped-buying flag (today they fail
-the after-sales gate), controls will not require purchases in both windows,
-and pooled calibration moves to a staggered difference-in-differences
-estimator; the per-action output is named "control-adjusted volume change",
-not a difference-in-differences estimate.
+`qty_after = 0` is a legitimate value on both sides: the treated pair's ratio
+is then 0 with a stopped-buying flag, and a control that bought before and not
+after contributes a 0 to the median. `log(0)` is undefined, so the volume
+error for a stopped pair is not produced - the pair stays in every count and
+is reported separately, never dropped from the measured set.
+
+Gates fail closed: window not elapsed, fewer than the configured minimum sale
+lines BEFORE the change (no baseline), or too few clean control pairs produce
+a reason, not a number. A control pair is clean when it carries no price
+action of its own at any date, shares no campaign with the treated action, and
+sells no item in the treated item's substitution group; the counts excluded by
+each test appear on the outcome row.
+
+Calibration reports the median absolute volume error and median realization by
+evidence bucket, only once the configured minimum of measured actions exists.
+
+### Pooled event study
+
+    E[qty_it] = exp( alpha_i + gamma_t + sum_{k != -1} theta_k * 1{event time = k} )
+
+fitted by Poisson pseudo-likelihood over a pair x month panel, with pair fixed
+effects `alpha_i`, calendar-month fixed effects `gamma_t`, and event time
+measured from each pair's own implementation month. Event time -1 is the
+omitted base period, so each `theta_k` reads against the month before the
+price moved. Standard errors cluster by pair.
+
+The control set for any period is the never-treated pairs plus the not-yet
+treated ones: a treated pair contributes rows only within `[-leads, +lags]` of
+its own treatment, so an already-treated pair never serves as somebody else's
+counterfactual.
+
+    effect at k      = exp(theta_k) - 1
+    average effect   = exp(mean of theta_k over k >= 0) - 1
+    pre-trend check  = the largest |exp(theta_k) - 1| over k < -1
+
+Poisson rather than a log outcome because the panel contains real zeros. The
+average-effect interval treats the post coefficients as independent, which
+they are not, so it is optimistic - stated on the output. A pre-trend beyond
+the configured tolerance marks the post coefficients as not an effect of the
+price change; one inside it is reported together with the size of pre-trend
+the data could have detected, because a quiet test with no power is not
+evidence.
 
 ## Margin and leakage rates
 

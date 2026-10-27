@@ -4617,3 +4617,146 @@ gap from the last two phases, completed this time - nothing else was competing
 for memory, so free RAM stayed above the 2 GB floor throughout. Its peak is
 still 4.65 GB, so it will keep stopping whenever something else is running
 beside it; Phase 83 is where that gets fixed rather than scheduled around.
+
+## Phase 75 — Tracker design (2026-10-27, Run 6 branch)
+
+Finding 15. Three things were wrong with the results tracker, and the middle
+one was bending every pooled number it produced.
+
+### It was calling a ratio a difference-in-differences estimate
+
+The per-action output divided one treated pair's volume ratio by the median
+ratio of untreated pairs in its segment, and called the result a
+difference-in-differences estimate in the column name, the outcome reason, the
+UI, the CLI help, the methodology, the equation sheet and the README. It is a
+**control-adjusted volume change**: it removes the general trend and carries
+none of the assumptions that name implies. Renamed everywhere, and the name
+is now reserved for the pooled estimator below, which does state its
+assumptions.
+
+### A pair that stopped buying was treated as missing data
+
+The gate required `tracking_min_after_sales` sale lines **after** the change,
+so a customer who responded to a price increase by stopping was recorded as
+`insufficient_evidence` and dropped from every median — the single most
+consequential outcome a price change can have, systematically removed from
+the measurement of price changes.
+
+An empty after window is now a volume ratio of zero with a `stopped_buying`
+flag, and the minimum moved to the **before** window, which is the baseline
+and does have to be real. `actions.tracking_min_after_sales` is rejected with
+an actionable error naming the replacement, the same treatment the renamed
+margin key got in Run 4.
+
+The control side had the same bug in subtler form: controls were restricted to
+pairs that bought in **both** windows, so every treated pair was compared
+against a group that could not fall to zero. A control that bought before and
+not after now contributes a zero, like any other outcome.
+
+`log(0)` is undefined, so a stopped pair has no volume error. It stays in
+every count and is reported as `n_stopped_buying` beside the medians, rather
+than vanishing from an error summary as though it had never been measured.
+
+### Controls were not clean
+
+Three tests now disqualify a comparison pair, each counted and named on the
+outcome row:
+
+- it carries a price action of its own, at any date — including **later in the
+  same window**, which is the staggered-adoption trap: comparing against a
+  pair about to be treated measures the difference between two treatments;
+- it shares a campaign (overlap group or scope key) with the treated action;
+- its item is in the same substitution group as the treated item, so volume
+  shifting out of the treated pair lands in the control and doubles the
+  apparent effect.
+
+### The pooled estimator
+
+New module `src/margin_engine/actions/event_study.py`. One estimate across
+every implemented action, with the estimand written down: the average
+proportional change in monthly quantity for treated pairs after their price
+change, against pairs not treated in that period.
+
+Actions land on different dates, so the control set for a period is every
+**never-treated** pair plus every **not-yet-treated** one, and a treated pair
+contributes rows only inside its own event window. That restriction is the
+substance of the staggered-adoption guidance in Baker, Callaway, Cunningham,
+Goodman-Bacon and Sant'Anna's practitioner's guide; the code and the
+methodology both say it is an event study with that restriction imposed and
+**not** the Callaway-Sant'Anna group-time estimator, because it is not.
+
+Poisson pseudo-likelihood with pair and calendar-month fixed effects, because
+the outcome contains real zeros and the whole point of the previous section is
+that those zeros matter. Event time -1 is the omitted base period.
+
+**Pre-trends are reported, never summarised into a pass.** A lead beyond the
+tolerance marks the post-change numbers as not an effect of the price change -
+and the UI then drops the figure out of headline type rather than showing it
+large beside a caveat. A lead inside the tolerance is reported together with
+**what size of pre-trend the data could have detected**, because a quiet test
+with no power is not evidence of anything. The notes say in plain words that a
+phased, randomized or matched-holdout rollout is what turns these comparisons
+into estimates.
+
+### Reporting
+
+Measured results are split by implementation wave, segment, action type,
+evidence level, and how faithfully the invoiced price actually moved - a new
+`implementation_compliance` bucket, because an action whose price never moved
+says nothing about price response and should not be pooled with one that did.
+
+### What changed in the outputs
+
+Demo world, before and after. The calibration table gains a stopped-buying
+column and one pair that was previously refused for having too few after-window
+sales now appears, measured at a volume ratio of zero
+(`fixed_volume` bucket, `n_stopped_buying: 1`).
+
+The pooled estimate on the demo world reports **a pre-trend of +19.8% two
+months before the change, against a 10% tolerance**, so its average
+post-change figure of +23.2% is labeled as not an effect of the price change.
+That is the right answer: the demo's implementation history is simulated on
+actions the engine chose, not on a randomized rollout, so the treated pairs
+are selected. The engine saying so on its own demo data is the feature.
+
+### Tests added
+
+`tests/test_tracker_design.py`, 17 tests, on controlled worlds built in the
+test so the planted effect is exact. Stopping measured at zero rather than
+dropped; no baseline refused with its reason; controls that stopped staying in
+the comparison (a world where five of ten controls leave, giving a control
+ratio of exactly 0.5); exclusions counted and named for own-action, campaign
+and substitute; the five reporting splits; the compliance buckets; and the
+absence of the words "difference-in-differences" from the per-action output.
+
+For the pooled estimator: the panel never giving an already-treated pair to
+someone else as a control, refusal below the minimum treated count with the
+per-action figures surviving it, recovery of a planted -20% effect to within
+3 points, and the pre-trend wording carrying its own detectable size.
+
+The exit gate is four worlds: **non-parallel trends** and **selected
+treatment** both surface as a detected pre-trend with the post numbers
+disclaimed; a **stop-buying** world measures all 24 treated pairs, 8 of them
+at zero, and the pooled estimate lands below the intensive-margin-only figure
+because it sees the stopping; and a **staggered** world estimates across four
+waves and recovers its planted -15% to within 5 points, with the per-action
+results split by wave.
+
+### Checks
+
+ruff 0; ruff format clean (194 files); mypy src api 0 (92 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 227 passed, 3 skipped, exit 0, with no
+snapshot re-baselining. One Playwright assertion had to change: the action
+detail page's end-to-end test asserted the words "difference-in-differences"
+were on screen. It now asserts they are NOT, and that the page names what it
+compared against instead. A second test was added for the pooled estimate's
+estimand, its pre-trend wording, and the refusal to present a figure as an
+effect when a pre-trend was found.
+
+The Python suite was run in batches, each its own process: **58 of 59 test
+files pass.** `tests/test_full_run.py` is the exception, and the gap is now
+pinned to one test rather than a whole file: nine of its ten pass together at
+1.95 GB, and `test_cli_twice_byte_identical_full_size_world` alone needs about
+4 GB and drives free memory to 1.69 GB, under the 2 GB floor, even with
+nothing else running. It is not skipped or weakened; it runs in CI. Phase 83
+is where the memory itself gets fixed.

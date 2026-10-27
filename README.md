@@ -185,13 +185,19 @@ closes the loop from finding to decision to measured outcome:
 - **Results tracking.** `margin-engine track` measures implemented actions
   after a configurable window: price realization (did the invoiced price
   actually move, or erode back?), volume against the prediction stored on the
-  action at generation time — as a difference-in-differences against untreated
-  same-segment pairs, so market trends never read as price effects — and
-  margin before vs after. Every gate fails closed with its reason; calibration
-  by evidence bucket appears only once enough actions are measured. On
-  synthetic worlds with planted price interventions the tracker's pooled
-  recovery error is 0.039 log points (see the validation table), and on a
-  sparse world it measures nothing and says why.
+  action at generation time, and margin before vs after. The per-action volume
+  figure is a **control-adjusted volume change** — the treated pair's ratio
+  divided by the trend in clean untreated pairs in the same segment — and is
+  deliberately not called a difference-in-differences estimate. A pair that
+  stops buying counts as a change of zero rather than being dropped, on both
+  sides of the comparison. Alongside it, a **pooled event study** compares
+  treated pairs with never-treated and not-yet-treated ones over event time,
+  states its estimand, and reports the pre-trend check with the size of
+  pre-trend the data could have detected. Every gate fails closed with its
+  reason; calibration by evidence bucket appears only once enough actions are
+  measured. On synthetic worlds with planted price interventions the tracker's
+  pooled recovery error is 0.039 log points (see the validation table), and on
+  a sparse world it measures nothing and says why.
 
 The hosted demo runs the Action center as a **sandbox**: it starts from a
 simulated, lifecycle-valid review history (labeled as such), and every
@@ -292,7 +298,7 @@ Planted truth vs. recovered, on synthetic data. These figures are produced by `s
 | Scenario matrix, full tier | Every invariant on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300/300 worlds pass |
 | Scale (10M lines under 15 min and 8 GB) | **KNOWN GAP** | Unverifiable on the 13.8 GB build machine (≈5 GB free): after the Run 5 scale refactor the largest run that fits is 241k lines in 13.0s at 2.64 GB peak (was 32.1s / 2.92 GB before the refactor; marginal memory ≈9.0 KB/line, was ≈10.0). Memory stays linear in lines across measured rungs, but that is an extrapolation — at ≈9 KB/line a full-featured 10M-line world would not fit 8 GB anywhere; the remaining lever (spilling the ledger to parquet between stages) is logged as the next scale step |
 | Hybrid world: real BLS PPI series drive the cost instrument | Informational | Median abs elasticity error 0.037 over 6 segments; 4 causal-supported |
-| Results tracker: planted +8% price interventions recovered (difference-in-differences) | Pooled error ≤ 0.10 log points; ≥ 50% of interventions measured | 21/30 measured; pooled recovery error 0.039 log points (a single pair's 90-day window carries ~0.26 log points of Poisson noise — reported, and why calibration aggregates instead of judging single actions) |
+| Results tracker: planted +8% price interventions recovered (control-adjusted volume change) | Pooled error ≤ 0.10 log points; ≥ 50% of interventions measured | 21/30 measured; pooled recovery error 0.039 log points (a single pair's 90-day window carries ~0.26 log points of Poisson noise — reported, and why calibration aggregates instead of judging single actions) |
 | Results tracker on a sparse world | Fail-closed: ≤ 25% of interventions get a number | 0/30 measured; every refusal carries its reason |
 
 Reported but not gated, because the planted number is not the estimand once the model is misspecified: `realistic_noise` (median 0.051, P90 0.126, worst 0.210), `persistent_demand` (0.021), `heterogeneous_elasticity` (0.024 — the segment estimate recovers the within-segment average), `nonconstant_elasticity` (0.320 — a constant-elasticity model on curved demand reports a local average), and `competitor_comovement` (0.236, with **zero** segments reaching causal support: the Anderson-Rubin and robustness criteria catch what overidentification cannot). An honest indication that clean synthetic results overstate real-world accuracy.

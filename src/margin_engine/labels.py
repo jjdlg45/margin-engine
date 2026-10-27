@@ -615,6 +615,45 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "There are too few independent groups for any interval to be "
         "trustworthy, so none is reported. The estimate itself is still shown.",
     },
+    # --- results tracking (Run 6, Phase 75) ------------------------------------
+    "no_pretrend_detected": {
+        "label": "No earlier movement found",
+        "description": "Treated customers were not already moving before the price did, as "
+        "far as this data can see. Which is not the same as a guarantee: the check reports "
+        "what size of earlier movement it could have detected.",
+    },
+    "pretrend_detected": {
+        "label": "Already moving beforehand",
+        "description": "Treated customers' volumes were already moving before the price "
+        "changed, so what happened afterwards cannot be read as an effect of the price.",
+    },
+    "pretrend_not_testable": {
+        "label": "Could not be checked",
+        "description": "Only one period before the change is in the window, so there is "
+        "nothing to compare against - which is not the same as there being nothing there.",
+    },
+    "fully_realized": {
+        "label": "Price moved in full",
+        "description": "The invoiced price moved all the way to the new price.",
+    },
+    "partly_realized": {
+        "label": "Price moved part way",
+        "description": "The invoiced price moved toward the new price but did not reach it.",
+    },
+    "not_realized": {
+        "label": "Price did not move",
+        "description": "The invoiced price stayed where it was, so this action says nothing "
+        "about how customers respond to a price change.",
+    },
+    "moved_the_other_way": {
+        "label": "Price moved the other way",
+        "description": "The invoiced price moved away from the new price rather than toward it.",
+    },
+    "not_known": {
+        "label": "Not known",
+        "description": "No invoice after the change, so there is no invoiced price to compare "
+        "- which happens when the customer stopped buying.",
+    },
     "pass": {"label": "Passed", "description": "This criterion was met."},
     "fail": {"label": "Not met", "description": "This criterion was not met."},
     "not_evaluated": {

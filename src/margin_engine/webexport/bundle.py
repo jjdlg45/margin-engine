@@ -529,7 +529,13 @@ class ActionOutcome(BaseModel):
     treated_volume_ratio: float | None
     control_volume_ratio: float | None
     n_control_pairs: int
-    did_volume_ratio: float | None
+    control_adjusted_volume_ratio: float | None
+    # Run 6, Phase 75: a pair that stopped buying is a result, not a gap.
+    stopped_buying: bool | None = None
+    n_control_pairs_excluded: int | None = None
+    control_exclusions: str | None = None
+    wave: str | None = None
+    implementation_compliance: str | None = None
     volume_error_log_points: float | None
     pocket_margin_before: float | None
     pocket_margin_after: float | None
@@ -595,6 +601,52 @@ class CalibrationRow(BaseModel):
     median_abs_volume_error_log_points: float | None
     median_realization_pct: float | None
     status: str
+    # Run 6, Phase 75: pairs that stopped buying are IN the count and the
+    # medians above; their volume error is undefined, so they are named.
+    n_stopped_buying: int | None = None
+
+
+class ResultsBreakdownRow(BaseModel):
+    """Measured results split by wave, segment, action type, evidence and how
+    faithfully the price actually moved (Run 6, Phase 75). One pooled median
+    hides where a number came from."""
+
+    dimension: str
+    value: str
+    n_measured: int
+    n_stopped_buying: int
+    median_control_adjusted_volume_ratio: float | None
+    median_realization_pct: float | None
+
+
+class EventStudyCoefficient(BaseModel):
+    event_time: int
+    coefficient_pct: float
+    se_pct: float | None
+    ci_low_pct: float | None
+    ci_high_pct: float | None
+    n_treated_pairs: int
+    period: str
+
+
+class EventStudySection(BaseModel):
+    """The pooled estimate, separate from the per-action control-adjusted
+    changes because it rests on assumptions they do not (Run 6, Phase 75)."""
+
+    status: str
+    reason: str
+    estimand: str
+    att_pct: float | None = None
+    att_se: float | None = None
+    att_ci_low: float | None = None
+    att_ci_high: float | None = None
+    coefficients: list[EventStudyCoefficient] = Field(default_factory=list)
+    pretrend_status: str
+    pretrend_detail: str
+    n_treated_pairs: int
+    n_control_pairs: int
+    n_cohorts: int
+    n_rows: int
 
 
 class ActionsSummary(BaseModel):
@@ -633,6 +685,9 @@ class ActionsSection(BaseModel):
     demo_history: bool = Field(description="True when the event history is simulated demo data")
     summary: ActionsSummary
     calibration: list[CalibrationRow]
+    # Run 6, Phase 75: the breakdowns and the pooled estimate.
+    results_breakdown: list[ResultsBreakdownRow] = Field(default_factory=list)
+    event_study: EventStudySection | None = None
     facets: dict[str, list[str]]
     overlap_groups: list[OverlapGroup] = Field(default_factory=list)
     notes: list[str]

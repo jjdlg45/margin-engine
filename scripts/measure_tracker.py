@@ -176,19 +176,35 @@ def run_world(preset: Preset, seed: int, n_customers: int, n_items: int) -> dict
         )
     out = tracked.outcomes.join(truth, on=["customer_id", "item_id"], how="left")
     measured = out.filter(pl.col("outcome_status") == "measured").with_columns(
-        (pl.col("did_volume_ratio").log() - pl.col("planted_log_effect")).abs().alias("abs_err")
+        # A pair that stopped buying has a volume ratio of zero, whose log is
+        # undefined (Run 6, Phase 75). It stays IN n_measured and is counted
+        # separately below rather than being quietly dropped from the error
+        # summary as if it had never been measured.
+        (pl.col("control_adjusted_volume_ratio").log() - pl.col("planted_log_effect"))
+        .abs()
+        .alias("abs_err")
     )
     errs = sorted(measured["abs_err"].drop_nulls().to_list())
     med = errs[len(errs) // 2] if errs else None
     p90 = errs[min(len(errs) - 1, math.ceil(0.9 * len(errs)) - 1)] if errs else None
     pooled_err = None
     if measured.height:
-        med_did = float(measured.select(pl.col("did_volume_ratio").log().median()).item())
+        med_did = float(
+            measured.select(pl.col("control_adjusted_volume_ratio").log().median()).item()
+        )
         med_planted = float(measured.select(pl.col("planted_log_effect").median()).item())
         pooled_err = round(abs(med_did - med_planted), 4)
+    study = tracked.event_study
     return {
         "n_interventions": inter.height,
         "n_measured": measured.height,
+        "n_stopped_buying": int(measured["stopped_buying"].sum() or 0),
+        "pooled_event_study_status": study.status,
+        "pooled_event_study_att_pct": (
+            round(study.att_pct, 4) if study.att_pct is not None else None
+        ),
+        "pooled_event_study_pretrend": study.pretrend_status,
+        "pooled_event_study_reason": study.reason,
         "measured_share": round(measured.height / max(inter.height, 1), 3),
         "pooled_recovery_error_log_points": pooled_err,
         "per_pair_median_abs_error_log_points": round(med, 4) if med is not None else None,
