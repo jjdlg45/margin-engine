@@ -277,6 +277,22 @@ class SensitivitySegment(BaseModel):
     n_absorbed_parameters: int | None = None
     n_clusters: int | None = None
     effective_f_detail: str | None = None
+    # Run 6, Phase 73: the cluster structure inference rests on, and the
+    # remedy used when the assignment level leaves too few clusters.
+    cluster_level_used: str | None = None
+    n_clusters_by_dimension: str | None = None
+    effective_clusters: float | None = None
+    n_clusters_with_instrument_variation: int | None = None
+    max_cluster_variation_share: float | None = None
+    cluster_variation_detail: str | None = None
+    small_cluster_method_used: str | None = None
+    small_cluster_detail: str | None = None
+    primary_interval_basis: str | None = None
+    analytic_ci_low: float | None = None
+    analytic_ci_high: float | None = None
+    wild_ci_low: float | None = None
+    wild_ci_high: float | None = None
+    wild_bootstrap_reps_used: int | None = None
     ar_shape: str | None = None
     ar_hull_lo: float | None = None
     ar_hull_hi: float | None = None

@@ -136,6 +136,46 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
+                      {/* Cost and tariff movements are assigned to whole
+                          suppliers and categories, so those are the units that
+                          count as independent - not the number of lines. */}
+                      <dt className="text-caption secondary">Independent groups</dt>
+                      <dd className="m-0">
+                        <span title={r.cluster_variation_detail || undefined}>
+                          {r.cluster_level_used
+                            ? labels(`cluster_${r.cluster_level_used}`).label
+                            : "—"}
+                        </span>
+                        {r.n_clusters !== null && r.n_clusters !== undefined
+                          ? `, ${count(r.n_clusters)} groups`
+                          : ""}
+                        {r.effective_clusters !== null && r.effective_clusters !== undefined
+                          ? ` (${num(r.effective_clusters, 1)} weighted by how much each moves)`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-caption secondary">How the interval was built</dt>
+                      <dd className="m-0">
+                        <span
+                          title={
+                            r.small_cluster_detail ||
+                            (r.primary_interval_basis
+                              ? labels(r.primary_interval_basis).description
+                              : undefined)
+                          }
+                        >
+                          {r.primary_interval_basis
+                            ? labels(r.primary_interval_basis).label
+                            : "—"}
+                        </span>
+                        {r.wild_bootstrap_reps_used !== null &&
+                        r.wild_bootstrap_reps_used !== undefined
+                          ? `, ${count(r.wild_bootstrap_reps_used)} resamples`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
                       {/* The extent of the robust set is a HULL, not a
                           confidence interval - named as one. */}
                       <dt

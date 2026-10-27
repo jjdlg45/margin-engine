@@ -4276,3 +4276,221 @@ row declaring what it rests on. `tests/test_opportunity.py` gains the
 allow-list guard tested by behaviour rather than by reading source, the
 total-quantity companion figure on a record, and the untested-not-ruled-out
 wording when no such estimate exists.
+
+## Phase 73 — Clustering at the instrument-assignment level (2026-10-27, Run 6 branch)
+
+Finding 4. Cost shocks arrive by supplier and tariff shocks by product
+category. Those are the units the instruments are *assigned* to, so those are
+the units whose errors move together — and how many of them there are, not how
+many invoice lines there are, is what the interval's accuracy rests on. The
+engine offered three grouping levels, none of them a bare assignment unit:
+`supplier_month`, `month`, and two-way `month_customer`. The period-crossed
+form treats one supplier's January and its February as independent draws,
+which neither the generator's AR(1) shocks nor real input costs are.
+
+### What was added
+
+**Four assignment levels.** `supplier`, `supplier_month`, `category` and
+`category_month` join the two outcome-correlation levels kept from Run 4.
+`panel/build.py` builds all six keys every time, so the estimator switches
+between them without rebuilding the panel and the per-cluster report can be
+produced for any of them. A level whose identifying column is absent is named
+in the record and falls back to the coarsest key present; if there is none,
+the segment says so rather than grouping on something it was not asked to.
+
+**Effective cluster count.** A raw count hides the case the spec asks about:
+twelve suppliers of which one does most of the moving is not twelve
+independent groups. Each segment now reports the raw count per dimension, how
+many clusters carry any instrument movement at all, the largest single
+cluster's share of it, and the inverse Herfindahl of those shares — the
+effective count. On the demo world's segments that is 6.9 to 8.3 against
+twelve raw suppliers, and 5.1 to 6.9 against eight raw categories. The
+effective count is the figure the adequacy criterion reads.
+
+**A tenth criterion, `cluster_structure_adequate`**, inserted at position 4 —
+beside the first stage, because both are about whether identification can
+support inference at all. The six later criteria were renumbered so the report
+has no gap and no two criteria share a position; a test asserts that.
+
+### The small-cluster remedy, and how it was chosen
+
+Below `min_assignment_clusters` effective clusters the group-robust t interval
+is too narrow to publish as a 95% interval, and policy decides. `wild_bootstrap`
+replaces it; `fail_closed` withdraws it. Either way the point estimate stays on
+the record and the analytic figures stay under their own names, because
+withdrawing an interval is the point and hiding the estimate is not.
+
+The bootstrap is the **wild restricted efficient** form: both equations are
+resampled under the same cluster weight, so the correlation between the
+first-stage and structural errors survives into the bootstrap world.
+Resampling the structural equation alone, with price held fixed, would assume
+price exogenous inside the procedure defending an IV estimate.
+
+The interval is the **symmetric** percentile-t. The equal-tailed form was
+implemented first and measured against the analytic interval it was meant to
+repair, over 100 seeded draws per design:
+
+| design | analytic | equal-tailed | symmetric |
+|---|---|---|---|
+| 10 balanced clusters | 88.0% | 88.0% | **93.0%** |
+| 14 balanced clusters | 90.0% | 81.0% | **90.0%** |
+| 24 balanced clusters | 95.0% | 92.0% | **97.0%** |
+| 10 clusters, weak first stage | 79.0% | 66.0% | **88.0%** |
+
+Equal-tailed was consistently worse than doing nothing: an asymmetric bootstrap
+distribution shifts the interval off centre faster than it widens it. The
+symmetric form is what shipped, and a seeded 60-draw version of the same
+measurement is a test, so the choice is pinned rather than remembered.
+
+Two cases have no remedy and fail closed regardless of policy. **Two-way
+grouping** is an intersection of two overlapping partitions and has no single
+partition to resample; resampling the binding dimension alone would discard
+the second one, which under persistent customer demand is exactly the
+dimension that made two-way the default. And below `min_bootstrap_clusters`
+raw clusters there are too few distinct weightings for the bootstrap to be a
+remedy either — 8, the lowest count at which it was measured to beat the
+analytic interval rather than add noise.
+
+Thresholds shipped: `min_assignment_clusters: 15`, `min_bootstrap_clusters: 8`,
+`small_cluster_method: wild_bootstrap`, `wild_bootstrap_reps: 999`. 15 keeps
+the shipped two-way grouping (18.9 to 22.6 effective on the demo world) on the
+analytic interval, which the 50-simulation persistent-demand study had already
+measured inside the band, and withdraws supplier and category, which it cannot.
+
+**Anderson-Rubin critical value.** A correctness fix found on the way. The grid
+inversion used chi-square critical values (5.99 at two instruments), but a
+cluster-robust Wald statistic is chi-square in the number of *clusters*, not
+rows. The bar is now `K x F(K, G-K)`, which converges back as clusters grow:
+6.05 at 288 clusters, 6.89 at 24, 8.21 at 12. At the counts the shipped default
+runs on this is a one per cent change; at the assignment levels it is not.
+
+### The coverage study, and why the default did not move
+
+A new `few_clusters` preset builds the world this phase is about: five
+suppliers, four categories, twelve months, and supplier and category shocks at
+AR(0.85). `scripts/measure_validation.py` replaces the three-level
+persistent-demand study with a six-level `cluster_structure_coverage` over both
+that world and `persistent_demand`, reporting how often each option produced
+**no** interval beside how often it covered — an option that covers well by
+refusing to answer is not the better option, and the count says so.
+
+Measured here across 11 seeds, 66 segment-estimates per cell, every option
+estimated on the same AR(1)-customer-demand worlds:
+
+| grouping | coverage | median width | intervals withdrawn |
+|---|---|---|---|
+| **month and customer (shipped)** | **95.5%** | 0.22 | 0 |
+| supplier, with the bootstrap | 87.9% | 0.23 | 0 |
+| month | 84.8% | 0.17 | 0 |
+| supplier and month | 81.8% | 0.16 | 0 |
+| category and month | 81.8% | 0.17 | 0 |
+| product category | — | — | all 66 |
+
+On the `few_clusters` world the assignment levels do not produce an interval at
+all, and that is structural rather than statistical: five suppliers and four
+categories are both below the bootstrap floor, so there is nothing to resample.
+`scripts/measure_validation.py` re-measures both worlds at 25 seeds for
+validation.json; the figures above come from a 11-seed scratch run used to
+choose the default and are not the recorded ones.
+
+The default did not move, and the reason is worth stating plainly: the
+assignment-level grouping Finding 4 asks for is right in principle and cannot
+be made to cover at a realistic supplier count. Twelve suppliers with the
+bootstrap applied reach 88% — better than every period-crossed form, and still
+short of the 90-98% band — because what breaks coverage under persistent demand
+is the **customer** dimension, shocks carrying over between months within a
+customer, and no supplier-level grouping absorbs it. The two-way form absorbs
+both that and the within-month correlation across the items a customer buys.
+
+What the phase buys is not a new default. It is that the assignment levels are
+now available and measured rather than assumed away; that a level with too few
+groups withdraws its interval instead of printing a narrow one; and that every
+segment shows the count, the spread of identifying variation across it, and
+which interval it ended up reporting.
+
+### A determinism regression from Phase 72, found and fixed
+
+`test_bundle_byte_identical_across_runs` fails on commit `c3748c2`. Phase 72's
+build log recorded 58 of 59 test files passing locally; that count was wrong,
+and this is the correction. The failure is real and reproducible, not a flake.
+
+The cause is Phase 72's thread pool. The estimates it produces are
+byte-identical at every worker count — that was checked and still holds — but
+the **library warnings** raised during the fits are not. Python's warning
+machinery is global: a library that opens its own `catch_warnings` block in one
+thread replaces the recorder every other thread is writing to. Measured on the
+committed sample: one worker records the same five warnings on every run,
+three workers record between one and three, varying between two runs inside the
+same process.
+
+Fixed by absorbing that stage's warnings rather than reporting a list whose
+contents depend on thread scheduling, and saying so in the report instead of
+leaving an absence. What those warnings carried is already reported as
+structured per-segment diagnostics — Phase 72's rows-and-units sample losses
+count singleton and separated groups, and convergence trouble appears in the
+status reasons. A test asserts the declaration is present whenever segments are
+fitted concurrently, so the absence cannot quietly become a silence.
+
+### What changed in the outputs
+
+Demo world, before and after: **unchanged**, 1 segment
+`causal_elasticity_supported` and 2 `iv_estimated_elasticity`, same intervals.
+Its three segments have 24 raw clusters and 18.9 to 22.6 effective, all above
+the 15 threshold, so no remedy applies. The Anderson-Rubin hulls move in the
+third decimal from the new critical value. The `library_warnings` list loses
+the racy entries from the fitting stage and gains the note above.
+
+Where behaviour does change is thin segments under the shipped two-way
+grouping, whose binding dimension is the customer side rather than the month
+side: on a 120-customer test world, three of six segments have nine or ten
+distinct customers and now report no 95% interval where they previously
+reported one.
+
+### Known gap
+
+`docs/validation.json` and the README validation table still carry the Run 4
+three-option clustering comparison. Regenerating them means running
+`scripts/measure_validation.py` end to end, which is hours of work and is where
+Phase 85 picks it up; the figures above come from a scratch run and are labelled
+as such rather than being written into the table as if they were the recorded
+ones.
+
+### Tests added
+
+`tests/test_clustering.py`, 28 tests: the column mapping for every configurable
+level and a check that no level can be added without one; the named fallback
+and the no-key refusal; the variation profile at even spread, full
+concentration and zero variation; the bootstrap's determinism, its independence
+from the replicate block size, its refusal at one cluster and at a saturated
+design, its symmetry about the point estimate, and the seeded 60-draw coverage
+comparison that justifies running it at all; and, end to end on a generated
+world, twelve suppliers taking the resampled interval, eight categories being
+below the floor, two-way grouping having no partition to resample, the
+withdrawal appearing as a failed criterion rather than a silent drop, the
+criteria staying in one unbroken order, the binding dimension being the thinner
+side, the fail-closed policy declining where the bootstrap would have run,
+monotonicity in the threshold, and every segment reporting how its groups carry
+the variation. `tests/test_webexport.py` gains the concurrent-fit warning
+declaration.
+
+### Checks
+
+ruff 0; ruff format clean (191 files); mypy src api 0 (91 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed, 3 skipped, exit 0, with no
+snapshot re-baselining.
+
+The Python suite was run in batches, each its own process. **57 of 59 test
+files pass.** Two did not:
+
+- `tests/test_sensitivity.py::test_ci_coverage_smoke` failed first time with
+  "only 37 intervals produced" against its own floor of 40 — the direct
+  consequence of this phase, since thin small-world segments now decline an
+  interval. The floor is a sample-size guard on the smoke measurement, so it
+  was left where it is and the run was given sixteen worlds instead of twelve.
+  The file now passes, 13 tests, 2.65 GB, 323s.
+- `tests/test_full_run.py` needs **4.72 GB** and drives free memory to 1.65 GB
+  with nothing else running, so the 2 GB floor stops it at 9 of its 10 tests.
+  Same known gap as Phase 72, measured again. It is not skipped or weakened: it
+  runs in CI, which has the memory for it, and the figure is recorded here
+  rather than reported as a pass. Phase 83's spill-to-Parquet work is where
+  this gets fixed.

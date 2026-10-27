@@ -403,6 +403,24 @@ def test_validation_rows_carry_no_raw_codes(
     assert render_text("a_code_without_a_label") == "a_code_without_a_label"
 
 
+def test_concurrent_fit_warnings_are_declared_not_quietly_dropped(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Segments are fitted side by side under the shipped rules, and the
+    library warnings raised while they are cannot be reported individually:
+    which ones survive depends on thread interleaving, so listing them would
+    both break the byte-identical guarantee and tell the reader something
+    untrue (Run 6, Phase 73). The absence has to be stated, not left implicit.
+    """
+    res, rules, _bundle, _out = built
+    assert rules.sensitivity.max_parallel_segments > 1
+    notes = [w for w in res.library_warnings if w["category"] == "EngineNote"]
+    assert len(notes) == 1, res.library_warnings
+    message = str(notes[0]["message"])
+    assert "side by side" in message
+    assert "segment's own diagnostics" in message
+
+
 def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
     rules_path = _fast_rules(tmp_path)
     hashes = []

@@ -55,6 +55,46 @@ def month_index(col: str = "invoice_date") -> pl.Expr:
     return (pl.col(col).dt.year() * 12 + pl.col(col).dt.month()).alias("month_idx")
 
 
+# The instruments are ASSIGNED at supplier x month and category x month, so
+# those are the levels at which their variation is correlated (Run 6, Phase
+# 73, Finding 4). When the shocks are serially correlated within a supplier -
+# the default generator draws them as AR(1), and real input costs behave the
+# same way - supplier x month is too FINE: the correlation runs across months
+# within the supplier, which supplier x month treats as independent. Clustering
+# at the assignment unit itself (supplier, category) is the coarser, safer
+# choice, at the cost of far fewer clusters.
+#
+# Every option is built here so the estimator can switch between them without
+# rebuilding the panel, and so the per-cluster instrument-variation report can
+# be produced for any of them. A level whose identifying column is absent
+# collapses to one cluster, which the small-cluster guard catches and reports
+# rather than silently treating as valid inference.
+_CLUSTER_SOURCES: dict[str, tuple[str, ...]] = {
+    "cluster_supplier": ("supplier_id",),
+    "cluster_supplier_month": ("supplier_id", "period"),
+    "cluster_category": ("item_category",),
+    "cluster_category_month": ("item_category", "period"),
+    "cluster_month": ("period",),
+    "cluster_customer": ("customer_id",),
+}
+
+
+def _cluster_columns(panel: pl.DataFrame) -> list[pl.Expr]:
+    """Build every clustering key the estimator can be configured to use."""
+    out: list[pl.Expr] = []
+    for name, sources in _CLUSTER_SOURCES.items():
+        if not all(c in panel.columns for c in sources):
+            # No column to cluster on. One group is not a usable cluster
+            # structure; it is reported as such by the cluster-adequacy gate.
+            out.append(pl.lit("unavailable").alias(name))
+            continue
+        expr = pl.col(sources[0]).fill_null("unknown")
+        for c in sources[1:]:
+            expr = expr + "@" + pl.col(c).fill_null("unknown")
+        out.append(expr.alias(name))
+    return out
+
+
 def build_panel(
     observations: pl.DataFrame,
     items: pl.DataFrame | None,
@@ -375,12 +415,7 @@ def build_panel(
         (pl.col("customer_id") + "|" + pl.col("item_id")).alias("pair"),
         (pl.col("price_cf") / 100).log().alias("log_price"),
         pl.when(pl.col("qty") > 0).then(pl.col("qty").log()).otherwise(None).alias("log_qty"),
-        (pl.col("supplier_id") + "@" + pl.col("period")).alias("cluster_supplier_month")
-        if "supplier_id" in (items.columns if items is not None else [])
-        or supplier_cost_index is not None
-        else pl.lit("all").alias("cluster_supplier_month"),
-        pl.col("period").alias("cluster_month"),
-        pl.col("customer_id").alias("cluster_customer"),
+        *_cluster_columns(panel),
         (
             (pl.col("item_role").fill_null("unknown") + "@" + pl.col("period"))
             if items is not None and "item_role" in items.columns

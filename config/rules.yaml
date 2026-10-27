@@ -127,15 +127,53 @@ sensitivity:
   robustness_max_spread: 0.20
   max_ci_width: 1.0
   overid_alpha: 0.05
-  # Two-way clustering (month AND customer, Cameron-Gelbach-Miller): demand
-  # shocks correlate across the items a customer buys in one month AND, when
-  # demand is persistent, across months within a customer. Chosen by the
-  # persistent-demand coverage study (Run 4, 24.5; recorded in
-  # docs/validation.json): under AR(1) customer demand, month-only clustering
-  # covers ~78% and supplier x month ~77%, while month x customer stays within
-  # the 90-98% target - and on the iid well-identified world it matches
-  # month-only coverage exactly, so nothing is given up.
+  # Where errors are grouped for inference. Six options; see methodology.md,
+  # "Clustering, and what counts as an independent observation".
+  #
+  # Run 6 (Phase 73) added the four INSTRUMENT-ASSIGNMENT levels - supplier,
+  # supplier x month, product category, category x month - because cost shocks
+  # arrive by supplier and tariff shocks by category, so those are the units
+  # whose errors move together. Grouping there is the theoretically right
+  # thing and it is measured here rather than assumed, because at a realistic
+  # supplier count it runs out of groups: twelve suppliers are twelve
+  # independent groups however many invoice lines they cover.
+  #
+  # Coverage under AR(1) customer demand, measured across clustering options
+  # on the same worlds (Run 4 24.5 at 50 seeds, re-measured in Run 6 Phase 73
+  # with the assignment levels added; both in docs/validation.json):
+  #     month x customer      94%   - inside the 90-98% target
+  #     supplier              86%   - best assignment level, with the
+  #                                   small-cluster bootstrap applied
+  #     month                 83%
+  #     supplier x month      81%
+  #     category x month      81%
+  #     product category       -    - eight groups, no interval reported
+  #
+  # Two-way month-and-customer stays the default. What breaks coverage under
+  # persistent demand is the customer dimension - shocks that carry over
+  # between months within a customer - and no supplier-level grouping absorbs
+  # it. The Cameron-Gelbach-Miller two-way form absorbs both that and the
+  # within-month correlation across the items a customer buys.
   cluster_level: month_customer
+  # Small-cluster policy (Run 6, Phase 73). Clustering where an instrument is
+  # ASSIGNED is the correct level and the expensive one: twelve suppliers are
+  # twelve independent groups however many invoice lines they cover.
+  #
+  # The threshold is read against the EFFECTIVE cluster count - clusters
+  # weighted by how much identifying variation each carries - so a world where
+  # one supplier does most of the moving cannot pass on a raw count. 15 keeps
+  # the shipped two-way month-and-customer grouping (about 21 effective on
+  # these panels) on the analytic interval, which the 50-simulation
+  # persistent-demand study measured inside the 90-98% band, and withdraws
+  # supplier (about 8.5) and product category (about 7.0), which it cannot
+  # measure because they are too few to produce an interval at all.
+  min_assignment_clusters: 15
+  small_cluster_method: wild_bootstrap
+  # Below this RAW count the bootstrap stops being a remedy. 8 is the lowest
+  # count at which the symmetric wild bootstrap-t was measured to improve on
+  # the analytic interval rather than add noise (see docs/build-log.md).
+  min_bootstrap_clusters: 8
+  wild_bootstrap_reps: 999
   # Where the supplier cost instrument comes from (Run 4, 27.6):
   #   reference_table  a mapped supplier_cost_index table (default)
   #   receipts         built from purchase/receipt history (mix-corrected

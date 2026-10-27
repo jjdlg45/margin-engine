@@ -535,6 +535,13 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "The instruments move price hard enough for the estimate to mean "
         "something; the figure before controlling is shown beside it.",
     },
+    "cluster_structure_adequate": {
+        "label": "Enough independent clusters",
+        "description": "Cost and tariff movements are assigned to whole suppliers and "
+        "categories, so those are the units that count as independent - not the number of "
+        "invoice lines. Too few of them, and the interval would look far more precise than "
+        "the evidence is.",
+    },
     "overidentification_not_rejected": {
         "label": "Overidentification not rejected",
         "description": "The two instruments agree. This test cannot detect a violation they "
@@ -558,6 +565,53 @@ LABELS: dict[str, dict[str, str]] = {
         "label": "Weak-instrument-robust agreement",
         "description": "The weak-instrument-robust set is bounded and agrees with the primary "
         "interval.",
+    },
+    # --- cluster structure (Run 6, Phase 73) -----------------------------------
+    "cluster_supplier": {
+        "label": "Supplier",
+        "description": "Each supplier counts as one independent group, however many months "
+        "and lines it covers. This is where the cost instrument is assigned.",
+    },
+    "cluster_supplier_month": {
+        "label": "Supplier and month",
+        "description": "Each supplier-month counts as one independent group. Only adequate "
+        "when a supplier's cost movements are unrelated from one month to the next.",
+    },
+    "cluster_category": {
+        "label": "Product category",
+        "description": "Each product category counts as one independent group. This is where "
+        "the tariff instrument is assigned.",
+    },
+    "cluster_category_month": {
+        "label": "Product category and month",
+        "description": "Each category-month counts as one independent group. Only adequate "
+        "when a category's tariff movements are unrelated from one month to the next.",
+    },
+    "cluster_month": {
+        "label": "Month",
+        "description": "Each month counts as one independent group, which allows for anything "
+        "that moves all customers together within a month.",
+    },
+    "cluster_month_customer": {
+        "label": "Month and customer",
+        "description": "Allows both for shocks that hit every customer in a month and for a "
+        "customer's own demand carrying over between months.",
+    },
+    "interval_cluster_robust_t": {
+        "label": "Group-robust interval",
+        "description": "The standard interval, which relies on there being enough independent "
+        "groups for its approximation to hold.",
+    },
+    "interval_wild_cluster_bootstrap": {
+        "label": "Resampled interval",
+        "description": "With few independent groups the standard interval is too narrow, so "
+        "the interval is rebuilt by repeatedly re-running the estimate with the groups "
+        "reweighted at random.",
+    },
+    "interval_withdrawn_few_clusters": {
+        "label": "Interval withdrawn",
+        "description": "There are too few independent groups for any interval to be "
+        "trustworthy, so none is reported. The estimate itself is still shown.",
     },
     "pass": {"label": "Passed", "description": "This criterion was met."},
     "fail": {"label": "Not met", "description": "This criterion was not met."},

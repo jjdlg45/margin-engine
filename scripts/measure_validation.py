@@ -44,6 +44,7 @@ from margin_engine.extended.quotes import STATUS_ESTIMATED, fit_win_curves, quot
 from margin_engine.ledger.pipeline import run_pipeline  # noqa: E402
 from margin_engine.segment.trees import fit_commercial_segments, prepare_segmentation_frame  # noqa: E402
 from margin_engine.sensitivity.estimate import (  # noqa: E402
+    CLUSTER_LEVEL_NAMES,
     STATUS_CAUSAL,
     STATUS_DESCRIPTIVE,
     STATUS_INSUFFICIENT,
@@ -350,56 +351,106 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
     )
 
 
-def persistent_demand_coverage(tmp: Path) -> list[dict[str, Any]]:
-    """Run 4 (24.5): the 50-simulation coverage study under AR(1) customer
-    demand shocks, once per clustering option. Worlds are generated once per
-    seed and re-estimated per option, so the comparison is apples-to-apples.
-    The shipped rules.yaml default is whichever option keeps coverage within
-    90-98% (recorded in the row names)."""
-    levels = ("month", "month_customer", "supplier_month")
-    covered = dict.fromkeys(levels, 0)
-    total = dict.fromkeys(levels, 0)
+CLUSTER_LEVELS = (
+    "supplier",
+    "supplier_month",
+    "category",
+    "category_month",
+    "month",
+    "month_customer",
+)
+
+
+def cluster_structure_coverage(tmp: Path) -> list[dict[str, Any]]:
+    """Run 6 (Phase 73, Finding 4): coverage by clustering option, on the two
+    worlds that put the choice under pressure.
+
+    `persistent_demand` carries AR(1) customer demand, which is what picked the
+    Run 4 default. `few_clusters` adds the problem this phase is about: five
+    suppliers, four categories, twelve months and strongly serially correlated
+    supplier and category shocks, so the units the instruments are ASSIGNED to
+    are few and each one's movement is correlated across the whole panel.
+
+    Worlds are generated once per seed and re-estimated per option, so the
+    comparison is apples-to-apples. Besides coverage, each row reports how
+    often the option produced NO interval at all - an option that covers well
+    by refusing to answer is not the better option, and the count says so.
+    """
+    worlds = (Preset.PERSISTENT_DEMAND, Preset.FEW_CLUSTERS)
+    # 25 seeds rather than the 50 the Run 4 three-level study used: twice the
+    # worlds and twice the options already double the estimation work on the
+    # same number of generated worlds, and the margins being separated here
+    # (95% against 84%) are far wider than the sampling noise at 25 x 6
+    # segment-estimates per cell.
+    seeds = range(100, 125)
     base = rules_full()
-    print("persistent-demand CI coverage, 50 simulations x 3 clusterings... (the other long one)")
-    for seed in range(100, 150):
-        panel, truth, _ = build_world_panel(
-            tmp / "pcov", Preset.PERSISTENT_DEMAND, seed, use_engine_segments=False
-        )
-        for level in levels:
-            rules = base.model_copy(
-                update={"sensitivity": base.sensitivity.model_copy(update={"cluster_level": level})}
+    shipped = base.sensitivity.cluster_level
+    tally: dict[tuple[str, str], list[int]] = {
+        (w.value, lv): [0, 0, 0] for w in worlds for lv in CLUSTER_LEVELS
+    }
+    print(
+        f"cluster-structure coverage, {len(seeds)} simulations x 2 worlds "
+        "x 6 clusterings... (one of the long ones)"
+    )
+    for world in worlds:
+        for seed in seeds:
+            panel, truth, _ = build_world_panel(
+                tmp / "ccov", world, seed, use_engine_segments=False
             )
-            sens = run_sensitivity(
-                panel,
-                rules,
-                market_control_source=SOURCE_MAPPED,
-                market_control_grain="item_category:month",
-                # Coverage studies measure the CONDITIONAL estimator's intervals;
-                # the total-quantity estimand is not read here (Run 6, Phase 72).
-                with_total_quantity=False,
-            )
-            for r in sens.to_dicts():
-                if r["iv_ci_low"] is None:
-                    continue
-                t = truth[r["segment"]]
-                total[level] += 1
-                covered[level] += int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
-    shipped = rules_full().sensitivity.cluster_level
+            for lv in CLUSTER_LEVELS:
+                rules = base.model_copy(
+                    update={
+                        "sensitivity": base.sensitivity.model_copy(update={"cluster_level": lv})
+                    }
+                )
+                sens = run_sensitivity(
+                    panel,
+                    rules,
+                    market_control_source=SOURCE_MAPPED,
+                    market_control_grain="item_category:month",
+                    # Coverage studies measure the CONDITIONAL estimator's
+                    # intervals; the total-quantity estimand is not read here.
+                    with_total_quantity=False,
+                )
+                cell = tally[(world.value, lv)]
+                for r in sens.to_dicts():
+                    if r.get("iv") is None:
+                        continue
+                    if r["iv_ci_low"] is None:
+                        cell[2] += 1
+                        continue
+                    t = truth[r["segment"]]
+                    cell[1] += 1
+                    cell[0] += int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
+            del panel
     rows = []
-    for level in levels:
-        rate = covered[level] / total[level] if total[level] else 0.0
-        is_default = level == shipped
-        rows.append(
-            _row(
-                f"95% CI coverage under persistent demand, cluster={level}"
-                + (" (shipped default)" if is_default else " (alternative, informational)"),
-                "Covers truth 90-98% of the time"
-                if is_default
-                else "Informational - reported to justify the clustering default",
-                f"{covered[level]}/{total[level]} = {rate:.1%}",
-                (0.90 <= rate <= 0.98) if is_default else True,
+    for world in worlds:
+        # Only the persistent-demand world GATES. `few_clusters` is built to
+        # have too few groups to work with, so the right outcome there is the
+        # engine declining to report intervals - which would score as 0%
+        # coverage and fail a coverage target that was never the point. Those
+        # rows say what happened and are read, not gated.
+        gates = world is Preset.PERSISTENT_DEMAND
+        for lv in CLUSTER_LEVELS:
+            covered, total, withdrawn = tally[(world.value, lv)]
+            rate = covered / total if total else 0.0
+            is_default = lv == shipped
+            name = world.value.replace("_", " ")
+            achieved = f"{covered}/{total} = {rate:.1%}" if total else "no intervals reported"
+            if withdrawn:
+                achieved += f", {withdrawn} withdrawn for having too few groups"
+            rows.append(
+                _row(
+                    f"95% CI coverage on the {name} world, grouped by "
+                    f"{CLUSTER_LEVEL_NAMES[lv]}"
+                    + (" (shipped default)" if is_default else " (alternative)"),
+                    "Covers truth 90-98% of the time"
+                    if (gates and is_default)
+                    else "Informational - reported to justify the clustering default",
+                    achieved,
+                    (0.90 <= rate <= 0.98) if (gates and is_default) else True,
+                )
             )
-        )
     return rows
 
 
@@ -870,7 +921,7 @@ def main() -> None:
         results += elasticity_checks(tmp)
         if not args.quick:
             results.append(coverage_check(tmp))
-            results += persistent_demand_coverage(tmp)
+            results += cluster_structure_coverage(tmp)
         results += preset_checks(tmp)
         results += misspecified_checks(tmp)
         results += total_quantity_checks(tmp)

@@ -20,6 +20,7 @@ Evidence status (spec 8.6):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -168,6 +169,29 @@ class SegmentEstimate:
     effective_k: float | None = None
     n_absorbed_parameters: int | None = None
     n_clusters: int | None = None
+    # Cluster structure (Run 6, Phase 73, Finding 4). The instruments are
+    # ASSIGNED at supplier x month and category x month, so the level at which
+    # their variation is correlated - not the level at which rows are many -
+    # is what inference has to respect.
+    cluster_level_used: str = ""
+    cluster_detail: str = ""
+    n_clusters_by_dimension: str = ""
+    # Clusters weighted by how much identifying variation each carries:
+    # the inverse Herfindahl of per-cluster instrument variation. Twelve
+    # suppliers of which one moves is not twelve independent clusters.
+    effective_clusters: float | None = None
+    n_clusters_with_instrument_variation: int | None = None
+    max_cluster_variation_share: float | None = None
+    cluster_variation_detail: str = ""
+    # Small-cluster remedy, when the assignment level leaves too few.
+    small_cluster_method_used: str = ""
+    small_cluster_detail: str = ""
+    primary_interval_basis: str = ""
+    analytic_ci_low: float | None = None
+    analytic_ci_high: float | None = None
+    wild_ci_low: float | None = None
+    wild_ci_high: float | None = None
+    wild_bootstrap_reps_used: int | None = None
     first_stage_variance_pd: bool | None = None
     effective_f_detail: str = ""
     # Anticipation (lead) test.
@@ -296,6 +320,202 @@ def _make_cluster_spec(*dims: np.ndarray) -> ClusterSpec:
     return [(ca, na, +1), (cb, nb, +1), (ci, ni, -1)]
 
 
+# Which panel columns each configured cluster level uses (Run 6, Phase 73).
+# The first four are the levels the INSTRUMENTS are assigned at; the last two
+# are outcome-correlation levels kept from Run 4.
+CLUSTER_LEVEL_COLUMNS: dict[str, list[str]] = {
+    "supplier": ["cluster_supplier"],
+    "supplier_month": ["cluster_supplier_month"],
+    "category": ["cluster_category"],
+    "category_month": ["cluster_category_month"],
+    "month": ["cluster_month"],
+    "month_customer": ["cluster_month", "cluster_customer"],
+}
+# Levels at which an instrument is assigned, as opposed to levels chosen for
+# outcome correlation. Serial correlation within an assignment unit is the
+# failure mode Finding 4 names, so the distinction is reported.
+ASSIGNMENT_LEVELS = frozenset({"supplier", "supplier_month", "category", "category_month"})
+# How the reported 95% interval was built. Codes, resolved to text by the
+# label dictionary wherever a person reads them.
+INTERVAL_CLUSTER_ROBUST = "interval_cluster_robust_t"
+INTERVAL_WILD_BOOTSTRAP = "interval_wild_cluster_bootstrap"
+INTERVAL_WITHDRAWN = "interval_withdrawn_few_clusters"
+# Replicates are evaluated in blocks so a long panel costs the same peak
+# memory as a short one: this is the number of matrix cells a block may
+# hold, which the sample length divides into a replicate count. It is a
+# memory dial only - a test pins that changing it cannot move a reported
+# number, because the draws are taken in the same order either way.
+WILD_BOOTSTRAP_BLOCK_CELLS = 4_000_000
+# Plain English for the level, for every string a person reads.
+CLUSTER_LEVEL_NAMES: dict[str, str] = {
+    "supplier": "supplier",
+    "supplier_month": "supplier and month",
+    "category": "product category",
+    "category_month": "product category and month",
+    "month": "month",
+    "month_customer": "month and customer",
+}
+
+
+def resolve_cluster_columns(level: str, available: Sequence[str]) -> tuple[list[str], str]:
+    """The cluster columns for a configured level, and a note on what happened.
+
+    A panel that predates the full set of keys, or one built without supplier
+    or category attributes, simply does not carry the requested column. Rather
+    than silently clustering on something else, the missing column is named and
+    the level falls back to the coarsest key the panel does have. The resulting
+    cluster COUNT then flows into the adequacy gate, so a degenerate fallback
+    cannot pass as valid inference.
+    """
+    want = CLUSTER_LEVEL_COLUMNS.get(level, ["cluster_month"])
+    have = [c for c in want if c in available]
+    if len(have) == len(want):
+        return want, ""
+    missing = ", ".join(c for c in want if c not in available)
+    for alt in ("cluster_month", "cluster_customer"):
+        if alt in available:
+            return [alt], (
+                f"the panel carries no {missing}, so inference fell back to "
+                f"{alt.removeprefix('cluster_')}"
+            )
+    return [], f"the panel carries no {missing} and no fallback clustering key"
+
+
+def cluster_variation_profile(
+    z: np.ndarray, codes: np.ndarray, n_g: int
+) -> tuple[float, int, float]:
+    """How the identifying variation is spread over clusters.
+
+    Returns the effective number of clusters, how many carry any instrument
+    variation at all, and the largest single share. The effective count is the
+    inverse Herfindahl of per-cluster variation shares: with the variation
+    spread evenly over G clusters it equals G, and with all of it inside one
+    cluster it equals 1. It is the number the adequacy gate reads, because a
+    cluster that contributes no instrument movement contributes no information
+    about the coefficient however many rows it holds.
+    """
+    mass = np.zeros(n_g)
+    np.add.at(mass, codes, (z * z).sum(axis=1))
+    total = float(mass.sum())
+    if total <= 0:
+        return 0.0, 0, 0.0
+    share = mass / total
+    eff = float(1.0 / float((share * share).sum()))
+    return eff, int((mass > total * 1e-12).sum()), float(share.max())
+
+
+def _iv_point_and_crv1(
+    yz: np.ndarray,
+    pz: np.ndarray,
+    z: np.ndarray,
+    zz_inv: np.ndarray,
+    codes: np.ndarray,
+    n_g: int,
+    dof: float,
+) -> tuple[float, float] | None:
+    """2SLS coefficient and its one-way CRV1 standard error, for bootstrapping."""
+    p_hat = z @ (zz_inv @ (z.T @ pz))
+    denom = float(p_hat @ pz)
+    if abs(denom) < 1e-12:
+        return None
+    beta = float((p_hat @ yz) / denom)
+    resid = yz - pz * beta
+    scores = np.zeros(n_g)
+    np.add.at(scores, codes, p_hat * resid)
+    var = dof * float(scores @ scores) / (denom * denom)
+    if not np.isfinite(var) or var <= 0:
+        return None
+    return beta, float(np.sqrt(var))
+
+
+def wild_cluster_bootstrap_iv(
+    yz: np.ndarray,
+    pz: np.ndarray,
+    z: np.ndarray,
+    codes: np.ndarray,
+    n_g: int,
+    *,
+    n_absorbed: int,
+    reps: int,
+    seed: int,
+) -> tuple[float, float, int, str] | None:
+    """Equal-tailed wild cluster bootstrap-t interval for the 2SLS coefficient.
+
+    This is the wild RESTRICTED EFFICIENT form (Davidson and MacKinnon): both
+    equations are resampled with the SAME cluster weight, so the correlation
+    between the first-stage and structural errors - the whole reason an
+    instrument is needed - survives into the bootstrap world. Bootstrapping the
+    structural equation alone, with price held fixed, would quietly assume
+    price exogenous inside the very procedure meant to defend an IV estimate.
+
+    Memory is bounded by evaluating replicates in blocks sized to the sample,
+    so a long panel costs the same peak as a short one.
+    """
+    n = yz.shape[0]
+    k_total = 1 + n_absorbed
+    if n_g <= 1 or n <= k_total:
+        return None
+    dof = (n_g / (n_g - 1)) * ((n - 1) / (n - k_total))
+    zz_inv = np.linalg.pinv(z.T @ z)
+    base = _iv_point_and_crv1(yz, pz, z, zz_inv, codes, n_g, dof)
+    if base is None:
+        return None
+    beta0, se0 = base
+    pi_hat = zz_inv @ (z.T @ pz)
+    fitted_p = z @ pi_hat
+    v_hat = pz - fitted_p
+    u_hat = yz - pz * beta0
+
+    # Every weight is drawn ONCE, before the blocking, so the block size stays
+    # a pure memory dial: drawing per block would advance the generator a
+    # different number of times and silently change the reported interval. The
+    # draw is one value per cluster per replicate - small, because clusters are
+    # few by definition here - while the blocked arrays below are the ones that
+    # scale with the sample.
+    rng = np.random.default_rng(seed)
+    weights = rng.choice(np.array([-1.0, 1.0]), size=(n_g, reps))
+    stats_out = np.empty(reps)
+    stats_out.fill(np.nan)
+    block = max(1, min(reps, int(WILD_BOOTSTRAP_BLOCK_CELLS // max(n, 1))))
+    done = 0
+    while done < reps:
+        b = min(block, reps - done)
+        w = weights[:, done : done + b][codes]
+        p_star = fitted_p[:, None] + v_hat[:, None] * w
+        y_star = p_star * beta0 + u_hat[:, None] * w
+        ph = z @ (zz_inv @ (z.T @ p_star))
+        den = np.einsum("ij,ij->j", ph, p_star)
+        ok = np.abs(den) > 1e-12
+        beta_r = np.where(ok, np.einsum("ij,ij->j", ph, y_star) / np.where(ok, den, 1.0), np.nan)
+        resid = y_star - p_star * beta_r
+        scores = np.zeros((n_g, b))
+        np.add.at(scores, codes, ph * resid)
+        var = dof * (scores * scores).sum(axis=0) / np.where(ok, den * den, 1.0)
+        se_r = np.sqrt(np.where(var > 0, var, np.nan))
+        stats_out[done : done + b] = (beta_r - beta0) / se_r
+        del w, p_star, y_star, ph, resid, scores
+        done += b
+
+    t = stats_out[np.isfinite(stats_out)]
+    if t.size < max(99, reps // 2):
+        return None
+    # SYMMETRIC percentile-t: the 95th percentile of |t*| replaces the
+    # normal-theory 1.96. The equal-tailed form (separate 2.5th and 97.5th
+    # percentiles) was measured first and was consistently WORSE than the
+    # analytic interval it was meant to repair - 88% coverage at ten clusters
+    # against the analytic 88%, and 66% against 79% with a weak first stage -
+    # because an asymmetric bootstrap distribution shifts the interval off
+    # centre faster than it widens it. The symmetric form reached 93% and 88%
+    # on the same draws. The measurements are in the build log.
+    q = float(np.quantile(np.abs(t), 0.95))
+    detail = (
+        f"wild cluster bootstrap-t over {n_g} groups, {t.size} of {reps} usable "
+        f"replicates; the symmetric 95th percentile of the studentized statistic is "
+        f"{q:.2f} against the normal-theory 1.96"
+    )
+    return beta0 - q * se0, beta0 + q * se0, int(t.size), detail
+
+
 def _spec_min_groups(spec: ClusterSpec) -> int:
     """Degrees of freedom driver: the smallest positive-sign group count."""
     return min(n_g for _, n_g, sign in spec if sign > 0)
@@ -397,8 +617,20 @@ def _ar_confidence_set(
     Vectorized over the grid: the reduced-form coefficient and per-cluster
     scores are linear in beta, so meat(beta) is a quadratic matrix form.
     """
-    crit = 5.99 if z.shape[1] == 2 else 3.84
     k = z.shape[1]
+    # Small-cluster critical value (Run 6, Phase 73). A cluster-robust Wald
+    # statistic is only chi-square in the number of clusters, not the number
+    # of rows, and this test is inverted over a grid at every segment - so with
+    # twelve suppliers the chi-square bar (5.99 at two instruments) accepts too
+    # little and reports a set narrower than the evidence. K x F(K, G-K) is the
+    # standard small-sample form and converges back to chi-square as clusters
+    # grow: at 288 clusters it is 6.05 against 5.99, at 24 it is 6.89, at 12 it
+    # is 8.21. The rest of this estimator already uses t and F critical values
+    # for the same reason.
+    from scipy import stats as _st
+
+    n_g_min = _spec_min_groups(spec)
+    crit = float(k * _st.f.ppf(0.95, k, max(n_g_min - k, 1)))
     ztz_inv = np.linalg.pinv(z.T @ z)
     a0 = ztz_inv @ (z.T @ y)  # coef at beta=0
     a1 = ztz_inv @ (z.T @ p)  # d(coef)/d(-beta)
@@ -526,12 +758,15 @@ def estimate_segment(
         )
         return est
 
-    if sc.cluster_level == "month":
-        cluster_cols = ["cluster_month"]
-    elif sc.cluster_level == "month_customer":
-        cluster_cols = ["cluster_month", "cluster_customer"]
-    else:
-        cluster_cols = ["cluster_supplier_month"]
+    cluster_cols, cluster_note = resolve_cluster_columns(sc.cluster_level, pos.columns)
+    est.cluster_level_used = sc.cluster_level
+    est.cluster_detail = cluster_note
+    if not cluster_cols:
+        est.status_reasons.append(
+            f"no grouping key for {CLUSTER_LEVEL_NAMES.get(sc.cluster_level, sc.cluster_level)}: "
+            f"{cluster_note}"
+        )
+        return est
     # Time fixed effects at item-role x month when roles are known: key value
     # items are broadly co-carried and co-move within a month, and absorbing
     # that common component keeps cluster-robust standard errors honest.
@@ -681,6 +916,29 @@ def estimate_segment(
     )
     est.n_absorbed_parameters = n_absorbed
     est.n_clusters = _spec_min_groups(spec)
+    # Cluster structure report (Run 6, Phase 73). The binding dimension is the
+    # one with fewest groups: it drives the degrees-of-freedom factor and the
+    # critical value, so it is the one the variation profile is taken over.
+    bind_codes, bind_n = min(((c, n) for c, n, sign in spec if sign > 0), key=lambda cn: cn[1])
+    est.n_clusters_by_dimension = "; ".join(
+        f"{col} {n}"
+        for col, (_c, n, _s) in zip(cluster_cols, spec[: len(cluster_cols)], strict=False)
+    )
+    eff_g, n_varying, max_share = cluster_variation_profile(z, bind_codes, bind_n)
+    est.effective_clusters = eff_g
+    est.n_clusters_with_instrument_variation = n_varying
+    est.max_cluster_variation_share = max_share
+    level_kind = (
+        "the level the instruments are assigned at"
+        if sc.cluster_level in ASSIGNMENT_LEVELS
+        else "an outcome-correlation level, not an instrument-assignment level"
+    )
+    est.cluster_variation_detail = (
+        f"grouped by {CLUSTER_LEVEL_NAMES.get(sc.cluster_level, sc.cluster_level)} "
+        f"({level_kind}): "
+        f"{bind_n} groups, {n_varying} carrying any instrument movement, "
+        f"largest single share {max_share:.0%}, effective count {eff_g:.1f}"
+    )
     est.first_stage_f = _first_stage_f(pz, z, spec, n_absorbed)
     # Robust effective first stage: the statistic whose critical value is
     # derived for an arbitrary (clustered) variance structure. This is what
@@ -813,8 +1071,90 @@ def estimate_segment(
         from scipy import stats as _st
 
         crit = float(_st.t.ppf(0.975, max(_spec_min_groups(spec) - 1, 2)))
-        est.iv_ci_low = beta_iv - crit * est.iv_se
-        est.iv_ci_high = beta_iv + crit * est.iv_se
+        est.analytic_ci_low = beta_iv - crit * est.iv_se
+        est.analytic_ci_high = beta_iv + crit * est.iv_se
+        est.iv_ci_low, est.iv_ci_high = est.analytic_ci_low, est.analytic_ci_high
+        est.primary_interval_basis = INTERVAL_CLUSTER_ROBUST
+
+    # --- small-cluster remedy (Run 6, Phase 73) ------------------------------
+    # Clustering where the instrument is ASSIGNED is the correct level and the
+    # expensive one: a world with twelve suppliers has twelve clusters however
+    # many rows it has, and the cluster-robust t interval is then materially
+    # too narrow. The count that matters is the EFFECTIVE one - clusters
+    # weighted by the identifying variation they carry - because a cluster
+    # whose instrument never moves tells the coefficient nothing.
+    cluster_fail_closed = False
+    eff_count = est.effective_clusters
+    few = eff_count is not None and eff_count < sc.min_assignment_clusters
+    if not few:
+        est.small_cluster_method_used = "not needed"
+        est.small_cluster_detail = (
+            f"effective group count {eff_count:.1f} is at or above the "
+            f"{sc.min_assignment_clusters} the standard interval needs"
+            if eff_count is not None
+            else "the spread of identifying movement across groups could not be measured"
+        )
+    else:
+        shortfall = (
+            f"effective group count {eff_count:.1f} (of {est.n_clusters} groups) is below the "
+            f"{sc.min_assignment_clusters} the standard interval needs"
+        )
+        if len(cluster_cols) > 1:
+            # The wild cluster bootstrap resamples whole clusters, which needs a
+            # partition. A two-way specification is an intersection of two
+            # overlapping partitions and has no such thing, so there is no
+            # bootstrap to fall back to here - only the honest refusal.
+            cluster_fail_closed = True
+            est.small_cluster_method_used = "interval withdrawn"
+            est.small_cluster_detail = (
+                f"{shortfall}, and a two-way grouping has no single partition to "
+                "resample, so no correction for having few groups applies"
+            )
+        elif est.n_clusters is not None and est.n_clusters <= sc.min_bootstrap_clusters:
+            cluster_fail_closed = True
+            est.small_cluster_method_used = "interval withdrawn"
+            est.small_cluster_detail = (
+                f"{shortfall}, and at {est.n_clusters} groups resampling is not a "
+                f"remedy either: below {sc.min_bootstrap_clusters} groups it was "
+                "measured to add noise rather than improve on the standard interval"
+            )
+        elif sc.small_cluster_method == "fail_closed":
+            cluster_fail_closed = True
+            est.small_cluster_method_used = "interval withdrawn"
+            est.small_cluster_detail = f"{shortfall}; configured policy is to fail closed"
+        else:
+            boot = wild_cluster_bootstrap_iv(
+                yz,
+                pz,
+                z,
+                bind_codes,
+                bind_n,
+                n_absorbed=n_absorbed,
+                reps=sc.wild_bootstrap_reps,
+                seed=2_000_003 + 7919 * segment,
+            )
+            if boot is None:
+                cluster_fail_closed = True
+                est.small_cluster_method_used = "interval withdrawn"
+                est.small_cluster_detail = (
+                    f"{shortfall}, and the wild cluster bootstrap did not produce enough "
+                    "usable replicates to replace the analytic interval"
+                )
+            else:
+                lo, hi, used, detail = boot
+                est.wild_ci_low, est.wild_ci_high = lo, hi
+                est.wild_bootstrap_reps_used = used
+                est.iv_ci_low, est.iv_ci_high = lo, hi
+                est.primary_interval_basis = INTERVAL_WILD_BOOTSTRAP
+                est.small_cluster_method_used = "resampled interval"
+                est.small_cluster_detail = f"{shortfall}, so the reported interval is a {detail}"
+    if cluster_fail_closed:
+        # The point estimate survives; its INTERVAL does not, and every
+        # downstream consumer reads the interval. Withdrawing it is the whole
+        # point of failing closed, so it is withdrawn rather than shown with a
+        # caveat. The analytic figures stay on the record under their own names.
+        est.iv_ci_low = est.iv_ci_high = None
+        est.primary_interval_basis = INTERVAL_WITHDRAWN
 
     # Anderson-Rubin set, described as the SHAPE it is (Run 6, Phase 71).
     # On contact with the search edge the grid is extended outward ONCE at a
@@ -992,9 +1332,28 @@ def estimate_segment(
             iv_ran=False, path_resolved=path.resolved
         )
         return est
-    overid_ok = est.overid_p is None or est.overid_p >= sc.overid_alpha
+    # Cluster structure (Run 6, Phase 73, Finding 4). Clustering at the level
+    # the instruments are ASSIGNED at is what makes the interval honest; doing
+    # so can leave few clusters, and this gate is where that cost is paid in
+    # the open rather than absorbed into an interval that looks precise.
     gate(
         4,
+        "cluster_structure_adequate",
+        not cluster_fail_closed,
+        f"{est.cluster_variation_detail}. {est.small_cluster_detail}",
+    )
+    if cluster_fail_closed:
+        reasons.append(f"cluster structure: {est.small_cluster_detail}")
+        est.status = STATUS_DESCRIPTIVE
+        est.status_reasons = reasons
+        est.causal_status_reasons = gates
+        est.estimand, est.estimand_bias_direction = estimand_for(
+            iv_ran=False, path_resolved=path.resolved
+        )
+        return est
+    overid_ok = est.overid_p is None or est.overid_p >= sc.overid_alpha
+    gate(
+        5,
         "overidentification_not_rejected",
         None if est.overid_p is None else overid_ok,
         (
@@ -1020,7 +1379,7 @@ def estimate_segment(
         # No identified alternative exists, so the headline has nothing to be
         # checked against. That is not a pass.
         gate(
-            5,
+            6,
             "robust_across_specifications",
             None,
             "no alternative specification is identified, so the headline estimate "
@@ -1033,7 +1392,7 @@ def estimate_segment(
     else:
         spread_ok = est.robustness_spread <= sc.robustness_max_spread
         gate(
-            5,
+            6,
             "robust_across_specifications",
             spread_ok,
             f"estimates span {est.robustness_spread:.2f} across "
@@ -1056,7 +1415,7 @@ def estimate_segment(
     )
     mix_txt = f" Zero-row prices: {est.price_source_mix}." if est.price_source_mix else ""
     gate(
-        6,
+        7,
         "imputed_price_robustness",
         None if cf_gap is None else cf_gap <= sc.robustness_max_spread,
         f"the PPML estimate moves {cf_gap:.2f} between the full panel, whose zero rows "
@@ -1081,7 +1440,7 @@ def estimate_segment(
         else None
     )
     gate(
-        7,
+        8,
         "interval_precise_enough",
         None if ci_width is None else ci_width <= sc.max_ci_width,
         f"the 95% interval spans {ci_width:.2f} against a {sc.max_ci_width} maximum"
@@ -1119,7 +1478,7 @@ def estimate_segment(
                 f"the weak-instrument-robust set accepts {est.ar_measure:.2f} in total, "
                 f"beyond {sc.ar_max_width_ratio}x the primary interval ({ci_width:.2f})"
             )
-    gate(8, "weak_instrument_robust_agreement", ar_ok, ar_detail)
+    gate(9, "weak_instrument_robust_agreement", ar_ok, ar_detail)
     if not ar_ok:
         reasons.append(f"weak-instrument-robust set: {ar_detail}")
     # An EMPTY robust set with two instruments is the cluster-robust
@@ -1148,7 +1507,7 @@ def estimate_segment(
     # the check could not speak. Recording it as a failure while the status stays
     # causal would make the gate record contradict the status it explains.
     gate(
-        9,
+        10,
         "no_material_anticipation_effect",
         None
         if est.lead_test_status in (LEAD_UNAVAILABLE, LEAD_INCONCLUSIVE)

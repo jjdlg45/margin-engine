@@ -315,7 +315,8 @@ Dependent variable: log quantity. Sample: positive-quantity rows only (zeros
 drop with the log). Endogenous regressor: log price, NOT instrumented — price
 and demand shocks are simultaneously determined, which is the point of
 reporting it. Fixed effects: pair and month (item-role x month when roles are
-known). Clustering: the configured level (default two-way month x customer).
+known). Clustering: the configured level (see "Clustering, and what counts
+as an independent observation" below; default two-way month x customer).
 Named estimand: the ASSOCIATION of price and conditional quantity among buying
 pairs — documents endogeneity bias, never used for decisions.
 
@@ -342,7 +343,8 @@ and month (item-role x month when roles are known), applied by within
 transformation to outcome, price and instruments; the optional market-price
 control is partialled out of all of them (Frisch-Waugh). Clustering: the
 configured level for F, the Anderson-Rubin set and the leave-one-cluster-out
-jackknife interval. Dropped observations: zeros, rows with missing price or
+jackknife interval; where that level leaves too few independent clusters the
+interval is resampled or withdrawn, per the section below. Dropped observations: zeros, rows with missing price or
 instruments, and singleton groups absorbed by the fixed effects — each
 counted. Named estimand: the own-price elasticity of conditional quantity
 among buying pairs, identified from instrument-induced price variation.
@@ -363,6 +365,9 @@ enters the Poisson equation as a control function. Fixed effects: pair and
 period (item-role x month when roles are known). Weights: none. Clustering:
 the first-stage strength keeps the configured spec (two-way by default); the
 Poisson's analytic variance clusters one-way on the first configured level.
+The small-cluster remedy below applies to the conditional estimator's
+interval, not to this one, whose own uncertainty is reported two ways
+already.
 Inference: that analytic cluster-robust standard error, which omits
 first-stage sampling noise, plus an optional pair cluster bootstrap that
 refits the whole procedure per replicate and does carry it — both published
@@ -455,12 +460,74 @@ interval is a full leave-one-cluster-out jackknife (first stage re-estimated
 per left-out cluster) with t(G-1) critical values — calibrated at small
 cluster counts where plug-in sandwiches under-cover — verified by
 50-simulation coverage studies; the AR set is reported alongside and takes
-over under weak identification. Clustering level is configurable: by month,
-by supplier x month, or two-way month x customer (Cameron-Gelbach-Miller
-combination of per-dimension jackknives, V = V_month + V_customer -
-V_intersection), the robust choice when customer demand shocks persist over
-time. The shipped default is chosen by the persistent-demand coverage study
-recorded in validation.json.
+over under weak identification.
+
+### Clustering, and what counts as an independent observation
+
+Cost shocks arrive by supplier and tariff shocks by product category. Those
+are the units the instruments are *assigned* to, so those are the units whose
+errors move together, and the number of them - not the number of invoice lines
+- is what the interval's accuracy depends on.
+
+Six levels are configurable. Four of them are assignment levels: `supplier`,
+`supplier_month`, `category` and `category_month`. Two are outcome-correlation
+levels kept from the earlier runs: `month`, and two-way `month_customer`
+(a Cameron-Gelbach-Miller combination of per-dimension jackknives,
+V = V_month + V_customer - V_intersection), the robust choice when customer
+demand shocks persist over time.
+
+The period-crossed forms are the finer ones, and they are only adequate when a
+unit's shocks are serially *independent*: clustering at supplier x month
+treats one supplier's January and its February as separate draws. Neither
+simulated nor real input-cost series behave that way - the generator draws
+both instruments as AR(1) processes - so the period-crossed forms understate
+the correlation they are supposed to absorb.
+
+Clustering at the assignment unit itself fixes that and costs cluster count: a
+distributor with twelve suppliers has twelve independent groups however many
+lines it has. Each segment therefore reports the raw count, how many clusters
+carry any instrument movement at all, the largest single cluster's share of
+that movement, and an **effective cluster count** - the inverse Herfindahl of
+the per-cluster shares. Twelve suppliers of which one does most of the moving
+is not twelve independent clusters, and the effective count is the figure the
+adequacy criterion reads.
+
+Below `min_assignment_clusters` effective clusters, the group-robust t
+interval is too narrow to report as a 95% interval, and policy decides:
+
+- `wild_bootstrap` replaces it with a **wild cluster bootstrap-t** interval.
+  Both equations are resampled under the same cluster weight (the wild
+  restricted efficient form), so the correlation between the first-stage and
+  structural errors survives into the bootstrap world; resampling the
+  structural equation alone would assume price exogenous inside the procedure
+  defending an IV estimate. The interval is the **symmetric** percentile-t:
+  the 95th percentile of the absolute studentized statistic replaces 1.96.
+  The equal-tailed form was measured first and was consistently worse than the
+  interval it was meant to repair, because an asymmetric bootstrap
+  distribution shifts the interval off centre faster than it widens it.
+- `fail_closed` withdraws the interval instead. The point estimate stays on the
+  record, with its analytic figures under their own names, but no 95% interval
+  is published and the status cannot rise above descriptive.
+
+Below `min_bootstrap_clusters` raw clusters, or whenever the configured level
+is two-way (an intersection of two overlapping partitions, which has no single
+partition to resample), the bootstrap is not available and the engine fails
+closed regardless of policy. The floor is 8 because that is the lowest count at
+which the symmetric bootstrap was measured to improve on the interval it
+replaces rather than add noise, not because of any closed-form rule.
+
+The Anderson-Rubin grid inversion uses a small-cluster critical value for the
+same reason: a cluster-robust Wald statistic is chi-square in the number of
+*clusters*, not rows, so the bar is K x F(K, G-K), which converges back to
+chi-square as clusters grow (6.05 against 5.99 at 288 clusters, 8.21 at 12).
+
+The shipped default is chosen by the cluster-structure coverage study recorded
+in validation.json, which runs every level over both the persistent-demand
+world and a `few_clusters` world built for this question - five suppliers,
+four categories, twelve months and strongly serially correlated shocks. Each
+row reports how often the option produced no interval at all beside how often
+it covered, because an option that covers well by refusing to answer is not
+the better option.
 
 Each segment also records its identifying price support: the 5th-95th
 percentile range of instrument-predicted within log-price movement

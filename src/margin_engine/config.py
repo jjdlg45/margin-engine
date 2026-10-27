@@ -533,15 +533,55 @@ class SensitivityConfig(StrictModel):
     robustness_max_spread: float = Field(default=0.20, gt=0)
     max_ci_width: float = Field(default=1.0, gt=0)
     overid_alpha: float = Field(default=0.05, gt=0, lt=1)
-    # Cluster level for IV inference. "supplier_month" is where the cost
-    # instrument varies (spec default); "month" is coarser and also absorbs
-    # customer-month demand-shock correlation across suppliers — use it when
-    # residuals are correlated across items a customer buys in the same month.
-    # "month_customer" clusters two-way (month and customer), for customer
-    # demand shocks that persist over time (Run 4, 24.5). The shipped default
-    # in rules.yaml is chosen by the persistent-demand coverage study recorded
-    # in validation.json, not here.
-    cluster_level: Literal["supplier_month", "month", "month_customer"] = "supplier_month"
+    # Cluster level for IV inference.
+    #
+    # Instrument-ASSIGNMENT levels (Run 6, Phase 73): "supplier" and "category"
+    # are the units the two instruments are assigned to, so all of a unit's
+    # variation over time sits inside one cluster. "supplier_month" and
+    # "category_month" are the finer assignment-x-period cells; they are only
+    # adequate when the shocks are serially INDEPENDENT within the unit, which
+    # neither simulated nor real input-cost series usually are.
+    #
+    # Outcome-correlation levels: "month" absorbs customer-month demand-shock
+    # correlation across suppliers; "month_customer" clusters two-way (month
+    # and customer) for customer demand shocks that persist over time
+    # (Run 4, 24.5).
+    #
+    # The shipped default in rules.yaml is chosen by the coverage studies
+    # recorded in validation.json, not here.
+    cluster_level: Literal[
+        "supplier",
+        "supplier_month",
+        "category",
+        "category_month",
+        "month",
+        "month_customer",
+    ] = "supplier_month"
+    # Small-cluster policy (Run 6, Phase 73). Clustering at the level the
+    # instrument is assigned to buys correctness at the price of cluster
+    # count: a world with twelve suppliers has twelve clusters, where the
+    # cluster-robust t interval is badly undersized however many ROWS it has.
+    #
+    # The threshold is read against the EFFECTIVE cluster count - clusters
+    # weighted by the identifying variation each carries - because a cluster
+    # whose instrument never moves tells the coefficient nothing however many
+    # rows it holds. At or above it the analytic interval is used as before.
+    # Below it, `small_cluster_method` decides:
+    #   wild_bootstrap  a wild cluster bootstrap-t interval replaces the
+    #                   analytic one for reporting AND for the precision gate
+    #   fail_closed     no instrumented status at all below the threshold
+    # Either way the count and the method are reported.
+    min_assignment_clusters: int = Field(default=15, ge=2)
+    small_cluster_method: Literal["wild_bootstrap", "fail_closed"] = "wild_bootstrap"
+    # Below this many RAW clusters the bootstrap stops being a remedy and the
+    # estimator fails closed whatever `small_cluster_method` says. 8 is the
+    # lowest count at which the symmetric wild bootstrap-t was measured to
+    # improve on the analytic interval rather than add noise (the measurements
+    # are in docs/build-log.md, Phase 73). Below about six it also runs out of
+    # distinct Rademacher weightings - 2^G of them - but the accuracy gives
+    # out first, so that is not what the threshold is set by.
+    min_bootstrap_clusters: int = Field(default=8, ge=2)
+    wild_bootstrap_reps: int = Field(default=999, ge=99)
     # causal_elasticity_supported additionally requires the Anderson-Rubin set
     # to be bounded and no wider than this multiple of the primary CI (24.7).
     ar_max_width_ratio: float = Field(default=1.5, gt=0)

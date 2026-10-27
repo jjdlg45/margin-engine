@@ -35,6 +35,13 @@ class Preset(StrEnum):
     # demand curvature makes elasticity depend on the price level (the
     # constant-elasticity log-log model is wrong by construction);
     NONCONSTANT_ELASTICITY = "nonconstant_elasticity"
+    # Run 6 (Phase 73): the cluster-structure world. Few suppliers and few
+    # categories, a short panel, and strongly serially correlated supplier and
+    # category shocks - so the units the instruments are ASSIGNED to are few
+    # and each one's movement is correlated across the whole panel. Demand
+    # stays independent, so whatever coverage does here is the instrument
+    # side's doing and not the demand side's.
+    FEW_CLUSTERS = "few_clusters"
     # competitor prices co-move with the cost instruments and shift demand:
     # the exclusion restriction is violated for BOTH instruments in a way
     # overidentification cannot detect (both move together).
@@ -289,6 +296,11 @@ class GeneratorConfig(BaseModel):
                     "market_index_granularity": "national_monthly",
                 }
             )
+        elif preset is Preset.FEW_CLUSTERS:
+            demand = demand.model_copy(update={"instrument_ar": 0.85})
+            base["n_suppliers"] = 5
+            base["n_categories"] = 4
+            base["months"] = 12
         elif preset is Preset.EXTENSIVE_MARGIN:
             # A ten per cent price rise moves a normal pair's monthly incidence
             # from 0.600 to about 0.566. The extensive contribution to the total

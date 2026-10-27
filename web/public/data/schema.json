@@ -2321,6 +2321,30 @@
   },
   "SensitivitySegment": {
    "properties": {
+    "analytic_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Analytic Ci High"
+    },
+    "analytic_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Analytic Ci Low"
+    },
     "ar_bounded": {
      "anyOf": [
       {
@@ -2458,6 +2482,30 @@
      "title": "Causal Gates",
      "type": "array"
     },
+    "cluster_level_used": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Cluster Level Used"
+    },
+    "cluster_variation_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Cluster Variation Detail"
+    },
     "competitor_path_detail": {
      "anyOf": [
       {
@@ -2481,6 +2529,18 @@
      ],
      "default": null,
      "title": "Competitor Path Resolution"
+    },
+    "effective_clusters": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective Clusters"
     },
     "effective_f_detail": {
      "anyOf": [
@@ -2997,6 +3057,18 @@
      "default": null,
      "title": "Market Control Within Cell Values"
     },
+    "max_cluster_variation_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Cluster Variation Share"
+    },
     "n_absorbed_parameters": {
      "anyOf": [
       {
@@ -3020,6 +3092,30 @@
      ],
      "default": null,
      "title": "N Clusters"
+    },
+    "n_clusters_by_dimension": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters By Dimension"
+    },
+    "n_clusters_with_instrument_variation": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters With Instrument Variation"
     },
     "n_identified_instruments": {
      "anyOf": [
@@ -3173,6 +3269,18 @@
      "default": null,
      "title": "Price Source Mix"
     },
+    "primary_interval_basis": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Primary Interval Basis"
+    },
     "robustness_excluded_weak": {
      "anyOf": [
       {
@@ -3212,6 +3320,30 @@
      "title": "Segment",
      "type": "integer"
     },
+    "small_cluster_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Small Cluster Detail"
+    },
+    "small_cluster_method_used": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Small Cluster Method Used"
+    },
     "status": {
      "title": "Status",
      "type": "string"
@@ -3243,6 +3375,42 @@
      ],
      "default": null,
      "title": "Support Log Lo"
+    },
+    "wild_bootstrap_reps_used": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Bootstrap Reps Used"
+    },
+    "wild_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Ci High"
+    },
+    "wild_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Ci Low"
     }
    },
    "required": [

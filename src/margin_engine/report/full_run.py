@@ -478,12 +478,41 @@ def run_full(
     t = time.perf_counter()
     # The index joins at category x month; the gate compares that grain to
     # each instrument's declared variation (Run 6, Phase 70).
-    sens_res = run_sensitivity_full(
-        panel,
-        rules,
-        market_control_source=mkt_source,
-        market_control_grain="item_category:month",
-    )
+    #
+    # Segments are fitted CONCURRENTLY when configured to be (Run 6, Phase 72).
+    # The estimates that come back are byte-identical whatever order the pool
+    # finishes in, but the library warnings raised during the fits are not:
+    # Python's warning machinery is global, and a library that opens its own
+    # `catch_warnings` block in one thread replaces the recorder every other
+    # thread is writing to. Measured on the committed sample: one worker
+    # records the same five warnings every run, three workers record between
+    # one and three, varying between runs of the same process.
+    #
+    # So the warnings from this stage are absorbed and NOT reported
+    # individually - reporting a list whose contents depend on thread
+    # interleaving would break the byte-identical guarantee and tell the
+    # reader something untrue about the run. What those warnings carried is
+    # reported as structured per-segment diagnostics instead: singleton and
+    # separated groups are counted in each segment's sample-loss record, and
+    # convergence trouble shows up in the status reasons. A deterministic note
+    # below says this is what happened, so nothing is silently dropped.
+    _concurrent_fits = rules.sensitivity.max_parallel_segments > 1
+    if _concurrent_fits:
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            sens_res = run_sensitivity_full(
+                panel,
+                rules,
+                market_control_source=mkt_source,
+                market_control_grain="item_category:month",
+            )
+    else:
+        sens_res = run_sensitivity_full(
+            panel,
+            rules,
+            market_control_source=mkt_source,
+            market_control_grain="item_category:month",
+        )
     sens, sens_gates = sens_res.estimates, sens_res.gates
     timings["sensitivity"] = time.perf_counter() - t
     rss_log("sensitivity")
@@ -779,6 +808,23 @@ def run_full(
     # ---- manifest -----------------------------------------------------------
     _w_catcher.__exit__(None, None, None)
     lib_warnings = _aggregate_warnings(list(_caught or []))
+    if _concurrent_fits:
+        # Said out loud rather than left as an absence. See the comment at the
+        # sensitivity stage for why these cannot be listed individually.
+        lib_warnings.append(
+            {
+                "category": "EngineNote",
+                "message": (
+                    "Library warnings raised while price-sensitivity segments were fitted "
+                    "side by side are not listed here: which ones survive depends on the "
+                    "order the threads happen to run in, and a list that changes between "
+                    "identical runs would be misleading. What they report is in each "
+                    "segment's own diagnostics - rows and groups the fit could not use, "
+                    "and the reasons behind its evidence status."
+                ),
+                "n_occurrences": 1,
+            }
+        )
     manifest = build_manifest(
         data_dir=data_dir,
         mapping_path=mapping_path,

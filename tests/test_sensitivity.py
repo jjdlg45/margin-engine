@@ -404,14 +404,22 @@ def _coverage(tmp: Path, seeds: range, size: dict[str, Any] | None) -> tuple[int
 
 
 def test_ci_coverage_smoke(tmp_path: Path) -> None:
-    """Default tier: 12 small worlds. The band is WIDER than the section 8
+    """Default tier: 16 small worlds. The band is WIDER than the section 8
     target of 90-98% and is not it - roughly 70 intervals cannot resolve a
     two-point-wide band, and asserting one here would fail on sampling noise
     alone. What this catches is the failure that matters between commits: an
     interval that has stopped covering anything, or one so wide it covers
     everything. The section 8 figure is measured over 50 full-size worlds by
-    the slow-tier test below and by scripts/measure_validation.py."""
-    covered, total = _coverage(tmp_path, range(200, 212), SMALL)
+    the slow-tier test below and by scripts/measure_validation.py.
+
+    Sixteen worlds rather than the twelve this started with. Run 6 Phase 73
+    added the cluster-adequacy criterion, which declines to report an interval
+    for a segment with too few independent groups - and on worlds this small
+    some segments have only nine or ten distinct customers, so a given number
+    of worlds now yields fewer intervals (37 from twelve, against the 40 this
+    needs). The sample-size floor below is what keeps the rate meaningful, so
+    it was left where it was and the worlds were added instead."""
+    covered, total = _coverage(tmp_path, range(200, 216), SMALL)
     rate = covered / total
     print(f"\n95% CI coverage over 12 small worlds: {covered}/{total} = {rate:.3f}")
     assert total >= 40, f"only {total} intervals produced"
