@@ -52,6 +52,123 @@ class DemandWorld:
     # Planted price interventions (Phase 41): one row per intervened pair with
     # the intervention month, the price lift and the pair's true elasticity.
     interventions: pl.DataFrame | None = None
+    # Planted elasticity of TOTAL expected quantity per segment, including
+    # whether the customer buys at all (Run 6, Phase 72). Distinct from the
+    # pairs frame's `elasticity`, which is the response conditional on buying.
+    planted_total: pl.DataFrame | None = None
+
+
+def _intensive_kappa(mu: np.ndarray, qty_process: str, sigma: float) -> np.ndarray:
+    """d log E[Q | bought] / d log mu for the generator's quantity process.
+
+    Both processes floor quantity at one, so the conditional mean is not mu and
+    its elasticity is not exactly the planted beta. The factor is one to machine
+    precision at the default scale (median mu near 20) and falls away sharply
+    below mu of about 2, where the floor binds often. Carrying it costs nothing
+    and keeps the recorded truth correct if the generator is ever reconfigured
+    into that regime.
+    """
+    mu = np.asarray(mu, dtype=float)
+    safe = np.maximum(mu, 1e-12)
+    if qty_process == "poisson":
+        # Q = max(1, Poisson(mu)) = N + 1{N = 0}, so E[Q] = mu + exp(-mu).
+        m = safe + np.exp(-safe)
+        return np.asarray(safe * (1.0 - np.exp(-safe)) / m, dtype=float)
+    # Loglinear: Q = max(1, round(mu * exp(e))), e ~ Normal(0, sigma^2).
+    # E[Q] = 1 + sum_{k >= 2} P(Q >= k); differentiating the tail sum in log mu
+    # gives the density terms below.
+    #
+    # Evaluated in column blocks. The naive form builds three (399, n_obs)
+    # float64 arrays at once - z, its normal CDF and its normal PDF - which at
+    # the default world's 720k pair-months is 2.3 GB each and was measured
+    # peaking the generator at 8.0 GB on a 14 GB machine, for every world every
+    # test generates. The sum runs over k, i.e. DOWN each column, so splitting
+    # the columns leaves each column's summation order untouched and the result
+    # bit-identical; only the live allocation changes, to 399 x BLOCK.
+    from scipy import stats
+
+    k = np.arange(2, 400, dtype=float)
+    log_k = np.log(k - 0.5)[:, None]
+    m = np.empty(safe.shape, dtype=float)
+    dens = np.empty(safe.shape, dtype=float)
+    block = 20_000
+    log_safe = np.log(safe)
+    for lo in range(0, safe.size, block):
+        hi = min(lo + block, safe.size)
+        z = (log_k - log_safe[None, lo:hi]) / sigma
+        m[lo:hi] = 1.0 + (1.0 - stats.norm.cdf(z)).sum(axis=0)
+        dens[lo:hi] = stats.norm.pdf(z).sum(axis=0) / sigma
+        del z
+    return np.asarray(dens / np.maximum(m, 1e-12), dtype=float)
+
+
+def _planted_total_elasticity(
+    *,
+    segment_id: np.ndarray,
+    beta: np.ndarray,
+    mu: np.ndarray,
+    incidence: np.ndarray,
+    available: np.ndarray,
+    on_contract: np.ndarray,
+    beta_ext: float,
+    qty_process: str,
+    qty_noise_sd: float,
+) -> pl.DataFrame:
+    """The planted elasticity of TOTAL expected quantity, per segment.
+
+    Observed quantity is `buy x Q|buy`, so expected quantity factors as
+    incidence times conditional mean and the two respond to price independently:
+
+        d log E[Q] / d log P  =  beta x kappa(mu)  +  beta_ext x (1 - incidence)
+
+    The extensive term carries `(1 - incidence)` because incidence cannot fall
+    where it is already near one: a long-tail pair buying in 15 per cent of
+    months carries most of beta_ext, a key-value item bought almost every month
+    carries almost none of it.
+
+    Segment aggregation is weighted by expected quantity, because that is what a
+    Poisson fit converges to - its score equations are, to first order, a
+    weighted least squares with those weights. An unweighted average would be
+    materially different (measured at 0.03 to 0.06 per segment here), since
+    expected quantity upweights exactly the high-incidence pairs that have the
+    least extensive response.
+    """
+    rows = available & ~on_contract
+    kappa = _intensive_kappa(mu, qty_process, qty_noise_sd)
+    eps = beta * kappa + beta_ext * (1.0 - incidence)
+    weight = incidence * np.where(
+        np.asarray(qty_process) == "poisson", mu + np.exp(-np.maximum(mu, 1e-12)), mu
+    )
+    df = pl.DataFrame(
+        {
+            "segment_id": segment_id[rows],
+            "_eps": eps[rows],
+            "_w": weight[rows],
+            "_kappa": kappa[rows],
+            "_pi": incidence[rows],
+            "_beta": beta[rows],
+        }
+    )
+    return (
+        df.group_by("segment_id")
+        .agg(
+            ((pl.col("_eps") * pl.col("_w")).sum() / pl.col("_w").sum()).alias("total_elasticity"),
+            ((pl.col("_beta") * pl.col("_kappa") * pl.col("_w")).sum() / pl.col("_w").sum()).alias(
+                "intensive_component"
+            ),
+            (beta_ext * ((1.0 - pl.col("_pi")) * pl.col("_w")).sum() / pl.col("_w").sum()).alias(
+                "extensive_component"
+            ),
+            ((pl.col("_pi") * pl.col("_w")).sum() / pl.col("_w").sum()).alias(
+                "mean_incidence_eq_weighted"
+            ),
+            ((pl.col("_kappa") * pl.col("_w")).sum() / pl.col("_w").sum()).alias(
+                "mean_kappa_eq_weighted"
+            ),
+            pl.len().alias("n_pair_months"),
+        )
+        .sort("segment_id")
+    )
 
 
 def _ar1(rng: np.random.Generator, n_series: int, months: int, sd: float, ar: float) -> np.ndarray:
@@ -448,7 +565,24 @@ def simulate_panel(
         adj[cross["row"].to_numpy()] = cross["adj"].to_numpy()
         log_mu = log_mu + adj
     mu = np.exp(np.clip(log_mu, -10, 8))
-    bought = available & (rng.random(n_obs) < buy_p)
+    # --- purchase incidence ------------------------------------------------
+    # A price-driven extensive margin (Run 6, Phase 72): whether the customer
+    # buys at all responds to price, through a logit in the same regressor the
+    # intensive margin uses. At beta_ext == 0 the untouched array is used rather
+    # than pushed through the logit and back, and that guard is load-bearing
+    # rather than cosmetic: sigmoid(logit(p)) is not p in binary floating point,
+    # and 0.07 - exactly the sparse preset's purchase probability - comes back
+    # as 0.07000000000000002. An unguarded round trip would flip a purchase for
+    # any draw landing in that one-unit-in-the-last-place window and cascade
+    # through every later draw. Either way this is ONE rng.random(n_obs) call at
+    # the same stream position, so a world with no extensive margin is
+    # bit-identical.
+    if d.beta_ext == 0.0:
+        buy_p_eff = buy_p
+    else:
+        logit_p = np.log(buy_p) - np.log1p(-buy_p)
+        buy_p_eff = 1.0 / (1.0 + np.exp(-(logit_p + d.beta_ext * (log_p_rel - d.ext_price_ref))))
+    bought = available & (rng.random(n_obs) < buy_p_eff)
     qty = np.zeros(n_obs, dtype=np.int64)
     if d.qty_process == "poisson":
         qty[bought] = np.maximum(1, rng.poisson(mu[bought]))
@@ -487,9 +621,21 @@ def simulate_panel(
             "z_tariff": zt,
         }
     )
+    planted_total = _planted_total_elasticity(
+        segment_id=pairs["segment_id"].to_numpy()[pair_rep],
+        beta=beta,
+        mu=mu,
+        incidence=np.broadcast_to(np.asarray(buy_p_eff, dtype=float), mu.shape),
+        available=available,
+        on_contract=on_contract,
+        beta_ext=d.beta_ext,
+        qty_process=d.qty_process,
+        qty_noise_sd=d.qty_noise_sd,
+    )
     return DemandWorld(
         pairs=pairs,
         panel=panel,
+        planted_total=planted_total,
         z_cost=z_cost,
         z_tariff=z_tariff,
         demand_shock=u,

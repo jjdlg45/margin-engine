@@ -39,6 +39,11 @@ class Preset(StrEnum):
     # the exclusion restriction is violated for BOTH instruments in a way
     # overidentification cannot detect (both move together).
     COMPETITOR_COMOVEMENT = "competitor_comovement"
+    # purchase incidence depends on price, so total expected quantity has an
+    # extensive margin the conditional estimand cannot see. The target for a
+    # zeros-inclusive estimator is the planted TOTAL elasticity recorded in
+    # ground truth, not the segment's intensive elasticity (Run 6, Phase 72).
+    EXTENSIVE_MARGIN = "extensive_margin"
 
 
 class MessRates(BaseModel):
@@ -129,6 +134,18 @@ class DemandParams(BaseModel):
     purchase_prob: float = 0.60
     # Probability a customer also carries any given KVI item (Phase 15).
     kvi_carriage_prob: float = 0.5
+    # Price-driven extensive margin (Run 6, Phase 72). Purchase incidence is a
+    # logit in the SAME regressor the intensive margin uses, log(P / P_ref):
+    #   logit p_it = logit(purchase_prob_i) + beta_ext * (log_p_rel_it - ext_price_ref)
+    # At 0.0 incidence does not depend on price, which is every world generated
+    # before this existed, and the code takes the untouched array rather than
+    # round-tripping it through the logit - see the guard in synth/demand.py.
+    beta_ext: float = 0.0
+    # Reference point for the incidence logit. 0.0 reads naturally (the
+    # configured probability is the incidence at the item's reference list
+    # price) but shifts average incidence, and so the world's line count,
+    # because the mean of log_p_rel is below zero.
+    ext_price_ref: float = 0.0
 
 
 class GeneratorConfig(BaseModel):
@@ -272,6 +289,13 @@ class GeneratorConfig(BaseModel):
                     "market_index_granularity": "national_monthly",
                 }
             )
+        elif preset is Preset.EXTENSIVE_MARGIN:
+            # A ten per cent price rise moves a normal pair's monthly incidence
+            # from 0.600 to about 0.566. The extensive contribution to the total
+            # elasticity is beta_ext x (1 - incidence), so it is largest exactly
+            # where incidence has room to fall: about -0.30 for the dense
+            # segments and -1.29 for the long-tail one.
+            demand = demand.model_copy(update={"beta_ext": -1.5})
         base["demand"] = demand
         if preset is Preset.SPARSE:
             base["n_customers"] = 40

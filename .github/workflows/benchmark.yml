@@ -1,0 +1,86 @@
+name: Benchmark
+
+# The Run-1 performance target (section 8: 500k+ lines under 2 minutes) is
+# measured HERE rather than on a developer machine. The full world needs about
+# 5.4 GB, which does not fit beside a desktop on a 14 GB laptop, and the
+# absolute figure moves several seconds between machines and between runs on
+# one machine - so a single local number cannot tell a code regression from a
+# slower machine.
+#
+# This job measures the pull request's code and `main` on the SAME runner, one
+# after the other, and fails on either bar: over the absolute target, or more
+# than 10% slower than main.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      max_regression_pct:
+        description: "Maximum allowed slowdown against main, in per cent"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@v7
+        with:
+          path: head
+          fetch-depth: 0
+
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: base
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+
+      # Both sides are measured in the same job on the same runner, back to
+      # back, so the comparison is not across machines.
+      - name: Sync dependencies (branch)
+        working-directory: head
+        run: uv sync --frozen --all-groups
+
+      - name: Benchmark the branch
+        working-directory: head
+        run: uv run python scripts/benchmark_pipeline.py --out "$GITHUB_WORKSPACE/head.json"
+
+      - name: Sync dependencies (main)
+        working-directory: base
+        run: uv sync --frozen --all-groups
+
+      - name: Benchmark main
+        working-directory: base
+        run: uv run python scripts/benchmark_pipeline.py --out "$GITHUB_WORKSPACE/base.json"
+
+      - name: Compare
+        working-directory: head
+        run: |
+          uv run python scripts/compare_benchmark.py \
+            --base "$GITHUB_WORKSPACE/base.json" \
+            --head "$GITHUB_WORKSPACE/head.json" \
+            --max-regression-pct "${{ github.event.inputs.max_regression_pct || '10' }}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            base.json
+            head.json

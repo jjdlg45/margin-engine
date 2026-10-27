@@ -58,6 +58,19 @@ STATUS_DESCRIPTIVE = "descriptive_elasticity"
 STATUS_IV = "iv_estimated_elasticity"
 STATUS_CAUSAL = "causal_elasticity_supported"
 
+# The TOTAL-quantity ladder (Run 6, Phase 72). Deliberately has no causal tier.
+# Measured on planted worlds that contain a real price-driven extensive margin,
+# the estimator tracks the total elasticity (median absolute error 0.149 against
+# 0.349 when scored against the conditional truth, so it is genuinely capturing
+# the extensive margin) but roughly six times less accurately than the
+# conditional estimator manages on its own estimand (0.023 median, 0.094 at the
+# 90th percentile). It also has no overidentification test and no out-of-sample
+# backtest. A claim that outranks the conditional estimate cannot rest on that,
+# so the ceiling is the instrumented tier and the engine never prices from it.
+STATUS_TOTAL_INSUFFICIENT = "insufficient_data_total_quantity"
+STATUS_TOTAL_DESCRIPTIVE = "descriptive_total_quantity"
+STATUS_TOTAL_IV = "iv_estimated_total_quantity"
+
 GATE_PASS = "pass"
 GATE_FAIL = "fail"
 GATE_NOT_EVALUATED = "not_evaluated"
@@ -88,7 +101,45 @@ class SegmentEstimate:
     # PPML on positive-quantity rows only (24.8): its gap to the full-panel
     # PPML reveals when carried-forward-price zero rows drive the estimate.
     ppml_positive: float | None = None
+    # Total-quantity estimand (Run 6, Phase 72): the response of expected
+    # quantity INCLUDING whether the customer buys at all, from an IV-Poisson
+    # control function on the panel with its zero rows.
+    iv_ppml: float | None = None
+    iv_ppml_status: str = STATUS_TOTAL_INSUFFICIENT
+    iv_ppml_reasons: str = ""
+    iv_ppml_first_stage_f: float | None = None
+    iv_ppml_rho_t: float | None = None
+    iv_ppml_n_rows: int | None = None
+    iv_ppml_detail: str = ""
+    # Inference on the total-quantity estimate (Run 6, Phase 72). Two standard
+    # errors, because they cover different things: the analytic one is
+    # cluster-robust but treats the estimated control function as known, and
+    # the resampled one refits the first stage per replicate but cannot
+    # resample the period level the instrument is assigned at. Both are
+    # published with what each omits.
+    iv_ppml_se_analytic: float | None = None
+    iv_ppml_se_bootstrap: float | None = None
+    iv_ppml_range_low: float | None = None
+    iv_ppml_range_high: float | None = None
+    iv_ppml_bootstrap_reps: int = 0
+    iv_ppml_inference: str = ""
+    # Half-panel jackknife bias diagnostic, reported and never adopted.
+    iv_ppml_spj: float | None = None
+    iv_ppml_spj_bias: float | None = None
+    iv_ppml_spj_detail: str = ""
+    # Rows and units that never reached the fit, by reason.
+    iv_ppml_sample_losses: str = ""
+    iv_ppml_rows_dropped: int | None = None
+    iv_ppml_units_dropped: int | None = None
+    # Largest move under an alternative zero-row assumption, and the account
+    # of what was varied. Past the configured gap the estimand is demoted.
+    iv_ppml_zero_row_gap: float | None = None
+    iv_ppml_zero_row_detail: str = ""
     carried_forward_share: float | None = None
+    # Share of estimation rows whose price was imputed rather than observed, and
+    # the mix of rungs that supplied them.
+    imputed_price_share: float | None = None
+    price_source_mix: str = ""
     iv: float | None = None
     iv_se: float | None = None
     iv_ci_low: float | None = None
@@ -409,11 +460,18 @@ def estimate_segment(
     *,
     market_control_source: str = SOURCE_ABSENT,
     market_control_grain: str | None = None,
+    with_total_quantity: bool = True,
 ) -> SegmentEstimate:
     """`market_control_source` is the public-source decision from
     `select_market_index` (Run 6, Phase 70) and `market_control_grain` the
     index's join grain (e.g. "item_category:month"). Passing the default means
     no control is in evidence, which caps the status - never a silent pass.
+
+    `with_total_quantity` controls whether the second estimand (Run 6, Phase 72)
+    is fitted. It defaults to on, so a caller never silently loses it; the two
+    internal loops that pool or backtest the CONDITIONAL estimate pass False,
+    because they never read the total-quantity number and fitting a second
+    Poisson per window or per child segment is work whose result is discarded.
     """
     sc = rules.sensitivity
     est = SegmentEstimate(segment=segment)
@@ -425,6 +483,28 @@ def estimate_segment(
     est.n_positive = pos.height
     if "price_carried_forward" in work.columns and work.height:
         est.carried_forward_share = float(work["price_carried_forward"].mean() or 0.0)  # type: ignore[arg-type]
+    if "price_status" in work.columns and work.height:
+        # The carried-forward share alone stopped being the disclosure it was
+        # once the price ladder existed (Run 6, Phase 72): with a price list in
+        # the data almost nothing reaches that rung, so the figure went to zero
+        # while a fifth of the panel still carried an IMPUTED price. What a
+        # reader needs to know is how much of the panel is imputed at all, and
+        # by which rung.
+        # IMPUTED means the price was constructed, not observed. A lost quote is
+        # a real price the customer was given for a month they did not buy, so
+        # it is reported in the mix but is not counted as an imputation.
+        est.imputed_price_share = float(
+            work["price_status"].is_in(["carried_forward", "list_x_pair_discount"]).mean() or 0.0  # type: ignore[arg-type]
+        )
+        mix = (
+            work.group_by("price_status")
+            .agg(pl.len().alias("n"))
+            .sort("n", descending=True)
+            .to_dicts()
+        )
+        est.price_source_mix = "; ".join(
+            f"{r['price_status'].replace('_', ' ')} {r['n'] / work.height:.0%}" for r in mix
+        )
     if est.n_positive < sc.min_observations:
         est.status_reasons.append(f"only {est.n_positive} positive observations")
         return est
@@ -513,9 +593,15 @@ def estimate_segment(
 
     # --- PPML on the panel incl. zeros --------------------------------------
     est.ppml = _ppml(work, rules)
-    # Robustness against carried-forward zero rows (24.8): the same PPML on
+    # Robustness against imputed zero-row prices (24.8): the same PPML on
     # positive-quantity rows only; the gap joins the robustness criterion.
     est.ppml_positive = _ppml(pos, rules)
+
+    # --- total-quantity estimand (Run 6, Phase 72) ---------------------------
+    # Reported beside the conditional estimate, never above it. The ladder has
+    # no causal tier at all, so nothing downstream can price from this number.
+    if with_total_quantity and sc.iv_ppml_enabled:
+        _total_quantity_estimate(est, work, rules, time_fe, cluster_cols, use_control=has_mkt)
 
     # --- IV ------------------------------------------------------------------
     have_z = ("z_cost" in pdf.columns and pdf["z_cost"].notna().all()) and (
@@ -956,27 +1042,33 @@ def estimate_segment(
         )
         if not spread_ok:
             reasons.append(f"robustness spread {est.robustness_spread:.2f} exceeds maximum")
-    # Carried-forward-price robustness (24.8): the PPML gap between the full
-    # panel (zeros at carried-forward prices) and positive rows only.
+    # Imputed-zero-row-price robustness (24.8): the PPML gap between the full
+    # panel, whose zero rows carry an IMPUTED price, and positive rows only,
+    # whose prices are all observed. The gate used to call this the
+    # "carried-forward" comparison, which stopped being true once the price
+    # ladder existed (Run 6, Phase 72): with a price list in the data the zero
+    # rows are priced at list times the pair's trailing discount, and almost
+    # none are carried forward. The gate now names the rungs actually present.
     cf_gap = (
         abs(est.ppml - est.ppml_positive)
         if est.ppml is not None and est.ppml_positive is not None
         else None
     )
+    mix_txt = f" Zero-row prices: {est.price_source_mix}." if est.price_source_mix else ""
     gate(
         6,
-        "carried_forward_price_robustness",
+        "imputed_price_robustness",
         None if cf_gap is None else cf_gap <= sc.robustness_max_spread,
-        f"the PPML estimate moves {cf_gap:.2f} between the full panel (zeros at "
-        f"carried-forward prices) and positive rows only, against a "
+        f"the PPML estimate moves {cf_gap:.2f} between the full panel, whose zero rows "
+        f"carry imputed prices, and positive rows only, against a "
         f"{sc.robustness_max_spread} maximum; note PPML is fitted WITHOUT the "
-        f"market control, so this compares a controlled headline to uncontrolled fits"
+        f"market control, so this compares a controlled headline to uncontrolled fits." + mix_txt
         if cf_gap is not None
         else "one of the two PPML fits did not converge, so the gap is unknown",
     )
     if cf_gap is not None and cf_gap > sc.robustness_max_spread:
         reasons.append(
-            f"carried-forward robustness gap {cf_gap:.2f} exceeds maximum "
+            f"imputed zero-row price robustness gap {cf_gap:.2f} exceeds maximum "
             f"(PPML with zeros {est.ppml:.2f} vs positive-only {est.ppml_positive:.2f})"
         )
     # The primary 95% interval is the cluster-robust Wald CI with t(G-1)
@@ -1234,6 +1326,753 @@ def _ppml(panel_seg: pl.DataFrame, rules: Rules) -> float | None:
         return None
 
 
+@dataclass(frozen=True)
+class IvPpmlFit:
+    """An IV-Poisson fit on the panel INCLUDING zeros, via a control function.
+
+    The estimand is total expected quantity - whether the customer buys at all,
+    and how much - rather than the quantity conditional on buying. That is the
+    quantity an opportunity forecast needs, and the conditional 2SLS estimate
+    cannot supply it.
+
+    The price of including the zeros is a stronger assumption than 2SLS makes:
+    the first-stage error must enter the exponential index linearly and
+    additively separably from the price. 2SLS needs only a linear projection.
+    Nothing in the data tests it, so it is stated wherever the estimate is
+    reported rather than left implicit.
+    """
+
+    beta: float | None
+    rho: float | None  # control-function coefficient; informative only under H0
+    rho_t: float | None
+    n_rows: int
+    n_positive: int
+    n_pairs: int
+    first_stage_f: float | None
+    detail: str
+    # Analytic cluster-robust standard error on the price coefficient. Free -
+    # the Poisson fit computes it anyway - but it treats the control function as
+    # a known regressor when it was estimated, so it OMITS first-stage sampling
+    # noise and is a lower bound. Labeled as such wherever it appears.
+    se_analytic: float | None = None
+    # Pair cluster bootstrap (Run 6, Phase 72): refits the whole procedure,
+    # first stage included, on pairs resampled with replacement, so it DOES
+    # carry the generated-regressor noise the analytic figure omits.
+    se_bootstrap: float | None = None
+    range_low: float | None = None
+    range_high: float | None = None
+    bootstrap_reps: int = 0
+    inference: str = ""
+    # Split-panel (half-panel) jackknife for the incidental-parameter bias that
+    # Kwon, Larch, Yoon & Yotov (2026, CESifo WP 12641) document for IV-PPML
+    # with high-dimensional fixed effects: fit the two time halves, and the
+    # bias-corrected point is 2 x full - mean(halves).
+    spj: float | None = None
+    spj_bias: float | None = None
+    spj_detail: str = ""
+    # Rows and units that never reached the fit, by reason.
+    sample_losses: str = ""
+    rows_dropped: int | None = None
+    units_dropped: int | None = None
+
+
+def _iv_ppml_sample_losses(
+    panel_seg: pl.DataFrame, z_cols: list[str], time_fe: str
+) -> tuple[str, int, int]:
+    """Account for every row and unit the IV-Poisson fit does not see.
+
+    Rows AND units, because the two tell different stories: a thousand dropped
+    zero rows cost no volume and can still remove the whole extensive-margin
+    signal, while one dropped key-value pair can be a tenth of the segment's
+    quantity. Each reason is counted on what survived the previous one, so the
+    figures add to the total instead of overlapping.
+
+    Computed here rather than read back from the estimator, so the accounting
+    does not depend on a particular pyfixest version's reporting and exists even
+    when the fit itself fails.
+    """
+    total_rows = panel_seg.height
+    if not total_rows:
+        return "the segment has no rows", 0, 0
+    total_units = int(panel_seg["qty"].sum() or 0)
+    steps: list[tuple[str, int, int]] = []
+    df = panel_seg
+
+    def drop(reason: str, keep: pl.Expr) -> None:
+        nonlocal df
+        mask = keep.fill_null(value=False)
+        gone = df.filter(~mask)
+        if gone.height:
+            steps.append((reason, gone.height, int(gone["qty"].sum() or 0)))
+        df = df.filter(mask)
+
+    if "contract_id" in df.columns:
+        drop("priced on a contract, which is excluded by design", pl.col("contract_id").is_null())
+    drop("no price", pl.col("log_price").is_not_null())
+    for c in z_cols:
+        drop(f"no {c.replace('_', ' ')} instrument value", pl.col(c).is_not_null())
+
+    # Singleton fixed effects, dropped iteratively exactly as the estimator
+    # drops them: removing a singleton pair can leave a period with one row.
+    before, units_before = df.height, (int(df["qty"].sum() or 0) if df.height else 0)
+    while df.height:
+        sized = df.with_columns(
+            pl.len().over("pair").alias("_np"), pl.len().over(time_fe).alias("_nt")
+        )
+        kept = sized.filter((pl.col("_np") > 1) & (pl.col("_nt") > 1)).drop("_np", "_nt")
+        if kept.height == df.height:
+            break
+        df = kept
+    if df.height < before:
+        steps.append(
+            (
+                "absorbed by a fixed effect with a single observation",
+                before - df.height,
+                units_before - (int(df["qty"].sum() or 0) if df.height else 0),
+            )
+        )
+
+    # Separation: a pair that never buys carries no information for a Poisson
+    # with pair fixed effects - its fixed effect runs to minus infinity and the
+    # estimator drops it. Those are exactly the customers who stopped buying, so
+    # losing them silently would hollow out the estimand this phase exists for.
+    if df.height:
+        before, units_before = df.height, int(df["qty"].sum() or 0)
+        # Iteratively, over BOTH fixed effects and until stable, because the
+        # cascade is real: dropping a pair that never buys can leave a period
+        # in which nothing is bought, which separates in turn.
+        while df.height:
+            kept = df.filter(
+                (pl.col("qty").max().over("pair") > 0).fill_null(value=False)
+                & (pl.col("qty").max().over(time_fe) > 0).fill_null(value=False)
+            )
+            if kept.height == df.height:
+                break
+            df = kept
+        if df.height < before:
+            steps.append(
+                (
+                    "in a pair that never buys, which a Poisson with pair fixed effects "
+                    "cannot use (separation)",
+                    before - df.height,
+                    units_before - (int(df["qty"].sum() or 0) if df.height else 0),
+                )
+            )
+
+    rows_dropped = total_rows - df.height
+    units_dropped = total_units - (int(df["qty"].sum() or 0) if df.height else 0)
+    if not steps:
+        return f"every one of the {total_rows:,} segment rows reached the fit", 0, 0
+    parts = [
+        f"{r:,} rows ({u:,} units) {reason}" for reason, r, u in sorted(steps, key=lambda s: -s[1])
+    ]
+    text = (
+        f"{rows_dropped:,} of {total_rows:,} rows and {units_dropped:,} of {total_units:,} "
+        "units did not reach the fit: " + "; ".join(parts)
+    )
+    return text, rows_dropped, units_dropped
+
+
+def _first_stage_cf(
+    pdf: pd.DataFrame,
+    z_cols: list[str],
+    time_fe: str,
+    spec: ClusterSpec,
+    *,
+    use_control: bool,
+    observed_price: np.ndarray | None = None,
+) -> tuple[np.ndarray | None, float | None, int]:
+    """Full-panel first stage, returning the residual the control function uses.
+
+    Same construction as the conditional first stage - two-way within
+    transformation, then the market control partialled out by Frisch-Waugh -
+    applied to every panel row, so the residual is defined for the zero rows the
+    Poisson stage needs.
+
+    The COEFFICIENT, however, is estimated only on rows whose price was actually
+    observed. A zero row's price is imputed from the pair's last purchase, so it
+    carries a stale cost shock: with AR(1) instruments at 0.70 and a mean
+    staleness near two months, measured pass-through on zero rows is 0.31
+    against 0.72 on purchase rows. Fitting the coefficient on all rows pulled it
+    from 0.72 to 0.62, and because a zero row contributes nothing to the
+    quantity side, only the first stage shrank - inflating the instrumented
+    price coefficient by one over that factor, always away from zero. Measured
+    on the well-identified preset, that was a median absolute error of 0.31
+    against a planted truth the conditional estimator recovers to 0.03. The
+    first stage asks how the instruments move the price a customer actually
+    faced, and an imputed price is not an observation of that.
+    """
+    cols = ["log_price", *z_cols] + (["log_mkt"] if use_control and "log_mkt" in pdf else [])
+    dm = _two_way_demean(pdf, cols, "pair", time_fe)
+    pz = dm["log_price"].to_numpy()
+    z = np.column_stack([dm[c].to_numpy() for c in z_cols])
+    if use_control and "log_mkt" in pdf:
+        mkt = dm["log_mkt"].to_numpy()
+        pz = _resid(pz, mkt)
+        z = np.column_stack([_resid(z[:, j], mkt) for j in range(z.shape[1])])
+    del dm
+    n_absorbed = int(pdf["pair"].nunique()) + int(pdf[time_fe].nunique())
+    if observed_price is None:
+        observed_price = np.ones(len(pz), dtype=bool)
+    if observed_price.sum() < max(len(z_cols) + 1, 30):
+        return None, None, n_absorbed
+    pz_fit, z_fit = pz[observed_price], z[observed_price]
+    # Strength is reported for the rows the coefficient is fitted on, since that
+    # is the variation doing the identifying.
+    # Subsetting cluster codes must RE-INDEX them densely: the codes are labels
+    # into an array sized by the group count, so carrying the original labels
+    # into a smaller sample indexes past the end of it.
+    spec_fit: ClusterSpec = []
+    for codes, _n, sign in spec:
+        sub, n_sub = _cluster_codes(codes[observed_price])
+        spec_fit.append((sub, n_sub, sign))
+    f = _first_stage_f(pz_fit, z_fit, spec_fit, n_absorbed)
+    try:
+        gamma = np.linalg.solve(z_fit.T @ z_fit, z_fit.T @ pz_fit)
+    except np.linalg.LinAlgError:
+        return None, f, n_absorbed
+    return pz - z @ gamma, f, n_absorbed
+
+
+def _iv_ppml_point(
+    pdf: pd.DataFrame,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+    """One complete IV-Poisson pass: first stage, control function, Poisson.
+
+    Returns (beta, beta's analytic clustered SE, rho, rho's t, first-stage F).
+    Shared by the point estimate, every bootstrap replicate and each
+    split-panel half, so a replicate reruns the first stage exactly as the point
+    estimate did - which is the whole reason a resampled interval carries
+    generated-regressor noise and the analytic one cannot.
+
+    Frames are built and released inside the call. A replicate that kept its
+    pyfixest fit alive would hold that replicate's design matrix for as long as
+    the caller held the result, and the caller holds hundreds.
+    """
+    import pyfixest as pf
+
+    # The first-stage strength keeps the same (possibly two-way) cluster spec
+    # the conditional estimator uses; the Poisson's own variance clusters
+    # one-way on the first column, which is what pyfixest accepts.
+    cluster_col = cluster_cols[0]
+    spec = _make_cluster_spec(*(pdf[c].to_numpy() for c in cluster_cols))
+    observed = (
+        (pdf["price_status"].to_numpy() == "observed")
+        if "price_status" in pdf.columns
+        else (pdf["qty"].to_numpy() > 0)
+    )
+    v, f, _absorbed = _first_stage_cf(
+        pdf, z_cols, time_fe, spec, use_control=use_control, observed_price=observed
+    )
+    del spec
+    if v is None:
+        return None, None, None, None, None
+    use_mkt = use_control and "log_mkt" in pdf.columns
+    rhs = ["log_price", "_cf_v"] + (["log_mkt"] if use_mkt else [])
+    wanted = ["qty", "pair", time_fe, cluster_col, *rhs]
+    fit_df = pdf.loc[
+        :, [c for c in dict.fromkeys(wanted) if c != "_cf_v" and c in pdf.columns]
+    ].copy()
+    fit_df["_cf_v"] = v
+    formula = f"qty ~ {' + '.join(rhs)} | pair + {time_fe}"
+    # The clustered variance matters here: on this data an iid standard error
+    # makes the control-function coefficient significant almost always, which
+    # would read as evidence of endogeneity when it is an artifact.
+    fit = None
+    try:
+        fit = pf.fepois(formula, data=fit_df, vcov={"CRV1": cluster_col})
+        beta = float(fit.coef()["log_price"])
+        beta_se = float(fit.se()["log_price"])
+        rho = float(fit.coef()["_cf_v"])
+        rho_se = float(fit.se()["_cf_v"])
+    except Exception:
+        return None, None, None, None, f
+    finally:
+        # pyfixest keeps the design matrix on the fit object; dropping both here
+        # bounds a bootstrap's live memory to one replicate rather than B.
+        del fit, fit_df
+    rho_t = rho / rho_se if rho_se > 0 else None
+    return beta, (beta_se if beta_se > 0 else None), rho, rho_t, f
+
+
+def _iv_ppml_bootstrap(
+    pdf: pd.DataFrame,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+    reps: int,
+    seed: int,
+) -> tuple[float | None, float | None, float | None, int, str]:
+    """Pair cluster bootstrap: resample pairs with replacement and refit.
+
+    The pair is the resampling unit because it is the panel's cross-sectional
+    unit and because drawing it whole preserves the within-pair serial
+    correlation the fixed effects do not remove. Each drawn copy of a pair gets
+    a FRESH pair id, so a pair drawn twice contributes two fixed effects rather
+    than one doubled group - without that, the design a replicate fits is not
+    the design the point estimate fitted.
+
+    What it carries and what it misses, both published with the number: it
+    carries first-stage sampling noise, which the analytic clustered figure
+    omits by treating the control function as known. It does NOT carry
+    dependence common to pairs within a period at the level the instrument is
+    assigned, because resampling that level would duplicate periods and break
+    the time fixed effects. Where the two differ, the wider one is the safer
+    read, and both are reported.
+
+    Memory is bounded to one replicate: each builds its own frame from numpy
+    takes and releases it before the next, so B replicates cost one replicate's
+    peak rather than B times it.
+    """
+    pairs = pdf["pair"].to_numpy()
+    uniq, inverse = np.unique(pairs, return_inverse=True)
+    n_pairs = len(uniq)
+    if n_pairs < 20:
+        return None, None, None, 0, f"no resampled interval: {n_pairs} pairs is too few to resample"
+    order = np.argsort(inverse, kind="stable")
+    starts = np.searchsorted(inverse[order], np.arange(n_pairs))
+    sizes = np.diff(np.append(starts, len(order)))
+    cols = [c for c in pdf.columns if c != "pair"]
+    base = {c: pdf[c].to_numpy() for c in cols}
+    rng = np.random.default_rng(seed)
+    draws: list[float] = []
+    failures = 0
+    for _ in range(reps):
+        picks = rng.integers(0, n_pairs, n_pairs)
+        idx = np.concatenate([order[starts[p] : starts[p] + sizes[p]] for p in picks])
+        rep = pd.DataFrame({c: base[c][idx] for c in cols})
+        rep["pair"] = np.repeat(np.arange(n_pairs), sizes[picks])
+        beta, _se, _rho, _rt, _f = _iv_ppml_point(
+            rep, z_cols, time_fe, cluster_cols, use_control=use_control
+        )
+        del rep, idx
+        if beta is None or not np.isfinite(beta):
+            failures += 1
+            continue
+        draws.append(float(beta))
+    if len(draws) < max(10, reps // 2):
+        return (
+            None,
+            None,
+            None,
+            len(draws),
+            f"no resampled interval: only {len(draws)} of {reps} replicates converged",
+        )
+    arr = np.asarray(draws)
+    se = float(arr.std(ddof=1))
+    lo, hi = (float(x) for x in np.quantile(arr, [0.025, 0.975]))
+    note = (
+        f"pair cluster bootstrap, {len(draws)} of {reps} replicates converged, first stage "
+        f"refitted in each. It carries first-stage sampling noise, which the analytic "
+        f"clustered figure omits; it does not carry dependence common to pairs within a period"
+    )
+    if failures:
+        note += f"; {failures} replicates did not converge and were dropped"
+    return se, lo, hi, len(draws), note
+
+
+def _iv_ppml_split_panel(
+    pdf: pd.DataFrame,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+    beta_full: float,
+) -> tuple[float | None, float | None, str]:
+    """Half-panel jackknife for the incidental-parameter bias (Dhaene-Jochmans).
+
+    Kwon, Larch, Yoon & Yotov (2026, CESifo WP 12641) show that IV-PPML with
+    high-dimensional fixed effects inherits an incidental-parameter bias of
+    order 1/T and that a split-panel jackknife removes its leading term. This
+    panel is 24 months with pair fixed effects, which is the regime that bias
+    lives in, so the correction is computed rather than assumed away.
+
+    It is REPORTED, not adopted as the point estimate. The correction doubles
+    the full-panel estimate and subtracts the mean of two half-panel fits, so it
+    roughly triples the variance of whatever it is applied to; on a ladder whose
+    ceiling is already the instrumented tier, trading a bias of the measured
+    size for that much variance is not an improvement. The measured comparison
+    is in docs/methodology.md. Where the correction is large, the estimate
+    itself is the thing in doubt, and the figure says so.
+    """
+    periods = np.sort(pdf[time_fe].unique())
+    if len(periods) < 6:
+        return None, None, f"no split-panel correction: {len(periods)} periods is too few to halve"
+    cut = periods[len(periods) // 2]
+    halves: list[float] = []
+    for mask in (pdf[time_fe] < cut, pdf[time_fe] >= cut):
+        half = pdf.loc[mask]
+        beta, _se, _rho, _rt, _f = _iv_ppml_point(
+            half, z_cols, time_fe, cluster_cols, use_control=use_control
+        )
+        del half
+        if beta is None or not np.isfinite(beta):
+            return None, None, "no split-panel correction: a half-panel fit did not converge"
+        halves.append(float(beta))
+    corrected = 2.0 * beta_full - float(np.mean(halves))
+    bias = beta_full - corrected
+    return (
+        corrected,
+        bias,
+        (
+            f"half-panel jackknife over {len(periods)} periods: halves {halves[0]:.3f} and "
+            f"{halves[1]:.3f}, bias-corrected point {corrected:.3f}, implied bias {bias:+.3f}. "
+            f"Reported as a diagnostic, not adopted: the correction roughly triples the "
+            f"estimate's variance"
+        ),
+    )
+
+
+def _iv_ppml_fit(
+    panel_seg: pl.DataFrame,
+    rules: Rules,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+    segment: int = 0,
+    diagnostics: bool = True,
+) -> IvPpmlFit:
+    """FE-Poisson on the full panel with the first-stage residual included.
+
+    `diagnostics` off gives the point estimate alone. The zero-row robustness
+    refits pass False: they ask only whether the number moves, and paying for a
+    bootstrap and a split-panel correction on a refit nobody publishes would
+    triple the cost of the check for no added information.
+
+    The residual enters as a regressor (the control function), which is what
+    makes the price coefficient an instrumented one. Its own coefficient is
+    reported but never published with an interval: the generated-regressor
+    correction vanishes only under the null that it is zero, so the statistic
+    is informative about that null and about nothing else.
+    """
+    try:
+        import pyfixest  # noqa: F401
+    except Exception as exc:  # pragma: no cover - import guard
+        return IvPpmlFit(None, None, None, 0, 0, 0, None, f"pyfixest unavailable: {exc}")
+
+    sc = rules.sensitivity
+    # Skipped on a refit nobody publishes: the robustness variants want the
+    # coefficient, not a second accounting of rows they deliberately removed.
+    losses, rows_dropped, units_dropped = (
+        _iv_ppml_sample_losses(panel_seg, z_cols, time_fe) if diagnostics else ("", None, None)
+    )
+
+    keep = ["qty", "log_price", "pair", "month_idx", *z_cols, *cluster_cols]
+    if "price_status" in panel_seg.columns:
+        keep.append("price_status")
+    if "availability_buyers" in panel_seg.columns:
+        keep.append("availability_buyers")
+    if time_fe != "month_idx":
+        keep.append(time_fe)
+    if use_control and "log_mkt" in panel_seg.columns:
+        keep.append("log_mkt")
+    df = panel_seg.filter(
+        pl.col("contract_id").is_null() & pl.col("log_price").is_not_null()
+    ).select([c for c in dict.fromkeys(keep) if c in panel_seg.columns])
+    df = df.drop_nulls(subset=["qty", "log_price", *z_cols])
+    pdf = _to_pandas(df)
+    del df
+    n_rows = len(pdf)
+    n_pos = int((pdf["qty"] > 0).sum()) if n_rows else 0
+    n_pairs = int(pdf["pair"].nunique()) if n_rows else 0
+
+    def short(detail: str, f: float | None = None) -> IvPpmlFit:
+        return IvPpmlFit(
+            None,
+            None,
+            None,
+            n_rows,
+            n_pos,
+            n_pairs,
+            f,
+            detail,
+            sample_losses=losses,
+            rows_dropped=rows_dropped,
+            units_dropped=units_dropped,
+        )
+
+    if n_rows < max(sc.min_observations, 50) or n_pos == 0:
+        return short("too few panel rows, or no positive quantity, for an IV-Poisson fit")
+
+    cluster_col = cluster_cols[0]
+    beta, se_analytic, rho, rho_t, f = _iv_ppml_point(
+        pdf, z_cols, time_fe, cluster_cols, use_control=use_control
+    )
+    if beta is None:
+        return short(
+            "the full-panel first stage could not be solved, or the IV-Poisson fit did not "
+            "converge, so no total-quantity estimate exists",
+            f,
+        )
+
+    inference = (
+        f"analytic standard error {se_analytic:.3f}, cluster-robust at "
+        f"{cluster_col.replace('_', ' ')}; it treats the control function as a known regressor "
+        f"when it was estimated, so it omits first-stage sampling noise"
+        if se_analytic is not None
+        else "the analytic standard error could not be computed"
+    )
+    se_boot: float | None = None
+    lo: float | None = None
+    hi: float | None = None
+    reps_done = 0
+    if diagnostics and sc.iv_ppml_bootstrap_reps > 0:
+        se_boot, lo, hi, reps_done, note = _iv_ppml_bootstrap(
+            pdf,
+            z_cols,
+            time_fe,
+            cluster_cols,
+            use_control=use_control,
+            reps=sc.iv_ppml_bootstrap_reps,
+            # Seeded from the segment so rerunning the same world reproduces the
+            # same interval; an interval that wanders between runs is not a
+            # measurement.
+            seed=1_000_003 + 7919 * segment,
+        )
+        inference += ". " + note
+    else:
+        inference += (
+            ". No resampled interval was computed in this run: the pair cluster bootstrap "
+            "refits the whole procedure once per replicate, which the measured pipeline budget "
+            "does not carry, so it is switched on by configuration "
+            "(sensitivity.iv_ppml_bootstrap_reps) for the validation studies"
+        )
+    spj: float | None = None
+    spj_bias: float | None = None
+    spj_detail = "the split-panel correction is switched off in this run"
+    if diagnostics and sc.iv_ppml_split_panel_jackknife:
+        spj, spj_bias, spj_detail = _iv_ppml_split_panel(
+            pdf, z_cols, time_fe, cluster_cols, use_control=use_control, beta_full=beta
+        )
+    del pdf
+    return IvPpmlFit(
+        beta=beta,
+        rho=rho,
+        rho_t=rho_t,
+        n_rows=n_rows,
+        n_positive=n_pos,
+        n_pairs=n_pairs,
+        first_stage_f=f,
+        detail=(
+            f"IV-Poisson on {n_rows:,} panel rows ({n_pos:,} with a purchase) across "
+            f"{n_pairs:,} pairs, clustered at {cluster_col.replace('_', ' ')}"
+        ),
+        se_analytic=se_analytic,
+        se_bootstrap=se_boot,
+        range_low=lo,
+        range_high=hi,
+        bootstrap_reps=reps_done,
+        inference=inference,
+        spj=spj,
+        spj_bias=spj_bias,
+        spj_detail=spj_detail,
+        sample_losses=losses,
+        rows_dropped=rows_dropped,
+        units_dropped=units_dropped,
+    )
+
+
+def _zero_row_robustness(
+    work: pl.DataFrame,
+    rules: Rules,
+    z_cols: list[str],
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+    beta: float,
+) -> tuple[float | None, str]:
+    """Refit the total-quantity estimate under alternative zero-row assumptions.
+
+    Zero rows are the whole reason this estimand exists, and two of the things
+    the engine believes about them are inferences rather than observations: the
+    price the customer would have faced, and whether the item was available at
+    all. Neither can be checked directly, so each is tested by removing the
+    rows that depend on it most and asking whether the answer changes.
+
+    * **Price.** Drop the zero rows carrying an imputed price, keeping purchases
+      and any no-purchase month with a real quoted price. If the estimate moves,
+      the imputation was carrying it.
+    * **Availability.** Drop the zero rows whose availability rests on a single
+      other customer having bought the item that month - the weakest form the
+      proxy takes. If the estimate moves, the proxy was carrying it.
+
+    Returns the larger of the two gaps and a plain-English account. The gap
+    demotes the estimate to descriptive past the configured threshold: an
+    estimate that depends on which guess was made about the zero rows is not an
+    instrumented measurement of anything.
+    """
+    sc = rules.sensitivity
+    variants: list[tuple[str, pl.DataFrame]] = []
+    if "price_status" in work.columns:
+        variants.append(
+            (
+                "dropping no-purchase months priced by imputation",
+                work.filter(
+                    (pl.col("qty") > 0) | pl.col("price_status").is_in(["observed", "quoted"])
+                ),
+            )
+        )
+    if "availability_buyers" in work.columns:
+        variants.append(
+            (
+                "dropping no-purchase months whose availability rests on a single buyer",
+                work.filter((pl.col("qty") > 0) | (pl.col("availability_buyers") > 1)),
+            )
+        )
+    gaps: list[tuple[float, str]] = []
+    skipped: list[str] = []
+    for label, alt in variants:
+        if alt.height == work.height:
+            skipped.append(f"{label} removed no rows")
+            continue
+        fit = _iv_ppml_fit(
+            alt,
+            rules,
+            z_cols,
+            time_fe,
+            cluster_cols,
+            use_control=use_control,
+            diagnostics=False,
+        )
+        if fit.beta is None:
+            skipped.append(f"{label} left too little to fit")
+            continue
+        gaps.append((abs(fit.beta - beta), f"{label}: {fit.beta:.2f} against {beta:.2f}"))
+    if not gaps:
+        return None, (
+            "the zero-row assumptions could not be varied ("
+            + "; ".join(skipped or ["no alternative was available"])
+            + ")"
+        )
+    worst = max(gaps, key=lambda g: g[0])
+    detail = "; ".join(g[1] for g in gaps)
+    verdict = (
+        f"the estimate moves {worst[0]:.2f} at most when the zero-row assumptions are varied, "
+        f"against a {sc.iv_ppml_max_zero_row_gap} maximum ({detail})"
+    )
+    if skipped:
+        verdict += "; " + "; ".join(skipped)
+    return worst[0], verdict
+
+
+def _total_quantity_estimate(
+    est: SegmentEstimate,
+    work: pl.DataFrame,
+    rules: Rules,
+    time_fe: str,
+    cluster_cols: list[str],
+    *,
+    use_control: bool,
+) -> None:
+    """Fit the total-quantity estimand and record it with an honest ceiling.
+
+    The ladder stops at the instrumented tier by construction. Three things are
+    missing that the conditional ladder has, and each is named on the record
+    rather than left for a reader to discover: the measured accuracy on planted
+    worlds is roughly six times worse, no overidentification test exists for
+    this estimand (the linear J is computed on positive rows and tests the
+    conditional model), and the temporal backtest predicts positive-quantity
+    rows, so this estimate has no out-of-sample check.
+    """
+    sc = rules.sensitivity
+    z_cols: list[str] = [c for c in ("z_cost", "z_tariff") if c in work.columns]
+    if not z_cols:
+        est.iv_ppml_status = STATUS_TOTAL_INSUFFICIENT
+        est.iv_ppml_reasons = "no instruments in the data, so total quantity is not instrumented"
+        return
+    fit = _iv_ppml_fit(
+        work, rules, z_cols, time_fe, cluster_cols, use_control=use_control, segment=est.segment
+    )
+    est.iv_ppml = fit.beta
+    est.iv_ppml_first_stage_f = fit.first_stage_f
+    est.iv_ppml_rho_t = fit.rho_t
+    est.iv_ppml_n_rows = fit.n_rows
+    est.iv_ppml_detail = fit.detail
+    est.iv_ppml_se_analytic = fit.se_analytic
+    est.iv_ppml_se_bootstrap = fit.se_bootstrap
+    est.iv_ppml_range_low = fit.range_low
+    est.iv_ppml_range_high = fit.range_high
+    est.iv_ppml_bootstrap_reps = fit.bootstrap_reps
+    est.iv_ppml_inference = fit.inference
+    est.iv_ppml_spj = fit.spj
+    est.iv_ppml_spj_bias = fit.spj_bias
+    est.iv_ppml_spj_detail = fit.spj_detail
+    # The sample-loss accounting is recorded even when the fit fails, because
+    # the reason it failed is usually in it.
+    est.iv_ppml_sample_losses = fit.sample_losses
+    est.iv_ppml_rows_dropped = fit.rows_dropped
+    est.iv_ppml_units_dropped = fit.units_dropped
+    if fit.beta is None:
+        est.iv_ppml_status = STATUS_TOTAL_INSUFFICIENT
+        est.iv_ppml_reasons = fit.detail
+        return
+    # The CHEAP disqualifiers run first, and the expensive ones only on a
+    # segment they left standing. Both orders give the same statuses - the
+    # robustness check can only demote, and a segment already demoted cannot be
+    # demoted further - so this is pure saved work: two extra Poisson fits per
+    # segment that were being spent to re-reject segments the first stage had
+    # already rejected. Measured at about 0.37s per segment on a 400k-row panel.
+    reasons: list[str] = []
+    if fit.first_stage_f is None or fit.first_stage_f < sc.min_first_stage_f:
+        reasons.append(
+            "the first stage on observed prices is too weak to instrument total quantity"
+        )
+    if (
+        est.imputed_price_share is not None
+        and est.imputed_price_share > sc.iv_ppml_max_imputed_share
+    ):
+        reasons.append(
+            f"{est.imputed_price_share:.0%} of the panel carries an imputed price, above the "
+            f"{sc.iv_ppml_max_imputed_share:.0%} this estimand is reported at"
+        )
+    if not sc.iv_ppml_zero_row_robustness:
+        est.iv_ppml_zero_row_detail = "the zero-row robustness check is switched off in this run"
+    elif reasons:
+        # Already demoted on a cheap check, so the refits cannot change the
+        # status. Say that, rather than leaving an empty field that would read
+        # as "varied, and nothing moved".
+        est.iv_ppml_zero_row_detail = (
+            "the zero-row assumptions were not varied: this segment is already reported as "
+            "descriptive on an earlier check, which the refits could only confirm"
+        )
+    else:
+        gap, detail = _zero_row_robustness(
+            work, rules, z_cols, time_fe, cluster_cols, use_control=use_control, beta=fit.beta
+        )
+        est.iv_ppml_zero_row_gap = gap
+        est.iv_ppml_zero_row_detail = detail
+        if gap is not None and gap > sc.iv_ppml_max_zero_row_gap:
+            reasons.append(
+                f"the estimate moves {gap:.2f} when the zero-row price and availability "
+                f"assumptions are varied, above the {sc.iv_ppml_max_zero_row_gap} this "
+                f"estimand is reported at"
+            )
+        elif gap is None:
+            reasons.append("the zero-row assumptions could not be varied, so none was tested")
+    est.iv_ppml_status = STATUS_TOTAL_DESCRIPTIVE if reasons else STATUS_TOTAL_IV
+    # The ceiling reason is permanent, not conditional: it applies even when
+    # every check above passes.
+    reasons.append(
+        "the total-quantity ladder has no causal tier: on planted worlds with a real "
+        "extensive margin this estimator recovers the total elasticity to a median "
+        "absolute error of 0.15 against the 0.02 the conditional estimator achieves on "
+        "its own estimand, it has no overidentification test, and the temporal backtest "
+        "does not cover it"
+    )
+    est.iv_ppml_reasons = "; ".join(reasons)
+
+
 @dataclass
 class SensitivityResult:
     """Per-segment estimates plus the long-form causal-gate record (Run 6,
@@ -1259,21 +2098,69 @@ def run_sensitivity_full(
     *,
     market_control_source: str = SOURCE_ABSENT,
     market_control_grain: str | None = None,
+    with_total_quantity: bool = True,
 ) -> SensitivityResult:
-    """Estimate every segment; returns the estimates and the gate record."""
-    segs = [s for s in panel["segment_leaf"].unique().to_list() if s is not None]
-    rows = []
-    gate_rows: list[dict[str, Any]] = []
-    for s in sorted(segs):
+    """Estimate every segment; returns the estimates and the gate record.
+
+    `with_total_quantity` is on by default, so a run never silently loses the
+    second estimand (Run 6, Phase 72). Simulation studies that measure the
+    sampling behaviour of the CONDITIONAL estimator - interval coverage,
+    bootstrap stability - pass False: they never read the total-quantity
+    number, and fitting a second Poisson per simulation per segment is work
+    whose result is thrown away. Measured: with the second estimand fitted in
+    the loop, the 50-simulation coverage study alone took 3,518s - longer than
+    the entire suite had previously taken.
+    """
+    segs = sorted(s for s in panel["segment_leaf"].unique().to_list() if s is not None)
+
+    def one(s: int) -> SegmentEstimate:
         seg_panel = panel.filter(pl.col("segment_leaf") == s)
-        est = estimate_segment(
+        return estimate_segment(
             seg_panel,
             rules,
             int(s),
             market_control_source=market_control_source,
             market_control_grain=market_control_grain,
+            with_total_quantity=with_total_quantity,
         )
-        rows.append(est.to_dict())
+
+    # Segments are independent, so they can run concurrently. Threads rather
+    # than processes: the work sits in numpy and pyfixest, which release the
+    # GIL, and on Windows a process pool would pay a fresh interpreter import
+    # per worker and copy each segment's frame through a pickle - both larger
+    # than the fit being parallelized. Memory is the binding constraint, so the
+    # worker count is configuration, not `cpu_count()`: each concurrent segment
+    # holds its own filtered frame.
+    #
+    # ORDER IS RESTORED BEFORE ANYTHING IS BUILT. Estimates are collected into
+    # a dict keyed by segment and read back in sorted order, so the exports are
+    # byte-identical to the sequential path whatever order the pool finishes in
+    # - which the determinism tests check.
+    workers = max(1, min(rules.sensitivity.max_parallel_segments, len(segs)))
+    if workers > 1 and len(segs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Longest first. Segments are wildly uneven - 21k to 154k rows on the
+        # demo world - so the finishing time is set by the largest one, and
+        # starting it last leaves it running alone after everything else is
+        # done. Submitting in descending size order is the standard
+        # longest-processing-time schedule and costs one group_by to compute.
+        sizes = dict(
+            panel.group_by("segment_leaf")
+            .agg(pl.len().alias("n"))
+            .select("segment_leaf", "n")
+            .iter_rows()
+        )
+        order = sorted(segs, key=lambda s: -int(sizes.get(s, 0)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            done = dict(zip(order, pool.map(one, order), strict=True))
+        ests = [done[s] for s in segs]
+    else:
+        ests = [one(s) for s in segs]
+
+    rows = [est.to_dict() for est in ests]
+    gate_rows: list[dict[str, Any]] = []
+    for est in ests:
         gate_rows.extend(est.gate_rows())
     gates = (
         pl.DataFrame(gate_rows, schema=GATES_SCHEMA).sort("segment", "gate_order")
@@ -1289,6 +2176,7 @@ def run_sensitivity(
     *,
     market_control_source: str = SOURCE_ABSENT,
     market_control_grain: str | None = None,
+    with_total_quantity: bool = True,
 ) -> pl.DataFrame:
     """Estimates only (the long-standing signature)."""
     return run_sensitivity_full(
@@ -1296,6 +2184,7 @@ def run_sensitivity(
         rules,
         market_control_source=market_control_source,
         market_control_grain=market_control_grain,
+        with_total_quantity=with_total_quantity,
     ).estimates
 
 

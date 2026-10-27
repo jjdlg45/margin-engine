@@ -321,9 +321,11 @@ pairs — documents endogeneity bias, never used for decisions.
 
 **FE-Poisson (PPML).**
 Dependent variable: quantity in levels, including true zeros. Sample: all
-active-assortment rows; zero rows carry the pair's last observed price
-(flagged carried-forward; a positive-rows-only variant is estimated and the
-gap joins the robustness criterion). Regressor: log price, not instrumented.
+active-assortment rows; zero rows carry a price from the declared ladder
+below (a lost quote where one exists, otherwise the pair's last observed
+price, each row labeled with its source; a positive-rows-only variant is
+estimated and the gap joins the robustness criterion). Regressor: log price,
+not instrumented.
 Fixed effects: pair and month; separated observations (groups whose outcome
 is all zero) are dropped by the estimator and counted. Named estimand: the
 descriptive semi-elasticity of TOTAL expected quantity — extensive and
@@ -345,14 +347,32 @@ instruments, and singleton groups absorbed by the fixed effects — each
 counted. Named estimand: the own-price elasticity of conditional quantity
 among buying pairs, identified from instrument-induced price variation.
 
-**IV-PPML control function (added by Phase 72).**
-Dependent variable: quantity in levels including zeros. First stage: log
-price on the instruments and fixed effects; its residual enters the PPML
-equation as a control function. Inference: bootstrap or jackknife (the
-control function is generated). Named estimand: the own-price elasticity of
-TOTAL expected quantity, including whether the customer buys at all — the
-estimand the opportunity optimizer needs. Specification details land with
-Phase 72 and are recorded here.
+**IV-PPML control function (Phase 72).**
+Dependent variable: quantity in levels, including true zeros. Sample: all
+active-assortment rows in the segment, contract pairs excluded; zero rows
+carry a price from the declared ladder and the share that is imputed is
+reported, since those rows carry the whole extensive-margin signal. Treatment
+of zeros: kept, which is the entire point — the Poisson needs no log, so a
+customer who stopped buying stays in the sample as an outcome of zero rather
+than disappearing from it. Endogenous regressor: log price. Instrument
+matrix: supplier cost index and category tariff rate, within-transformed over
+pair and period, with the market-price control partialled out by Frisch-Waugh
+when one is in evidence. First stage: fitted on observed-price rows ONLY, for
+the reason set out below, and its residual is evaluated on every row and
+enters the Poisson equation as a control function. Fixed effects: pair and
+period (item-role x month when roles are known). Weights: none. Clustering:
+the first-stage strength keeps the configured spec (two-way by default); the
+Poisson's analytic variance clusters one-way on the first configured level.
+Inference: that analytic cluster-robust standard error, which omits
+first-stage sampling noise, plus an optional pair cluster bootstrap that
+refits the whole procedure per replicate and does carry it — both published
+with what each leaves out. Bias: a half-panel jackknife is computed and
+reported, never substituted. Dropped and separated observations: counted in
+rows and in units, by reason, including pairs that never buy, which a Poisson
+with pair fixed effects cannot use. Named estimand: the own-price elasticity
+of TOTAL expected quantity, including whether the customer buys at all.
+Ceiling: `iv_estimated_total_quantity`. This ladder has no causal tier, and
+the opportunity optimizer never prices from it.
 
 ### Estimand and the competitor-price path (Run 6)
 
@@ -488,6 +508,195 @@ Known limitation (by design of the test itself): the overidentification test
 detects an invalid instrument only when the two instruments disagree.
 Exclusion restrictions remain economic assumptions that no statistical test
 fully proves.
+
+### Two estimands: buying customers, and total quantity (Run 6)
+
+The engine estimates two different quantities and never lets one pass for the
+other.
+
+**Conditional quantity (the headline).** FE-2SLS on log quantity over
+positive-quantity rows: among customers who bought, how does the quantity they
+bought respond to price? This is the estimate the statuses in the table above
+describe, and the only one the engine prices from.
+
+**Total quantity.** An IV-Poisson control function over the whole panel,
+including months with no purchase: how does *expected* quantity respond,
+counting whether the customer buys at all? This is the quantity an opportunity
+forecast actually needs, and the conditional estimate cannot supply it - a
+customer who stops buying contributes nothing to a positive-rows regression.
+
+The control function works by including the first-stage residual as a regressor
+in the Poisson equation, which is what makes the price coefficient an
+instrumented one. Its coefficient is reported but never published with an
+interval: the generated-regressor correction vanishes only under the null that
+it is zero, so the statistic is informative about that null and nothing else.
+
+```text
+first stage   p~ = Z~ gamma + v        (two-way within, market control partialled out)
+second stage  E[q] = exp(a_pair + c_period + beta log p + rho v)
+```
+
+**The first stage is fitted on observed prices only.** A zero row's price is
+imputed from the pair's last purchase, so it carries a stale cost shock: with
+AR(1) instruments at 0.70 and a mean staleness near two months, measured
+pass-through on zero rows is 0.31 against 0.72 on purchase rows. Fitting the
+coefficient on every row pulled it from 0.72 to 0.62, and because a zero row
+contributes nothing to the quantity side of the Poisson score, only the first
+stage shrank - which inflates the instrumented price coefficient by one over
+that factor, always away from zero. Measured on planted worlds, that was a
+median absolute error of 0.31 where the conditional estimator achieves 0.02. The
+first stage asks how the instruments move the price a customer actually faced,
+and an imputed price is not an observation of that.
+
+**The total-quantity ladder has no causal tier.** Its statuses are
+`insufficient_data_total_quantity`, `descriptive_total_quantity` and
+`iv_estimated_total_quantity`, and the last is the ceiling by construction, for
+three stated reasons:
+
+1. *Accuracy.* On worlds that plant a real price-driven extensive margin it
+   recovers the planted total elasticity to a median absolute error of 0.15
+   (90th percentile 0.27), against the 0.02 median and 0.09 at the 90th
+   percentile that the conditional estimator achieves on its own estimand. It is
+   genuinely measuring the extensive margin - it is about twice as close to the
+   planted total elasticity as to the planted conditional one, and on the
+   smaller test world 6.5 times closer - but not to the accuracy the engine's
+   gated target demands.
+2. *No overidentification test.* The linear overidentification test is computed
+   on positive-quantity rows and tests the conditional model. No equivalent
+   exists for this estimand in the engine today, so presenting the linear test
+   beside it would borrow credibility from a test that does not apply.
+3. *No out-of-sample check.* The temporal backtest fits on a training window and
+   predicts positive-quantity rows, so it validates the conditional estimate.
+   This one has no backtest at all.
+
+A segment whose zero rows are mostly imputed is demoted to descriptive, because
+the zero rows carry the entire extensive-margin signal and an imputed price is
+not an observation of the price that produced them. The threshold is
+`iv_ppml_max_imputed_share` (default 50%), and the share and the mix of price
+sources behind it are reported beside every estimate.
+
+The trade this estimator makes is stronger than 2SLS's: the first-stage error
+must enter the exponential index linearly and separably from the price, where
+2SLS needs only a linear projection. Nothing in the data tests that assumption.
+
+**Inference: two standard errors, and what each one omits.** The estimate ships
+with both, because neither is the whole answer and presenting one alone would
+overstate what is known.
+
+1. *Analytic, cluster-robust.* The Poisson fit's own clustered standard error,
+   at the configured cluster level. It is free, and it treats the control
+   function as a known regressor when in fact it was estimated, so it omits
+   first-stage sampling noise. It is a lower bound.
+2. *Pair cluster bootstrap.* Pairs are resampled with replacement and the whole
+   procedure - first stage included - is refitted on each draw, so this one does
+   carry the generated-regressor noise. Each drawn copy of a pair gets a fresh
+   fixed effect, because a pair drawn twice is two units, not one doubled group.
+   It does **not** carry dependence common to pairs within a period at the level
+   the instrument is assigned, since resampling that level would duplicate
+   periods and break the time fixed effects. Where the two disagree, the wider
+   one is the safer read.
+
+A bootstrap replicate costs about one point estimate, so the shipped pipeline
+runs at zero replicates and reports the analytic figure with its caveat
+attached; `sensitivity.iv_ppml_bootstrap_reps` turns the resampled interval on,
+and the validation study runs it. At IV-estimated status the resampled range is
+a sensitivity range, not a confidence interval for business impact.
+
+**Split-panel jackknife: computed, reported, not adopted.** Kwon, Larch, Yoon &
+Yotov (2026, CESifo WP 12641) show that IV-PPML with high-dimensional fixed
+effects inherits an incidental-parameter bias of order 1/T, and that a
+split-panel jackknife removes its leading term. This panel is 24 months with
+pair fixed effects, which is the regime that bias lives in, so the correction is
+computed on every estimate rather than assumed away: fit the two time halves,
+and the corrected point is twice the full-panel estimate minus the mean of the
+halves.
+
+It is reported as a diagnostic and never substituted for the point estimate. The
+correction doubles one estimate and subtracts the mean of two noisier ones, so
+it roughly triples the variance of what it is applied to, and the measurement on
+planted extensive-margin worlds is that it does not buy accuracy back: the
+comparison of corrected against uncorrected recovery is a row in
+`docs/validation.json`, and the correction is adopted only if that row ever says
+it helps. A large correction on a given segment is read as doubt about that
+estimate, not as a better number, and the figure is shown so a reader can see
+which it is.
+
+Both of these are pure diagnostics - neither moves a status - and each costs
+whole extra Poisson fits per segment, so both are off in the shipped pipeline
+configuration and on in the validation study. That is a measured decision, not
+a preference: the Run 1 performance target is stated for the shipped
+configuration, and a diagnostic that nothing downstream reads does not get to
+spend the budget a gated target is measured against. The gate that does move a
+status - the zero-row robustness check below - stays on.
+
+**Alternative zero-row assumptions, and demotion when they matter.** Zero rows
+are the reason this estimand exists, and two things the engine believes about
+them are inferences rather than observations: the price the customer would have
+faced, and whether the item was available at all. Neither can be checked
+directly, so each is tested by removing the rows that lean on it hardest and
+refitting:
+
+* drop the no-purchase months priced by imputation, keeping purchases and any
+  month with a real quoted price - if the estimate moves, the imputation was
+  carrying it;
+* drop the no-purchase months whose availability rests on a single other
+  customer having bought the item that month, the weakest form the proxy takes
+  - if the estimate moves, the proxy was carrying it.
+
+The larger of the two gaps is reported beside the estimate, and past
+`iv_ppml_max_zero_row_gap` (default 0.30) the estimand is demoted to
+descriptive. An estimate that depends on which guess was made about the
+no-purchase months is not an instrumented measurement of anything.
+
+**What each zero row rests on** is labeled rather than assumed. Every panel row
+carries `assortment_basis` (`observed` for a purchase, `inferred` where the pair
+is only assumed to still carry the item because it bought within the lookback),
+`availability_basis` (`observed` for a purchase, otherwise `proxied`, since the
+engine cannot see stock), `price_status` (`observed`, `quoted`,
+`list_x_pair_discount` or `carried_forward`) and `zero_reason_basis`, which is
+`unknown` for every no-purchase month: no ERP export records why a customer did
+not buy, and inventing a reason would be the kind of guess the engine refuses
+elsewhere.
+
+**Rows and units the fit could not use.** Every estimate carries an accounting
+of what never reached it, by reason - priced on a contract, no price, no
+instrument value, absorbed by a singleton fixed effect, or separated because a
+pair never buys - counted in both rows and units, each reason measured on what
+survived the previous one so the parts add to the whole. Rows and units are both
+reported because they tell different stories: a thousand dropped no-purchase
+rows cost no volume and can still remove the whole extensive-margin signal,
+while one dropped key-value pair can be a tenth of the segment's quantity.
+
+Separation deserves the emphasis it gets here. A pair that never buys in the
+window carries no information for a Poisson with pair fixed effects - its fixed
+effect runs to minus infinity and the estimator drops it. Those are precisely
+the customers who stopped buying, the case this estimand exists to capture, so
+the count is published rather than left inside the estimator. The accounting is
+computed from the panel directly, not read back from the fitting library, so it
+survives a library upgrade and exists even when the fit itself fails.
+
+**The planted truth it is scored against.** Observed quantity is incidence times
+conditional quantity, so expected quantity factors and the two margins respond to
+price independently:
+
+```text
+d log E[Q] / d log P = beta x kappa(mu)  +  beta_ext x (1 - incidence)
+                       [intensive]          [extensive]
+```
+
+`kappa` corrects for both quantity processes flooring quantity at one; it is one
+to machine precision at the default scale and falls away below a mean of about
+two. The extensive term carries `(1 - incidence)` because incidence cannot fall
+where it is already near one: a long-tail pair buying in 14% of months carries
+most of the extensive response, a key-value item bought almost every month
+carries almost none. Segment aggregation is weighted by expected quantity,
+because that is what a Poisson fit converges to - its score equations are, to
+first order, a weighted least squares with those weights. An unweighted average
+differs by 0.03 to 0.06 per segment here, which would consume half the error
+budget on a definitional choice. The `extensive_margin` preset plants
+`beta_ext = -1.5`; the derivation was checked against direct Poisson fits in a
+differenced design, pooled mean difference +0.037 (t = 1.30) over 18
+segment-seeds.
 
 ### Weak-instrument diagnostics (Run 6)
 

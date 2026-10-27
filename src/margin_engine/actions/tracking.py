@@ -68,9 +68,18 @@ OUTCOMES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 }
 
 # Evidence buckets for the calibration report (prediction error by evidence).
+# EVERY volume treatment must appear here. The lookup below deliberately has no
+# default: an unmapped treatment used to fall into `fixed_volume`, so an action
+# sized WITH a modeled volume response would land in the bucket whose own
+# tooltip says it was sized at unchanged volume, and shift a published
+# calibration figure (Run 6, Phase 72).
 _BUCKET = {
     "expected_change": "causal_supported",
     "sensitivity_range_only": "iv_estimated",
+    "fixed_volume_only": "fixed_volume",
+    "outside_price_support": "fixed_volume",
+    "cost_unavailable": "fixed_volume",
+    "competitor_path_uncontrolled": "fixed_volume",
 }
 
 
@@ -331,7 +340,9 @@ def _calibration(outcomes: pl.DataFrame, rules: Rules) -> pl.DataFrame:
     # Bucket by the action's volume evidence at generation time:
     # causal-supported vs IV-estimated vs fixed-volume (spec Phase 41).
     bucketed = measured.with_columns(
-        pl.col("volume_treatment").replace_strict(_BUCKET, default="fixed_volume").alias("bucket")
+        pl.col("volume_treatment")
+        .replace_strict(_BUCKET, default="unclassified_volume_treatment")
+        .alias("bucket")
     )
     return (
         bucketed.group_by("bucket")

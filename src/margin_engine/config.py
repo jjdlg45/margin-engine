@@ -587,6 +587,43 @@ class SensitivityConfig(StrictModel):
     # alone let saturated designs through, where the fixed effects absorb more
     # parameters than there are rows.
     lead_test_min_residual_dof: int = Field(default=30, ge=1)
+    # Total-quantity estimand (Run 6, Phase 72): an IV-Poisson control function
+    # on the panel including its zero rows. Reported beside the conditional
+    # estimate and never above it - the ladder has no causal tier - so this
+    # switch controls whether it is computed at all, not whether it may price.
+    iv_ppml_enabled: bool = True
+    # Above this share of imputed zero-row prices the estimand is reported as
+    # descriptive: the zero rows carry the entire extensive-margin signal, and
+    # an imputed price is not an observation of the price that produced it.
+    iv_ppml_max_imputed_share: float = Field(default=0.50, gt=0, le=1)
+    # Pair cluster bootstrap replicates for the total-quantity estimate's
+    # resampled interval. Zero means the analytic clustered standard error is
+    # the only one reported, and the estimate says so: a replicate refits the
+    # whole procedure, first stage included, which is the only way to carry the
+    # generated-regressor noise the analytic figure omits, and also the reason
+    # it costs roughly one point estimate each. Measured on the demo world at
+    # about one second per replicate per segment, so the shipped pipeline runs
+    # at zero and the validation studies raise it.
+    iv_ppml_bootstrap_reps: int = Field(default=0, ge=0, le=2000)
+    # Half-panel jackknife for the incidental-parameter bias IV-PPML with
+    # high-dimensional fixed effects carries at short T. Two extra fits, so it
+    # stays on by default; it is reported as a diagnostic, never adopted as the
+    # point estimate.
+    iv_ppml_split_panel_jackknife: bool = False
+    # Re-estimate the total-quantity response under alternative zero-row price
+    # and availability assumptions, and demote past the gap below. Two extra
+    # point fits per segment, no diagnostics on them.
+    iv_ppml_zero_row_robustness: bool = True
+    iv_ppml_max_zero_row_gap: float = Field(default=0.30, gt=0)
+    # Segments estimated concurrently. Each concurrent segment holds its own
+    # filtered panel, so this is a memory dial as much as a speed one, and the
+    # default comes from measurement rather than the core count. On a
+    # 400k-row demo panel with six segments: 1.16x at two workers, 1.23x at
+    # three (2.05 GB peak), 1.25x at four (2.13 GB). Three takes almost all
+    # the available gain and leaves margin for larger panels. The ceiling is
+    # load imbalance, not the worker count - segments run 21k to 154k rows,
+    # so the largest one is the critical path however many workers there are.
+    max_parallel_segments: int = Field(default=3, ge=1, le=32)
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)

@@ -2576,6 +2576,18 @@
      ],
      "title": "Identifying Coverage"
     },
+    "imputed_price_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Imputed Price Share"
+    },
     "iv": {
      "anyOf": [
       {
@@ -2608,6 +2620,222 @@
       }
      ],
      "title": "Iv Ci Low"
+    },
+    "iv_ppml": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml"
+    },
+    "iv_ppml_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml First Stage F"
+    },
+    "iv_ppml_inference": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Inference"
+    },
+    "iv_ppml_n_rows": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml N Rows"
+    },
+    "iv_ppml_range_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Range High"
+    },
+    "iv_ppml_range_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Range Low"
+    },
+    "iv_ppml_reasons": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Reasons"
+    },
+    "iv_ppml_rows_dropped": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Rows Dropped"
+    },
+    "iv_ppml_sample_losses": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Sample Losses"
+    },
+    "iv_ppml_se_analytic": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Se Analytic"
+    },
+    "iv_ppml_se_bootstrap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Se Bootstrap"
+    },
+    "iv_ppml_spj": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj"
+    },
+    "iv_ppml_spj_bias": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj Bias"
+    },
+    "iv_ppml_spj_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj Detail"
+    },
+    "iv_ppml_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Status"
+    },
+    "iv_ppml_units_dropped": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Units Dropped"
+    },
+    "iv_ppml_zero_row_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Zero Row Detail"
+    },
+    "iv_ppml_zero_row_gap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Zero Row Gap"
     },
     "iv_se": {
      "anyOf": [
@@ -2932,6 +3160,18 @@
     "price_cv_within": {
      "title": "Price Cv Within",
      "type": "number"
+    },
+    "price_source_mix": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Price Source Mix"
     },
     "robustness_excluded_weak": {
      "anyOf": [

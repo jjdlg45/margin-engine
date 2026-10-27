@@ -466,6 +466,11 @@ def run_full(
         rules,
         market_price_index=market_idx,
         fiscal=fiscal,
+        # Zero-row price sources (Run 6, Phase 72). Both are optional reference
+        # tables; absent them the ladder falls back to carrying prices forward,
+        # which is what it did before.
+        quotes=res.reference.get("quotes"),
+        price_list=res.reference.get("price_list"),
     )
     timings["panel"] = time.perf_counter() - t
     rss_log("panel")

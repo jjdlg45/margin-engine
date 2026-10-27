@@ -249,12 +249,15 @@ LABELS: dict[str, dict[str, str]] = {
     "expected_change": {
         "label": "Volume modeled",
         "description": "Causal-supported elasticity: the expected contribution change "
-        "models the volume response.",
+        "models the volume response. It models how much buying customers buy, and holds "
+        "steady the question of whether they keep buying at all; where the engine could "
+        "estimate that second effect, it is shown beside this figure as an alternative.",
     },
     "sensitivity_range_only": {
         "label": "Range only",
         "description": "Instrument-level evidence: the volume response is shown only as a "
-        "labeled sensitivity range.",
+        "labeled sensitivity range, and it covers how much buying customers buy rather "
+        "than whether they keep buying.",
     },
     "fixed_volume_only": {
         "label": "Fixed volume",
@@ -542,10 +545,10 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "Using each instrument alone, and the alternatives, lands close enough "
         "to the headline estimate.",
     },
-    "carried_forward_price_robustness": {
-        "label": "Robust to carried-forward prices",
-        "description": "Including zero-quantity months at carried-forward prices does not "
-        "move the estimate materially.",
+    "imputed_price_robustness": {
+        "label": "Robust to imputed no-purchase prices",
+        "description": "A month with no purchase has no invoiced price, so the engine fills "
+        "one in. Including those months does not move the estimate materially.",
     },
     "interval_precise_enough": {
         "label": "Interval precise enough",
@@ -624,6 +627,33 @@ LABELS: dict[str, dict[str, str]] = {
         "status; a detected but immaterial one is reported and does not block; an "
         "inconclusive result is reported with the smallest effect the test could have "
         "detected.",
+    },
+    "unclassified_volume_treatment": {
+        "label": "Volume treatment not classified",
+        "description": "This action's volume treatment has no evidence bucket, so its "
+        "prediction error is reported separately rather than pooled with a bucket that "
+        "would describe it wrongly.",
+    },
+    "insufficient_data_total_quantity": {
+        "label": "Total quantity: not enough evidence",
+        "description": "There was not enough to estimate how total quantity responds to "
+        "price, counting months with no purchase. Only the response among buying "
+        "customers is reported.",
+    },
+    "descriptive_total_quantity": {
+        "label": "Total quantity: descriptive only",
+        "description": "A total-quantity response was estimated but not on strong enough "
+        "instruments, or on a panel where too many of the no-purchase months carry an "
+        "imputed price, so it describes an association rather than a response to price.",
+    },
+    "iv_estimated_total_quantity": {
+        "label": "Total quantity: instrumented estimate",
+        "description": "How total quantity responds to price, including whether the "
+        "customer buys at all. This is the highest status this measure can reach: on test "
+        "worlds it recovers the planted response about six times less precisely than the "
+        "buying-customers measure recovers its own, it has no cross-check against a second "
+        "instrument, and the out-of-sample test does not cover it. The engine never prices "
+        "from it.",
     },
     "placebo_not_run": {
         "label": "Placebo check not run",

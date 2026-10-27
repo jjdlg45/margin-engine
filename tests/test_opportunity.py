@@ -210,6 +210,61 @@ def test_optimize_monopoly_markup_clipped() -> None:
     assert row["optimal_price_cents"] == 9_700
 
 
+def test_only_cleared_volume_treatments_may_be_optimized() -> None:
+    """The optimizer's support guard is an allow-list (Run 6, Phase 72), so a
+    volume treatment nobody has reasoned about cannot silently qualify a price
+    for optimization.
+
+    Tested by behaviour, not by reading the source: a guard written as
+    `!= outside_price_support` would pass the unknown value below and an
+    allow-list refuses it, and the test keeps holding if the expression is
+    rewritten."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{}]), panel, _sensitivity(beta=-2.0), Rules())
+    opp = opp.with_columns(pl.lit(-2.0).alias("elasticity"))
+    cleared = optimize_targets(opp, _guidance([{}]), Rules()).to_dicts()[0]
+    assert cleared["optimal_price_cents"] is not None, (
+        "the cleared treatment must still optimize, or this test proves nothing"
+    )
+    unknown = optimize_targets(
+        opp.with_columns(pl.lit("some_future_treatment").alias("volume_treatment")),
+        _guidance([{}]),
+        Rules(),
+    ).to_dicts()[0]
+    assert unknown["optimal_price_cents"] is None
+    assert unknown["target_basis"] == "provisional_historical"
+
+
+def test_the_conditional_elasticity_is_never_the_only_volume_response() -> None:
+    """A forecast built on the conditional elasticity holds buying incidence
+    fixed (Run 6, Phase 72). Every record says so, and where a total-quantity
+    estimate exists the same arithmetic is reported under it as the
+    alternative - beside the headline, never added to it."""
+    panel = _panel([{"qty": 20.0}])
+    sens = _sensitivity().with_columns(
+        pl.lit(-3.0).alias("iv_ppml"),
+        pl.lit("iv_estimated_total_quantity").alias("iv_ppml_status"),
+    )
+    row = price_opportunities(_guidance([{}]), panel, sens, Rules()).to_dicts()[0]
+    assert row["total_quantity_elasticity"] == -3.0
+    assert row["total_quantity_status"] == "iv_estimated_total_quantity"
+    assert "whether they keep buying at all" in row["volume_estimand_note"]
+    # A more elastic total response means a worse outcome than the headline,
+    # and the two are alternatives: neither is the other plus something.
+    assert (
+        row["gp_change_total_quantity_basis_cents"]
+        < row["expected_pocket_gross_profit_change_cents"]
+    )
+
+
+def test_without_a_total_quantity_estimate_the_gap_is_called_untested() -> None:
+    panel = _panel([{"qty": 20.0}])
+    row = price_opportunities(_guidance([{}]), panel, _sensitivity(), Rules()).to_dicts()[0]
+    assert row["total_quantity_elasticity"] is None
+    assert row["gp_change_total_quantity_basis_cents"] is None
+    assert "untested rather than ruled out" in row["volume_estimand_note"]
+
+
 def test_optimize_only_when_causal() -> None:
     panel = _panel([{"qty": 20.0}])
     opp = price_opportunities(

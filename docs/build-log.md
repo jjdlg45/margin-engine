@@ -4035,3 +4035,244 @@ deliberately changed - sensitivity (the new robust diagnostics and the two
 permanent interpretations), modules on mobile (the conditional first-stage
 column), and methodology (the regenerated validation table, four of whose
 images were already stale from Phase 70).
+
+## Phase 72 — IV estimand with zero sales (2026-10-27, Run 6 branch)
+
+Finding 3: the FE-2SLS headline is fitted on positive-quantity rows, so it
+measures the response of quantity *conditional on buying* and cannot see a
+customer who stops buying. This phase adds a second estimand that can, keeps
+the two apart everywhere, and refuses to let the second outrank the first.
+
+### The estimand, and the ceiling it carries
+
+An IV-Poisson control function over the whole panel including its zero rows:
+the first-stage residual enters the Poisson equation as a regressor, which is
+what makes the price coefficient an instrumented one. Statuses are
+`insufficient_data_total_quantity`, `descriptive_total_quantity` and
+`iv_estimated_total_quantity`, and the last is the ceiling **by construction**,
+for three measured reasons recorded on the estimate itself: recovery is about
+six times less accurate than the conditional estimator manages on its own
+estimand; no overidentification test exists for it (the linear J is computed on
+positive rows and tests the conditional model); and the temporal backtest
+predicts positive-quantity rows, so this estimate has no out-of-sample check.
+Nothing downstream prices from it.
+
+**The first stage is fitted on observed prices only.** A zero row's price is
+imputed, so it carries a stale cost shock: measured pass-through on zero rows
+is 0.31 against 0.72 on purchase rows. Fitting the coefficient on every row
+pulled it from 0.72 to 0.62, and because a zero row contributes nothing to the
+quantity side of the Poisson score, only the first stage shrank — inflating the
+price coefficient by one over that factor, always away from zero. Median
+absolute error 0.31, against a truth the conditional estimator recovers to 0.03.
+
+### Inference, and a correction that is reported rather than adopted
+
+Two standard errors, both published, each labeled with what it leaves out. The
+analytic cluster-robust one is free but treats the estimated control function
+as known, so it omits first-stage sampling noise and is a lower bound. A pair
+cluster bootstrap refits the whole procedure per replicate — each drawn copy of
+a pair getting a fresh fixed effect — so it does carry that noise, while it
+cannot carry dependence common to pairs within a period without duplicating
+periods and breaking the time fixed effects.
+
+The split-panel jackknife for the incidental-parameter bias that Kwon, Larch,
+Yoon & Yotov (2026, CESifo WP 12641) document for IV-PPML with high-dimensional
+fixed effects is computed and reported, never substituted: it doubles one
+estimate and subtracts the mean of two noisier ones, roughly tripling the
+variance. The corrected-against-uncorrected comparison is now a row in
+validation.json, and the correction is adopted only if that row ever says it
+helps.
+
+Both are pure diagnostics — neither moves a status — and each costs whole extra
+fits per segment, so both are off in the shipped `config/rules.yaml` and on in
+the validation study. The check that *does* move a status stays on.
+
+### Zero rows: what they rest on, and whether the answer depends on it
+
+Every panel row declares `assortment_basis` (observed / inferred),
+`availability_basis` (observed / proxied), `price_status` (observed / quoted /
+list_x_pair_discount / carried_forward) and `zero_reason_basis`, which is
+`unknown` for every no-purchase month because no export records why a customer
+did not buy.
+
+Two of those are inferences, so each is tested by refitting without the rows
+that lean on it hardest — the months priced by imputation, and the months whose
+availability rests on a single other buyer. Past `iv_ppml_max_zero_row_gap`
+(0.30) the estimand is demoted to descriptive.
+
+### Rows and units the fit could not use
+
+Reported by reason — contract, no price, no instrument value, singleton fixed
+effect, separation — in rows AND units, each reason measured on what survived
+the previous one so the parts add to the whole. Separation gets the emphasis: a
+pair that never buys is exactly the customer this estimand exists to capture,
+and a Poisson with pair fixed effects cannot use it. The accounting is computed
+from the panel rather than read back from pyfixest, so it survives a library
+upgrade and exists even when the fit itself fails.
+
+### The conditional estimate is never the only volume response on a record
+
+Opportunity records carry the segment's total-quantity elasticity, the same
+arithmetic re-run under it, and a plain-English note naming what the headline
+holds fixed — or, where no total-quantity estimate exists, saying the second
+effect is untested rather than ruled out. The two are alternatives, never
+summed. A new metric-dictionary entry defines the companion figure.
+
+### A memory regression that made the suite unrunnable
+
+The owner stopped a `tests/test_sensitivity.py` run that had reached **11.5 GB**
+on a 14 GB machine with 0.1 GB free, after it had been swapping for hours. The
+cause was not the new estimator.
+
+`_intensive_kappa`, added to the generator this phase to record the planted
+truth, built three `(399, n_obs)` float64 arrays at once — `z`, its normal CDF
+and its normal PDF — which at the default world's ~720k pair-months is 2.3 GB
+each. It runs on **every world every test generates**, so it was not a
+sensitivity-test problem at all; it was a tax on the whole suite.
+
+The sum runs over `k`, i.e. down each column, so the columns can be evaluated
+in blocks without touching any column's summation order. Measured on one world,
+one seed, one process:
+
+| stage | before | after |
+|---|---|---|
+| `generate` | 7.96 GB | **1.71 GB** |
+| whole single-world build and estimate | 8.70 GB | **2.80 GB** |
+
+The result is **bit-identical**, verified against the old form on 57,321 draws
+and again in the small-mu regime where the quantity floor binds. A test pins
+it, and the pre-existing generator hash fixture — which records digests taken
+*before* this phase — proves no generated world moved.
+
+### Test tiers
+
+Nothing was weakened to make the default tier pass, and nothing lost its
+measurement. The section 8 numbers of record are produced by
+`scripts/measure_validation.py`, which runs each study independently; the slow
+tier is the same measurement inside pytest.
+
+`tests/test_sensitivity.py` now carries both: **13 default-tier tests** on small
+worlds with deliberately wider, explicitly labeled bounds, and **6 slow-tier
+tests** at the scale the targets are stated for, with the stated thresholds.
+Two of the moves are worth naming:
+
+- The **fail-closed preset assertions** (`weak_instrument`, `price_constant`)
+  got reduced-scale copies rather than being shrunk. A "never reaches causal"
+  assertion gets *easier* on a smaller world, because less data is less chance
+  to clear a bar by accident — so the full-scale run is the claim and the
+  reduced one is the tripwire. That reasoning is in the file, not just here.
+- The **end-to-end recovery study** runs one size up from the rest. At the
+  small size, three seeds produced three segment cells pure enough to score
+  against a single planted truth — too few to take a median of. Measured: 3
+  pure cells at the small size, 13 at the reduced size it now uses.
+
+Measured on the default tier: **2.57 GB peak, 286s, 13 passed** — against the
+11.5 GB the owner observed. Per-test attribution drove the last step: the two
+remaining default-scale preset worlds were setting a 3.64 GB peak on their own.
+
+### Running the suite on a 14 GB machine
+
+A single pytest process accumulates allocator arenas across every world the
+suite generates, so its peak is closer to the sum of the worst offenders than
+to the worst one: the whole suite peaked at 4.2 GB where no individual batch
+exceeds 1.6 GB. Running it in small batches, each its own process, releases
+that between groups. Every test still runs exactly once; only the process
+boundary moves. This is a developer-machine workflow, not a change to CI, which
+runs the suite in one invocation on a runner with the memory for it.
+
+### The performance target, and where it is measured from now on
+
+Phase 72 adds work to the sensitivity stage, and the Run-1 performance check
+had 1.0s of headroom (119.0s against a 120s bar). Measured on a 400k-row demo
+panel with six engine segments:
+
+| configuration | sensitivity stage | against baseline |
+|---|---|---|
+| estimand off | 8.54s | — |
+| sequential | 15.02s | +6.48s |
+| 2 workers | 12.96s | +4.42s |
+| **3 workers (shipped)** | **12.17s** | **+3.63s** |
+| 4 workers | 12.00s | +3.45s |
+
+Two changes recovered most of the added cost.
+
+**The cheap disqualifiers run first.** The zero-row robustness refits are two
+extra Poisson fits per segment, and they can only ever demote. A segment
+already demoted by the first-stage or imputed-share check cannot be demoted
+further, so running the refits on it was spending two fits to re-reject it.
+Both orders give identical statuses; this is pure saved work. It saves little
+on a well-identified world, where almost every segment passes those checks,
+and most on the weak and sparse worlds where it matters least for runtime —
+worth having, not the lever that paid.
+
+**Segments are estimated concurrently, longest first.** Threads rather than
+processes: the work is in numpy and pyfixest, which release the GIL, and on
+Windows a process pool would pay a fresh interpreter import per worker and a
+pickle of each segment's frame — both larger than the fit being parallelized.
+The first attempt gained only 1.16x and *lost* at four workers. The cause was
+load imbalance: segments run 21k to 154k rows, so the largest is the critical
+path and starting it last leaves it running alone. Submitting in descending
+size order (longest-processing-time) lifted every worker count and removed the
+four-worker regression. Three workers is the default: 1.23x of the 1.25x
+available, at 2.05 GB against 2.13 GB.
+
+Estimates are collected into a dict keyed by segment and read back in sorted
+order, so exports are byte-identical whatever order the pool finishes in. The
+sweep asserts that at every worker count, and it held at all four.
+
+**This does not reach the 10% headroom the owner asked for**, and the shortfall
+is stated rather than rounded away: the two levers recover 2.9s of the 6.5s
+added, so the pipeline lands near 122s rather than under 108s. Getting to 108s
+needs roughly 11s from the other ~105s of the pipeline, which is Phase 83's
+spill-to-Parquet work, not something per-segment parallelism can reach.
+
+**Where the figure is measured from now on.** Not on a developer machine. The
+full world needs about 5.4 GB, which does not fit beside a desktop on this
+14 GB laptop, and a single local reading cannot separate a code regression from
+a slower machine — exactly the confusion Phase 71 hit, where unchanged code
+measured 118.3 to 120.3s against a committed 111.0s.
+
+`.github/workflows/benchmark.yml` (pull requests and manual dispatch) checks
+out the branch and `main` into one job and measures both back to back on the
+same runner, failing if the branch is over the absolute bar OR more than 10%
+slower than main. `scripts/benchmark_pipeline.py` times `run_full` alone, on a
+world generated in a child process so the generator's peak and the pipeline's
+peak never coexist; `scripts/compare_benchmark.py` applies both bars and writes
+a table to the job summary.
+
+Locally, `measure_validation.py` now emits two rows instead of one: the section
+8 row states that the measurement happens in CI and why, and a separate smoke
+row at reduced scale states that it is below the 500k lines the target names
+and therefore cannot pass it. No local number can be mistaken for the real one.
+
+### Checks
+
+ruff 0; ruff format clean; mypy src api 0 (91 files); tsc 0; vitest 22/22;
+vite build 0.
+
+The Python suite was run in batches, each its own process (see above). **58 of
+59 test files pass.** The exception is `tests/test_full_run.py`, which needs
+4.57 GB — it drives free memory to 1.40 GB on this machine and is killed by the
+2 GB floor the owner set after the freeze. It is not skipped or weakened: it
+runs in CI, which has the memory for it, and this is recorded as a known gap in
+local verification rather than a passing result.
+
+Playwright 225 passed 3 skipped (exit 0), with no snapshot re-baselining: the
+new sensitivity rows render inside the existing page region, so no committed
+image moved.
+
+### Tests added
+
+`tests/test_total_quantity.py` (17) and `tests/test_zero_row_prices.py` (7).
+The loss accounting by reason in rows and units, a never-buying pair reported
+as separated rather than silently dropped, the separation sweep cascading
+through both fixed effects until stable, and the accounting surviving a fit
+that fails. Both standard errors with what each omits, the stated absence of a
+resampled interval when none was computed, the bootstrap bracketing the point
+and refusing fewer than twenty pairs, the split-panel correction reported with
+its bias arithmetic and refusing a panel it cannot halve. The demotion when a
+zero-row guess decides the estimate, both assumptions varied, and every zero
+row declaring what it rests on. `tests/test_opportunity.py` gains the
+allow-list guard tested by behaviour rather than by reading source, the
+total-quantity companion figure on a record, and the untested-not-ruled-out
+wording when no such estimate exists.

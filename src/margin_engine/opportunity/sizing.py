@@ -176,8 +176,27 @@ def price_opportunities(
     has_support = {"support_log_lo", "support_log_hi"}.issubset(sensitivity.columns)
     if has_support:
         sens_cols += [pl.col("support_log_lo"), pl.col("support_log_hi")]
+    # Total-quantity elasticity (Run 6, Phase 72). The elasticity priced above
+    # is the CONDITIONAL one, estimated on months a customer bought, so a
+    # forecast built on it holds buying incidence fixed - it answers "they buy
+    # less per order", never "some of them stop buying". The total-quantity
+    # estimate is the one that counts the stopping, and it is carried here so
+    # the conditional number is never the only volume response on the record.
+    # It is a SECOND figure next to the first, never a replacement and never
+    # added to it: its ladder has no causal tier, so nothing prices from it.
+    has_total = "iv_ppml" in sensitivity.columns
+    if has_total:
+        sens_cols += [
+            pl.col("iv_ppml").cast(pl.Float64).alias("total_quantity_elasticity"),
+            pl.col("iv_ppml_status").alias("total_quantity_status"),
+        ]
     sens = sensitivity.select(sens_cols)
     g = g.join(sens, on="segment_leaf", how="left")
+    if not has_total:
+        g = g.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("total_quantity_elasticity"),
+            pl.lit(None, dtype=pl.String).alias("total_quantity_status"),
+        )
     if not has_support:
         g = g.with_columns(
             pl.lit(None, dtype=pl.Float64).alias("support_log_lo"),
@@ -288,6 +307,13 @@ def price_opportunities(
     kc = pl.col("k_per_unit_cents").fill_null(0)
     delta_contrib = ((unit_c1 - kc) * q1 - (unit_c0 - kc) * q0).round(0)
 
+    # The same arithmetic under the total-quantity elasticity: what the figure
+    # would be if the extensive margin moved as the zeros-inclusive estimate
+    # says it does. Reported beside the headline as the sensitivity to the
+    # assumption the headline makes, never summed with it and never priced.
+    q1_total = q0 * p_ratio.pow(pl.col("total_quantity_elasticity"))
+    delta_total = (unit_c1 * q1_total - unit_c0 * q0).round(0)
+
     q1_lo = q0 * p_ratio.pow(pl.col("elasticity_ci_low"))
     q1_hi = q0 * p_ratio.pow(pl.col("elasticity_ci_high"))
     delta_lo = (unit_c1 * q1_lo - unit_c0 * q0).round(0)
@@ -351,6 +377,30 @@ def price_opportunities(
         .then(pl.lit(TREATMENT_RANGE))
         .otherwise(pl.lit(TREATMENT_FIXED))
         .alias("volume_treatment"),
+        pl.when(pl.col("total_quantity_elasticity").is_not_null() & has_cost & in_support)
+        .then(delta_total)
+        .otherwise(None)
+        .alias("gp_change_total_quantity_basis_cents"),
+        # Names the estimand behind the modeled volume response, in the words a
+        # reader needs: what it holds fixed, and whether the engine has
+        # anything to say about what it holds fixed.
+        pl.when(pl.col("total_quantity_elasticity").is_not_null())
+        .then(
+            pl.lit(
+                "Modeled on how much buying customers buy, which holds steady the question "
+                "of whether they keep buying at all. The second figure re-runs it on the "
+                "estimate that counts customers who stop; the two are alternatives, not "
+                "parts of a total."
+            )
+        )
+        .otherwise(
+            pl.lit(
+                "Modeled on how much buying customers buy, which holds steady the question "
+                "of whether they keep buying at all. There was not enough evidence to "
+                "estimate the second effect here, so it is untested rather than ruled out."
+            )
+        )
+        .alias("volume_estimand_note"),
         pl.lit(f"last_{window}_months").alias("baseline_window"),
         pl.lit("raise_to_target_index").alias("action"),
         pl.lit("target >= floor; corridor P25-P75; contract-protected excluded").alias(
@@ -407,6 +457,10 @@ def price_opportunities(
         "elasticity_estimand",
         "cost_unavailable",
         "volume_treatment",
+        "total_quantity_elasticity",
+        "total_quantity_status",
+        "gp_change_total_quantity_basis_cents",
+        "volume_estimand_note",
         "deduction_treatment",
         "baseline_window",
         "action",
@@ -619,8 +673,14 @@ def optimize_targets(
             pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"),
         )
     causal = pl.col("evidence_status") == STATUS_CAUSAL
+    # An ALLOW-LIST, not a deny-list (Run 6, Phase 72). The guard used to read
+    # `!= TREATMENT_OUTSIDE_SUPPORT`, so every treatment value except that one
+    # literal passed - including any value added later and not reasoned about
+    # here. Optimizing a price needs a volume response that answers the question
+    # being asked, so only the treatments explicitly cleared for it qualify and
+    # anything new defaults to no optimization.
     in_support = (
-        pl.col("volume_treatment") != TREATMENT_OUTSIDE_SUPPORT
+        pl.col("volume_treatment").is_in([TREATMENT_EXPECTED])
         if "volume_treatment" in j.columns
         else pl.lit(value=True)
     )

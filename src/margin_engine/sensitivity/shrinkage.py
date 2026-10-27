@@ -38,7 +38,10 @@ def shrink_to_segment(
         child_panel = panel.filter(
             (pl.col("segment_leaf") == seg) & (pl.col("item_category") == cat)
         )
-        est = estimate_segment(child_panel, rules, int(seg))
+        # Partial pooling shrinks the CONDITIONAL estimate toward its parent;
+        # the total-quantity estimand is not pooled, so fitting it per child
+        # segment would be discarded work.
+        est = estimate_segment(child_panel, rules, int(seg), with_total_quantity=False)
         raw.append((int(seg), str(cat), est))
 
     # tau^2 per segment via method of moments on child estimates.

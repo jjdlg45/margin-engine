@@ -143,6 +143,46 @@ sensitivity:
   #   external         a public series (e.g. BLS PPI) mapped to categories via
   #                    external_index_map, then to suppliers by modal category
   instrument_source: reference_table
+  # Total-quantity estimand (Run 6, Phase 72): an IV-Poisson control function
+  # over the panel INCLUDING months with no purchase, answering how expected
+  # quantity responds to price counting whether the customer buys at all. It
+  # is reported beside the headline elasticity and never above it: its ladder
+  # has no causal tier, so the optimizer never prices from it.
+  iv_ppml_enabled: true
+  # Above this share of no-purchase months carrying an imputed price, the
+  # estimand is demoted to descriptive: those rows carry the whole
+  # extensive-margin signal, and an imputed price is not an observation of the
+  # price that produced them.
+  iv_ppml_max_imputed_share: 0.50
+  # Re-estimate under alternative zero-row price and availability assumptions
+  # and demote past this gap. This one GATES the status, so it stays on: an
+  # estimate that depends on which guess was made about the no-purchase months
+  # is not an instrumented measurement of anything.
+  iv_ppml_zero_row_robustness: true
+  iv_ppml_max_zero_row_gap: 0.30
+  # Segments estimated concurrently (Run 6, Phase 72). A memory dial as much
+  # as a speed one: each concurrent segment holds its own filtered panel.
+  # Measured on the demo panel at 1.23x with three workers and 2.05 GB peak;
+  # four buys 0.02x more for more memory. Results are byte-identical at every
+  # worker count - segments are independent and the order is restored before
+  # anything is built.
+  max_parallel_segments: 3
+  # The two pure DIAGNOSTICS are off in the shipped pipeline and on in the
+  # validation study, because each costs whole extra fits per segment and the
+  # Run-1 performance target is measured on this configuration. Neither
+  # changes a status.
+  #   bootstrap_reps        a pair cluster bootstrap that refits the first
+  #                         stage per replicate, so its interval carries the
+  #                         generated-regressor noise the analytic
+  #                         cluster-robust standard error omits. One fit per
+  #                         replicate.
+  #   split_panel_jackknife the half-panel correction for the
+  #                         incidental-parameter bias IV-PPML with
+  #                         high-dimensional fixed effects carries at short T.
+  #                         Two fits, reported, never adopted as the point
+  #                         estimate.
+  iv_ppml_bootstrap_reps: 0
+  iv_ppml_split_panel_jackknife: false
   # Validation without planted truth (Run 4, 27.4): temporal backtest, placebo
   # tests and rolling-window stability in the report. Informational only.
   real_data_validation: true

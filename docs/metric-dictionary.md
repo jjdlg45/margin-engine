@@ -140,8 +140,20 @@ Level 3 on a pocket gross profit basis: unit economics P x (1 - d) - F - C, with
 - **Denominator:** none (a dollar total)
 - **Price basis:** invoice price converted to pocket with (1 - d) and fixed deductions F
 - **Includes:** pairs with known cost, causal-supported elasticity and a proposed move inside the segment's identifying price support
-- **Excludes:** per-unit cost-to-serve K (see expected contribution change); pairs without cost; moves outside price support; never summed across levels
+- **Excludes:** per-unit cost-to-serve K (see expected contribution change); pairs without cost; moves outside price support; never summed across levels. It models how much buying customers buy and holds steady whether they keep buying; the companion figure below re-runs it on the estimate that counts them stopping
 - **Amount status:** modeled from actual baselines and estimated elasticity
+
+## Expected pocket gross profit change, counting customers who stop buying
+
+The same arithmetic as the figure above, under the estimate that counts months a customer buys nothing. An alternative to that figure, never added to it.
+
+- **Formula:** c(P1) x Q(P1) - c(P0) x Q(P0), with unit economics c(P) = P x (1 - d) - F - C and Q from the segment's total-quantity elasticity instead of its buying-customers elasticity
+- **Units:** pocket cents over the baseline window
+- **Denominator:** none (a dollar total)
+- **Price basis:** invoice price converted to pocket with (1 - d) and fixed deductions F
+- **Includes:** pairs with known cost and a proposed move inside the segment's identifying price support, in segments where a total-quantity response could be estimated at all
+- **Excludes:** segments with no total-quantity estimate, where the second effect is reported as untested rather than as zero; this figure never sets a price and is never added to the figure above or to any other level
+- **Amount status:** modeled from actual baselines and an estimate that carries no causal tier
 
 ## Expected contribution change
 

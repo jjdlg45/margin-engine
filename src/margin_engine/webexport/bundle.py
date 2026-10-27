@@ -219,6 +219,38 @@ class SensitivitySegment(BaseModel):
     support_log_hi: float | None = None
     ppml_positive: float | None = None
     carried_forward_share: float | None = None
+    imputed_price_share: float | None = None
+    # Total-quantity estimand (Run 6, Phase 72), reported beside the
+    # conditional estimate and never above it: its ladder has no causal tier.
+    iv_ppml: float | None = None
+    iv_ppml_status: str | None = None
+    iv_ppml_reasons: str | None = None
+    iv_ppml_first_stage_f: float | None = None
+    iv_ppml_n_rows: int | None = None
+    price_source_mix: str | None = None
+    # Two standard errors, because they cover different things: the analytic
+    # one is cluster-robust but treats the estimated control function as known,
+    # and the resampled one refits the first stage per replicate but cannot
+    # resample the period level the instrument is assigned at. `inference`
+    # spells out what each omits; neither is presented as the whole answer.
+    iv_ppml_se_analytic: float | None = None
+    iv_ppml_se_bootstrap: float | None = None
+    iv_ppml_range_low: float | None = None
+    iv_ppml_range_high: float | None = None
+    iv_ppml_inference: str | None = None
+    # Half-panel jackknife bias diagnostic: reported, never adopted.
+    iv_ppml_spj: float | None = None
+    iv_ppml_spj_bias: float | None = None
+    iv_ppml_spj_detail: str | None = None
+    # Rows and units that never reached the fit, by reason.
+    iv_ppml_sample_losses: str | None = None
+    iv_ppml_rows_dropped: int | None = None
+    iv_ppml_units_dropped: int | None = None
+    # Largest move under an alternative zero-row price or availability
+    # assumption, and the account of what was varied. Past the configured gap
+    # the estimand is demoted, so this is the reason behind a status.
+    iv_ppml_zero_row_gap: float | None = None
+    iv_ppml_zero_row_detail: str | None = None
     market_control_used: bool = False
     # Run 6, Phase 70: the named estimand, the market control's adequacy
     # statistics, the competitor-price path resolution and the per-gate

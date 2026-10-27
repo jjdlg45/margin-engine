@@ -195,6 +195,58 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
+                      {/* The SECOND estimand, named for what it measures. It is
+                          reported beside the headline, never above it. */}
+                      <dt
+                        className="text-caption secondary"
+                        title={r.iv_ppml_reasons || undefined}
+                      >
+                        Total quantity, including whether they buy at all
+                      </dt>
+                      <dd className="m-0">
+                        {r.iv_ppml !== null && r.iv_ppml !== undefined ? num(r.iv_ppml) : "—"}
+                        {r.iv_ppml_status ? ` — ${labels(r.iv_ppml_status).label}` : ""}
+                      </dd>
+                    </div>
+                    {r.iv_ppml !== null && r.iv_ppml !== undefined ? (
+                      <div>
+                        {/* Both standard errors, because neither is the whole
+                            answer and the tooltip says what each one leaves
+                            out. A resampled range appears only when the run
+                            computed one. */}
+                        <dt
+                          className="text-caption secondary"
+                          title={r.iv_ppml_inference || undefined}
+                        >
+                          Total quantity: how precise
+                        </dt>
+                        <dd className="m-0">
+                          {r.iv_ppml_se_analytic !== null && r.iv_ppml_se_analytic !== undefined
+                            ? `plus or minus ${num(r.iv_ppml_se_analytic)} before first-stage noise`
+                            : "not available"}
+                          {r.iv_ppml_range_low !== null &&
+                          r.iv_ppml_range_low !== undefined &&
+                          r.iv_ppml_range_high !== null &&
+                          r.iv_ppml_range_high !== undefined
+                            ? `; resampled range ${num(r.iv_ppml_range_low)} to ${num(
+                                r.iv_ppml_range_high,
+                              )}`
+                            : "; no resampled range in this run"}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {r.iv_ppml_sample_losses ? (
+                      <div>
+                        <dt
+                          className="text-caption secondary"
+                          title={r.iv_ppml_spj_detail || undefined}
+                        >
+                          Total quantity: rows the fit could not use
+                        </dt>
+                        <dd className="m-0">{r.iv_ppml_sample_losses}</dd>
+                      </div>
+                    ) : null}
+                    <div>
                       <dt className="text-caption secondary">Naive (biased) estimate</dt>
                       <dd className="m-0">{r.naive_fe_ols !== null ? num(r.naive_fe_ols) : "—"}</dd>
                     </div>
@@ -209,10 +261,15 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-caption secondary">Carried-forward rows</dt>
+                      <dt
+                        className="text-caption secondary"
+                        title={r.price_source_mix || undefined}
+                      >
+                        Imputed zero-row prices
+                      </dt>
                       <dd className="m-0">
-                        {r.carried_forward_share !== null && r.carried_forward_share !== undefined
-                          ? pct(r.carried_forward_share)
+                        {r.imputed_price_share !== null && r.imputed_price_share !== undefined
+                          ? pct(r.imputed_price_share)
                           : "—"}
                       </dd>
                     </div>

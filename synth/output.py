@@ -383,6 +383,28 @@ def export_reference_tables(
     ).write_csv(out / "landed_cost_components.csv")
 
 
+def _planted_total_fields(world: DemandWorld, segment_id: int) -> dict[str, Any]:
+    """The planted total-quantity elasticity for one segment, or empty when the
+    generator did not record one."""
+    pt = world.planted_total
+    if pt is None or not pt.height:
+        return {}
+    row = pt.filter(pl.col("segment_id") == segment_id)
+    if not row.height:
+        return {}
+    r = row.to_dicts()[0]
+    return {
+        "total_elasticity": round(float(r["total_elasticity"]), 6),
+        "intensive_component": round(float(r["intensive_component"]), 6),
+        "extensive_component": round(float(r["extensive_component"]), 6),
+        "mean_incidence_eq_weighted": round(float(r["mean_incidence_eq_weighted"]), 6),
+        "mean_kappa_eq_weighted": round(float(r["mean_kappa_eq_weighted"]), 6),
+        "n_pair_months": int(r["n_pair_months"]),
+        "weight_basis": "expected_quantity",
+        "row_set": "available_non_contract",
+    }
+
+
 def export_ground_truth(
     cfg: GeneratorConfig,
     out: Path,
@@ -491,11 +513,28 @@ def export_ground_truth(
                 "segment_id": s.segment_id,
                 "name": s.name,
                 "rule": s.rule,
+                # The response CONDITIONAL on buying - what a positive-quantity
+                # estimator targets. Unchanged in meaning (Run 6, Phase 72).
                 "elasticity": s.elasticity,
                 "base_price_index": s.base_price_index,
+                **_planted_total_fields(world, s.segment_id),
             }
             for s in segments
         ],
+        # What the total-quantity figures mean, stated beside them rather than
+        # left for a reader to infer (Run 6, Phase 72).
+        "extensive_margin": {
+            "beta_ext": cfg.demand.beta_ext,
+            "ext_price_ref": cfg.demand.ext_price_ref,
+            "form": "logit on log price relative to the item's reference list",
+            "quantity_process": cfg.demand.qty_process,
+            "note": (
+                "total_elasticity is the expected-quantity-weighted response of TOTAL "
+                "expected quantity to price, including whether the customer buys at "
+                "all; elasticity is the response conditional on buying. They coincide "
+                "when beta_ext is zero."
+            ),
+        },
         "naive_bias_direction": "toward_zero",
         "naive_bias_explanation": (
             "Reps discount when the demand shock is negative (endogeneity_gamma > 0), "

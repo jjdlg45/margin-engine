@@ -267,9 +267,40 @@ METRICS: tuple[MetricDef, ...] = (
         ),
         excludes=(
             "per-unit cost-to-serve K (see expected contribution change); pairs without "
-            "cost; moves outside price support; never summed across levels"
+            "cost; moves outside price support; never summed across levels. It models "
+            "how much buying customers buy and holds steady whether they keep buying; "
+            "the companion figure below re-runs it on the estimate that counts them "
+            "stopping"
         ),
         amount_status="modeled from actual baselines and estimated elasticity",
+    ),
+    MetricDef(
+        code="expected_pocket_gross_profit_change_total_quantity_basis",
+        label="Expected pocket gross profit change, counting customers who stop buying",
+        description=(
+            "The same arithmetic as the figure above, under the estimate that counts "
+            "months a customer buys nothing. An alternative to that figure, never "
+            "added to it."
+        ),
+        formula=(
+            "c(P1) x Q(P1) - c(P0) x Q(P0), with unit economics "
+            "c(P) = P x (1 - d) - F - C and Q from the segment's total-quantity "
+            "elasticity instead of its buying-customers elasticity"
+        ),
+        units="pocket cents over the baseline window",
+        denominator="none (a dollar total)",
+        price_basis="invoice price converted to pocket with (1 - d) and fixed deductions F",
+        includes=(
+            "pairs with known cost and a proposed move inside the segment's "
+            "identifying price support, in segments where a total-quantity response "
+            "could be estimated at all"
+        ),
+        excludes=(
+            "segments with no total-quantity estimate, where the second effect is "
+            "reported as untested rather than as zero; this figure never sets a price "
+            "and is never added to the figure above or to any other level"
+        ),
+        amount_status=("modeled from actual baselines and an estimate that carries no causal tier"),
     ),
     MetricDef(
         code="expected_contribution_change",

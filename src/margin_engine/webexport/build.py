@@ -540,6 +540,36 @@ def build_bundle(
                 support_log_hi=_r(r.get("support_log_hi")),
                 ppml_positive=_r(r.get("ppml_positive")),
                 carried_forward_share=_r(r.get("carried_forward_share")),
+                imputed_price_share=_r(r.get("imputed_price_share")),
+                iv_ppml=_r(r.get("iv_ppml")),
+                iv_ppml_status=r.get("iv_ppml_status") or None,
+                iv_ppml_reasons=r.get("iv_ppml_reasons") or None,
+                iv_ppml_first_stage_f=_r(r.get("iv_ppml_first_stage_f")),
+                iv_ppml_n_rows=(
+                    _i(r["iv_ppml_n_rows"]) if r.get("iv_ppml_n_rows") is not None else None
+                ),
+                price_source_mix=r.get("price_source_mix") or None,
+                iv_ppml_se_analytic=_r(r.get("iv_ppml_se_analytic")),
+                iv_ppml_se_bootstrap=_r(r.get("iv_ppml_se_bootstrap")),
+                iv_ppml_range_low=_r(r.get("iv_ppml_range_low")),
+                iv_ppml_range_high=_r(r.get("iv_ppml_range_high")),
+                iv_ppml_inference=r.get("iv_ppml_inference") or None,
+                iv_ppml_spj=_r(r.get("iv_ppml_spj")),
+                iv_ppml_spj_bias=_r(r.get("iv_ppml_spj_bias")),
+                iv_ppml_spj_detail=r.get("iv_ppml_spj_detail") or None,
+                iv_ppml_sample_losses=r.get("iv_ppml_sample_losses") or None,
+                iv_ppml_rows_dropped=(
+                    _i(r["iv_ppml_rows_dropped"])
+                    if r.get("iv_ppml_rows_dropped") is not None
+                    else None
+                ),
+                iv_ppml_units_dropped=(
+                    _i(r["iv_ppml_units_dropped"])
+                    if r.get("iv_ppml_units_dropped") is not None
+                    else None
+                ),
+                iv_ppml_zero_row_gap=_r(r.get("iv_ppml_zero_row_gap")),
+                iv_ppml_zero_row_detail=r.get("iv_ppml_zero_row_detail") or None,
                 market_control_used=bool(r.get("market_control_used") or False),
                 estimand=r.get("estimand"),
                 estimand_bias_direction=r.get("estimand_bias_direction"),
