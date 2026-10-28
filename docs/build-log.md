@@ -5535,3 +5535,86 @@ free memory 2.21 GB, zero floor excursions, 1218s. tsc 0; vitest 22/22; vite
 build 0; Playwright 233 passed 3 skipped (exit 0) with no snapshot changes -
 the review facts render on an action detail page, which the snapshot set does
 not cover.
+
+## Phase 80 — Market data provenance (2026-10-28, Run 6 branch)
+
+Finding 18. The antitrust guardrail on the competitor-price control was one
+boolean on the mapping: `public_source: true`. A boolean is an assertion.
+Anyone could write it, nobody could check it, and - the part that matters -
+it could not tell a producer price index from a competitor's selling prices.
+
+### Provenance replaces the flag
+
+Every external series now declares a `provenance` block: provider, url,
+retrieved_utc, license, update_cadence, coverage, aggregation_level and
+`series_kind`. The old boolean is **refused with a message naming the
+replacement**, on the mapping (`public_source`) and in config
+(`market_index_public_source_required` -> `market_index_provenance_required`),
+the same treatment the renamed margin and tracking keys got.
+
+The gate reads three things:
+
+1. **Is it accounted for at all?** No provenance, no control. A series nobody
+   can place is not evidence that competitor prices were held constant.
+2. **Is it the right kind of series?** This is what the boolean could not
+   express. A producer price index is a **cost** series; the competitor-price
+   control needs a market **selling-price** index. Each is now refused by
+   name in the other's role, with the reason: a cost index used as a control
+   would look like a control and would not be one - the same cost shocks that
+   identify the elasticity also move it - and a selling-price series used as
+   an instrument would be the exact channel the exclusion restriction has to
+   rule out, which is also the antitrust concern itself rather than a
+   modelling nicety.
+3. **Is the publisher one this deployment accepts?**
+   `market_index_allowed_providers` with `market_index_require_allowlist`
+   makes an approved list binding. Off by default - most deployments have not
+   drawn one up - and an unlisted provider is then **reported**, not silently
+   accepted.
+
+Where the control is used the run states what it is: publisher, url,
+retrieval time, licence, cadence, coverage and level.
+
+### The demo says what it actually is
+
+`config/mappings/synth_erp.yaml` previously said `public_source: true` with a
+comment explaining that the simulated index "qualifies". It now carries
+provenance that reads: provider *margin-engine synthetic generator*,
+retrieved *generated with the world, not retrieved*, licence *synthetic data,
+no licence applies*. The control still qualifies - it is a selling-price
+series at category x month - and nothing pretends it came from a publisher.
+
+The adequacy wording changed with it: "the index is public, current, ..."
+became "the index is accounted for, is a selling-price series, is current,
+...", because that is what was checked.
+
+### What changed in the outputs
+
+Nothing on the demo: the market control remains adequate and causal support
+is still reachable. The change is in what a differently-mapped deployment can
+get away with.
+
+### Tests added
+
+`tests/test_competitor_path.py` gains 7: an index with no recorded provenance
+is refused; a cost index is refused for the competitor-price role with the
+instrument-pipeline reason; an accounted-for selling-price index is accepted
+**and named** in the notes; an allowlist is reported when off and binding
+when on; requiring an allowlist with nobody on it approves nobody; provenance
+can be waived only deliberately; and both halves of the rename fail closed
+with a way forward - the mapping one raised through `load_mapping`, which is
+where a person actually meets it.
+
+`tests/test_compliance.py`'s end-to-end gate test now swaps a provenance
+block in and out rather than a boolean.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 756 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.43 GB, minimum system
+free memory 2.08 GB, zero floor excursions, 1353s. tsc 0; vitest 22/22; vite
+build 0; Playwright 233 passed 3 skipped (exit 0), no snapshot changes.
+
+The first run of the suite failed on batch 17: `tests/test_sensitivity.py`
+still read `.public_source` off the mapping. Fixed and the suite re-run green
+before committing, rather than committing the phase and noting the failure.

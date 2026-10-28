@@ -58,16 +58,25 @@ import numpy as np
 import polars as pl
 
 from margin_engine.config import InstrumentConfig, Rules
+from margin_engine.ingest.mapping import SourceProvenance
 
 # --- control source (Phase 37 public-source rule) ---------------------------
 SOURCE_ABSENT = "market_control_absent"
 SOURCE_NOT_PUBLIC = "market_control_not_public"
+#: Run 6, Phase 80: the series has no recorded provenance, is not the kind of
+#: series this control needs, or comes from a publisher nobody approved.
+SOURCE_NO_PROVENANCE = "market_control_no_provenance"
+SOURCE_WRONG_KIND = "market_control_wrong_series_kind"
+SOURCE_NOT_ALLOWLISTED = "market_control_provider_not_allowed"
 SOURCE_MAPPED = "market_control_mapped"
 
 # --- adequacy outcomes -------------------------------------------------------
 CONTROL_ADEQUATE = "market_control_adequate"
 CONTROL_ABSENT = "market_control_absent"
 CONTROL_NOT_PUBLIC = "market_control_not_public"
+CONTROL_NO_PROVENANCE = "market_control_no_provenance"
+CONTROL_WRONG_KIND = "market_control_wrong_series_kind"
+CONTROL_NOT_ALLOWLISTED = "market_control_provider_not_allowed"
 CONTROL_STALE = "market_control_stale"
 CONTROL_INCOMPLETE = "market_control_incomplete"
 CONTROL_ABSORBED = "market_control_absorbed_by_time_effects"
@@ -106,32 +115,103 @@ class ControlAssessment:
 
     @property
     def absent(self) -> bool:
-        return self.status in (CONTROL_ABSENT, CONTROL_NOT_PUBLIC)
+        return self.status in (
+            CONTROL_ABSENT,
+            CONTROL_NOT_PUBLIC,
+            CONTROL_NO_PROVENANCE,
+            CONTROL_WRONG_KIND,
+            CONTROL_NOT_ALLOWLISTED,
+        )
 
 
 def select_market_index(
     market_index: pl.DataFrame | None,
     *,
-    public_source: bool | None,
+    provenance: SourceProvenance | None,
     rules: Rules,
 ) -> tuple[pl.DataFrame | None, str, list[str]]:
-    """Phase 37's public-source rule, extracted so every caller shares it.
+    """Whether a market index may serve as the competitor-price control.
 
-    `public_source` is the mapping's declaration for the market_price_index
-    reference table. Returns (frame or None, source code, notes).
+    Phase 37 asked the mapping for a boolean: is this public? Run 6
+    (Phase 80, Finding 18) asks it to account for the series instead -
+    provider, url, retrieval time, licence, cadence, coverage, aggregation
+    level and kind - and reads three things from that.
+
+    1. **Is it accounted for at all?** No provenance, no control. A series
+       nobody can place is not evidence that competitor prices were held
+       constant.
+    2. **Is it the right kind of series?** A producer price index is a COST
+       series and belongs in the instrument pipeline. The competitor-price
+       control needs a market SELLING-price index. A cost index here would
+       look like a control and would not be one - the same cost shocks that
+       identify the elasticity also move it - so it is refused by name.
+    3. **Is the publisher one this deployment accepts?** An allowlist is off
+       by default, because most deployments have not drawn one up; when it is
+       on, an unlisted provider is refused rather than waved through.
+
+    Returns (frame or None, source code, notes). The notes name the
+    provenance, so a reader can see what the control actually is.
     """
     notes: list[str] = []
     if market_index is None:
         return None, SOURCE_ABSENT, notes
-    if rules.compliance.market_index_public_source_required and public_source is not True:
+    cc = rules.compliance
+    if provenance is None:
+        if cc.market_index_provenance_required:
+            notes.append(
+                "market price index NOT used as an elasticity control: the mapping "
+                "records no provenance for it (provider, url, retrieved_utc, "
+                "license, update_cadence, coverage, aggregation_level, "
+                "series_kind). A series nobody can account for is not evidence "
+                "that competitor prices were held constant; see "
+                "docs/methodology.md, Pricing-law considerations"
+            )
+            return None, SOURCE_NO_PROVENANCE, notes
         notes.append(
-            "market price index NOT used as an elasticity control: the mapping "
-            "does not declare it a public source. Only public sources are "
-            "accepted (sharing competitors' non-public prices through a pricing "
-            "algorithm raises antitrust concerns; see docs/methodology.md, "
-            "Pricing-law considerations)"
+            "market price index used without recorded provenance "
+            "(compliance.market_index_provenance_required is off)"
         )
-        return None, SOURCE_NOT_PUBLIC, notes
+        return market_index, SOURCE_MAPPED, notes
+    if provenance.series_kind != "selling_price_index":
+        notes.append(
+            "market price index NOT used as an elasticity control: its declared "
+            f"series_kind is {provenance.series_kind}, and the competitor-price "
+            "control needs a market selling-price index. A cost index belongs in "
+            "the instrument pipeline, where the same cost movements are the "
+            "identifying variation rather than a confound to hold constant"
+        )
+        return None, SOURCE_WRONG_KIND, notes
+    allowed = cc.market_index_allowed_providers
+    if cc.market_index_require_allowlist:
+        if not allowed:
+            notes.append(
+                "market price index NOT used as an elasticity control: an "
+                "allowlist is required but compliance."
+                "market_index_allowed_providers is empty, so no publisher is "
+                "approved"
+            )
+            return None, SOURCE_NOT_ALLOWLISTED, notes
+        if provenance.provider not in allowed:
+            notes.append(
+                "market price index NOT used as an elasticity control: publisher "
+                f"{provenance.provider} is not in the approved list "
+                f"{list(allowed)}"
+            )
+            return None, SOURCE_NOT_ALLOWLISTED, notes
+    elif allowed and provenance.provider not in allowed:
+        notes.append(
+            f"market price index publisher {provenance.provider} is not in "
+            f"compliance.market_index_allowed_providers {list(allowed)}; the "
+            "allowlist is not enforced (market_index_require_allowlist is off), "
+            "so the control is used and this is reported"
+        )
+    notes.append(
+        f"market price index control: {provenance.series_kind} published by "
+        f"{provenance.provider} ({provenance.url}), retrieved "
+        f"{provenance.retrieved_utc}, licence {provenance.license}, updated "
+        f"{provenance.update_cadence}, covering {provenance.coverage} at "
+        f"{provenance.aggregation_level}"
+    )
     return market_index, SOURCE_MAPPED, notes
 
 
@@ -163,15 +243,39 @@ def assess_market_control(
     the structural absorption test.
     """
     sc = rules.sensitivity
-    if source == SOURCE_NOT_PUBLIC:
-        return ControlAssessment(
-            status=CONTROL_NOT_PUBLIC,
-            usable=False,
-            adequate=False,
-            detail=(
+    if source in (
+        SOURCE_NOT_PUBLIC,
+        SOURCE_NO_PROVENANCE,
+        SOURCE_WRONG_KIND,
+        SOURCE_NOT_ALLOWLISTED,
+    ):
+        detail = {
+            SOURCE_NOT_PUBLIC: (
                 "a market price index is mapped but not declared a public source, "
                 "so it is refused as a control"
             ),
+            SOURCE_NO_PROVENANCE: (
+                "a market price index is mapped with no recorded provenance, so it "
+                "is refused as a control"
+            ),
+            SOURCE_WRONG_KIND: (
+                "the mapped market index is not a selling-price series, so it "
+                "cannot stand in for competitor prices"
+            ),
+            SOURCE_NOT_ALLOWLISTED: (
+                "the mapped market index comes from a publisher this deployment has not approved"
+            ),
+        }[source]
+        return ControlAssessment(
+            status={
+                SOURCE_NOT_PUBLIC: CONTROL_NOT_PUBLIC,
+                SOURCE_NO_PROVENANCE: CONTROL_NO_PROVENANCE,
+                SOURCE_WRONG_KIND: CONTROL_WRONG_KIND,
+                SOURCE_NOT_ALLOWLISTED: CONTROL_NOT_ALLOWLISTED,
+            }[source],
+            usable=False,
+            adequate=False,
+            detail=detail,
         )
     if source == SOURCE_ABSENT or log_mkt is None or log_price_within is None:
         return ControlAssessment(
@@ -318,9 +422,10 @@ def assess_market_control(
         price_relevance_coef=coef,
         instrument_r2=inst_r2,
         detail=(
-            "the index is public, current, covers the estimation window, varies "
-            "within each time period, and explains within-pair price movement, so "
-            "it can hold observed competitor-price conditions constant"
+            "the index is accounted for, is a selling-price series, is current, "
+            "covers the estimation window, varies within each time period, and "
+            "explains within-pair price movement, so it can hold observed "
+            "competitor-price conditions constant"
         ),
     )
 

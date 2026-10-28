@@ -1289,12 +1289,35 @@ justification at approval (Phase 38 guardrail).
 **Algorithmic pricing and information sharing (Sherman Act section 1).**
 Recent enforcement and litigation treat pricing algorithms fed with
 competitors' non-public data as potential facilitators of price coordination,
-even without an explicit agreement. For that reason the engine accepts a
-market/competitor price index as an elasticity control **only from public
-sources**: the mapping must declare `public_source: true` for the
-market_price_index table, and anything else switches the control off with a
-stated note (`compliance.market_index_public_source_required`). Public indexes
-(e.g. producer price indexes) carry no such concern.
+even without an explicit agreement. The engine therefore accounts for every
+external series it uses rather than asserting that it is acceptable.
+
+Until Run 6 the mapping declared `public_source: true` and that was the whole
+test. A boolean is an assertion; **provenance is a record** (Phase 80,
+Finding 18). Each external series now declares its provider, URL, retrieval
+timestamp, licence or terms, update cadence, coverage, aggregation level and
+**series kind**, and the engine reads three things from that block:
+
+- *Is it accounted for at all?* No provenance, no control: a series nobody
+  can place is not evidence that competitor prices were held constant
+  (`compliance.market_index_provenance_required`).
+- *Is it the right kind of series?* This is the distinction the old boolean
+  could not make. A **producer price index is a cost series** and belongs in
+  the instrument pipeline, where those cost movements are the identifying
+  variation. A **market selling-price index** is what the competitor-price
+  control needs. Each is refused by name in the other's role - a cost index
+  used as a competitor-price control would look like a control and would not
+  be one, and a selling-price series used as an instrument would be the very
+  channel the exclusion restriction has to rule out.
+- *Is the publisher one this deployment accepts?*
+  `compliance.market_index_allowed_providers` with
+  `market_index_require_allowlist` makes an approved-source list binding; off
+  by default, because most deployments have not drawn one up, and an unlisted
+  provider is then reported rather than silently accepted.
+
+Where the control is used, the run states what it is: publisher, URL,
+retrieval time, licence, cadence, coverage and level. The committed demo's
+index says plainly that it is synthetic.
 
 **What the engine never does.** It never ingests competitor transaction data,
 never recommends coordinating prices with competitors, and never silences a

@@ -115,7 +115,7 @@ def build_world_panel(
         # the competitor-price gate instead of bypassing it.
         market_price_index=select_market_index(
             res.reference.get("market_price_index"),
-            public_source=res.mapping.reference_tables["market_price_index"].public_source
+            provenance=res.mapping.reference_tables["market_price_index"].provenance
             if "market_price_index" in res.mapping.reference_tables
             else None,
             rules=rules,

@@ -10,11 +10,20 @@ estimands, and the downstream consequence.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 import pytest
+import yaml
 
 from margin_engine.config import InstrumentConfig, InstrumentPath, Rules
+from margin_engine.ingest.mapping import (
+    MappingError,
+    ReferenceTable,
+    SourceProvenance,
+    load_mapping,
+)
 from margin_engine.sensitivity.market_control import (
     CONTROL_ABSENT,
     CONTROL_ABSORBED,
@@ -33,7 +42,10 @@ from margin_engine.sensitivity.market_control import (
     PATH_NOT_CONTROLLED,
     SOURCE_ABSENT,
     SOURCE_MAPPED,
+    SOURCE_NO_PROVENANCE,
+    SOURCE_NOT_ALLOWLISTED,
     SOURCE_NOT_PUBLIC,
+    SOURCE_WRONG_KIND,
     assess_market_control,
     estimand_for,
     resolve_competitor_path,
@@ -41,6 +53,23 @@ from margin_engine.sensitivity.market_control import (
 )
 
 RULES = Rules()
+
+
+def _prov(**over: object) -> SourceProvenance:
+    base = {
+        "provider": "Example Statistics Office",
+        "url": "https://example.gov/series/widgets",
+        "retrieved_utc": "2026-10-01T00:00:00Z",
+        "license": "public domain",
+        "update_cadence": "monthly",
+        "coverage": "all categories, 2019 onward",
+        "aggregation_level": "item category x month",
+        "series_kind": "selling_price_index",
+    }
+    base.update(over)
+    return SourceProvenance.model_validate(base)
+
+
 RNG = np.random.default_rng(7)
 N = 600
 
@@ -60,30 +89,128 @@ def _informative_control(n: int = N) -> tuple[np.ndarray, np.ndarray, np.ndarray
 
 
 # ---------------------------------------------------------------------------
-# Control selection (the public-source rule, now shared with production)
+# Control selection (the recorded-provenance rule, shared with production)
 # ---------------------------------------------------------------------------
 
 
+def _idx() -> pl.DataFrame:
+    return pl.DataFrame({"item_category": ["CAT01"], "period": ["2024-01"], "market_index": [1.0]})
+
+
 def test_absent_index_is_absent() -> None:
-    frame, source, notes = select_market_index(None, public_source=None, rules=RULES)
+    frame, source, notes = select_market_index(None, provenance=None, rules=RULES)
     assert frame is None
     assert source == SOURCE_ABSENT
     assert not notes
 
 
-def test_non_public_index_is_refused_with_a_note() -> None:
-    idx = pl.DataFrame({"item_category": ["CAT01"], "period": ["2024-01"], "market_index": [1.0]})
-    frame, source, notes = select_market_index(idx, public_source=False, rules=RULES)
+def test_an_index_with_no_recorded_provenance_is_refused() -> None:
+    """Run 6, Phase 80: a series nobody can account for is not evidence that
+    competitor prices were held constant."""
+    frame, source, notes = select_market_index(_idx(), provenance=None, rules=RULES)
     assert frame is None
-    assert source == SOURCE_NOT_PUBLIC
-    assert any("public source" in n for n in notes)
+    assert source == SOURCE_NO_PROVENANCE
+    assert any("records no provenance" in n for n in notes)
 
 
-def test_public_index_is_accepted() -> None:
-    idx = pl.DataFrame({"item_category": ["CAT01"], "period": ["2024-01"], "market_index": [1.0]})
-    frame, source, _ = select_market_index(idx, public_source=True, rules=RULES)
+def test_a_cost_index_is_refused_for_the_competitor_price_control() -> None:
+    """A producer price index is a cost series. Used here it would look like
+    a control and would not be one: the cost shocks that identify the
+    elasticity also move it."""
+    frame, source, notes = select_market_index(
+        _idx(), provenance=_prov(series_kind="cost_index"), rules=RULES
+    )
+    assert frame is None
+    assert source == SOURCE_WRONG_KIND
+    assert any("selling-price index" in n for n in notes)
+    assert any("instrument pipeline" in n for n in notes)
+
+
+def test_an_accounted_for_selling_price_index_is_accepted_and_named() -> None:
+    frame, source, notes = select_market_index(_idx(), provenance=_prov(), rules=RULES)
     assert frame is not None
     assert source == SOURCE_MAPPED
+    named = " ".join(notes)
+    for part in ("Example Statistics Office", "public domain", "monthly", "2026-10-01"):
+        assert part in named
+
+
+def test_an_allowlist_binds_only_when_it_is_turned_on() -> None:
+    rules = Rules.model_validate(
+        {"compliance": {"market_index_allowed_providers": ["Someone Else"]}}
+    )
+    frame, source, notes = select_market_index(_idx(), provenance=_prov(), rules=rules)
+    # Reported, not enforced.
+    assert frame is not None and source == SOURCE_MAPPED
+    assert any("not enforced" in n for n in notes)
+
+    binding = Rules.model_validate(
+        {
+            "compliance": {
+                "market_index_allowed_providers": ["Someone Else"],
+                "market_index_require_allowlist": True,
+            }
+        }
+    )
+    frame, source, notes = select_market_index(_idx(), provenance=_prov(), rules=binding)
+    assert frame is None and source == SOURCE_NOT_ALLOWLISTED
+    assert any("not in the approved list" in n for n in notes)
+
+
+def test_requiring_an_allowlist_with_nobody_on_it_approves_nobody() -> None:
+    rules = Rules.model_validate({"compliance": {"market_index_require_allowlist": True}})
+    frame, source, notes = select_market_index(_idx(), provenance=_prov(), rules=rules)
+    assert frame is None and source == SOURCE_NOT_ALLOWLISTED
+    assert any("no publisher is" in n for n in notes)
+
+
+def test_provenance_can_be_waived_only_deliberately() -> None:
+    rules = Rules.model_validate({"compliance": {"market_index_provenance_required": False}})
+    frame, source, notes = select_market_index(_idx(), provenance=None, rules=rules)
+    assert frame is not None and source == SOURCE_MAPPED
+    assert any("without recorded provenance" in n for n in notes)
+
+
+def test_the_old_public_source_boolean_is_refused_with_a_way_forward(tmp_path: Path) -> None:
+    """Both halves of the rename fail closed, and both say what to write
+    instead. The mapping error is raised through load_mapping, which is where
+    a person actually meets it."""
+    with pytest.raises(ValueError, match="provenance"):
+        ReferenceTable.model_validate(
+            {"file": "x.csv", "columns": {"a": "A"}, "public_source": True}
+        )
+    bad = tmp_path / "m.yaml"
+    bad.write_text(
+        yaml.safe_dump(
+            {
+                "source_system": "x",
+                "lines": {
+                    "file": "l.csv",
+                    "columns": {
+                        "source_line_key": "K",
+                        "invoice_id": "I",
+                        "invoice_date": "D",
+                        "customer_id": "C",
+                        "item_id": "IT",
+                        "quantity": "Q",
+                        "uom": "U",
+                    },
+                },
+                "reference_tables": {
+                    "market_price_index": {
+                        "file": "m.csv",
+                        "columns": {"item_category": "C"},
+                        "public_source": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(MappingError, match="provenance"):
+        load_mapping(bad)
+    with pytest.raises(ValueError, match="market_index_provenance_required"):
+        Rules.model_validate({"compliance": {"market_index_public_source_required": True}})
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -1028,13 +1028,33 @@ class RobinsonPatmanConfig(StrictModel):
 
 
 class ComplianceConfig(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_public_source_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "market_index_public_source_required" in data:
+            msg = (
+                "compliance.market_index_public_source_required was replaced in "
+                "Run 6 (Phase 80) by market_index_provenance_required. The gate no "
+                "longer reads a boolean on the mapping: it reads a recorded "
+                "provenance block, and refuses a series whose kind is a cost index "
+                "rather than a market selling-price index."
+            )
+            raise ValueError(msg)
+        return data
+
     robinson_patman: RobinsonPatmanConfig = RobinsonPatmanConfig()
-    # The market/competitor price index control is accepted from PUBLIC
-    # sources only (the mapping must declare public_source: true): feeding
+    # The market/competitor price index control is accepted only with
+    # recorded provenance (Run 6, Phase 80): provider, url, retrieval time,
+    # licence, cadence, coverage, aggregation level and series kind. Feeding
     # competitors' non-public prices through a pricing algorithm raises
-    # antitrust concerns, so the engine refuses the control rather than
-    # assume. Documented in docs/methodology.md (Pricing-law considerations).
-    market_index_public_source_required: bool = True
+    # antitrust concerns, so the engine refuses a series it cannot account
+    # for. Documented in docs/methodology.md (Pricing-law considerations).
+    market_index_provenance_required: bool = True
+    # Production deployments name the publishers they accept. Empty means any
+    # recorded provenance is accepted, and the run says so rather than
+    # implying someone approved the source.
+    market_index_allowed_providers: tuple[str, ...] = ()
+    market_index_require_allowlist: bool = False
 
 
 # ---------------------------------------------------------------------------

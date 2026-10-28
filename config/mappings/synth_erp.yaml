@@ -169,13 +169,22 @@ reference_tables:
     columns: {item_category: CATEGORY, period: PERIOD, duty_pct: DUTY_PCT}
   # Optional market/competitor price index (Run 4, 24.10): an elasticity
   # control. Absent file = control off; the engine states that.
-  # public_source (Run 5, Phase 37): the control is accepted from PUBLIC
-  # sources only. The generator simulates a published category-level index
-  # (the synthetic analogue of a PPI-style public series), so it qualifies.
+  # Provenance (Run 6, Phase 80) replaced the Phase 37 public_source boolean.
+  # This series is SYNTHETIC and says so: the demo world simulates a
+  # published category-level selling-price index, and nothing here pretends
+  # it came from a real publisher.
   market_price_index:
     file: market_price_index.csv
     columns: {item_category: CATEGORY, period: PERIOD, market_index: MKT_IDX}
-    public_source: true
+    provenance:
+      provider: margin-engine synthetic generator
+      url: https://github.com/jjdlg45/margin-engine
+      retrieved_utc: generated with the world, not retrieved
+      license: synthetic data, no licence applies
+      update_cadence: monthly, with the generated world
+      coverage: every item category in the generated world, all 24 months
+      aggregation_level: item category x month
+      series_kind: selling_price_index
   return_freight_log:
     file: return_freight_log.csv
     columns: {invoice_id: RET_INV_NO, amount: RTN_FRT_EXP}

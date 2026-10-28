@@ -445,10 +445,16 @@ compliance:
     # Flag only pairs a reviewer has confirmed. Off by default: most
     # deployments have no reviewed competitor map on day one.
     require_reviewed_map: false
-  # The market/competitor price index control is accepted only when the
-  # mapping declares public_source: true for it (antitrust: competitors
-  # sharing non-public prices through algorithms).
-  market_index_public_source_required: true
+  # The market/competitor price index control is accepted only with recorded
+  # provenance (Run 6, Phase 80): provider, url, retrieval time, licence,
+  # cadence, coverage, aggregation level and series kind. A cost index is
+  # refused for this role by name - it belongs in the instrument pipeline.
+  # (Antitrust: competitors sharing non-public prices through algorithms.)
+  market_index_provenance_required: true
+  # Publishers this deployment accepts. Empty means any recorded provenance
+  # is accepted and the run says so; require_allowlist makes it binding.
+  market_index_allowed_providers: []
+  market_index_require_allowlist: false
 
 # Action generation (Run 5, Phase 38). Dates anchor to the data's last invoice
 # date, so a given world always generates identical actions.

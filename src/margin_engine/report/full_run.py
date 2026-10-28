@@ -428,13 +428,13 @@ def run_full(
     rss_log("guidance")
 
     t = time.perf_counter()
-    # Public-data-only rule (Phase 37) + competitor-path control selection
+    # Recorded-provenance rule (Phase 80) + competitor-path control selection
     # (Run 6, Phase 70), in one shared function so tests and the validation
     # scripts exercise the same decision production does.
     mpi_spec = res.mapping.reference_tables.get("market_price_index")
     market_idx, mkt_source, mkt_notes = select_market_index(
         res.reference.get("market_price_index"),
-        public_source=mpi_spec.public_source if mpi_spec is not None else None,
+        provenance=mpi_spec.provenance if mpi_spec is not None else None,
         rules=rules,
     )
     res.notes.extend(mkt_notes)
@@ -462,10 +462,26 @@ def run_full(
 
         series_ref = res.reference.get("external_cost_series")
         items_ref = res.reference.get("items")
+        series_spec = res.mapping.reference_tables.get("external_cost_series")
+        series_prov = series_spec.provenance if series_spec is not None else None
+        # The mirror of the market-control rule (Run 6, Phase 80): this role
+        # needs a COST series. A competitor selling-price index used as an
+        # instrument would be worse than useless - it is the very channel the
+        # exclusion restriction has to rule out, and feeding competitors'
+        # prices into a pricing model is the antitrust concern itself.
+        wrong_kind = series_prov is not None and series_prov.series_kind != "cost_index"
         if series_ref is None or items_ref is None:
             res.notes.append(
                 "instrument_source=external but no external_cost_series/items table: "
                 "supplier cost instrument unavailable (statuses cap accordingly)"
+            )
+            supplier_idx = None
+        elif wrong_kind:
+            res.notes.append(
+                "external cost instrument NOT used: the mapped series declares "
+                f"series_kind {series_prov.series_kind if series_prov else 'unknown'}, "
+                "and this role needs a cost index. A selling-price series is the "
+                "channel the exclusion restriction must rule out, not an instrument"
             )
             supplier_idx = None
         else:
