@@ -23,7 +23,7 @@ from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
-from margin_engine.extended.hierarchy import apply_analysis_level
+from margin_engine.extended.hierarchy import apply_analysis_level, inherit_parent_contracts
 from margin_engine.extended.quotes import QuoteIntake
 from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
@@ -388,6 +388,13 @@ def run_full(
     res.notes.extend(h_notes)
     flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules, fiscal)
     del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
+    # Parent/child contracts (Run 6, Phase 85): protection recorded at the
+    # account or parent level reaches the child lines before segmentation,
+    # guidance and the action guardrails read contract_id.
+    flagged, _c_notes = inherit_parent_contracts(
+        flagged, res.reference.get("contracts"), res.reference["customers"]
+    )
+    res.notes.extend(_c_notes)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
     peaks.mark("dispersion")
@@ -774,7 +781,15 @@ def run_full(
     _fp_inputs = ";".join(f"{f['file']}:{f['sha256'][:12]}" for f in manifest_inputs(data_dir))
     fingerprints = {
         "input": hashlib.sha256(_fp_inputs.encode()).hexdigest()[:16],
-        "config": file_sha256(rules_path)[:16],
+        # Rules AND mapping (Run 6, Phase 85): a mapping change redefines
+        # what the numbers mean - a different cost basis, a different sign
+        # convention - and a proposal generated under the old mapping must
+        # not look current under the new one. Found while covering the
+        # "mapping changes between runs" edge case: the trio had no mapping
+        # component at all.
+        "config": hashlib.sha256(
+            (file_sha256(rules_path) + file_sha256(mapping_path)).encode()
+        ).hexdigest()[:16],
         # The elasticities are rounded to 6 significant digits before hashing,
         # the same rounding the bundle applies to every solver output
         # (Phase 78): an iterative fit's last digits move with BLAS thread

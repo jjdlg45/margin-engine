@@ -158,9 +158,25 @@ def run_tieout(
     returns_cents - canonical columns from the mapping loader."""
     if fiscal is None:
         fiscal = build_calendar(rules.fiscal)
+    fx_converted = any(c.endswith("_src") for c in ledger.columns)
     tol_pct = rules.reporting.tieout_tolerance_pct
     tol_cents = rules.reporting.tieout_tolerance_cents
     notes: list[str] = []
+    if fx_converted:
+        # Analytical vs book translation (Run 6, Phase 85). The engine
+        # converts each line at the rate of its invoice period - the
+        # analytical view, where a June sale is a June sale at June's rate. A
+        # general ledger translated at closing or average rates values the
+        # same transactions differently, and the gap is translation policy,
+        # not a missing dollar. Said here so a multi-currency variance is read
+        # against the right explanation first.
+        notes.append(
+            "multi-currency: engine totals convert each line at its invoice "
+            "period's rate (analytical view, fx_rate_policy invoice_date). A GL "
+            "translated at closing or average rates will differ by translation "
+            "policy alone - a standing reconciling item on every comparison "
+            "below, not a missing amount"
+        )
     unresolved: list[str] = []
 
     covered = ledger.filter(

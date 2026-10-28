@@ -75,6 +75,9 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # scopes share an overlap_group whose joint impact lives in the portfolio
     # table - never in a naive sum.
     "scope_key": pl.String,
+    # Run 6, Phase 85: ship-tos covered by one action (1 unless the analysis
+    # level aggregates above ship-to), and units traded by the pair.
+    "n_ship_tos": pl.Int64,
     "baseline_period": pl.String,
     "intervention": pl.String,
     "affected_set": pl.String,
@@ -220,7 +223,17 @@ def _finalize(
             default="manual action",
         )
         .alias("intervention"),
-        pl.when(pl.col("action_type").is_in(price_types))
+        pl.when(pl.col("action_type").is_in(price_types) & (pl.col("n_ship_tos").fill_null(1) > 1))
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit("one customer-item pair covering "),
+                    pl.col("n_ship_tos").cast(pl.String),
+                    pl.lit(" ship-to accounts"),
+                ]
+            )
+        )
+        .when(pl.col("action_type").is_in(price_types))
         .then(pl.lit("one customer-item pair"))
         .when(pl.col("action_type") == "cost_pass_through")
         .then(pl.concat_str([pl.lit("every unprotected pair in "), pl.col("scope")]))
@@ -264,7 +277,26 @@ def _pair_base(
         pair_uom = (
             ledger.filter(pl.col("transaction_type") == "sale")
             .group_by("customer_id", "item_id")
-            .agg(pl.col("uom_norm").drop_nulls().cast(pl.String).mode().sort().first().alias("uom"))
+            .agg(
+                pl.col("uom_norm").drop_nulls().cast(pl.String).mode().sort().first().alias("uom"),
+                # Run 6, Phase 85: a pair still trading in more than one
+                # NORMALIZED unit has no equivalence map, so one proposed
+                # price would be ambiguous - which unit does it price? Until
+                # Phase 85 the mode was taken silently, which is a choice
+                # nobody made. Counted here; the action is blocked below.
+                pl.col("uom_norm").drop_nulls().cast(pl.String).n_unique().alias("_n_uoms"),
+                # How many ship-tos the action covers (Run 6, Phase 85). At
+                # analysis_level bill_to or parent, one guidance "customer" is
+                # several shipping accounts, so one proposed price lands on
+                # all of them - which the ERP file keyed by ship-to has to
+                # know and the approver has to see. One is the common case
+                # and says nothing new; more than one is the fact.
+                (
+                    pl.col("ship_to_customer_id").drop_nulls().n_unique()
+                    if "ship_to_customer_id" in ledger.columns
+                    else pl.lit(1, dtype=pl.UInt32)
+                ).alias("_n_ship_tos"),
+            )
         )
     else:
         pair_uom = None
@@ -398,6 +430,11 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("_floor_price_cents").alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        (
+            pl.col("_n_ship_tos").cast(pl.Int64)
+            if "_n_ship_tos" in rows.columns
+            else pl.lit(1, dtype=pl.Int64)
+        ).alias("n_ship_tos"),
         pl.col("_compliance").alias("compliance_flags"),
         (
             pl.col("contract_protected").fill_null(value=False)
@@ -406,8 +443,25 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
                 if "below_floor_authorized" in rows.columns
                 else pl.lit(value=False)
             )
+            | (
+                (pl.col("_n_uoms").fill_null(1) > 1)
+                if "_n_uoms" in rows.columns
+                else pl.lit(value=False)
+            )
         ).alias("blocked"),
-        pl.when(pl.col("contract_protected").fill_null(value=False))
+        pl.when(
+            (pl.col("_n_uoms").fill_null(1) > 1)
+            if "_n_uoms" in rows.columns
+            else pl.lit(value=False)
+        )
+        .then(
+            pl.lit(
+                "the pair trades in more than one unit of measure with no "
+                "equivalence between them, so a single proposed price would be "
+                "ambiguous; map the UOM conversions or split the scope per unit"
+            )
+        )
+        .when(pl.col("contract_protected").fill_null(value=False))
         .then(
             pl.lit(
                 "contract-protected line: price actions are blocked until the "
@@ -552,6 +606,11 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("_floor_price_cents").alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        (
+            pl.col("_n_ship_tos").cast(pl.Int64)
+            if "_n_ship_tos" in rows.columns
+            else pl.lit(1, dtype=pl.Int64)
+        ).alias("n_ship_tos"),
         pl.col("_compliance").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -608,6 +667,7 @@ def _service_policy_actions(service_flags: pl.DataFrame | None, anchor: dt.date)
         pl.lit(None, dtype=pl.Int64).alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        pl.lit(1, dtype=pl.Int64).alias("n_ship_tos"),
         pl.lit("").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -682,6 +742,7 @@ def _rebate_review_actions(
         pl.lit(None, dtype=pl.Int64).alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        pl.lit(1, dtype=pl.Int64).alias("n_ship_tos"),
         pl.lit("").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -778,6 +839,9 @@ def _pass_through_actions(
                 "floor_price_cents": None,
                 "pass_through_level": level,
                 "incremental_cost_cents": incr,
+                # A scenario action is scoped to a category, not a pair, so
+                # the ship-to question does not arise for it.
+                "n_ship_tos": 1,
                 "compliance_flags": "",
                 "blocked": False,
                 "blocked_reason": None,

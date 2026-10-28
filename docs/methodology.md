@@ -1208,6 +1208,14 @@ recognize, the mapping is:
 
 ### Monthly GL variance check (Run 6)
 
+Multi-currency runs carry a standing reconciling item, stated before any
+variance is read: the engine converts each line at its invoice period's rate
+(the analytical view - a June sale is a June sale at June's rate), while a
+general ledger translated at closing or average rates values the same
+transactions differently. That gap is translation policy, not a missing
+dollar, and the tie-out says so rather than leaving a reviewer to hunt for
+an amount that is not missing.
+
 The GL comparison is a CONTROL, not a proof. Net sales and cost of goods sold
 reconcile separately per period; every month-measure shows engine total, GL
 total, signed and absolute variance, the variance percentage (no percentage is
@@ -1232,6 +1240,37 @@ Every run writes a manifest: config and mapping hashes, input file
 fingerprints (sha256), software versions, cleaning decisions, parameters,
 stage timings and sampled peak memory per stage. The DuckDB store keeps both
 views and the audit trail keyed by source line key.
+
+### Spreadsheet and hierarchy edge cases (Run 6, Phase 85)
+
+Four assumptions that were never written down, now behaviours that are:
+
+- **Formulas with no cached result.** A workbook written by a tool that never
+  evaluated its formulas stores the formula and no value. Reading those cells
+  as blanks would turn `=B2*C2` into a missing amount, and the engine would
+  then do honest arithmetic on dishonest input. It fails with the cell
+  reference and says to save the workbook or export to CSV.
+- **Hidden rows are kept and counted.** A hidden row is still data, and a
+  filtered export can hide the very lines under review, so dropping them
+  would be a decision nobody made. Every total includes them and the run
+  reports how many were hidden.
+- **Date serials are named.** An Excel cell formatted as General holds a date
+  as a day count. The error now says the values are serials and that the fix
+  is in the workbook, rather than only that they do not match the declared
+  format.
+- **Parent and child contracts.** A national agreement is signed once, at the
+  parent account, while invoice lines carry ship-to ids and often no contract
+  number. A line with no contract of its own inherits protection from a
+  contract naming its customer, bill-to or parent, where the item family and
+  the dates match; the inherited id is marked `contract_inherited` so its
+  provenance stays visible. Before this, every child line under a
+  parent-level contract was treated as freely priceable - eligible for price
+  increases on exactly the customers a contract forbids repricing.
+
+An action is also blocked when its pair trades in more than one normalized
+unit with no equivalence between them, because one proposed price would be
+ambiguous, and an action covering several ship-tos says so in its affected
+set.
 
 ### Memory at scale: the spill path (Run 6, Phase 83)
 

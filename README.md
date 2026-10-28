@@ -332,6 +332,20 @@ Rows marked informational are reported, not gated: once the model is misspecifie
 
 A mapping YAML declares column names and business meaning; ingestion fails actionably on anything undeclared. Classified transactions produce two views (clean sales observations and a complete financial ledger) and a staged waterfall with exact allocations. Prices normalize to an index against the effective-dated list price; robust z-scores flag data-quality anomalies and commercial outliers separately. Commercial segments come from a decision tree on the price index using context features only. Every feature declares its lineage and the guard refuses any that embeds the realized price, so a feature cannot pass on an innocent name; the ABC class is cut on a window that ends before the line's own period, order-size bands on quantity rather than value, and the target encoding out of fold. Segments are checked for stability by bootstrap and scored on later months the tree never saw. Price guidance is historical reference bands against an exact economic margin floor, rounded up so it always clears minimum margin. Own-price elasticity is estimated per segment by fixed-effects instrumental-variables regression with two instruments (supplier cost index, category tariff rate), and first-stage, overidentification, robustness, and weak-IV-robust diagnostics feed a four-level evidence status. Opportunity is sized at three levels that are never added together. Findings become proposed actions with guardrails, reviewed maker-checker, exported to the ERP and measured after implementation. Full detail: [`docs/methodology.md`](docs/methodology.md).
 
+## Independent review
+
+An independent methodology review raised 24 findings about the gap between
+what the labels promised and what the methods delivered. Most of the
+remediation is subtraction: numbers that used to appear now refuse to.
+Three results make the engine look worse on its own demo and are correct —
+both win curves fell to `insufficient_precision` once standard errors stopped
+treating 676 quotes from 24 customers as independent; one commercial segment
+disappeared when features embedding the price being explained were removed
+(bootstrap stability rose 0.737 → 0.884); and the spill-to-Parquet scale path
+was measured as not lowering peak memory, so it ships off by default saying
+so. Finding by finding, with before/after numbers and what is still open:
+[`docs/run6-report.md`](docs/run6-report.md).
+
 ## Honest labels and limitations
 
 - **Historical reference bands are not optimal prices.** Targets stay `provisional_historical` unless elasticity evidence supports optimization.
@@ -353,7 +367,7 @@ A mapping YAML declares column names and business meaning; ingestion fails actio
 | `tests/` | Accounting fixtures, property tests, input-format tests, recovery and coverage studies |
 | `web/` | React + TypeScript demo site with Playwright and accessibility tests |
 | `scripts/` | Validation measurement script |
-| `docs/` | `methodology.md`, `validation.json`, design plan, and UI review screenshots |
+| `docs/` | `methodology.md`, `metric-dictionary.md`, `validation.json` with its scope in `validation.md`, `run6-report.md` (the independent-review remediation), design plan, and UI review screenshots |
 | `data/sample/` | Small committed demo dataset |
 
 ## Author

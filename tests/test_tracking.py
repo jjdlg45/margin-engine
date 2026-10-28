@@ -51,6 +51,7 @@ def _action_frame(**over: Any) -> pl.DataFrame:
         "floor_price_cents": 800,
         "pass_through_level": None,
         "incremental_cost_cents": None,
+        "n_ship_tos": 1,
         "scope_key": None,
         "baseline_period": None,
         "intervention": None,

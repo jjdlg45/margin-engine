@@ -59,6 +59,7 @@ def _mk_action(
         "floor_price_cents": floor,
         "pass_through_level": None,
         "incremental_cost_cents": None,
+        "n_ship_tos": 1,
         "scope_key": None,
         "baseline_period": None,
         "intervention": None,

@@ -5953,3 +5953,168 @@ batch returncode 0, worst batch peak 3.48 GB, minimum system free memory
 2.03 GB, zero floor excursions, 1402s. tsc 0; vite build 0; Playwright 235
 passed 3 skipped after re-baselining the four methodology snapshots that
 gained the traceability block.
+
+## Phase 85 — Acceptance matrix, remaining edge cases, and the Run 6 report (2026-10-28, Run 6 branch)
+
+### 85.1 The acceptance matrix, as a registry that breaks
+
+The reviewer closed with 22 test families a remediation has to cover. The
+tests existed, written phase by phase; what did not exist was the map from
+family to tests in a form that fails when someone renames or deletes one.
+
+`tests/test_acceptance_matrix.py` is that map. Each family names the modules
+and, for the load-bearing ones, the specific tests that discharge it, and a
+test resolves every reference against the code: a module that stops importing
+or a named test that disappears fails the matrix rather than quietly thinning
+it. Five more families cover the 85.2 edge cases, so the registry holds 27.
+
+Writing it caught five references that pointed at tests which had been
+renamed since the review (`test_normal_sale_every_stage_exact` is
+`test_normal_sale`, and four more) - the exact drift the registry exists to
+make loud.
+
+### 85.2 The edge cases, and the assumptions they replaced
+
+Each was previously handled by an assumption nobody had written down.
+
+**Spreadsheet formulas with no cached result.** openpyxl's `data_only` returns
+the value Excel last computed; a workbook written by a tool that never
+computed them yields `None` for every formula cell - indistinguishable from a
+blank. Reading those as blanks turns `=B2*C2` into a missing amount and the
+engine then does honest arithmetic on dishonest input. It now fails with the
+cell reference and the fix. The second pass that looks for formulas runs only
+when the first pass saw nulls, so the common case (blanks everywhere in real
+exports) costs nothing.
+
+**Hidden rows are kept and counted.** A hidden row is still data, and a
+filtered export can hide the very lines under review, so dropping them would
+be a decision nobody made. Counting them needed care: openpyxl's read-only
+worksheets - which the loader uses, because holding a 10M-line workbook in the
+cell model is not an option - do not expose row dimensions, so the `hidden="1"`
+flag is read straight from the sheet XML in the zip, streamed in chunks.
+
+**Date serials are named as serials.** 45678 is 2025-01-15 in Excel's day
+count. The actionable error used to say only that the values did not match the
+declared format, which is true and useless: the fix is in the workbook. The
+hint fires only for values inside the plausible business range, so a misread
+format is not explained as a serial problem.
+
+**Mapping changes between runs.** The config fingerprint hashed the rules file
+alone. A mapping change redefines what the numbers mean - a different cost
+basis, a different sign convention - so a proposal generated under the old
+mapping must not look current under the new one. It now hashes both.
+
+**An action spanning multiple units** is blocked: a pair still trading in more
+than one normalized unit with no equivalence between them has no single
+unambiguous price. The mode used to be taken silently. **An action spanning
+several ship-tos** says so in its affected set ("one customer-item pair
+covering 3 ship-to accounts"), because at analysis level bill-to or parent one
+guidance customer is several shipping accounts and the ERP file keyed by
+ship-to has to know.
+
+**Parent and child contracts.** A national agreement is signed once, at the
+parent account, while invoice lines carry ship-to ids and often no contract
+number of their own. Protection was the line's own `contract_id` and nothing
+else, so **every child line under a parent-level contract was treated as
+freely priceable** - eligible for price-increase actions on exactly the
+customers a contract forbids repricing. A line with no contract of its own now
+inherits from a contract naming its customer, bill-to or parent where family
+and dates match, marked `contract_inherited` so the provenance stays visible.
+A line's own contract always wins.
+
+**FX analytical vs book translation.** The engine converts each line at its
+invoice period's rate; a GL translated at closing or average rates values the
+same transactions differently. The tie-out now states that as a standing
+reconciling item before any variance is read, so a reviewer does not hunt for
+an amount that is not missing.
+
+### A defect found by writing the test
+
+The hidden-row regex was written through a shell heredoc, which turned `\b`
+into a literal backspace byte (`\x08`) inside the pattern. It compiled, ran,
+matched nothing, and would have shipped as "hidden rows are counted" while
+counting none. The test caught it immediately; a repo-wide sweep for control
+characters in Python sources came back clean (0 files).
+
+The first end-to-end hidden-row test was also wrong in my favour: it compared
+the ledger height to the source CSV row count, which differ legitimately
+because classification drops verified duplicates. Rewritten as an A/B between
+two runs of the same workbook differing only in which rows are hidden - same
+ledger height, same net total, and only the filtered run carries the note.
+
+### 85.3 The report
+
+`docs/run6-report.md`: every finding 1-24 with what changed, the tests, the
+measured before/after numbers, what is still open and six decisions for the
+owner. Current-state figures are read from the committed artifacts
+(`bundle.json`, `validation.json`); before/after figures are quoted from the
+phase entries above, with the build-log line checked for each one. Where a
+figure has moved since the phase that recorded it - later phases changed the
+demo - both appear.
+
+Writing it caught one more unverified figure of my own: the report said
+Phase 76's cross-fitting cost "+0.58 s at 210k lines", a number this log does
+not contain. The measured figures are the stage A/B median 2.25 s -> 3.06 s
+(+23%) and, inside the end-to-end run, 3.07 s -> 3.54 s (+0.47 s). Corrected
+before the commit.
+
+README gains an "Independent review" section and the report link; the
+methodology gains the Phase 85 behaviours and the translation-policy note. The
+metric dictionary needed no change - it is generated from
+`src/margin_engine/metrics.py` with a test asserting they match, and Phase 85
+added no metric. The validation table likewise: generated from
+`docs/validation.json`, which has not been regenerated since Phase 71, with a
+test asserting the documents match it.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (210 files); mypy src api 0 (96 files,
+strict). Full pytest green: **844 tests in 70 files**, 24 batches each in its
+own process, every batch returncode 0, worst batch peak 3.41 GB, 1473s. tsc 0;
+vitest 22/22; vite build 0; Playwright 235 passed 3 skipped (exit 0) with no
+snapshot changes.
+
+The `n_ship_tos` schema addition needed six call sites updated (five test
+fixtures that enumerate every action column, and the manual-propose route);
+an earlier suite run failed on two of them before they were found. Real
+deployments need no migration: the action store already fills missing schema
+columns with null, and `fill_null(1)` reads that as one ship-to.
+
+Only change in the regenerated demo bundle: `manifest.config_fingerprint`
+4284a56ca8413cb1 -> 017bb804a65712bb, because the fingerprint now hashes the
+mapping as well as the rules. That single visible difference is what "outputs
+keep mapping/config version" means.
+
+Memory: one batch (3.41 GB peak) touched the 2.0 GB floor once for 0.2 s,
+bottoming at 1.91 GB - above the 1.2 GB hard-kill line and far shorter than
+the 3-second sustained rule. Reported with its duration because the Phase 78
+watchdog change made that possible.
+
+### Verified like CI, from a fresh clone
+
+`run6` cloned to a temp folder at `60f8a59` and run as CI would, so nothing
+could depend on a file that exists only on this machine:
+
+| Step | Result |
+|---|---|
+| `uv sync --frozen --all-groups` | resolved from the lock, no drift |
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 (210 files) |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| Full pytest, 24 batches | every batch returncode 0, worst peak 3.48 GB, 1462s |
+| `margin-engine export-web --demo` | bundle + schema written |
+| `npm ci` | clean install from the lockfile |
+| `npx tsc --noEmit` | 0 |
+| `npm run build` | 0 |
+| `CI=true SKIP_SNAPSHOTS=1 npx playwright test` | 235 passed, 3 skipped |
+
+The clone's only `git status` entry after the run was
+`web/public/data/schema.json`, and it is **byte-identical** to the committed
+file (0 CRLF in both) - a Windows autocrlf flag, not output drift. Verified
+rather than assumed, because "the clone came back clean" is the kind of claim
+this run exists to check.
+
+The clone is still on disk at `C:\Projects\me-verify` (1.3 GB): removing it
+needed a recursive delete that this session's permissions refused, across
+three attempts. Left for the owner to delete; recorded here rather than
+claiming a cleanup that did not happen.

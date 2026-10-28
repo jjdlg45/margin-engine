@@ -789,6 +789,8 @@ async def propose(
             "floor_price_cents": [floor],
             "pass_through_level": [None],
             "incremental_cost_cents": [None],
+            # A hand-written proposal names one pair; the ship-to span is 1.
+            "n_ship_tos": [1],
             # Scope metadata (Phase 68): manual price proposals share the same
             # uniqueness unit as generated ones (no effective date yet).
             "scope_key": [
