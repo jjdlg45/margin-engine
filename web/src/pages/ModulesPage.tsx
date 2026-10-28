@@ -9,6 +9,61 @@ import type { OptionalModules } from "../types/bundle";
 import { usePageData } from "../lib/queries";
 import { count, dollars, num, pct } from "../lib/format";
 
+type WinCurveRow = NonNullable<OptionalModules["win_curves"]>[number];
+
+/** Plain words for the level standard errors were grouped at. Quotes to one
+ * customer, or on one opportunity, are not independent draws, and the number
+ * of groups - not the number of rows - is what the precision gate reads. */
+function clusterWords(level: string | undefined): string {
+  switch (level) {
+    case "quote":
+      return "opportunities";
+    case "customer":
+      return "customers";
+    case "rep":
+      return "sales reps";
+    default:
+      return "rows";
+  }
+}
+
+function holdoutWords(w: WinCurveRow): string {
+  if (w.calibration_status === "not testable" || w.calibration_slope == null) {
+    return "not testable";
+  }
+  const shape =
+    w.calibration_status === "calibrated" ? "right shape" : "wrong shape out of sample";
+  return `${shape} (slope ${w.calibration_slope.toFixed(2)} on ${w.holdout_n} quotes)`;
+}
+
+function QuoteIntakeBlock({ intake }: { intake: NonNullable<OptionalModules["quote_intake"]> }) {
+  return (
+    <div className="mt-4 max-w-2xl text-sm">
+      <p className="m-0">
+        {count(intake.n_modeled)} of {count(intake.n_rows)} quote rows were modeled, one
+        observation per {intake.unit === "opportunity" ? "opportunity" : "quote line"}. Only
+        quotes with a decision - won or lost - are evidence about price.
+      </p>
+      {intake.excluded.length > 0 && (
+        <ul className="m-0 mt-2 list-disc pl-5" data-testid="quote-exclusions">
+          {intake.excluded.map((e) => (
+            <li key={e.reason}>
+              {count(e.n)} excluded: {e.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+      {intake.notes.length > 0 && (
+        <ul className="m-0 mt-2 list-disc pl-5 text-caption">
+          {intake.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ModulesBody({ m }: { m: OptionalModules }) {
   return (
     <>
@@ -27,6 +82,8 @@ function ModulesBody({ m }: { m: OptionalModules }) {
                   <th>Price coefficient</th>
                   <th>95% CI</th>
                   <th>Negotiation gap</th>
+                  <th>Independent groups</th>
+                  <th>Held-out check</th>
                   <th className="left">Status</th>
                 </tr>
               </thead>
@@ -34,7 +91,13 @@ function ModulesBody({ m }: { m: OptionalModules }) {
                 {m.win_curves.map((w) => (
                   <tr key={w.segment}>
                     <td>{w.segment}</td>
-                    <td>{count(w.n_quotes)}</td>
+                    <td>
+                      {count(w.n_quotes)}
+                      <span className="text-caption">
+                        {" "}
+                        ({count(w.n_won ?? 0)} won, {count(w.n_lost ?? 0)} lost)
+                      </span>
+                    </td>
                     <td>{pct(w.win_rate)}</td>
                     <td>{w.price_coef !== null ? num(w.price_coef) : "—"}</td>
                     <td>
@@ -43,6 +106,12 @@ function ModulesBody({ m }: { m: OptionalModules }) {
                         : "—"}
                     </td>
                     <td>{w.negotiation_gap !== null ? pct(w.negotiation_gap) : "—"}</td>
+                    <td title={`Standard errors grouped by ${clusterWords(w.cluster_level)}`}>
+                      {w.n_clusters != null
+                        ? `${count(w.n_clusters)} ${clusterWords(w.cluster_level)}`
+                        : "not grouped"}
+                    </td>
+                    <td>{holdoutWords(w)}</td>
                     <td>
                       <StatusChip status={w.status} reason={w.reasons || undefined} />
                     </td>
@@ -54,6 +123,7 @@ function ModulesBody({ m }: { m: OptionalModules }) {
         ) : (
           <EmptyState title="Win/loss modeling is off">{m.win_curves_absent_reason}</EmptyState>
         )}
+        {m.quote_intake && <QuoteIntakeBlock intake={m.quote_intake} />}
       </Section>
       <Section
         title="Cross-price effects"

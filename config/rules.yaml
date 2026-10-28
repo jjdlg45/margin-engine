@@ -165,6 +165,24 @@ sensitivity:
   # it. The Cameron-Gelbach-Miller two-way form absorbs both that and the
   # within-month correlation across the items a customer buys.
   cluster_level: month_customer
+  # Quote intake (Run 6, Phase 77). Only a decided quote is evidence about
+  # price: before this, anything that was not "W" counted as a loss, so an
+  # open quote read as the customer saying no. A code in none of these lists
+  # is excluded as unrecognized, never assumed to be a loss.
+  quote_outcome_won: [W, WON, WIN, ACCEPTED]
+  quote_outcome_lost: [L, LOST, LOSS, REJECTED]
+  quote_outcome_open: [O, OPEN, PENDING, QUOTED]
+  quote_outcome_withdrawn: [X, WITHDRAWN, CANCELLED, CANCELED]
+  quote_outcome_expired: [E, EXPIRED, LAPSED]
+  # One decision is one observation: with a quote id, revisions collapse to
+  # the latest version of their opportunity.
+  quote_unit: auto
+  win_curve_controls: [time, log_quantity]
+  # Quotes to one customer are not independent draws.
+  win_curve_cluster: auto
+  win_curve_holdout_share: 0.25
+  win_curve_min_holdout: 100
+  win_curve_calibration_band: [0.5, 2.0]
   # Small-cluster policy (Run 6, Phase 73). Clustering where an instrument is
   # ASSIGNED is the correct level and the expensive one: twelve suppliers are
   # twelve independent groups however many invoice lines they cover.

@@ -1237,11 +1237,35 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
                 negotiation_gap=_r(r.get("negotiation_gap")),
                 status=str(r["status"]),
                 reasons=str(r.get("reasons") or ""),
+                n_won=_i(r.get("n_won") or 0),
+                n_lost=_i(r.get("n_lost") or 0),
+                cluster_level=str(r.get("cluster_level") or "none"),
+                n_clusters=_i(r["n_clusters"]) if r.get("n_clusters") is not None else None,
+                controls=str(r.get("controls") or ""),
+                holdout_n=_i(r.get("holdout_n") or 0),
+                calibration_slope=_r(r.get("calibration_slope")),
+                calibration_intercept=_r(r.get("calibration_intercept")),
+                brier=_r(r.get("brier")),
+                auc=_r(r.get("auc")),
+                calibration_status=str(r.get("calibration_status") or "not testable"),
             )
             for r in res.win_curves.sort("segment").to_dicts()
         ]
     else:
         win_reason = "No quotes table (or no price list) in the mapped data."
+    intake = None
+    if res.quote_intake is not None:
+        raw = res.quote_intake
+        intake = QuoteIntakeModel(
+            n_rows=raw.n_rows,
+            unit=raw.unit,
+            n_modeled=raw.n_modeled,
+            excluded=[
+                QuoteExclusion(reason=describe_exclusion(k), n=n)
+                for k, n in sorted(raw.excluded.items())
+            ],
+            notes=list(raw.notes),
+        )
     cross = None
     cross_reason = None
     if res.cross_estimates is not None:
@@ -1291,6 +1315,7 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
     return OptionalModules(
         win_curves=win,
         win_curves_absent_reason=win_reason,
+        quote_intake=intake,
         cross_price=cross,
         cross_price_absent_reason=cross_reason,
         inventory=inventory,
@@ -1299,6 +1324,9 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
 
 
 # Imported late to keep the model namespace tidy at the top of the module.
+from margin_engine.extended.quotes import describe_exclusion  # noqa: E402
+from margin_engine.webexport.bundle import QuoteExclusion  # noqa: E402
+from margin_engine.webexport.bundle import QuoteIntake as QuoteIntakeModel  # noqa: E402
 from margin_engine.webexport.bundle import WinCurve as WinCurveModel  # noqa: E402
 
 

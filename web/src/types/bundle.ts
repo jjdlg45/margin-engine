@@ -322,10 +322,28 @@ export type NFlagged = number;
 export type NSalesCosted = number;
 export type TimingStatement = string;
 export type InventoryAbsentReason = string | null;
+export type N = number;
+export type Reason1 = string;
+export type Excluded = QuoteExclusion[];
+export type NModeled = number;
+export type NRows1 = number;
+export type Notes2 = string[];
+export type Unit = string;
 export type WinCurves = WinCurve[] | null;
+export type Auc = number | null;
+export type Brier = number | null;
+export type CalibrationIntercept = number | null;
+export type CalibrationSlope = number | null;
+export type CalibrationStatus = string;
 export type CiHigh = number | null;
 export type CiLow = number | null;
+export type ClusterLevel = string;
+export type Controls = string;
+export type HoldoutN = number;
+export type NClusters1 = number | null;
+export type NLost = number;
 export type NQuotes = number;
+export type NWon = number;
 export type NegotiationGap = number | null;
 export type PriceCoef = number | null;
 export type PriceCoefSe = number | null;
@@ -416,7 +434,7 @@ export type Plain = string;
  */
 export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
-export type Notes2 = string[];
+export type Notes3 = string[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
 export type AnalyticCiHigh = number | null;
@@ -488,7 +506,7 @@ export type MarketControlUsed = boolean;
 export type MarketControlWithinCellValues = number | null;
 export type MaxClusterVariationShare = number | null;
 export type NAbsorbedParameters1 = number | null;
-export type NClusters1 = number | null;
+export type NClusters2 = number | null;
 export type NClustersByDimension = string | null;
 export type NClustersWithInstrumentVariation = number | null;
 export type NIdentifiedInstruments = number | null;
@@ -943,6 +961,7 @@ export interface OptionalModules {
   cross_price_absent_reason: CrossPriceAbsentReason;
   inventory: InventorySection | null;
   inventory_absent_reason: InventoryAbsentReason;
+  quote_intake?: QuoteIntake | null;
   win_curves: WinCurves;
   win_curves_absent_reason: WinCurvesAbsentReason;
 }
@@ -968,10 +987,35 @@ export interface InventorySection {
   n_sales_costed: NSalesCosted;
   timing_statement: TimingStatement;
 }
+/**
+ * Run 6, Phase 77: every quote row, and where it went.
+ */
+export interface QuoteIntake {
+  excluded: Excluded;
+  n_modeled: NModeled;
+  n_rows: NRows1;
+  notes: Notes2;
+  unit: Unit;
+}
+export interface QuoteExclusion {
+  n: N;
+  reason: Reason1;
+}
 export interface WinCurve {
+  auc?: Auc;
+  brier?: Brier;
+  calibration_intercept?: CalibrationIntercept;
+  calibration_slope?: CalibrationSlope;
+  calibration_status?: CalibrationStatus;
   ci_high: CiHigh;
   ci_low: CiLow;
+  cluster_level?: ClusterLevel;
+  controls?: Controls;
+  holdout_n?: HoldoutN;
+  n_clusters?: NClusters1;
+  n_lost?: NLost;
   n_quotes: NQuotes;
+  n_won?: NWon;
   negotiation_gap: NegotiationGap;
   price_coef: PriceCoef;
   price_coef_se: PriceCoefSe;
@@ -1021,7 +1065,7 @@ export interface SegmentsSection {
   index_distribution: IndexDistribution;
   margin_driver_note: MarginDriverNote;
   margin_driver_rules: MarginDriverRules;
-  notes?: Notes2;
+  notes?: Notes3;
   recommendation_change_share: RecommendationChangeShare;
   rules: Rules;
 }
@@ -1124,7 +1168,7 @@ export interface SensitivitySegment {
   market_control_within_cell_values?: MarketControlWithinCellValues;
   max_cluster_variation_share?: MaxClusterVariationShare;
   n_absorbed_parameters?: NAbsorbedParameters1;
-  n_clusters?: NClusters1;
+  n_clusters?: NClusters2;
   n_clusters_by_dimension?: NClustersByDimension;
   n_clusters_with_instrument_variation?: NClustersWithInstrumentVariation;
   n_identified_instruments?: NIdentifiedInstruments;

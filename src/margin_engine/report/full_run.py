@@ -24,6 +24,7 @@ from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
 from margin_engine.extended.hierarchy import apply_analysis_level
+from margin_engine.extended.quotes import QuoteIntake
 from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.labels import describe, plain_rule
@@ -79,6 +80,7 @@ class FullRunResult:
     customer_economics: pl.DataFrame | None = None
     service_flags: pl.DataFrame | None = None
     win_curves: pl.DataFrame | None = None
+    quote_intake: QuoteIntake | None = None
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
     inventory_identity: pl.DataFrame | None = None
@@ -603,8 +605,13 @@ def run_full(
         res.notes.append("inventory costing OFF: no inventory_receipts table in the mapping/data")
 
     win_curves: pl.DataFrame | None = None
+    intake_payload: QuoteIntake | None = None
     if res.reference["quotes"] is not None and res.reference["price_list"] is not None:
-        from margin_engine.extended.quotes import fit_win_curves, quote_price_index
+        from margin_engine.extended.quotes import (
+            describe_exclusion,
+            fit_win_curves,
+            quote_price_index,
+        )
 
         seg_of_pair = (
             df.filter(pl.col("segment_leaf").is_not_null())
@@ -612,13 +619,16 @@ def run_full(
             .unique(subset=["customer_id", "item_id"])
         )
         qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-        win_curves = fit_win_curves(
-            qi,
-            seg_of_pair,
-            min_quotes=rules.sensitivity.min_quotes_per_segment,
-            max_rel_se=rules.sensitivity.win_curve_max_rel_se,
+        win_curves, quote_intake = fit_win_curves(qi, seg_of_pair, rules)
+        res.notes.append(
+            f"win/loss modeling ran on the quotes table: {quote_intake.n_modeled} of "
+            f"{quote_intake.n_rows} rows modeled, one observation per "
+            f"{quote_intake.unit}"
         )
-        res.notes.append("win/loss modeling ran on the quotes table")
+        for reason, n in sorted(quote_intake.excluded.items()):
+            res.notes.append(f"quotes excluded, {describe_exclusion(reason)}: {n}")
+        res.notes.extend(quote_intake.notes)
+        intake_payload = quote_intake
     else:
         res.notes.append("win/loss modeling OFF: no quotes table (or no price list) available")
 
@@ -1178,6 +1188,7 @@ def run_full(
         customer_economics=cts.customer_economics,
         service_flags=cts.service_flags,
         win_curves=win_curves,
+        quote_intake=intake_payload,
         cross_estimates=cross_estimates,
         inventory_cogs=inventory_cogs,
         inventory_identity=inventory_identity,

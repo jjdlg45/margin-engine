@@ -456,6 +456,34 @@ class WinCurve(BaseModel):
     negotiation_gap: float | None
     status: str
     reasons: str
+    # Run 6, Phase 77: what was modeled, how it was clustered, and whether its
+    # probabilities held up on quotes it had not seen.
+    n_won: int = 0
+    n_lost: int = 0
+    cluster_level: str = "none"
+    n_clusters: int | None = None
+    controls: str = ""
+    holdout_n: int = 0
+    calibration_slope: float | None = None
+    calibration_intercept: float | None = None
+    brier: float | None = None
+    auc: float | None = None
+    calibration_status: str = "not testable"
+
+
+class QuoteExclusion(BaseModel):
+    reason: str
+    n: int
+
+
+class QuoteIntake(BaseModel):
+    """Run 6, Phase 77: every quote row, and where it went."""
+
+    n_rows: int
+    unit: str
+    n_modeled: int
+    excluded: list[QuoteExclusion]
+    notes: list[str]
 
 
 class CrossPriceEstimate(BaseModel):
@@ -488,6 +516,7 @@ class InventorySection(BaseModel):
 class OptionalModules(BaseModel):
     win_curves: list[WinCurve] | None
     win_curves_absent_reason: str | None
+    quote_intake: QuoteIntake | None = None
     cross_price: list[CrossPriceEstimate] | None
     cross_price_absent_reason: str | None
     inventory: InventorySection | None

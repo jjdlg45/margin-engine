@@ -95,6 +95,33 @@ test("segments page: the later-period test is shown with its baseline", async ({
   }
 });
 
+test("modules page: the win curves say what they modeled and what they left out", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/modules");
+  const intake = bundle.optional_modules.quote_intake;
+  expect(intake).toBeTruthy();
+  // Every quote row is accounted for: modeled plus excluded equals the total.
+  const excluded = intake!.excluded.reduce((a, e) => a + e.n, 0);
+  expect(intake!.n_modeled + excluded).toBe(intake!.n_rows);
+  await expect(
+    page.getByText("Only quotes with a decision - won or lost - are evidence", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  if (intake!.excluded.length > 0) {
+    const list = page.getByTestId("quote-exclusions");
+    await expect(list).toBeVisible();
+    for (const e of intake!.excluded) {
+      await expect(list).toContainText(e.reason);
+    }
+  }
+  // The precision gate reads independent groups, so the page shows them.
+  await expect(page.getByText("Independent groups", { exact: true })).toBeVisible();
+  await expect(page.getByText("Held-out check", { exact: true })).toBeVisible();
+});
+
 test("sensitivity page: segment rows match the bundle", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/sensitivity");

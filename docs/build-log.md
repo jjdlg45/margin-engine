@@ -5142,3 +5142,131 @@ and methodology.
 
 The 811k-line Run-1 performance target is not measured here; it runs in CI
 (`benchmark.yml`), as recorded above.
+
+## Phase 77 — Win curves beyond a standard-error gate (2026-10-27, Run 6 branch)
+
+Finding 21. The win/loss model had a precision gate and nothing behind it:
+the gate was reading standard errors computed from quotes that were not
+independent, on a sample that included quotes nobody had decided, counting
+each revision of a negotiation as a fresh draw.
+
+### Only a decided quote is evidence about price
+
+`outcome == "W"` was a win and **everything else was a loss**. An open quote -
+no decision yet - counted as the customer saying no. A quote withdrawn
+because the customer's project was cancelled counted as a price rejection.
+
+Outcome codes are now classified against configured lists
+(`quote_outcome_won`, `_lost`, `_open`, `_withdrawn`, `_expired`);
+open, withdrawn and expired quotes are excluded with a reason and counted,
+and a code in none of the lists is excluded as `outcome_not_recognized` with
+the offending codes named, never read as a loss. Modeled plus excluded equals
+the rows that came in, and the Modules page shows the split.
+
+The direction of the old bias matters. On a planted world where withdrawn and
+expired quotes cluster at low prices - projects that fell through, nothing to
+do with price - counting them as losses makes cheap quotes appear to lose and
+**flattens the curve**: it understates how much price matters, which is the
+direction that flatters a price increase. The test measures both: the Phase 77
+intake recovers the planted coefficient within 15%, the old rule does not, and
+the biased estimate is strictly closer to zero.
+
+### One decision is one observation
+
+Where the mapping provides `quote_id` the unit is the opportunity and only
+the latest revision is modeled; without one the unit is the quote line and
+the output says so rather than implying otherwise. Counting revisions
+separately triples a deal's weight and, because revisions walk the price
+down, tilts the curve toward the prices that needed revising - measured: with
+two revisions per opportunity, collapsing them recovers the planted
+coefficient and leaving them in does not.
+
+`quote_unit: opportunity` without a mapped `quote_id` fails with an
+actionable message rather than silently falling back.
+
+### Quotes are not independent draws
+
+Standard errors now cluster at the finest level the data supports -
+opportunity, then customer, then rep - and the number of groups is reported
+beside the coefficient, because that is what the precision gate is actually
+reading.
+
+**This changes the demo.** Both segments drop from `estimated_win_curve` to
+`insufficient_precision`:
+
+| Segment | Quotes | Customers | Coefficient | SE | Before | After |
+|---|---|---|---|---|---|---|
+| 6 | 676 (353 won, 323 lost) | 24 | -7.40 | 1.04 | estimated | insufficient precision |
+| 24 | 1,140 (580 won, 560 lost) | 49 | -3.45 | 0.59 | estimated | insufficient precision |
+
+676 quotes from 24 customers are not 676 independent observations, and the
+relative standard error says so once it is computed correctly. Nothing was
+tightened: the 10% relative-SE bar is unchanged, and the standard error it
+reads is now the right one. The validation world (200 customers) still clears
+it - `test_win_curve_every_estimated_segment_within_15pct` requires at least
+two estimated segments and passes - so the section 8 target holds where there
+is enough independent data, and fails closed where there is not.
+
+Demo opportunity totals are unchanged ($413,735.22 gross, 611 records): the
+win curve was not driving optimization there, which needs causal-supported
+elasticity *and* an estimated curve.
+
+### Calibration on quotes the curve has not seen
+
+In sample a logistic fit is calibrated by construction, so the check is a
+time split: refit on the earlier quotes, score the later ones, and report the
+calibration slope and intercept, the Brier score and the c-statistic. Outside
+`win_curve_calibration_band` the status drops to `insufficient_precision`
+however tight the standard error is - a precise curve of the wrong shape is
+worse than an imprecise one. Too few held-out quotes is reported as "not
+testable", which is neither a pass nor a failure.
+
+On the demo both segments are calibrated (slopes 0.95 and 1.35 on 169 and 285
+held-out quotes); they fail the phase on clustering alone.
+
+### Tests added
+
+`tests/test_win_curves.py`, 17 tests on worlds whose win curve is known
+exactly.
+
+The taxonomy: codes map case- and space-insensitively, an unknown code is
+excluded and named, a missing outcome column switches the module off instead
+of guessing, and modeled plus excluded equals the input.
+
+The bias: the planted coefficient is recovered with the new intake and is not
+with the old rule, and the old rule's error is toward zero.
+
+Revisions: only the latest version survives, the unit resolves to the
+opportunity when a quote id exists and to the line when it does not, asking
+for opportunities without one fails actionably, and leaving revisions in
+moves the estimate away from the truth.
+
+Clustering: the level is the finest the data supports, clustering widens the
+interval on a world with 25 customers and 3,000 quotes while leaving the
+point estimate identical, and `none` turns it off.
+
+Calibration: a well-specified curve is calibrated out of sample with a sane
+Brier score and c-statistic; a world whose price sensitivity collapses in the
+second year is precise, wrong, and caught only by the held-out check; too few
+held-out quotes reports "not testable" and does not block the status.
+
+`tests/test_quotes.py` follows the new signature and supplies the outcome
+column it models. `web/e2e/pages.spec.ts` checks the intake block, the
+exclusion list and the two new columns, and asserts modeled plus excluded
+equals the total on the page's own data.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (199 files); mypy src api 0 (93 files,
+strict). Full pytest green: 720 tests in 64 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.28 GB, 1183s. tsc 0;
+vitest 22/22; vite build 0; Playwright 231 passed 3 skipped (exit 0) after
+re-baselining the four modules-page snapshots whose table gained the
+independent-groups and held-out-check columns and the quote intake block.
+
+Memory note: the minimum free-memory reading during the batched run was
+1.77 GB, under the 2.0 GB floor. The watchdog did not abort because its rule
+only counts a shortfall against the run when the process tree is itself a
+meaningful consumer, and Windows reports dirty file-cache pages from the
+synthetic-world CSV writes as unavailable. Recorded rather than smoothed
+over; no batch exceeded 3.28 GB of its own.

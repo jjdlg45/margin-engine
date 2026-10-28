@@ -738,6 +738,37 @@ class SensitivityConfig(StrictModel):
     # standard error (se / |coefficient|) is at or under this; noisier fits are
     # insufficient_precision -- reported with their CI, never accuracy-gated.
     win_curve_max_rel_se: float = Field(default=0.10, gt=0)
+    # --- quote intake (Run 6, Phase 77) -------------------------------------
+    # Which source outcome codes mean what. Only decided quotes - won or lost
+    # - can enter a win/loss model; an open quote has no outcome yet and a
+    # withdrawn one was never decided on price. Before Phase 77 anything that
+    # was not "W" counted as a loss, which turns an unfinished pipeline into
+    # evidence that the price was too high. A code in none of these lists is
+    # excluded as unrecognized and reported, never assumed to be a loss.
+    quote_outcome_won: tuple[str, ...] = ("W", "WON", "WIN", "ACCEPTED")
+    quote_outcome_lost: tuple[str, ...] = ("L", "LOST", "LOSS", "REJECTED")
+    quote_outcome_open: tuple[str, ...] = ("O", "OPEN", "PENDING", "QUOTED")
+    quote_outcome_withdrawn: tuple[str, ...] = ("X", "WITHDRAWN", "CANCELLED", "CANCELED")
+    quote_outcome_expired: tuple[str, ...] = ("E", "EXPIRED", "LAPSED")
+    # What one observation is. "auto" uses the opportunity (quote_id) when the
+    # mapping provides one and the line otherwise, and says which it used.
+    # Revisions of the same opportunity are one decision, not several, so only
+    # the latest version of each is modeled.
+    quote_unit: Literal["auto", "line", "opportunity"] = "auto"
+    # Covariates beyond the price index, used where the column exists.
+    win_curve_controls: tuple[str, ...] = ("time", "log_quantity")
+    # Standard errors cluster here. Quotes on one opportunity, to one customer
+    # or from one rep are not independent draws. "auto" takes the finest level
+    # the data supports (opportunity, then customer, then rep).
+    win_curve_cluster: Literal["auto", "quote", "customer", "rep", "none"] = "auto"
+    # The most recent share of quotes is held out to check whether the fitted
+    # probabilities are calibrated out of sample, not only precise in sample.
+    win_curve_holdout_share: float = Field(default=0.25, gt=0, lt=1)
+    win_curve_min_holdout: int = Field(default=100, ge=10)
+    # A holdout calibration slope outside this band means the curve's
+    # probabilities are the wrong shape, however tight its standard error:
+    # the status drops to insufficient_precision with that reason.
+    win_curve_calibration_band: tuple[float, float] = (0.5, 2.0)
     min_price_variation_cv: float = Field(default=0.01, ge=0)
 
 

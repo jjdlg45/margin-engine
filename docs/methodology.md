@@ -1103,7 +1103,60 @@ Statuses are fail-closed:
   (default 0.10), so the data does not support the accuracy an estimated curve
   claims. Coefficient, SE and CI stay reported; the status keeps the curve out
   of accuracy gating and win-aware optimization.
-- `estimated_win_curve` — fitted within the precision gate.
+- `estimated_win_curve` — fitted within the precision gate and calibrated on
+  held-out quotes (or with too few held-out quotes to test, which the output
+  says rather than assumes).
+
+### What counts as evidence (Run 6, Phase 77)
+
+Three things had to be fixed before any of the above means anything
+(Finding 21).
+
+**Only a decided quote is evidence about price.** The Run 2 implementation
+read `outcome == "W"` as a win and *everything else* as a loss. An open quote
+- no decision yet - therefore counted as the customer saying no, and a quote
+withdrawn because the customer's project was cancelled counted as a price
+rejection. Outcome codes are now classified against configured lists
+(`sensitivity.quote_outcome_won` and its siblings); open, withdrawn and
+expired quotes are excluded with a reason and counted, and a code in none of
+the lists is excluded as unrecognized rather than read as a loss. Modeled
+plus excluded equals the rows that came in, and the report shows the split.
+
+This is not a small correction. On a planted world where withdrawn and
+expired quotes cluster at low prices - projects that fell through, nothing to
+do with price - the old rule recovers a price coefficient biased toward zero,
+because cheap quotes appear to lose. It understates how much price matters,
+which is the direction that flatters a price increase.
+
+**One decision is one observation.** Revisions of the same opportunity are
+one negotiation. Where the mapping provides `quote_id` the unit is the
+opportunity and only the latest version is modeled, with the collapsed
+revisions counted; without one the unit is the quote line and the report says
+so. Counting revisions separately triples a deal's weight and, because
+revisions usually walk the price down, tilts the curve toward the prices that
+needed revising.
+
+**Quotes are not independent draws.** Standard errors cluster at the
+opportunity, customer or rep level - the finest the data supports - and the
+number of groups is reported beside the coefficient, because that, not the
+row count, is what the precision gate is reading. On the committed demo
+sample this is decisive: 676 quotes from 24 customers and 1,140 from 49 are
+not 676 and 1,140 independent observations, and both segments drop from
+estimated to `insufficient_precision` once the standard errors say so.
+
+**Calibration on quotes the curve has not seen.** In sample a logistic fit is
+calibrated by construction, so the check is a time split: refit on the
+earlier quotes, score the later ones, and report the calibration slope and
+intercept (from a logistic regression of the held-out outcome on the fitted
+log-odds), the Brier score and the c-statistic. A slope of 1 means the
+probabilities are the right shape; outside
+`sensitivity.win_curve_calibration_band` the status drops to
+`insufficient_precision` however tight the standard error is, because a
+precise curve of the wrong shape is worse than an imprecise one. Too few
+held-out quotes is reported as "not testable" - not as a pass.
+
+Controls for time and deal size enter where the columns exist, and the
+controls actually used are named on each row.
 
 The precision threshold is calibrated so that estimated curves recover planted
 coefficients within +/-15 percent per segment: across validation worlds, every

@@ -2032,6 +2032,17 @@
      ],
      "title": "Inventory Absent Reason"
     },
+    "quote_intake": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/QuoteIntake"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "win_curves": {
      "anyOf": [
       {
@@ -2200,6 +2211,64 @@
     "n_commercial_outlier_flags"
    ],
    "title": "PeerGroupStat",
+   "type": "object"
+  },
+  "QuoteExclusion": {
+   "properties": {
+    "n": {
+     "title": "N",
+     "type": "integer"
+    },
+    "reason": {
+     "title": "Reason",
+     "type": "string"
+    }
+   },
+   "required": [
+    "reason",
+    "n"
+   ],
+   "title": "QuoteExclusion",
+   "type": "object"
+  },
+  "QuoteIntake": {
+   "description": "Run 6, Phase 77: every quote row, and where it went.",
+   "properties": {
+    "excluded": {
+     "items": {
+      "$ref": "#/$defs/QuoteExclusion"
+     },
+     "title": "Excluded",
+     "type": "array"
+    },
+    "n_modeled": {
+     "title": "N Modeled",
+     "type": "integer"
+    },
+    "n_rows": {
+     "title": "N Rows",
+     "type": "integer"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "unit": {
+     "title": "Unit",
+     "type": "string"
+    }
+   },
+   "required": [
+    "n_rows",
+    "unit",
+    "n_modeled",
+    "excluded",
+    "notes"
+   ],
+   "title": "QuoteIntake",
    "type": "object"
   },
   "ReconciliationCheck": {
@@ -4153,6 +4222,59 @@
   },
   "WinCurve": {
    "properties": {
+    "auc": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Auc"
+    },
+    "brier": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Brier"
+    },
+    "calibration_intercept": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Calibration Intercept"
+    },
+    "calibration_slope": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Calibration Slope"
+    },
+    "calibration_status": {
+     "default": "not testable",
+     "title": "Calibration Status",
+     "type": "string"
+    },
     "ci_high": {
      "anyOf": [
       {
@@ -4175,8 +4297,45 @@
      ],
      "title": "Ci Low"
     },
+    "cluster_level": {
+     "default": "none",
+     "title": "Cluster Level",
+     "type": "string"
+    },
+    "controls": {
+     "default": "",
+     "title": "Controls",
+     "type": "string"
+    },
+    "holdout_n": {
+     "default": 0,
+     "title": "Holdout N",
+     "type": "integer"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
+    },
+    "n_lost": {
+     "default": 0,
+     "title": "N Lost",
+     "type": "integer"
+    },
     "n_quotes": {
      "title": "N Quotes",
+     "type": "integer"
+    },
+    "n_won": {
+     "default": 0,
+     "title": "N Won",
      "type": "integer"
     },
     "negotiation_gap": {
