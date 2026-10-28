@@ -32,6 +32,7 @@ from margin_engine.labels import label as label_of
 from margin_engine.ledger.events import build_events, vendor_rebate_rollforward
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
 from margin_engine.ledger.rebate_subledger import build_rebate_subledger
+from margin_engine.ledger.spill import SpilledLedger, spill_ledger
 from margin_engine.manifest.run_manifest import (
     _sha256 as file_sha256,
 )
@@ -43,7 +44,7 @@ from margin_engine.manifest.run_manifest import (
 from margin_engine.manifest.run_manifest import (
     fingerprint_inputs as manifest_inputs,
 )
-from margin_engine.memlog import rss_log
+from margin_engine.memlog import StagePeaks, rss_log
 from margin_engine.money import cents_col_to_dollars
 from margin_engine.opportunity.deductions import build_tiered_context, deduction_coverage
 from margin_engine.opportunity.sizing import observed_leakage, price_opportunities
@@ -84,6 +85,10 @@ class FullRunResult:
     # Robinson-Patman review (Run 6, Phase 79): the flagged pairs with
     # their supporting facts, and who could and could not be screened.
     compliance_detail: pl.DataFrame | None = None
+    # Where the ledger parquet sits when scale.spill_ledger ran (Phase 83).
+    # pipeline.ledger is rehydrated and authoritative; this is for consumers
+    # that would rather scan than hold.
+    ledger_spill_path: Path | None = None
     compliance_screen: pl.DataFrame | None = None
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
@@ -246,6 +251,7 @@ def run_full(
     validate: bool | None = None,
     lines: pl.DataFrame | None = None,
     cache_dir: Path | None = None,
+    spill: bool | None = None,
 ) -> FullRunResult:
     """Run the pipeline. `validate=None` follows the config switch
     (sensitivity.real_data_validation); an explicit bool overrides it — the CLI
@@ -254,6 +260,9 @@ def run_full(
     rules = load_rules(rules_path)
     timings: dict[str, float] = {}
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Peak RSS per stage, sampled on a thread (Run 6, Phase 83): boundary
+    # readings miss a stage that balloons and frees before its end.
+    peaks = StagePeaks().start()
 
     # Capture library warnings (e.g. pyfixest singleton fixed effects) for the
     # manifest and report instead of printing them to the console. Entered and
@@ -266,6 +275,7 @@ def run_full(
     res = run_pipeline(data_dir, mapping_path, rules, lines=lines, cache_dir=cache_dir)
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
     rss_log("pipeline_done")
+    peaks.mark("pipeline_done")
 
     # Fiscal calendar (Phase 36): one calendar drives every ANALYTIC period —
     # panel periods, peer-group quarters, the guidance observation unit,
@@ -300,6 +310,7 @@ def run_full(
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
     rss_log("cost_to_serve")
+    peaks.mark("cost_to_serve")
 
     # Economic event taxonomy (Run 6, Phase 61): every adjustment classified by
     # its economics, with counterparty, direction, periods, basis, status and
@@ -335,6 +346,35 @@ def run_full(
     res.notes.extend(subledger_res.notes)
     timings["economic_events"] = time.perf_counter() - t
     rss_log("economic_events")
+    peaks.mark("economic_events")
+
+    # Spill window (Run 6, Phase 83): the accounting stages above consumed the
+    # full ledger while it was naturally in memory. Nothing between here and
+    # observed_leakage reads it except one five-column aggregation, so with
+    # scale.spill_ledger on it spends the heavy middle of the run on disk.
+    spilled: SpilledLedger | None = None
+    if rules.scale.spill_ledger if spill is None else spill:
+        spilled = spill_ledger(res.ledger, out_dir / "work" / "ledger_spill.parquet")
+        res.ledger = spilled.empty_frame()
+        res.notes.append(
+            f"ledger spilled to Parquet for the analytic stages "
+            f"({spilled.height:,} lines, {len(spilled.columns)} columns); "
+            "tail consumers read it back one at a time - outputs are "
+            "byte-identical to the in-memory path by test"
+        )
+    ledger_height = spilled.height if spilled is not None else res.ledger.height
+
+    def full_ledger() -> pl.DataFrame:
+        """The whole frame, for one consumer at a time.
+
+        In-memory mode hands back the resident frame. Spill mode reads the
+        parquet fresh, and the caller lets the copy drop when it is done -
+        which is the entire point: the first measurement of this phase showed
+        that rehydrating once and keeping it resident put the peak ABOVE the
+        in-memory path, because the peak lives at exports, where the ledger
+        sat beside its own write-ready copy.
+        """
+        return spilled.read() if spilled is not None else res.ledger
 
     t = time.perf_counter()
     analysis_obs, h_notes = apply_analysis_level(
@@ -345,6 +385,7 @@ def run_full(
     del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
+    peaks.mark("dispersion")
 
     t = time.perf_counter()
     df = prepare_segmentation_frame(flagged, res.reference["customers"], res.reference["items"])
@@ -353,6 +394,7 @@ def run_full(
     margin_tree = fit_margin_driver_tree(df, rules, seed=0)
     timings["segmentation"] = time.perf_counter() - t
     rss_log("segmentation")
+    peaks.mark("segmentation")
 
     t = time.perf_counter()
     # Per-unit cost-to-serve K (estimated, from config activity rates) for the
@@ -365,8 +407,20 @@ def run_full(
     # allocations). Both derive from the POOL-RESOLVED effective rates, so a
     # rate switched off by the overlap check never re-enters through K.
     eff_rates = cts.rates or {}
+    _k_cols = [
+        "transaction_type",
+        "quantity_norm",
+        "activity_cts_cents",
+        "customer_id",
+        "item_id",
+    ]
+    k_source = (
+        spilled.read(_k_cols)
+        if spilled is not None and "activity_cts_cents" in spilled.columns
+        else res.ledger
+    )
     cts_per_unit = (
-        res.ledger.filter(
+        k_source.filter(
             (pl.col("transaction_type") == "sale")
             & (pl.col("quantity_norm") > 0)
             & pl.col("activity_cts_cents").is_not_null()
@@ -406,9 +460,10 @@ def run_full(
             # difference beside a flag is an actual or an estimate (79).
             pl.lit("estimated from configured activity rates").alias("cts_method"),
         )
-        if "activity_cts_cents" in res.ledger.columns
+        if "activity_cts_cents" in k_source.columns
         else None
     )
+    del k_source
     guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit, fiscal)
     # Pricing compliance (Phase 37): Robinson-Patman review flag on competitor
     # pairs, with cost-to-serve differences as supporting documentation.
@@ -426,6 +481,7 @@ def run_full(
     ).with_columns(pl.col("rp_review_flag").fill_null(value=False))
     timings["guidance"] = time.perf_counter() - t
     rss_log("guidance")
+    peaks.mark("guidance")
 
     t = time.perf_counter()
     # Recorded-provenance rule (Phase 80) + competitor-path control selection
@@ -505,6 +561,7 @@ def run_full(
     )
     timings["panel"] = time.perf_counter() - t
     rss_log("panel")
+    peaks.mark("panel")
 
     t = time.perf_counter()
     # The index joins at category x month; the gate compares that grain to
@@ -547,9 +604,12 @@ def run_full(
     sens, sens_gates = sens_res.estimates, sens_res.gates
     timings["sensitivity"] = time.perf_counter() - t
     rss_log("sensitivity")
+    peaks.mark("sensitivity")
 
     t = time.perf_counter()
-    leak = observed_leakage(res.ledger, rules, fiscal)
+    _led = full_ledger()
+    leak = observed_leakage(_led, rules, fiscal)
+    del _led
     # Deductions with explicit denominators (Run 6, Phase 66): tiered programs
     # are RECOMPUTED at candidate revenue, never flattened into d; a tiered
     # customer without a tier table gets the fixed-rate approximation label.
@@ -584,6 +644,7 @@ def run_full(
     ded_coverage = deduction_coverage(guidance_res.guidance, tiered_cust_ids)
     timings["opportunity"] = time.perf_counter() - t
     rss_log("opportunity")
+    peaks.mark("opportunity")
 
     # Validation without planted truth (27.4): temporal backtest, placebos,
     # rolling-window stability. Informational; never gates a status.
@@ -597,6 +658,7 @@ def run_full(
         res.notes.extend(real_val.notes)
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
+        peaks.mark("real_data_validation")
         # The shuffled-instrument placebo speaks to whether this design's
         # inference is correctly sized, which is read beside the elasticity it
         # qualifies rather than only in the validation appendix (Run 6, Phase
@@ -667,7 +729,9 @@ def run_full(
     tieout_res = None
     gl_totals = res.reference.get("gl_totals")
     if gl_totals is not None:
-        tieout_res = run_tieout(res.ledger, gl_totals, rules, fiscal)
+        _led = full_ledger()
+        tieout_res = run_tieout(_led, gl_totals, rules, fiscal)
+        del _led
         res.notes.extend(tieout_res.notes)
         res.notes.append(
             f"monthly GL variance check ran: {tieout_res.n_failing} month-measure(s) "
@@ -691,6 +755,7 @@ def run_full(
         res.notes.append("cross-price estimation OFF: no substitution_groups table available")
     timings["optional_modules"] = time.perf_counter() - t
     rss_log("optional_modules")
+    peaks.mark("optional_modules")
     # The segmentation frame is consumed; only its leaf assignments, guidance,
     # the panel and `flagged` live on (Phase 35: one fewer wide line-level frame).
     del df
@@ -713,7 +778,7 @@ def run_full(
         ).hexdigest()[:16],
     }
     actions_res = generate_actions(
-        ledger=res.ledger,
+        ledger=full_ledger(),
         guidance=guidance_res.guidance,
         opportunities=opps,
         leakage=leak,
@@ -810,6 +875,8 @@ def run_full(
     formats = list(rules.reporting.output_formats)
     prewritten: dict[str, Path] = {}
     for name, frame in exports.items():
+        if name == "financial_ledger" and spilled is not None:
+            frame = full_ledger()
         out = _round_solver_outputs(
             name, _natural_sort(name, frame.with_columns(pl.col(pl.Categorical).cast(pl.String)))
         )
@@ -839,10 +906,18 @@ def run_full(
                     lf.with_columns(pl.col(pl.Date).cast(pl.String)).sink_csv(
                         out_dir / f"{name}.csv"
                     )
-        del out
+        del out, frame
     rss_log("export_files_written")
+    peaks.mark("export_files_written")
+    if spilled is not None and "financial_ledger" not in prewritten:
+        # Only when parquet is not among the output formats: the store then
+        # has no file to load from and needs the frame. It stays resident
+        # from here on, which this configuration pays for and the default
+        # (parquet on) does not.
+        res.ledger = spilled.read()
     store_duckdb(res, out_dir / "engine.duckdb", prewritten=prewritten)
     rss_log("duckdb_stored")
+    peaks.mark("duckdb_stored")
     timings["exports"] = time.perf_counter() - t
 
     # ---- manifest -----------------------------------------------------------
@@ -870,7 +945,7 @@ def run_full(
         mapping_path=mapping_path,
         rules_path=rules_path,
         cleaning_decisions=cleaning_decisions_from(
-            res.ledger, res.removed_duplicates, res.blank_rows_dropped
+            full_ledger(), res.removed_duplicates, res.blank_rows_dropped
         ),
         parameters={
             "n_segments": seg.leaf_assignments["segment_leaf"].n_unique(),
@@ -879,13 +954,16 @@ def run_full(
             "library_warnings": lib_warnings,
         },
         stage_timings_s=timings,
+        stage_peak_rss_gb=peaks.stop(),
     )
     write_manifest(manifest, out_dir)
 
     # ---- report --------------------------------------------------------------
     # Display casing for data values (Phase 46): acronyms from the mapping.
     _acronyms = frozenset(res.mapping.display.acronyms)
-    sale = res.ledger.filter(pl.col("transaction_type") == "sale")
+    _led = full_ledger()
+    sale = _led.filter(pl.col("transaction_type") == "sale")
+    del _led
     net_rev = int(sale["net_amount_cents"].sum())
     missing_cost_rev = int(sale.filter(pl.col("flag_missing_cost"))["net_amount_cents"].sum())
     gross_list = int(sale["gross_list_value_cents"].fill_null(0).sum())
@@ -975,7 +1053,7 @@ def run_full(
     context: dict[str, Any] = {
         "manifest": manifest,
         "coverage": {
-            "n_lines": f"{res.ledger.height:,}",
+            "n_lines": f"{ledger_height:,}",
             "n_observations": f"{res.observations.height:,}",
             "net_revenue": _fmt_dollars(net_rev),
             "missing_cost_revenue_share": f"{missing_cost_rev / max(net_rev, 1):.2%}",
@@ -1198,8 +1276,14 @@ def run_full(
         ),
     }
     rss_log("report_context_built")
+    peaks.mark("report_context")
     render_report(context, out_dir / "report.html")
     rss_log("report_rendered")
+    if spilled is not None and res.ledger.height == 0:
+        # PipelineResult.ledger is the contract the web bundle, the CLI and
+        # the tracker read. It comes back whole here, when the stage frames
+        # are gone and nothing else full-width is alive.
+        res.ledger = spilled.read()
     return FullRunResult(
         pipeline=res,
         flagged=flagged,
@@ -1219,6 +1303,7 @@ def run_full(
         service_flags=cts.service_flags,
         win_curves=win_curves,
         quote_intake=intake_payload,
+        ledger_spill_path=spilled.path if spilled is not None else None,
         compliance_detail=compliance_res.detail,
         compliance_screen=compliance_res.screen,
         cross_estimates=cross_estimates,

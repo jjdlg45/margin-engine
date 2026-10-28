@@ -1229,9 +1229,61 @@ does not back.
 ## 10. Reproducibility
 
 Every run writes a manifest: config and mapping hashes, input file
-fingerprints (sha256), software versions, cleaning decisions, parameters and
-stage timings. The DuckDB store keeps both views and the audit trail keyed by
-source line key.
+fingerprints (sha256), software versions, cleaning decisions, parameters,
+stage timings and sampled peak memory per stage. The DuckDB store keeps both
+views and the audit trail keyed by source line key.
+
+### Memory at scale: the spill path (Run 6, Phase 83)
+
+The scale problem is coexistence, not any one stage: the financial ledger is
+the engine's widest frame (about 85 columns), and it used to stay resident
+through dispersion, segmentation, guidance, the panel, sensitivity and
+opportunity - stages that build large frames of their own and do not read it.
+
+With `scale.spill_ledger` on (or `--spill` on the CLI), the ledger is written
+to Parquet once, after the last stage that mutates it and the accounting
+stages that consume it whole (the event taxonomy, the rebate subledger, the
+vendor roll-forward), and dropped from memory for the analytic middle of the
+run. Inside that window exactly one consumer needs it - the per-unit
+cost-to-serve aggregation for the contribution floor - and it reads a
+five-column projection. At the reporting tail (leakage onward) the frame is
+read back once, whole, because exports, the DuckDB store and the report
+consume every column by design, and `PipelineResult.ledger` then satisfies
+the same contract it always did.
+
+**What the spill cannot move.** The allocation stages that need global order
+within settlement groups (largest-remainder cents, ties broken on
+source_line_key) run upstream of the spill point and, since Run 5,
+month-partitioned. Nothing downstream re-sorts the ledger: every consumer
+either aggregates or writes it in stored order, which is the order it was
+spilled in. Parity is a test, not an argument - the same run with the spill
+on and off produces byte-identical exports, and the contribution-floor,
+leakage, guidance and opportunity frames match to the cent.
+
+**Why it is off by default: it was measured, and it does not help yet.** On
+worlds of 70k-230k lines (three row counts, two cardinality mixes, each run
+in its own process), the spill RAISES peak memory slightly - 2.79 GB to
+3.05 GB at 227k lines - and the per-stage peaks say why. The run's peak does
+not live in the analytic middle the spill empties; it lives at the export
+step, where a write-ready copy of the ledger (re-sorted, categoricals cast
+back to strings) must exist beside its source for the file to be
+byte-identical to the in-memory path, and beside the still-resident
+observations and flagged frames, which the ledger spill does not touch. The
+middle stages did get lighter (sensitivity's peak fell below the tail's),
+but the tail sets the number.
+
+So the spill ships off, with its parity proven, as infrastructure for the two
+levers the measurement identified rather than as a saving it has not earned:
+streaming the ledger export (blocked today by byte-identity between the
+eager and streaming Parquet writers - relaxing that is an owner decision,
+because "byte-identical exports" is a published claim), and spilling the
+observations frames the same way. The 10M-line target remains a known gap,
+now with a better map of where the memory actually is.
+
+Peak memory per stage is sampled on a thread (tenth-of-a-second interval)
+rather than read at stage boundaries, because a stage that balloons and frees
+before its boundary would otherwise read as cheap. Absent psutil the manifest
+carries an empty record, which is a statement, not a row of zeros.
 
 ## 11. Pricing-law considerations
 

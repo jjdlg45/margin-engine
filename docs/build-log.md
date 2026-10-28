@@ -5808,3 +5808,88 @@ second, bottoming at 1.81 GB - above the 1.2 GB hard-kill line, below the
 2.0 GB soft floor, and shorter than the 3-second sustained rule. The
 tightened watchdog is why this sentence can state the duration instead of
 rounding the dip away.
+
+## Phase 83 — Spill-to-Parquet scale path (2026-10-28, Run 6 branch)
+
+Finding 23. The widest frame in the engine - the 85-column financial ledger -
+stayed resident through dispersion, segmentation, guidance, the panel,
+sensitivity and opportunity, none of which reads it. The phase asked for a
+spill path with per-stage projections, stage classification, per-stage peak
+memory, benchmarks at several row counts and cardinalities, and parity to the
+cent. All of that exists. The benchmark then said something the finding did
+not expect, and that result is the most useful thing in this phase.
+
+### What was built
+
+- `scale.spill_ledger` (config) / `--spill` (CLI), off by default. The ledger
+  is written to Parquet once, after cost-to-serve and the accounting stages
+  that consume it whole (events, subledger, roll-forward), and dropped from
+  memory for the analytic middle. The one in-window consumer - the per-unit
+  cost-to-serve aggregation - reads a five-column projection; a projection
+  that names a missing column fails loudly rather than producing nulls.
+- Tail consumers (leakage, tie-out, action generation, the ledger export, the
+  DuckDB store, cleaning decisions, the report's sale aggregates) each read
+  the frame back, use it, and let it drop - at most one full-width ledger
+  alive at a time. `PipelineResult.ledger` is rehydrated at the very end, so
+  nothing outside run_full changes.
+- Stage classification is written down in `ledger/spill.py` and the
+  methodology: the order-sensitive allocations (largest-remainder cents, ties
+  on source_line_key) run upstream of the spill point, month-partitioned
+  since Run 5; nothing downstream re-sorts the ledger, so the spill cannot
+  move a tie-break.
+- `StagePeaks` (memlog): peak RSS per stage, sampled on a thread at 0.1s with
+  a boundary reading folded in so a fast stage records its memory instead of
+  a zero. Lands in every run manifest as `stage_peak_rss_gb`; absent psutil
+  it is an empty record, which is a statement, not zeros.
+- Parity: `tests/test_spill.py` (10 tests) proves byte-identical exports and
+  cent-identical leakage/guidance/opportunity frames between the two paths on
+  the committed sample, row order of the spilled frame preserved, projections
+  exact, the placeholder schema-true. The scenario matrix runs every third
+  fast-tier world a third time with the spill on and byte-compares.
+
+### What the benchmark said
+
+Three worlds, each run in its own process so allocator arenas cannot flatter
+the next; peaks are child-process-tree RSS at 0.1s:
+
+| World | Lines | In-memory peak | Spill peak | Peak stage (both) |
+|---|---|---|---|---|
+| 150 x 250 | 70,514 | 1.52 GB | 1.58 GB | DuckDB store / exports |
+| 300 x 500 | 227,388 | 2.79 GB | 3.05 GB | exports / DuckDB store |
+| 120 x 1,250 | 226,587 | 2.79 GB | 3.07 GB | exports / DuckDB store |
+
+**The spill does not lower peak memory at these scales; it raises it
+slightly.** The first version was worse still (rehydrating at leakage held
+the full ledger beside its own write-ready export copy: 3.04 GB), and the
+read-use-drop tail redesign recovered only part of that, because the peak was
+never in the middle the spill empties. It is the export step: a write-ready
+copy of the ledger (re-sorted, categoricals cast to strings) has to exist for
+the file to be byte-identical, beside the still-resident observations and
+flagged frames the ledger spill does not touch. The middle stages did get
+lighter - sensitivity's peak fell below the tail's with the spill on - but
+the tail sets the number.
+
+The spill therefore ships OFF by default, documented as infrastructure with
+its parity proven, not as a saving it has not earned. The two levers the
+measurement identified, recorded for the owner:
+
+1. **Streaming the ledger export.** Blocked by byte-identity between eager
+   and streaming Parquet writers; "byte-identical exports" is a published
+   claim, so relaxing it is an owner decision, not mine.
+2. **Spilling the observations/flagged frames** the same way - they are
+   resident through the whole tail in both modes.
+
+The committed validation.json still carries the Run 5 wording that spilling
+the ledger "is the next scale step"; this measurement narrows that to the two
+levers above, and the row updates when the validation workflow regenerates
+it. The 10M-line target stays a KNOWN GAP, as the spec requires, now with a
+better map of where the memory actually is.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (207 files); mypy src api 0 (96 files,
+strict). Full pytest green: 798 tests in 68 files, 23 batches each in its own
+process, every batch returncode 0, worst batch peak 3.44 GB, minimum system
+free memory 2.29 GB, zero floor excursions, 1313s. Playwright 233 passed
+3 skipped (exit 0); no web change in this phase beyond none - the spill is
+engine-internal and the bundle is untouched.

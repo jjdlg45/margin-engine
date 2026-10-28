@@ -59,12 +59,27 @@ def run(
         help="Directory for the fingerprint-keyed parse cache: re-running on "
         "unchanged input skips re-parsing the export (Phase 35)",
     ),
+    spill: bool = typer.Option(
+        False,
+        "--spill",
+        help="Spill the ledger to Parquet for the analytic stages (Phase 83): "
+        "lower peak memory on large worlds, byte-identical outputs by test. "
+        "Also available as scale.spill_ledger in the rules file",
+    ),
 ) -> None:
     """Run the full pipeline: ingest -> waterfall -> analytics -> report."""
     from margin_engine.report.full_run import run_full
 
     try:
-        result = run_full(data, mapping, rules, out, validate=validate, cache_dir=cache_dir)
+        result = run_full(
+            data,
+            mapping,
+            rules,
+            out,
+            validate=validate,
+            cache_dir=cache_dir,
+            spill=spill or None,
+        )
     except MappingError as exc:
         _fail("mapping", exc)
     except MoneyParseError as exc:

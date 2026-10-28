@@ -53,6 +53,7 @@ def build_manifest(
     cleaning_decisions: dict[str, Any],
     parameters: dict[str, Any],
     stage_timings_s: dict[str, float],
+    stage_peak_rss_gb: dict[str, float] | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
     versions = {"python": sys.version.split()[0], "platform": platform.platform()}
@@ -73,6 +74,9 @@ def build_manifest(
         "cleaning_decisions": cleaning_decisions,
         "parameters": parameters,
         "stage_timings_s": {k: round(v, 3) for k, v in stage_timings_s.items()},
+        # Sampled peak RSS per stage (Run 6, Phase 83); empty when psutil is
+        # unavailable, which is stated rather than reported as zeros.
+        "stage_peak_rss_gb": stage_peak_rss_gb or {},
     }
 
 

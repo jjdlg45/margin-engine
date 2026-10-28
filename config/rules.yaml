@@ -484,3 +484,11 @@ drift:
   data_quality_change_pp: 2.0    # data-quality rate change, percentage points
   status_share_change: 0.2       # guidance status count: relative change...
   min_status_count_change: 5     # ...AND at least this many pairs
+
+# Memory behaviour at scale (Run 6, Phase 83). spill_ledger writes the
+# financial ledger to Parquet after the accounting stages finish with it and
+# drops it from memory for the analytic middle of the run. Off by default:
+# the in-memory path is the measured configuration, and the spill path's
+# outputs are byte-identical to it by test.
+scale:
+  spill_ledger: false

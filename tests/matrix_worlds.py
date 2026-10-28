@@ -395,6 +395,17 @@ def run_world(spec: WorldSpec, tmp: Path) -> dict[str, Any]:
     run_full(erp_fmt, mapping_fmt, rules_path, tmp / "out2")
     failures.extend(_check_determinism(tmp / "out1", tmp / "out2"))
 
+    # Spill parity on every third world (Run 6, Phase 83): the same exports,
+    # byte for byte, with the ledger spending the analytic stages on disk.
+    # A subset because it is one more full run per world; the dedicated
+    # tests/test_spill.py covers the committed sample on every run.
+    if spec.idx % 3 == 0:
+        run_full(erp_fmt, mapping_fmt, rules_path, tmp / "out_spill", spill=True)
+        failures.extend(
+            f.replace("determinism:", "spill_parity:")
+            for f in _check_determinism(tmp / "out1", tmp / "out_spill")
+        )
+
     if spec.format_profile != "plain":
         plain_res = run_pipeline(erp_plain, mapping_plain, rules_obj)
         t_plain = _ledger_totals(plain_res.ledger)

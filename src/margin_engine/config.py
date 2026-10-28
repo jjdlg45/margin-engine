@@ -1027,6 +1027,20 @@ class RobinsonPatmanConfig(StrictModel):
     require_reviewed_map: bool = False
 
 
+class ScaleConfig(StrictModel):
+    """Memory behaviour at scale (Run 6, Phase 83, Finding 23).
+
+    spill_ledger writes the financial ledger to Parquet after the accounting
+    stages finish with it and drops it from memory for the heavy middle of
+    the run (dispersion through opportunity), reading back projections where
+    a stage needs a slice and the full frame once, at the reporting tail.
+    Off by default: the in-memory path is the measured configuration, and the
+    spill path's outputs are byte-identical to it by test, not by assumption.
+    """
+
+    spill_ledger: bool = False
+
+
 class ComplianceConfig(StrictModel):
     @model_validator(mode="before")
     @classmethod
@@ -1111,6 +1125,7 @@ class Rules(StrictModel):
     reporting: ReportingConfig = ReportingConfig()
     fiscal: FiscalConfig = FiscalConfig()
     compliance: ComplianceConfig = ComplianceConfig()
+    scale: ScaleConfig = ScaleConfig()
     actions: ActionsConfig = ActionsConfig()
     drift: DriftConfig = DriftConfig()
 
