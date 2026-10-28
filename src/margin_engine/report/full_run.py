@@ -89,6 +89,11 @@ class FullRunResult:
     # pipeline.ledger is rehydrated and authoritative; this is for consumers
     # that would rather scan than hold.
     ledger_spill_path: Path | None = None
+    # The trio every proposal already carries (Phase 69), now carried by the
+    # run itself so the bundle and the API can name what they were built from
+    # (Phase 84): input = source file hashes, config = the rules hash,
+    # model = the elasticity evidence the volume responses came from.
+    fingerprints: dict[str, str] = field(default_factory=dict)
     compliance_screen: pl.DataFrame | None = None
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
@@ -770,9 +775,16 @@ def run_full(
     fingerprints = {
         "input": hashlib.sha256(_fp_inputs.encode()).hexdigest()[:16],
         "config": file_sha256(rules_path)[:16],
+        # The elasticities are rounded to 6 significant digits before hashing,
+        # the same rounding the bundle applies to every solver output
+        # (Phase 78): an iterative fit's last digits move with BLAS thread
+        # count and library build, and a fingerprint that moves with them
+        # would call the same model two models. Found by the cross-process
+        # determinism test when Phase 84 surfaced this hash into the bundle.
         "model": hashlib.sha256(
             "|".join(
-                f"{r['segment']}:{r['status']}:{r['iv'] if r['iv'] is not None else 'na'}"
+                f"{r['segment']}:{r['status']}:"
+                + (f"{r['iv']:.6g}" if r["iv"] is not None else "na")
                 for r in sens.sort("segment").select("segment", "status", "iv").to_dicts()
             ).encode()
         ).hexdigest()[:16],
@@ -1317,4 +1329,5 @@ def run_full(
         actions=actions_res.actions,
         action_events=actions_res.events,
         action_portfolio=action_portfolio,
+        fingerprints=fingerprints,
     )

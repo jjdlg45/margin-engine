@@ -279,10 +279,14 @@ export type Category = string;
 export type Message = string;
 export type NOccurrences = number;
 export type LibraryWarnings = LibraryWarning[];
+export type ConfigFingerprint = string;
+export type EngineVersion1 = string;
 export type InputFiles = {
   [k: string]: string;
 }[];
+export type InputFingerprint = string;
 export type MappingSha256 = string;
+export type ModelFingerprint = string;
 export type NoteOnVolatileFields = string;
 export type Notes2 = string[];
 export type RulesSha256 = string;
@@ -971,8 +975,12 @@ export interface LibraryWarning {
 }
 export interface ManifestInfo {
   cleaning_decisions: CleaningDecisions;
+  config_fingerprint?: ConfigFingerprint;
+  engine_version?: EngineVersion1;
   input_files: InputFiles;
+  input_fingerprint?: InputFingerprint;
   mapping_sha256: MappingSha256;
+  model_fingerprint?: ModelFingerprint;
   note_on_volatile_fields: NoteOnVolatileFields;
   notes: Notes2;
   rules_sha256: RulesSha256;

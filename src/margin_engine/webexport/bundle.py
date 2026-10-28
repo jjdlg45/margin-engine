@@ -574,6 +574,13 @@ class ValidationResult(BaseModel):
 class ManifestInfo(BaseModel):
     rules_sha256: str
     mapping_sha256: str
+    # Run 6, Phase 84: the same trio every action proposal carries, so a
+    # figure on any page can be matched to the run that produced it and a
+    # proposal can be told apart from one generated under a different model.
+    input_fingerprint: str = ""
+    config_fingerprint: str = ""
+    model_fingerprint: str = ""
+    engine_version: str = ""
     input_files: list[dict[str, str]]
     software_versions: dict[str, str]
     cleaning_decisions: dict[str, int]

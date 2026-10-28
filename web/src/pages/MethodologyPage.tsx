@@ -115,6 +115,43 @@ function MethodologyBody({ d }: { d: MethodologyData }) {
           </ScrollX>
         </Section>
       )}
+      <Section
+        title="Which run these numbers come from"
+        lede="Every figure on this site was computed by one engine run, and these identifiers name it. The same trio travels on every action proposal, so a proposal generated under a different configuration or a different fitted model is distinguishable from one generated under this one."
+      >
+        <ScrollX label="Run identity">
+          <table className="max-w-2xl" data-testid="traceability">
+            <tbody>
+              <tr>
+                <th className="left">Engine version</th>
+                <td className="left">{d.manifest.engine_version || "not recorded"}</td>
+              </tr>
+              <tr>
+                <th className="left">Policy rules (hash)</th>
+                <td className="left">{d.manifest.rules_sha256.slice(0, 16)}</td>
+              </tr>
+              <tr>
+                <th className="left">Mapping (hash)</th>
+                <td className="left">{d.manifest.mapping_sha256.slice(0, 16)}</td>
+              </tr>
+              <tr>
+                <th className="left">Source data</th>
+                <td className="left">{d.manifest.input_fingerprint || "not recorded"}</td>
+              </tr>
+              {d.manifest.input_files.map((f) => (
+                <tr key={f.name}>
+                  <th className="left text-caption">&nbsp;&nbsp;{f.name}</th>
+                  <td className="left text-caption">{f.sha256.slice(0, 16)}</td>
+                </tr>
+              ))}
+              <tr>
+                <th className="left">Fitted model</th>
+                <td className="left">{d.manifest.model_fingerprint || "not recorded"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </ScrollX>
+      </Section>
       <CoverageSection />
       {d.library_warnings.length > 0 && (
         <Section

@@ -860,6 +860,10 @@ def build_bundle(
     manifest = ManifestInfo(
         rules_sha256=str(m.get("rules_sha256", "")),
         mapping_sha256=str(m.get("mapping_sha256", "")),
+        input_fingerprint=str(res.fingerprints.get("input", "")),
+        config_fingerprint=str(res.fingerprints.get("config", "")),
+        model_fingerprint=str(res.fingerprints.get("model", "")),
+        engine_version=__version__,
         input_files=[
             {
                 "name": str(Path(str(f.get("path", f.get("name", "")))))
@@ -1440,6 +1444,13 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         "app": {
             "bundle_version": d["bundle_version"],
             "engine_version": d["engine_version"],
+            # Traceability (Phase 84): /api/version and the UI footer read
+            # these without fetching the whole methodology payload.
+            "rules_sha256": d["manifest"]["rules_sha256"],
+            "mapping_sha256": d["manifest"]["mapping_sha256"],
+            "model_fingerprint": d["manifest"]["model_fingerprint"],
+            "config_fingerprint": d["manifest"]["config_fingerprint"],
+            "input_fingerprint": d["manifest"]["input_fingerprint"],
             "data_label": d["data_label"],
             "honest_labels": d["honest_labels"],
             "labels": d["labels"],

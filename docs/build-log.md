@@ -5893,3 +5893,63 @@ process, every batch returncode 0, worst batch peak 3.44 GB, minimum system
 free memory 2.29 GB, zero floor excursions, 1313s. Playwright 233 passed
 3 skipped (exit 0); no web change in this phase beyond none - the spill is
 engine-internal and the bundle is untouched.
+
+## Phase 84 — Version traceability (2026-10-28, Run 6 branch)
+
+Short phase. Phase 69 gave every action proposal three fingerprints - input
+(source file hashes), config (the rules hash), model (the elasticity evidence
+the volume responses came from) - so a stale proposal could be told apart
+from a fresh one. The run itself did not carry them: the bundle knew its
+engine version and the manifest's config/mapping hashes, the UI showed none
+of it, and /api/version answered with version numbers only.
+
+Now every surface names its run.
+
+- `FullRunResult.fingerprints` carries the trio, and the bundle's manifest
+  section gains `input_fingerprint`, `config_fingerprint`,
+  `model_fingerprint` and `engine_version` beside the hashes it already had.
+- **UI**: the Data & methodology page opens its audit block with "Which run
+  these numbers come from": engine version, rules hash, mapping hash, the
+  input fingerprint with every source file and its hash beneath it, and the
+  fitted-model fingerprint - with the lede saying why: a proposal generated
+  under a different configuration or model is distinguishable from one
+  generated under this one.
+- **API**: /api/version returns the same five identifiers, read from the
+  bundle's own app payload rather than re-derived, and the OpenAPI contract
+  documents them.
+
+### Tests added
+
+`tests/test_api.py`: /api/version carries all five identifiers and each
+equals the bundle's own (parity, not presence). `web/e2e/pages.spec.ts`: the
+methodology page shows the bundle's identifiers, truncated for reading, and
+the first input files with their hashes.
+
+### A defect the new visibility caught at once
+
+The first full-suite run for this phase failed the cross-process determinism
+test: app.json, bundle.json and methodology.json differed across thread
+counts - precisely the files that had just gained the fingerprints. The model
+fingerprint (Phase 69) hashed the UNROUNDED elasticities, whose last digits
+move with BLAS thread count, so the same fitted model on the same data could
+carry two fingerprints. On actions alone that instability was invisible; the
+moment Phase 84 surfaced the hash into the bundle, the Phase 78 test caught
+it.
+
+Fixed by hashing the elasticities at 6 significant digits - the same rounding
+the bundle applies to every solver output - because last-digit jitter is not
+a different model, and a fingerprint that says it is would trigger stale-
+action re-reviews for nothing. Proposals persisted under the old derivation
+will read as config-changed once against a fresh run; the stale-action
+revalidation path is built for exactly that and shows the difference.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (207 files); mypy src api 0 (96 files,
+strict). Full pytest: the first run failed on the fingerprint instability
+above (batch 22); after the fix the full suite re-ran green before the
+commit - 798 tests in 68 files, 23 batches each in its own process, every
+batch returncode 0, worst batch peak 3.48 GB, minimum system free memory
+2.03 GB, zero floor excursions, 1402s. tsc 0; vite build 0; Playwright 235
+passed 3 skipped after re-baselining the four methodology snapshots that
+gained the traceability block.

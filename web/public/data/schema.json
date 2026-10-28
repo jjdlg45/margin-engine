@@ -1989,6 +1989,16 @@
      "title": "Cleaning Decisions",
      "type": "object"
     },
+    "config_fingerprint": {
+     "default": "",
+     "title": "Config Fingerprint",
+     "type": "string"
+    },
+    "engine_version": {
+     "default": "",
+     "title": "Engine Version",
+     "type": "string"
+    },
     "input_files": {
      "items": {
       "additionalProperties": {
@@ -1999,8 +2009,18 @@
      "title": "Input Files",
      "type": "array"
     },
+    "input_fingerprint": {
+     "default": "",
+     "title": "Input Fingerprint",
+     "type": "string"
+    },
     "mapping_sha256": {
      "title": "Mapping Sha256",
+     "type": "string"
+    },
+    "model_fingerprint": {
+     "default": "",
+     "title": "Model Fingerprint",
      "type": "string"
     },
     "note_on_volatile_fields": {

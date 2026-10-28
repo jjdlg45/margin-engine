@@ -185,3 +185,22 @@ test("modules page: present modules render, absent ones state the reason", async
     await expect(page.getByText(m.inventory_absent_reason)).toBeVisible();
   }
 });
+
+
+test("methodology page: every figure names the run it came from", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/methodology");
+  const t = page.getByTestId("traceability");
+  await expect(t).toBeVisible();
+  const m = bundle.manifest;
+  // The displayed identifiers are the bundle's, truncated for reading - a
+  // parity check, not a presence check.
+  await expect(t).toContainText(m.rules_sha256.slice(0, 16));
+  await expect(t).toContainText(m.mapping_sha256.slice(0, 16));
+  await expect(t).toContainText(m.model_fingerprint);
+  await expect(t).toContainText(m.input_fingerprint);
+  await expect(t).toContainText(m.engine_version);
+  for (const f of m.input_files.slice(0, 3)) {
+    await expect(t).toContainText(f.sha256.slice(0, 16));
+  }
+});

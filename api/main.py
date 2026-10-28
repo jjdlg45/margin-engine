@@ -232,6 +232,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "bundle_version": snap.app.get("bundle_version"),
             "engine_version": snap.app.get("engine_version"),
             "loaded_utc": snap.loaded_utc.isoformat(timespec="seconds"),
+            # Traceability (Run 6, Phase 84): which configuration, mapping,
+            # inputs and fitted model this API is serving numbers from.
+            "rules_sha256": snap.app.get("rules_sha256"),
+            "mapping_sha256": snap.app.get("mapping_sha256"),
+            "model_fingerprint": snap.app.get("model_fingerprint"),
+            "config_fingerprint": snap.app.get("config_fingerprint"),
+            "input_fingerprint": snap.app.get("input_fingerprint"),
         }
 
     @app.get("/api/app")
