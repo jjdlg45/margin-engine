@@ -5618,3 +5618,73 @@ build 0; Playwright 233 passed 3 skipped (exit 0), no snapshot changes.
 The first run of the suite failed on batch 17: `tests/test_sensitivity.py`
 still read `.public_source` off the mapping. Fixed and the suite re-run green
 before committing, rather than committing the phase and noting the failure.
+
+## Phase 81 — Pricing-law wording (2026-10-28, Run 6 branch)
+
+Short phase, one idea: the guardrails are guardrails. The methodology
+described the review flag and the data rule accurately and left a reader free
+to infer that passing them means something legally. It does not.
+
+### Guardrails, not safe harbors
+
+The pricing-law section now opens by saying so: nothing in it makes a price
+lawful, passing every check the engine applies is not a defense, and a clean
+run is not evidence of anything in a dispute. What the checks do is narrow
+the ways a run can go wrong by accident.
+
+Two sentences were added at the other end for the same reason. The written
+justification a flagged action requires at approval is "a record that someone
+considered the question, not a finding that the answer was yes". And a new
+paragraph says what the engine **cannot** do: it cannot tell whether two
+customers actually compete, whether two items are of like grade and quality,
+whether a defense applies, or whether any price is lawful - and the absence
+of a flag is not an answer either.
+
+### The context, verified before citing it
+
+The spec asked for the DOJ's September 2026 proposed consent decree with
+Pinnacle as context. That is after my training cutoff, so rather than write
+it from the spec I checked it: it is real, and the detail that matters is one
+the spec did not state.
+
+Filed **4 September 2026** in the RealPage matter (M.D.N.C.), where the
+United States and state co-plaintiffs sued six landlords in January 2025 over
+rents set with each other's competitively sensitive information. Pinnacle
+admits no fault and the decree is subject to public comment and court
+approval. It asks Pinnacle to refrain from using an anticompetitive algorithm
+that generates pricing recommendations, refrain from sharing competitively
+sensitive information with competitors, and accept a court-appointed monitor
+if it uses an uncertified third-party pricing algorithm.
+
+**It does not outlaw pricing software.** It draws the line at algorithms fed
+with rivals' data, and contemplates certified third-party algorithms. That
+distinction is the reason the citation belongs here at all: it is the line
+Phase 80's provenance rule is built around - own transactions plus public
+series whose source is recorded. The section says staying on that side is a
+design choice, not a certification, and that the engine cannot certify
+itself.
+
+The press release is linked with its retrieval date, as docs/data-sources.md
+requires of any external source.
+
+### Elsewhere
+
+The README's one-line description of the flag said it answers "which
+recommended prices put likely-competing customers far apart". Two words were
+doing too much work: *likely* overstated what an attribute screen knows, and
+the line implied a finding. It now reads "possibly-competing", adds what a
+reviewer would need to judge it, and says in the same breath that it is a
+prompt to look, not a finding, and not a safe harbor.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 756 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.38 GB, minimum system
+free memory 2.21 GB, zero floor excursions, 1303s. Playwright 233 passed
+3 skipped (exit 0), no snapshot changes - the change is documentation and one
+README line, and the methodology page renders from the markdown file.
+
+Network: one search and one fetch of justice.gov to verify the citation
+before writing it. Recorded in the entry above with the retrieval date; no
+test depends on the network.

@@ -1239,6 +1239,39 @@ Orientation for reviewers, not legal advice. Pricing decisions at scale touch
 several bodies of law, and the engine's job is to surface the facts a counsel
 or compliance reviewer would ask for — never to conclude.
 
+**These are guardrails, not safe harbors.** Nothing in this section makes a
+price lawful, and passing every check the engine applies is not a defense.
+The review flag below is a prompt to look at a pair of prices; the
+provenance rule refuses a data source the engine cannot account for. Both
+narrow the ways a run can go wrong by accident. Neither is an opinion about
+any price, and a clean run is not evidence of anything in a dispute.
+
+The distinction matters because the enforcement risk around pricing software
+is about *inputs and conduct*, not about using software. The clearest recent
+illustration is the Justice Department's proposed consent decree with
+Pinnacle Property Management, filed 4 September 2026 in the RealPage matter
+(M.D.N.C.; the United States and state co-plaintiffs sued six landlords in
+January 2025 over rents set with each other's competitively sensitive
+information). Pinnacle admits no fault, and the decree is subject to public
+comment and court approval. What it asks for is instructive: refrain from
+using an anticompetitive algorithm that generates pricing recommendations,
+refrain from sharing competitively sensitive information with competitors,
+and accept a court-appointed monitor if a third-party pricing algorithm is
+used that is not certified under the decree. **It does not outlaw pricing
+software** — it draws the line at algorithms fed with rivals' data, and
+contemplates certified third-party algorithms.
+
+That line is the one this engine is built to stay on the right side of: it
+prices from the seller's own transactions and from public series whose
+provenance is recorded, and it refuses a market index it cannot account for
+(Phase 80). Staying on that side is a design choice, not a certification.
+The engine cannot certify itself, this document is not a legal opinion, and
+a deployment that matters should be reviewed by counsel who can see the
+actual data and the actual market.
+
+[DOJ press release](https://www.justice.gov/opa/pr/justice-department-reaches-proposed-consent-decree-pinnacle-one-americas-largest-landlords),
+retrieved 28 October 2026.
+
 **Price discrimination (Robinson-Patman Act).** Selling commodities of like
 grade and quality to competing buyers at different prices can be unlawful when
 it may harm competition. Recognized defenses include cost justification (the
@@ -1284,7 +1317,8 @@ a question: whether the customers actually compete, whether the goods are of
 like grade and quality, and whether a defense applies are judgments the
 engine cannot make. No engine output calls anything a violation, and none
 calls anything compliant. Actions on flagged pairs require a written
-justification at approval (Phase 38 guardrail).
+justification at approval (Phase 38 guardrail) — a record that someone
+considered the question, not a finding that the answer was yes.
 
 **Algorithmic pricing and information sharing (Sherman Act section 1).**
 Recent enforcement and litigation treat pricing algorithms fed with
@@ -1321,8 +1355,14 @@ index says plainly that it is synthetic.
 
 **What the engine never does.** It never ingests competitor transaction data,
 never recommends coordinating prices with competitors, and never silences a
-compliance flag: a flagged action can be approved, but only with a recorded
+review flag: a flagged action can be approved, but only with a recorded
 written justification.
+
+**What the engine cannot do.** It cannot tell whether two customers actually
+compete, whether two items are of like grade and quality, whether a defense
+applies, or whether any particular price is lawful. It has no view on the
+market a deployment operates in. Every flag it raises is a question for
+someone else to answer, and the absence of a flag is not an answer either.
 
 ## 12. Action center
 

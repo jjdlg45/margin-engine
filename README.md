@@ -34,7 +34,7 @@ This engine is built around three rules:
 | Order and customer economics | What does each order and customer contribute after returns and cost-to-serve? |
 | Cost and tariff pass-through scenarios | What happens to margin at 0–100% pass-through? |
 | Action center: findings become proposed actions, reviewed maker-checker, exported to the ERP, then measured | Which findings became decisions — and did they actually work? |
-| Robinson-Patman review flags with cost-to-serve evidence | Which recommended prices put likely-competing customers far apart on the same item? |
+| Robinson-Patman review flags with the buyer facts beside them | Which recommended prices put possibly-competing customers far apart on the same item, and what would a reviewer need to judge it? (A prompt to look, not a finding - and not a safe harbor.) |
 
 **Optional modules** switch on when their input data exists and say so when it doesn't: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO / LIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups. Analytic periods follow a configurable **fiscal calendar**: calendar months (default), 4-4-5 / 4-5-4 / 5-4-4 retail week calendars, or a custom period table — one declaration drives the sensitivity panel, peer-group quarters, baseline windows and the monthly GL variance check, while data-declared periods (rebate settlements, FX months) always stay as the source states them.
 
