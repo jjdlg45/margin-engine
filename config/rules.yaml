@@ -81,6 +81,16 @@ segmentation:
   bootstrap_resamples: 30
   abc_a_share: 0.80
   abc_b_share: 0.15
+  # The ABC class the commercial tree may see (Run 6, Phase 76). Cut on a
+  # window that ENDS the period before each line, so the feature cannot carry
+  # the price it is used to explain. "units" or "orders" drop price from the
+  # basis entirely. The reported ABC table is unaffected.
+  abc_feature_basis: revenue
+  abc_feature_lag_periods: 6
+  # Out-of-fold target encoding while the tree is grown.
+  target_encoding_folds: 5
+  # Share of months used to fit the time-based holdout; the rest are scored.
+  holdout_fit_period_share: 0.75
 
 price_guidance:
   band_percentiles: [0.25, 0.50, 0.75]

@@ -183,8 +183,7 @@ peer median — entry-error magnitude) and `commercial_pricing_outlier`
 
 Commercial segments are a decision tree on the normalized price index using
 context features only (industry, size band, region, channel, contract type,
-item family, item role, order-size band, revenue ABC). A leakage guard rejects
-any feature whose name contains price/discount/cost/rebate/margin terms.
+item family, item role, order-size band, ABC class).
 
 Method details, each load-bearing:
 
@@ -204,6 +203,61 @@ Method details, each load-bearing:
 Stability is measured by partition agreement (adjusted Rand index) across
 bootstrap refits, never by comparing raw leaf ids, and the share of
 provisional targets that would change across resamples is reported.
+
+### What a segmentation feature is allowed to know (Run 6)
+
+A tree fit on the price index will use anything that correlates with the
+price index, including a restatement of it. Three features were doing exactly
+that, and each needed a different fix.
+
+**The ABC class.** Revenue is price times quantity. An ABC class cut on the
+same months the tree is explaining therefore carries those months' prices,
+and the tree can "explain" the index with a coarse copy of it. The class the
+tree sees is now cut on a window that **ends the period before each line**
+(`abc_feature_lag_periods`, default 6), on a configurable basis
+(`abc_feature_basis`: revenue, units or order frequency). An item with no
+history in that window is `unrated`, which is a level of its own - it is not
+a C. The ABC table in the dispersion output is unchanged: for *reporting* a
+period, the contemporaneous class is the right answer.
+
+**The order-size band.** Order net value is also price times quantity. The
+bands are now cut on order quantity in normalized units, which carries the
+same business meaning - how big an order is - with no price in it.
+
+**The target encoding.** It was fit on the rows it then encoded, so a
+category with few rows was handed the mean of the very targets the split was
+about to be scored against, and a split on noise looked clean. Encoding is
+now **cross-fitted**: while the tree is grown, each row is encoded from the
+other folds only (`target_encoding_folds`, default 5). The full-sample maps
+are kept for assignment and prediction, where there is no fold to hold out.
+
+**The guard reads lineage, not names.** The old guard rejected a feature
+whose name contained price, discount, cost, rebate or margin. `revenue_abc`
+contains none of those words and was built from outcome-period revenue, so it
+passed. Every commercial feature now declares its lineage
+(`segmentation.feature_lineage`): source columns, formula, reference window,
+whether it uses outcome-period data, and whether it embeds the realized
+price. The guard refuses a feature that declares it embeds the realized
+price, refuses one that declares nothing at all, and keeps the name check as
+a second line. Features that are same-period but price-free - the order-size
+band - are **reported rather than refused**, and the time-based check below
+puts a number on what they are worth.
+
+### Tested on periods the segmentation never saw (Run 6)
+
+A bootstrap resamples the same months, so it measures how firmly a structure
+is attached to this data, not whether it will still describe the market next
+quarter. Alongside it the engine fits the tree on the earliest
+`holdout_fit_period_share` of months (default 0.75) and scores the segment
+medians against the pairs in the later months, as mean absolute error on the
+price index, against the baseline of a single median for everybody. The
+evaluation runs twice - with the full feature set and again without the
+features whose lineage declares they are measured in the same period as the
+target - so the contribution of those features is a measured number.
+
+The holdout beating the baseline is evidence the structure generalizes in
+time. It failing to is reported in the same words on the Segments page, not
+suppressed.
 
 The margin-driver tree (pocket margin %, context + discount / rebate / cost
 bands, depth 4) is a separate, explanatory output and is never used to justify

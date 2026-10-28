@@ -18,7 +18,7 @@ import polars as pl
 from margin_engine import __version__
 from margin_engine.config import Rules
 from margin_engine.fiscal import build_calendar
-from margin_engine.labels import LABELS, plain_rule, render_text
+from margin_engine.labels import LABELS, label, plain_rule, render_text
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
@@ -55,6 +55,7 @@ from margin_engine.webexport.bundle import (
     ResultsBreakdownRow,
     ScenarioGrid,
     ScenarioGridPoint,
+    SegmentHoldout,
     SegmentIndexStats,
     SegmentRule,
     SegmentsSection,
@@ -454,6 +455,21 @@ def build_bundle(
         bootstrap_median_ari=_r(res.segments.bootstrap_median_ari),
         recommendation_change_share=_r(res.segments.recommendation_change_share),
         index_distribution=idx_dist,
+        holdout=(
+            SegmentHoldout(
+                n_fit_periods=h.n_fit_periods,
+                n_eval_periods=h.n_eval_periods,
+                n_eval_pairs=h.n_eval_pairs,
+                mae=_r(h.mae),
+                mae_baseline=_r(h.mae_baseline),
+                mae_without_same_period_features=_r(h.mae_without_same_period_features),
+                same_period_features=[label(f) for f in h.same_period_features],
+                note=h.note,
+            )
+            if (h := res.segments.holdout) is not None
+            else None
+        ),
+        notes=list(res.segments.notes),
     )
 
     # --- guidance (all pairs, with explanations and annual revenue) ----------

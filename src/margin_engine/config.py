@@ -302,6 +302,12 @@ class FeatureLineage(StrictModel):
     formula: str
     reference_window: str
     uses_outcome_period_data: bool
+    # Run 6, Phase 76. The guard keys on THIS, not on the flag above: what
+    # breaks a tree fit on the price index is a feature built from the
+    # realized price of the period being explained. Contemporaneous but
+    # price-free context (order size in units) is a weaker concern - it is
+    # reported, not refused.
+    embeds_realized_price: bool = False
 
 
 def _default_feature_lineage() -> dict[str, FeatureLineage]:
@@ -326,19 +332,26 @@ def _default_feature_lineage() -> dict[str, FeatureLineage]:
         "item_family": static_item,
         "item_role": static_item,
         "order_size_band": FeatureLineage(
-            source_columns=("net_amount_cents", "order_id"),
-            formula="terciles of order net value over the fitting sample",
+            source_columns=("quantity_norm", "order_id"),
+            formula="terciles of order quantity in normalized units",
             reference_window="fitting sample (same period as the target)",
-            # Order net value embeds realized prices from the outcome period.
+            # Same period as the target, so it is reported as such - but since
+            # Phase 76 the bands are cut on quantity, not order net value, so
+            # no realized price enters the feature.
             uses_outcome_period_data=True,
+            embeds_realized_price=False,
         ),
-        "revenue_abc": FeatureLineage(
-            source_columns=("net_amount_cents", "customer_id"),
-            formula="cumulative revenue-share classes A/B/C over the fitting sample",
-            reference_window="fitting sample (same period as the target)",
-            # Contemporaneous revenue embeds the target-period prices; Phase 76
-            # replaces this with a pre-period ABC and flips this flag.
-            uses_outcome_period_data=True,
+        "abc_class": FeatureLineage(
+            source_columns=("net_amount_cents", "quantity_norm", "order_id", "item_id"),
+            formula=(
+                "A/B/C cumulative-share classes per item, cut on the configured "
+                "basis (abc_feature_basis) over a window that ends before the "
+                "line's own period; items with no history in that window are "
+                "unrated"
+            ),
+            reference_window="the abc_feature_lag_periods periods before each line's period",
+            uses_outcome_period_data=False,
+            embeds_realized_price=False,
         ),
     }
 
@@ -356,7 +369,7 @@ class SegmentationConfig(StrictModel):
         "item_family",
         "item_role",
         "order_size_band",
-        "revenue_abc",
+        "abc_class",
     )
     # Columns that must never appear in commercial-segment features.
     forbidden_commercial_features: tuple[str, ...] = (
@@ -369,6 +382,21 @@ class SegmentationConfig(StrictModel):
     # Lineage metadata per feature (Run 6, 60.4): every context feature must
     # declare where it comes from and whether it uses outcome-period data.
     feature_lineage: dict[str, FeatureLineage] = Field(default_factory=_default_feature_lineage)
+    # ABC as a SEGMENTATION FEATURE (Run 6, Phase 76). The reported ABC table
+    # is unchanged; this is the lagged class the commercial tree may see.
+    # "revenue" keeps the familiar business meaning, "units" and "orders" drop
+    # price from the basis entirely.
+    abc_feature_basis: Literal["revenue", "units", "orders"] = "revenue"
+    # How many periods of history the class is cut on. The window ENDS the
+    # period before each line, so a line's own month never contributes.
+    abc_feature_lag_periods: int = Field(default=6, ge=1)
+    # Out-of-fold target encoding while the tree is grown (Run 6, Phase 76):
+    # an in-sample encoding hands a high-cardinality category the leaf mean it
+    # is about to be scored against.
+    target_encoding_folds: int = Field(default=5, ge=2)
+    # Share of PERIODS (earliest first) used to fit the time-based holdout
+    # evaluation; the rest are held out.
+    holdout_fit_period_share: float = Field(default=0.75, gt=0, lt=1)
     bootstrap_resamples: int = Field(default=30, ge=2)
     # Cells whose mean normalized price index differs by less than this are not
     # commercially distinct and are consolidated into one segment.

@@ -368,6 +368,14 @@ export type ScopeLabel = string | null;
 export type ScopeValue = string;
 export type ScenarioGrids = ScenarioGrid[];
 export type BootstrapMedianAri = number | null;
+export type Mae = number | null;
+export type MaeBaseline = number | null;
+export type MaeWithoutSamePeriodFeatures = number | null;
+export type NEvalPairs = number;
+export type NEvalPeriods = number;
+export type NFitPeriods = number;
+export type Note2 = string;
+export type SamePeriodFeatures = string[];
 export type NPairs1 = number;
 export type P25 = number;
 export type P50 = number;
@@ -408,6 +416,7 @@ export type Plain = string;
  */
 export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
+export type Notes2 = string[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
 export type AnalyticCiHigh = number | null;
@@ -1008,11 +1017,26 @@ export interface ScenarioGridPoint {
 }
 export interface SegmentsSection {
   bootstrap_median_ari: BootstrapMedianAri;
+  holdout?: SegmentHoldout | null;
   index_distribution: IndexDistribution;
   margin_driver_note: MarginDriverNote;
   margin_driver_rules: MarginDriverRules;
+  notes?: Notes2;
   recommendation_change_share: RecommendationChangeShare;
   rules: Rules;
+}
+/**
+ * Run 6, Phase 76: how the segmentation does on periods it never saw.
+ */
+export interface SegmentHoldout {
+  mae: Mae;
+  mae_baseline: MaeBaseline;
+  mae_without_same_period_features: MaeWithoutSamePeriodFeatures;
+  n_eval_pairs: NEvalPairs;
+  n_eval_periods: NEvalPeriods;
+  n_fit_periods: NFitPeriods;
+  note: Note2;
+  same_period_features: SamePeriodFeatures;
 }
 export interface SegmentIndexStats {
   n_pairs: NPairs1;

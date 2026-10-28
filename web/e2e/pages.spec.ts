@@ -79,6 +79,22 @@ test("guidance page: pair lookup shows bundle floors and explanation", async ({ 
   await expect(page.getByText(pair.explanation.slice(0, 60))).toBeVisible();
 });
 
+test("segments page: the later-period test is shown with its baseline", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/segments");
+  const h = bundle.segments.holdout;
+  expect(h).toBeTruthy();
+  await expect(page.getByRole("heading", { name: "Tested on later periods" })).toBeVisible();
+  // The segmentation is never shown winning without the thing it beat.
+  await expect(page.getByText("Average error of the segment medians")).toBeVisible();
+  await expect(page.getByText("Average error of a single median")).toBeVisible();
+  const notes = page.getByTestId("segment-notes");
+  await expect(notes).toBeVisible();
+  for (const n of bundle.segments.notes ?? []) {
+    await expect(notes).toContainText(n.slice(0, 60));
+  }
+});
+
 test("sensitivity page: segment rows match the bundle", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/sensitivity");

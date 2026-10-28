@@ -148,6 +148,19 @@ class SegmentIndexStats(BaseModel):
     p75: float
 
 
+class SegmentHoldout(BaseModel):
+    """Run 6, Phase 76: how the segmentation does on periods it never saw."""
+
+    n_fit_periods: int
+    n_eval_periods: int
+    n_eval_pairs: int
+    mae: float | None
+    mae_baseline: float | None
+    mae_without_same_period_features: float | None
+    same_period_features: list[str]
+    note: str
+
+
 class SegmentsSection(BaseModel):
     rules: list[SegmentRule]
     margin_driver_rules: list[SegmentRule]
@@ -155,6 +168,8 @@ class SegmentsSection(BaseModel):
     bootstrap_median_ari: float | None
     recommendation_change_share: float | None
     index_distribution: list[SegmentIndexStats]
+    holdout: SegmentHoldout | None = None
+    notes: list[str] = []
 
 
 class GuidancePair(BaseModel):

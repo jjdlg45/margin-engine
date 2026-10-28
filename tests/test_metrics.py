@@ -76,12 +76,23 @@ def test_feature_lineage_covers_context_features() -> None:
 
 
 def test_feature_lineage_is_honest_about_outcome_period() -> None:
-    """revenue_abc and order_size_band are computed over the fitting sample and
-    embed outcome-period dollars; the metadata must say so until Phase 76
-    replaces the computation."""
+    """Phase 76 replaced the two features that carried outcome-period dollars.
+
+    `revenue_abc` is gone from the context set (the ABC the tree sees is now
+    cut on a window that ends before the line's own period) and the order-size
+    band is cut on quantity. The order band is still measured over the same
+    period as the target and must keep saying so; neither may claim to be
+    price-free unless it is.
+    """
     lineage = Rules().segmentation.feature_lineage
-    assert lineage["revenue_abc"].uses_outcome_period_data
+    assert "revenue_abc" not in Rules().segmentation.context_features
+    assert not lineage["abc_class"].uses_outcome_period_data
+    assert not lineage["abc_class"].embeds_realized_price
+    assert "before" in lineage["abc_class"].reference_window
+    # Same period, but cut on units: reported as same-period, not refused.
     assert lineage["order_size_band"].uses_outcome_period_data
+    assert not lineage["order_size_band"].embeds_realized_price
+    assert "net_amount_cents" not in lineage["order_size_band"].source_columns
     assert not lineage["industry"].uses_outcome_period_data
 
 

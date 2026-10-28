@@ -234,26 +234,104 @@ def abc_classification(observations: pl.DataFrame, rules: Rules) -> pl.DataFrame
     observations = observations.sort("source_line_key")
 
     def _abc(metric: pl.Expr, name: str) -> pl.DataFrame:
-        per_item = (
-            observations.group_by("item_id")
-            .agg(metric.alias("value"))
-            .sort(["value", "item_id"], descending=[True, False])
-            .with_columns((pl.col("value").cum_sum() / pl.col("value").sum()).alias("_cum"))
-            .with_columns(
-                pl.when(pl.col("_cum") <= a)
-                .then(pl.lit("A"))
-                .when(pl.col("_cum") <= a + b)
-                .then(pl.lit("B"))
-                .otherwise(pl.lit("C"))
-                .alias(name)
-            )
-        )
-        return per_item.select("item_id", name)
+        per_item = observations.group_by("item_id").agg(metric.alias("value"))
+        return _abc_classes(per_item, a, b, name)
 
     rev = _abc(pl.col("net_amount_cents").sum(), "revenue_abc")
     units = _abc(pl.col("quantity_norm").sum(), "unit_abc")
     freq = _abc(pl.col("order_id").n_unique(), "frequency_abc")
     return rev.join(units, on="item_id").join(freq, on="item_id")
+
+
+def _abc_classes(per_item: pl.DataFrame, a: float, b: float, name: str) -> pl.DataFrame:
+    """A/B/C by cumulative share of `value`, largest first.
+
+    Ties break on item_id so the classes are reproducible. A non-positive
+    total has no cumulative share to cut, so every item is unrated rather
+    than being swept into C.
+    """
+    total = per_item["value"].sum() if per_item.height else 0
+    if not total or float(total) <= 0:
+        return per_item.select("item_id", pl.lit(UNRATED).alias(name))
+    return (
+        per_item.sort(["value", "item_id"], descending=[True, False])
+        .with_columns((pl.col("value").cum_sum() / pl.col("value").sum()).alias("_cum"))
+        .with_columns(
+            pl.when(pl.col("_cum") <= a)
+            .then(pl.lit("A"))
+            .when(pl.col("_cum") <= a + b)
+            .then(pl.lit("B"))
+            .otherwise(pl.lit("C"))
+            .alias(name)
+        )
+        .select("item_id", name)
+    )
+
+
+#: An item with no history in the lookback window has no class. It is not a C.
+UNRATED = "unrated"
+
+_ABC_BASIS_METRIC = {
+    "revenue": lambda: pl.col("net_amount_cents").sum(),
+    "units": lambda: pl.col("quantity_norm").sum(),
+    "orders": lambda: pl.col("order_id").n_unique(),
+}
+
+
+def lagged_abc_classification(
+    observations: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
+) -> pl.DataFrame:
+    """Item ABC class cut on a window that ends BEFORE the line's own period.
+
+    `abc_classification` above is the right answer for reporting: it describes
+    the period being reported on. As a SEGMENTATION feature it is not, because
+    revenue is price x quantity over the very period the commercial tree is
+    explaining - an item's class then carries the prices the tree is fitting,
+    and the tree can "explain" the price index with a restatement of it
+    (Run 6, Finding 11).
+
+    This version cuts the class on the `abc_feature_lag_periods` periods
+    before each line's own period, on the configured basis (revenue, units or
+    order frequency). Items with no history in the window are `unrated`.
+
+    Returns one row per (item_id, _abc_period) carrying `abc_class`.
+    """
+    sc = rules.segmentation
+    lag = sc.abc_feature_lag_periods
+    metric = _ABC_BASIS_METRIC[sc.abc_feature_basis]()
+    idx = "_abc_pidx"
+    if fiscal is not None:
+        work = fiscal.attach(observations, "invoice_date", idx=idx)
+    else:
+        d = pl.col("invoice_date")
+        work = observations.with_columns((d.dt.year() * 12 + d.dt.month()).alias(idx))
+    work = work.filter(pl.col(idx).is_not_null())
+    if work.height == 0:
+        return pl.DataFrame(
+            schema={"item_id": pl.String, "_abc_period": pl.Int64, "abc_class": pl.String}
+        )
+
+    per_period = work.group_by("item_id", idx).agg(metric.alias("value")).sort("item_id", idx)
+    periods = sorted(int(v) for v in work[idx].unique().to_list())
+    frames: list[pl.DataFrame] = []
+    for target in periods:
+        window = (
+            per_period.filter((pl.col(idx) >= target - lag) & (pl.col(idx) < target))
+            .group_by("item_id")
+            .agg(pl.col("value").sum().alias("value"))
+        )
+        classes = _abc_classes(window, sc.abc_a_share, sc.abc_b_share, "abc_class")
+        # Every item selling in this period gets a row, so "no history in the
+        # window" is a visible `unrated` rather than a missing key that some
+        # later join has to guess about.
+        active = per_period.filter(pl.col(idx) == target).select("item_id").unique()
+        frames.append(
+            active.join(classes, on="item_id", how="left")
+            .with_columns(pl.col("abc_class").fill_null(UNRATED))
+            .with_columns(pl.lit(target, dtype=pl.Int64).alias("_abc_period"))
+        )
+    out = pl.concat(frames) if frames else pl.DataFrame()
+    return out.select("item_id", "_abc_period", "abc_class").sort("item_id", "_abc_period")
 
 
 def run_dispersion(
@@ -278,4 +356,17 @@ def run_dispersion(
     stats = peer_group_stats(df)
     abc = abc_classification(observations, rules)
     df = df.join(abc, on="item_id", how="left")
+    # The lagged class the commercial tree may see, keyed on the line's own
+    # period (Run 6, Phase 76). The reported `abc` table above is unchanged.
+    lagged = lagged_abc_classification(observations, rules, fiscal)
+    idx = "_abc_pidx"
+    if fiscal is not None:
+        df = fiscal.attach(df, "invoice_date", idx=idx)
+    else:
+        d = pl.col("invoice_date")
+        df = df.with_columns((d.dt.year() * 12 + d.dt.month()).alias(idx))
+    df = df.join(lagged.rename({"_abc_period": idx}), on=["item_id", idx], how="left").with_columns(
+        pl.col("abc_class").fill_null(UNRATED)
+    )
+    df = df.drop(idx)
     return df, stats, abc

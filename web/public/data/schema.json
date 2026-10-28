@@ -2461,6 +2461,79 @@
    "title": "ScenarioGridPoint",
    "type": "object"
   },
+  "SegmentHoldout": {
+   "description": "Run 6, Phase 76: how the segmentation does on periods it never saw.",
+   "properties": {
+    "mae": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae"
+    },
+    "mae_baseline": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae Baseline"
+    },
+    "mae_without_same_period_features": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae Without Same Period Features"
+    },
+    "n_eval_pairs": {
+     "title": "N Eval Pairs",
+     "type": "integer"
+    },
+    "n_eval_periods": {
+     "title": "N Eval Periods",
+     "type": "integer"
+    },
+    "n_fit_periods": {
+     "title": "N Fit Periods",
+     "type": "integer"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "same_period_features": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Same Period Features",
+     "type": "array"
+    }
+   },
+   "required": [
+    "n_fit_periods",
+    "n_eval_periods",
+    "n_eval_pairs",
+    "mae",
+    "mae_baseline",
+    "mae_without_same_period_features",
+    "same_period_features",
+    "note"
+   ],
+   "title": "SegmentHoldout",
+   "type": "object"
+  },
   "SegmentIndexStats": {
    "properties": {
     "n_pairs": {
@@ -2587,6 +2660,17 @@
      ],
      "title": "Bootstrap Median Ari"
     },
+    "holdout": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/SegmentHoldout"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "index_distribution": {
      "items": {
       "$ref": "#/$defs/SegmentIndexStats"
@@ -2603,6 +2687,14 @@
       "$ref": "#/$defs/SegmentRule"
      },
      "title": "Margin Driver Rules",
+     "type": "array"
+    },
+    "notes": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
      "type": "array"
     },
     "recommendation_change_share": {

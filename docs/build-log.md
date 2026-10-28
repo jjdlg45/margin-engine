@@ -4917,3 +4917,228 @@ free memory 2.44 GB (floor 2.0), 1997s; plus
 No web source changed, so the web gates were not re-run: `git status` shows
 changes only under `.github/`, `docs/`, `scripts/`, `src/margin_engine/`,
 `tests/` and `README.md`, none of which the app reads at build time.
+
+## Phase 76 — Segmentation leakage (2026-10-27, Run 6 branch)
+
+Finding 11. The commercial tree is fit on the normalized price index, and it
+will use anything that correlates with the price index - including a
+restatement of it. Three features were doing exactly that. The review named
+one; the audit for it found the other two.
+
+### What was leaking
+
+**`revenue_abc`.** Revenue is price times quantity. The ABC class was cut on
+the same months the tree was explaining, so an item's class carried those
+months' prices and the tree could "explain" the index with a coarse copy of
+it. This is the one Finding 11 named.
+
+**The order-size band.** Cut on order *net value*, which is also price times
+quantity. Exactly the same leak, in a feature nobody had looked at.
+
+**The target encoding.** Fit on the rows it then encoded. A category with few
+rows was handed the mean of the very targets the split was about to be scored
+against, so a split on noise looked clean.
+
+**And the guard could not have caught any of them.** It rejected a feature
+whose *name* contained price, discount, cost, rebate or margin. `revenue_abc`
+contains none of those words. A name check is a spell-checker.
+
+### What replaced them
+
+**A lagged ABC** (`lagged_abc_classification`). The class the tree sees is cut
+on a window that ends the period *before* each line
+(`abc_feature_lag_periods`, default 6), on a configurable basis
+(`abc_feature_basis`: revenue, units or order frequency - the spec allows
+either a pre-period revenue ABC or a lagged unit/frequency one, so both ship
+and revenue is the default). An item with no history in the window is
+`unrated`, a level of its own, because calling it a C is a statement nobody
+measured. Every item selling in a period gets a row, so "no history" is
+visible rather than a missing key for a later join to interpret.
+
+The reported ABC table is unchanged. For *reporting* a period the
+contemporaneous class is the right answer; it is only as a feature of a model
+explaining that period that it is wrong.
+
+**Order-size bands on quantity.** Same business meaning - how big an order is
+- with no price in it.
+
+**Cross-fitted target encoding** (`TargetEncoder.fit_cross_fitted`). While the
+tree is grown each row is encoded from the other folds only
+(`target_encoding_folds`, default 5); the full-sample maps stay for assignment
+and prediction, where there is no fold to hold out. Folds are a seeded
+permutation, so the same frame gives the same assignment every run.
+
+**A guard that reads lineage.** `FeatureLineage` (60.4) gains
+`embeds_realized_price`. The guard now refuses a feature that declares it
+embeds the realized price, refuses a feature that declares *nothing*, and
+keeps the name check as a second line. Features that are same-period but
+price-free - the order-size band - are reported, not refused, and get a
+measured number instead of an argument.
+
+### Tested on periods it never saw
+
+`time_based_holdout` fits the tree on the earliest 75% of months and scores
+the segment medians on the later ones, as mean absolute error on the price
+index against a single median for everybody. It runs twice: with the full
+feature set and without the same-period features. A bootstrap resamples the
+same months and cannot tell a structure that will hold next quarter from one
+that has fitted this quarter's noise; this can.
+
+On the demo world: **0.0621 against a 0.1145 baseline** over 6 held-out months
+and 1,273 pairs, and dropping the order-size band costs 0.0003 - it is worth
+almost nothing out of time, which is now a number on the page rather than a
+belief.
+
+### What changed in the outputs
+
+Demo world, before and after, both measured by running `export-web --demo` on
+a worktree at the previous commit and on this tree:
+
+| | Before | After |
+|---|---|---|
+| Commercial segments | 3 | 2 |
+| Bootstrap median ARI | 0.737 | 0.884 |
+| Price recommendations changing across resamples | 41.7% | 31.4% |
+| Gross price opportunity | $396,296.75 | $413,735.22 |
+| Conservative (below-P25 to P25) | $114,032.28 | $119,415.56 |
+| Opportunity records | 660 | 611 |
+| Outside price support | 202 | 193 |
+| Expected pocket-gross-profit change | $49,636.44 | unchanged |
+
+**The engine now finds one segment fewer, and that is the result, not a
+regression.** The two old segments at the upper end of the index (medians
+0.914 and 1.031) merge into one (median 0.941). The split between them was
+being drawn with features that carried the prices it was separating. The
+partition that remains is markedly more stable - bootstrap agreement 0.737 to
+0.884, and a third fewer price recommendations flip when the data is
+resampled.
+
+On the validation world the planted-segment recovery target is unaffected:
+`test_out_of_sample_ari_vs_planted` and `test_bootstrap_stability` pass at the
+section 8 bars (ARI >= 0.70, bootstrap median ARI >= 0.80) with no change to
+either.
+
+### Tests added
+
+`tests/test_segment_leakage.py`, 23 tests on frames built in the test so the
+truth is exact.
+
+The guard: an innocent name does not get a price-embedding feature through;
+an undeclared feature is refused rather than assumed innocent; the name check
+still fires; same-period-but-price-free features are returned for reporting,
+not raised on.
+
+The lagged ABC: an item that is tiny for six months and enormous in the
+seventh is still a C in the seventh; the first period rates nobody; revenue,
+units and order-frequency bases rank ten items in opposite orders; an
+all-zero window rates nobody; the classification is deterministic.
+
+Order size: thirty orders whose unit prices swing by three orders of
+magnitude land in bands determined only by their quantity.
+
+Cross-fitting: on a pure-noise category appearing twice per level, the
+in-sample encoding correlates with the target above 0.6 and the out-of-fold
+encoding below 0.2 - the leak, measured; the prediction-time maps stay
+full-sample; the folds are reproducible and fall back on frames too small to
+hold anything out.
+
+The planted shortcut world: a second attribute predicts the price index as
+well as the truth does but cuts across it. Declared honestly, the guard
+refuses it. Declared as price-free - a lie the metadata permits - the tree
+takes it and recovery falls by more than 0.2 ARI, which is what makes the
+declaration load-bearing rather than decorative.
+
+The holdout: real structure beats a single median and says so; structureless
+data does not pretend to; too little history refuses with a reason; the
+same-period features get their own number; the fitted result carries all of
+it in its notes.
+
+`tests/test_metrics.py` - the Phase 60 lineage test said "until Phase 76
+replaces the computation" and now asserts the replacement.
+
+`web/e2e/pages.spec.ts` - the Segments page shows the later-period test with
+the baseline beside it, and every engine note reaches the page.
+
+### Plain English
+
+`abc_class` and `order_size_band` gained label-dictionary entries, because the
+new segment notes name them and the raw-code scanner is right to fail on a
+column name in a sentence. The notes read "context feature order size band is
+measured over the same period as the price index it helps explain".
+
+### What it cost, and the optimization that was needed
+
+Cross-fitted encoding runs on every bootstrap refit, and the Run-1
+performance bar is decided by a few seconds of ambient variation (Phase 71:
+119.0s measured against 120s). So the cost was measured rather than assumed,
+on the largest world this machine holds - 300 customers x 500 items, 209,661
+lines, 13,568 pairs - three runs per configuration, interleaved.
+
+The obvious implementation refits the encoder once per fold, and it was not
+affordable:
+
+| Segmentation stage | Median |
+|---|---|
+| Before Phase 76 | 2.25s |
+| Refit per fold | 5.98s (+166%) |
+| One pass by subtraction | 4.47s (+98%) |
+| Subtraction with `bincount` | **3.06s (+23%)** |
+
+Two changes got it there, neither of which touches what is computed:
+
+1. **Subtraction instead of refitting.** Per-category totals are accumulated
+   once with the fold as a second axis; a fold's "fit on the others" is the
+   row total minus that fold's own column. `test_the_fast_cross_fitting_equals_refitting_every_fold`
+   asserts the two agree to 1e-12 at shrinkage 0 and 20, including for
+   categories that appear in a single fold, where a refit falls back to the
+   other folds' mean.
+2. **`np.bincount` instead of `np.add.at`.** The unbuffered scatter-add was
+   over half the remaining cost.
+
+End to end on the same world, full Run-1 pipeline, three runs each: 76.37s
+before, 78.04s after. The before runs spread 75.84-82.72s and the after runs
+77.30-78.89s, so the median gap of 1.67s is not separable from run-to-run
+variation; the **stage** measurement (+0.47s in that same run, segmentation
+3.07s to 3.54s) is the trustworthy figure, and 0.40s of it is the time-based
+holdout - a fixed cost of two extra fits, not multiplied by the bootstrap.
+
+The 811k-line Run-1 performance target is measured by the CI benchmark job
+(`.github/workflows/benchmark.yml`), which times this branch and `main` on
+the same runner and fails on either the absolute bar or a 10% regression.
+That job is the gate; a sub-1% addition cannot be resolved on a 14 GB machine
+against a bar whose own measurement spread is about 4s, and the full world
+does not fit here beside a desktop. Recorded as the one check this phase
+cannot run locally.
+
+The demo outputs are bit-identical before and after the optimization
+(2 segments, bootstrap ARI 0.8840696765, holdout 0.06208593743), so the
+reported numbers above are unaffected by it.
+
+### A flaky test of my own, caught by the suite
+
+`test_the_shortcut_really_does_destroy_the_partition` passed on its own and
+failed inside a batch. The planted world had 40 customers, so industry x
+shortcut is four cells of 10 customers each - below the shipped
+20-customer leaf minimum. Whether the shortcut cells survived the
+minimum-enforcing merge was therefore decided by merge order, and the test
+measured that rather than the thing it claims to measure.
+
+Fixed by planting 120 customers, so each cell holds 30 and the tree is free
+to take the shortcut if it wants to. It does: recovery falls from 1.000 to
+0.499, a gap of 0.501 against the 0.2 the test requires. Three consecutive
+runs of the file and one of the full batch are green. The threshold was not
+touched - the world was made big enough for the question to be asked.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (198 files); mypy src api 0 (93 files,
+strict). Full pytest green: 703 tests in 63 files, 21 batches each in its own
+process, every batch returncode 0, worst batch peak 3.39 GB, minimum system
+free memory 2.38 GB (floor 2.0), 1230s. tsc 0; vitest 22/22; vite build 0;
+Playwright 229 passed 3 skipped (exit 0) after re-baselining 24 snapshots on
+the six pages whose content changed with the segment count - segments
+(the new later-period section), sensitivity, opportunity, actions, modules
+and methodology.
+
+The 811k-line Run-1 performance target is not measured here; it runs in CI
+(`benchmark.yml`), as recorded above.

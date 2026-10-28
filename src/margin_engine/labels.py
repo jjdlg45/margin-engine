@@ -13,6 +13,18 @@ from typing import NamedTuple
 from margin_engine.metrics import metric_label_entries
 
 LABELS: dict[str, dict[str, str]] = {
+    # --- segmentation features (Run 6, Phase 76) ----------------------------
+    "abc_class": {
+        "label": "ABC class",
+        "description": "A, B or C by cumulative share of the configured basis, cut on a "
+        "window that ends before the line's own period; an item with no history in that "
+        "window is unrated.",
+    },
+    "order_size_band": {
+        "label": "order size band",
+        "description": "Small, medium or large by the order's quantity in normalized units. "
+        "Cut on quantity rather than order value, so no realized price enters the feature.",
+    },
     # --- evidence statuses (sensitivity, cross-price) ------------------------
     "causal_elasticity_supported": {
         "label": "Causal, supported",
@@ -941,6 +953,7 @@ _FEATURE_NOUNS: dict[str, str] = {
     "item_role": "items",
     "order_size_band": "orders",
     "revenue_abc": "revenue class",
+    "abc_class": "items",
 }
 
 _VALUE_WORDS: dict[str, str] = {
@@ -962,6 +975,9 @@ _ORDERED_LEVELS: dict[str, list[str]] = {
     "cost_ratio_band": ["low", "mid", "high"],
     "order_size_band": ["small", "medium", "large"],
     "revenue_abc": ["A", "B", "C"],
+    # "unrated" is a level, not a gap: an item with no history in the lookback
+    # window has no class, and saying so beats quietly calling it a C.
+    "abc_class": ["A", "B", "C", "unrated"],
 }
 
 # Band features whose plain phrase is not "<levels> <noun>".
@@ -1024,6 +1040,8 @@ def _include_phrase(feature: str, values: list[str], acronyms: frozenset[str] = 
         return f"{vals} {_BAND_PHRASES[feature]}"
     if feature == "revenue_abc":
         return f"revenue class {vals}"
+    if feature == "abc_class":
+        return f"ABC class {vals}"
     noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
     return f"{vals} {noun}"
 
@@ -1066,6 +1084,7 @@ _ONE_HOT_FEATURES = (
     "channel",
     "contract_type",
     "revenue_abc",
+    "abc_class",
 )
 
 
