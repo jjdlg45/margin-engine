@@ -173,9 +173,16 @@ closes the loop from finding to decision to measured outcome:
   event log whose current status is derived by replay — never edited in place.
   Roles are analyst (proposes, edits, exports, implements), approver (approves
   or rejects — never an action they proposed themselves) and viewer. Approving
-  a compliance-flagged action requires a written justification. Identity in
-  local mode is a configured user name, documented everywhere as *not*
-  authentication.
+  a compliance-flagged action requires a written justification.
+- **Two identity modes.** `local` (the default) takes a configured user name
+  from a header: convenient for one person on one machine, and *not*
+  authentication — anyone who can reach the port can be anyone. `production`
+  rejects client-supplied identity outright, issues bearer tokens against
+  accounts with PBKDF2-hashed passwords or an OIDC provider, decides every
+  authorisation on an **immutable user id** rather than a display name, keeps
+  an audit log that holds the record and none of the secrets, and refuses to
+  start unless the operator has declared the state directory encrypted.
+  Details in [`docs/deploy-api.md`](docs/deploy-api.md).
 - **ERP price export.** `margin-engine export-prices` writes approved price
   actions as an ERP-importable price file (header names, date format, decimal
   separator and price unit configurable per deployment), deterministic and

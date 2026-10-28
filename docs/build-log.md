@@ -5688,3 +5688,123 @@ README line, and the methodology page renders from the markdown file.
 Network: one search and one fetch of justice.gov to verify the citation
 before writing it. Recorded in the entry above with the retrieval date; no
 test depends on the network.
+
+## Phase 82 — Authenticated production mode (2026-10-28, Run 6 branch)
+
+Finding 19. The API's identity was a header the client filled in. A comment
+said so and the response text said so, but a comment is not a control: with
+`X-User` the caller chose who it was, which means separation of duties, role
+checks and the audit trail were all decided by the party they constrain.
+
+### Two modes, and the difference is who decides
+
+`MARGIN_API_MODE` (new) is `local` by default, keeping exactly the Phase 39
+behaviour for one person on one machine. The mode name now says what the
+comment used to.
+
+`production` takes every identity decision away from the client:
+
+- **`X-User` is rejected, not ignored** - 400 with
+  `client_identity_rejected`. A header that used to be identity must not
+  quietly become a hint a caller believes worked.
+- Identity is a bearer token the server issued, against local accounts with
+  **PBKDF2-HMAC-SHA256** passwords (stdlib, 600k iterations, per-hash salt,
+  iteration count stored so the factor can be raised) or an OIDC provider
+  through a registered verifier.
+- Every decision reads an **immutable user id**, never a display name. A
+  separation-of-duties rule written against display names is a rule about
+  strings, and the person it constrains can edit it.
+- Unknown user and wrong password give the same answer, with the same work.
+  An account with no password hash cannot be logged into at all, which is
+  the safe reading of a half-configured deployment.
+
+### The seam, not a half-written identity system
+
+`api.auth.set_oidc_verifier(fn)` is the whole OIDC integration: a callable
+returning `(user_id, display_name, roles)`. No JWKS fetching, no signature
+validation - that belongs to a library a security team chose, and writing a
+partial one here would be worse than none. A provider failure surfaces as
+401, never 500, and never with the provider's own message.
+
+### Refusing to start
+
+Production mode fails at startup when nobody could log in (no accounts, or
+no password hash and no verifier), and when
+`MARGIN_API_STORAGE_ENCRYPTED=1` is unset. The last is a **declaration**,
+not a check: DuckDB has no at-rest encryption, uploads and review history
+and the audit log are protected by the volume or not at all, and the process
+cannot see the volume from inside. Making the operator declare it turns an
+assumption into somebody's decision.
+
+### Uploads belong to whoever sent them
+
+The upload id is a content hash. That is convenient and was never a secret -
+two people uploading the same export get the same id, and an id can be
+derived from a file someone already has - so **knowing the id was access**.
+Ownership is now recorded per upload and checked on read and delete; an
+unowned folder stays readable in local mode and is refused in production.
+
+`MARGIN_API_UPLOADS_RETENTION_DAYS` (default 7) deletes uploads nobody came
+back for, and `DELETE /api/load/upload/{id}` removes one now. Files and
+folders are created owner-only where the platform supports it; on Windows it
+does not, and docs/deploy-api.md says the volume is the operator's job
+rather than implying the engine handled it.
+
+### An audit log that keeps the record and not the secrets
+
+JSON lines: timestamp, immutable user id, action, status, resource. Logins,
+failed logins, uploads, deletions and exports. Fields are copied in **by
+name** rather than filtered out, so a new field elsewhere in the API cannot
+start appearing here by accident, and `record()` raises on a key that looks
+like a secret rather than trusting the caller.
+
+### Tests added
+
+`tests/test_production_mode.py`, 32 tests. Each one is something that used
+to work and must now fail.
+
+Spoofed identity: the header is rejected on `/auth/me` and on a lifecycle
+call; no token means no identity; a made-up token and a wrong scheme are
+401s.
+
+Passwords: unknown user and wrong password are indistinguishable; an account
+with no hash cannot be logged into; a hash does not contain the password and
+two hashes of one password differ; four shapes of malformed stored hash fail
+rather than pass.
+
+Separation of duties, server-side: the analyst who submitted an action holds
+the approver role too and is still refused with `self_approval`, while a
+different approver succeeds, and an approver without the analyst role cannot
+submit. These run through the real HTTP lifecycle with tokens, so the check
+is demonstrably not in the browser.
+
+Uploads: another user's upload cannot be read or deleted, the owner's can,
+and retention deletes the old folder while leaving the new one.
+
+The audit log: it records who and what; a failed login is recorded without
+what was tried; and a test writes a password, a token and a distinctive
+value through the whole flow and fails if any reaches the file.
+
+Startup refusals: no accounts, no way to authenticate, undeclared storage
+encryption, an unknown mode, an unknown role.
+
+The OIDC seam: a registered verifier takes over token resolution, and a
+provider that raises becomes a 401 whose message does not quote it.
+
+Local mode: unchanged, still takes the header, still says in its own
+response that this is not authentication, and answers a login attempt with
+409 and an explanation rather than a confusing 401.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (205 files); mypy src api 0 (95 files,
+strict). Full pytest green: 788 tests in 67 files, 23 batches each in its own
+process, every batch returncode 0, worst batch peak 3.37 GB, 1314s. tsc 0;
+vitest 22/22; Playwright 233 passed 3 skipped (exit 0), no snapshot changes -
+the API surface changed, not the static demo.
+
+Memory: one batch (b3_9, 3.37 GB peak) touched the floor once, for 1.0
+second, bottoming at 1.81 GB - above the 1.2 GB hard-kill line, below the
+2.0 GB soft floor, and shorter than the 3-second sustained rule. The
+tightened watchdog is why this sentence can state the duration instead of
+rounding the dip away.

@@ -38,6 +38,33 @@ from margin_engine.config import RevalidationConfig, Rules, load_rules
 router = APIRouter()
 
 
+_IDENTIFY = (
+    "identify the caller: X-User with a configured name in local mode, or a "
+    "bearer token from /api/auth/login in production mode"
+)
+
+
+def _resolved_user(request: Request, x_user: str | None) -> str | None:
+    """The user id the SERVER determined, never the one the client typed.
+
+    In local mode that is still the configured X-User name, so nothing about
+    a workstation changes. In production X-User raises, the bearer token is
+    the only identity, and what comes back is an immutable account id - the
+    thing separation of duties has to be written against, because a display
+    name can be changed by the person it would otherwise constrain.
+    """
+    principal = request.app.state.auth.resolve(
+        header_user=x_user, authorization=request.headers.get("authorization")
+    )
+    return principal.user_id if principal is not None else None
+
+
+def _audit(request: Request, **kw: object) -> None:
+    log = getattr(request.app.state, "audit", None)
+    if log is not None:
+        log.record(**kw)
+
+
 def _err(
     status_code: int, code: str, detail: str, extra: dict[str, Any] | None = None
 ) -> JSONResponse:
@@ -192,7 +219,8 @@ def _transition(
         return _err(
             400,
             "missing_user",
-            "send X-User: a configured user name (local identity, not authentication)",
+            "identify the caller: X-User with a configured name in local mode, or "
+            "a bearer token from /api/auth/login in production mode",
         )
     store = _store(request)
     policy = _policy(request)
@@ -482,7 +510,7 @@ async def submit(
         request,
         action_id,
         "under_review",
-        user=x_user,
+        user=_resolved_user(request, x_user),
         note=str((body or {}).get("note", "")),
         expected_seq=_expected_seq(body),
     )
@@ -499,7 +527,7 @@ async def approve(
         request,
         action_id,
         "approved",
-        user=x_user,
+        user=_resolved_user(request, x_user),
         note=str((body or {}).get("reason", "")),
         expected_seq=_expected_seq(body),
     )
@@ -516,7 +544,7 @@ async def reject(
         request,
         action_id,
         "rejected",
-        user=x_user,
+        user=_resolved_user(request, x_user),
         note=str((body or {}).get("reason", "")),
         expected_seq=_expected_seq(body),
     )
@@ -533,7 +561,7 @@ async def rework(
         request,
         action_id,
         "proposed",
-        user=x_user,
+        user=_resolved_user(request, x_user),
         note=str((body or {}).get("note", "")),
         expected_seq=_expected_seq(body),
     )
@@ -550,7 +578,7 @@ async def implement(
         request,
         action_id,
         "implemented",
-        user=x_user,
+        user=_resolved_user(request, x_user),
         note=str((body or {}).get("note", "")),
         expected_seq=_expected_seq(body),
     )
@@ -563,8 +591,9 @@ async def bulk_approve(
     """Per-item guardrail checks: items that fail are refused with the reason
     (their status is untouched — refusing to approve is not a human rejection);
     items already approved report unchanged."""
+    x_user = _resolved_user(request, x_user)
     if not x_user:
-        return _err(400, "missing_user", "send X-User (local identity, not authentication)")
+        return _err(400, "missing_user", _IDENTIFY)
     ids = body.get("action_ids")
     note = str(body.get("reason", ""))
     if not isinstance(ids, list) or not ids:
@@ -610,8 +639,9 @@ async def price_export(
     download); dry_run previews without changing state. Idempotent: the file
     always holds every approved-or-exported price action, and only
     still-approved ones transition."""
+    x_user = _resolved_user(request, x_user)
     if not x_user:
-        return _err(400, "missing_user", "send X-User (local identity, not authentication)")
+        return _err(400, "missing_user", _IDENTIFY)
     store = _store(request)
     policy = _policy(request)
     try:
@@ -624,6 +654,13 @@ async def price_export(
     rules = load_rules(request.app.state.settings.rules_path)
     dry_run = bool((body or {}).get("dry_run", False))
     result = export_price_file(store, rules, None, who=x_user, dry_run=dry_run)
+    _audit(
+        request,
+        action="actions.export",
+        user_id=x_user,
+        status=200,
+        detail="dry run" if dry_run else "exported",
+    )
     return {
         "summary": result.summary,
         "csv": result.csv_text,
@@ -639,8 +676,9 @@ async def edit_action(
     body: dict[str, Any],
     x_user: str | None = Header(default=None),
 ) -> Any:
+    x_user = _resolved_user(request, x_user)
     if not x_user:
-        return _err(400, "missing_user", "send X-User (local identity, not authentication)")
+        return _err(400, "missing_user", _IDENTIFY)
     store = _store(request)
     policy = _policy(request)
     action = store.get_action(action_id)
@@ -673,8 +711,9 @@ async def propose(
     """Manually propose an action. Price-type proposals are guardrail-checked
     against the floor on record for the pair; a pair with no floor on record
     is refused rather than guessed."""
+    x_user = _resolved_user(request, x_user)
     if not x_user:
-        return _err(400, "missing_user", "send X-User (local identity, not authentication)")
+        return _err(400, "missing_user", _IDENTIFY)
     store = _store(request)
     policy = _policy(request)
     try:

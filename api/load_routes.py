@@ -13,8 +13,12 @@ plain-English messages.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import json
+import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -52,12 +56,86 @@ def _err(status_code: int, detail: str) -> JSONResponse:
 def _uploads_dir(request: Request) -> Path:
     d: Path = request.app.state.settings.uploads_dir
     d.mkdir(parents=True, exist_ok=True)
+    _restrict(d)
     return d
+
+
+def _restrict(path: Path) -> None:
+    """Owner-only where the platform supports it (no-op on Windows; see
+    docs/deploy-api.md, which makes the volume the operator's job)."""
+    with contextlib.suppress(OSError, NotImplementedError):
+        path.chmod(0o700 if path.is_dir() else 0o600)
+
+
+def _caller(request: Request) -> str | None:
+    """The uploading user, as the server determined it (Run 6, Phase 82)."""
+    auth = getattr(request.app.state, "auth", None)
+    if auth is None:
+        return None
+    principal = auth.resolve(
+        header_user=request.headers.get("x-user"),
+        authorization=request.headers.get("authorization"),
+    )
+    return principal.user_id if principal is not None else None
+
+
+def _owner_path(folder: Path) -> Path:
+    return folder / "_owner.json"
+
+
+def _owner_of(folder: Path) -> str | None:
+    f = _owner_path(folder)
+    if not f.exists():
+        return None
+    try:
+        return str(json.loads(f.read_text(encoding="utf-8")).get("owner_user_id") or "") or None
+    except (ValueError, OSError):
+        return None
+
+
+def _may_read(request: Request, folder: Path) -> bool:
+    """An upload belongs to whoever sent it.
+
+    The upload id is the content hash, which is convenient and is NOT a
+    secret: two people uploading the same export get the same id, and an id
+    can be guessed from a file somebody already has. Ownership is therefore
+    recorded and checked rather than inferred from knowing the id. An
+    unowned folder (uploaded before this existed, or by an anonymous local
+    caller) stays readable in local mode and is refused in production.
+    """
+    owner = _owner_of(folder)
+    caller = _caller(request)
+    production = getattr(request.app.state, "auth", None) is not None and (
+        request.app.state.auth.production
+    )
+    if owner is None:
+        return not production
+    return owner == caller
+
+
+def sweep_expired_uploads(root: Path, retention_days: float) -> int:
+    """Delete uploads older than the retention window. Returns the count.
+
+    Retention is a deletion policy, not a hope: a workspace that holds a
+    customer's invoice export forever is a liability nobody asked for.
+    """
+    if retention_days <= 0 or not root.is_dir():
+        return 0
+    cutoff = time.time() - retention_days * 86_400
+    removed = 0
+    for folder in sorted(root.iterdir()):
+        if not folder.is_dir():
+            continue
+        newest = max((f.stat().st_mtime for f in folder.rglob("*") if f.is_file()), default=0.0)
+        if newest and newest < cutoff:
+            shutil.rmtree(folder, ignore_errors=True)
+            removed += 1
+    return removed
 
 
 def _upload_file(request: Request, upload_id: str) -> Path | None:
     folder = _uploads_dir(request) / upload_id
-    if not folder.is_dir():
+    if not folder.is_dir() or not _may_read(request, folder):
         return None
     files = [p for p in folder.iterdir() if p.suffix.lower() in ALLOWED_SUFFIXES]
     return files[0] if files else None
@@ -81,11 +159,51 @@ async def upload(request: Request, filename: str) -> Any:
             413,
             "That file is larger than 200 MB. Run the engine locally on files this size (see the guide page).",
         )
+    root = _uploads_dir(request)
+    sweep_expired_uploads(root, request.app.state.settings.uploads_retention_days)
     upload_id = hashlib.sha256(body).hexdigest()[:12]
-    folder = _uploads_dir(request) / upload_id
+    folder = root / upload_id
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / name).write_bytes(body)
+    _restrict(folder)
+    target = folder / name
+    target.write_bytes(body)
+    _restrict(target)
+    owner = _caller(request)
+    _owner_path(folder).write_text(
+        json.dumps({"owner_user_id": owner, "uploaded_epoch": round(time.time())}),
+        encoding="utf-8",
+    )
+    _restrict(_owner_path(folder))
+    audit = getattr(request.app.state, "audit", None)
+    if audit is not None:
+        audit.record(
+            action="load.upload",
+            user_id=owner,
+            status=200,
+            resource=upload_id,
+            n_bytes=len(body),
+        )
     return {"upload_id": upload_id, "filename": name, "n_bytes": len(body)}
+
+
+@router.delete("/api/load/upload/{upload_id}")
+def delete_upload(upload_id: str, request: Request) -> Any:
+    """Delete an upload and everything derived from it.
+
+    Retention sweeps the forgotten ones; this is for the person who wants it
+    gone now. Refusing to delete somebody else's is the same check as
+    refusing to read it.
+    """
+    folder = _uploads_dir(request) / upload_id
+    if not folder.is_dir():
+        return _err(404, "No upload with that id.")
+    if not _may_read(request, folder):
+        return _err(404, "No upload with that id.")
+    shutil.rmtree(folder, ignore_errors=True)
+    audit = getattr(request.app.state, "audit", None)
+    if audit is not None:
+        audit.record(action="load.delete", user_id=_caller(request), status=200, resource=upload_id)
+    return {"upload_id": upload_id, "deleted": True}
 
 
 def _confirmables(draft_text: str, profile: Any) -> list[dict[str, Any]]:
