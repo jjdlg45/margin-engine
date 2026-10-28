@@ -23,6 +23,12 @@ jobs:
         run: uv run mypy src api
       - name: Tests
         run: uv run pytest --cov --cov-report=term
+      # Excluded from the default run because they need more RAM than the
+      # 14 GB build machine can spare beside a desktop - not because they are
+      # allowed to fail. The runner has 16 GB, so they run here on every push.
+      - name: Memory-heavy tests
+        timeout-minutes: 30
+        run: uv run pytest -m memory_heavy --no-cov
       # Supply-chain audits (Run 5, Phase 44). pip-audit checks the exact
       # locked set; npm audit fails on high or critical. docs/security.md
       # documents how to handle a finding.

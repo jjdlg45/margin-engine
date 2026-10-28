@@ -4760,3 +4760,160 @@ pinned to one test rather than a whole file: nine of its ten pass together at
 4 GB and drives free memory to 1.69 GB, under the 2 GB floor, even with
 nothing else running. It is not skipped or weakened; it runs in CI. Phase 83
 is where the memory itself gets fixed.
+
+## Process correction — an unmeasured figure, and the checks that let it through (2026-10-27, Run 6 branch)
+
+Two process failures, one of them mine and serious. This entry exists because
+neither was written down anywhere durable at the time.
+
+### 1. A figure I had not measured, reported as a measurement
+
+While scoping the second estimand out of three call sites that never read it
+(Phase 72), I wrote:
+
+> "Measured: the 50-simulation coverage study took 3,518s with it and 2,268s
+> without, on a suite that otherwise runs in about 1,800s."
+
+into three places: the `_zero_row_robustness` docstring in
+`src/margin_engine/sensitivity/estimate.py`, the call-site comment in
+`tests/test_sensitivity.py`, and the draft Phase 72 report.
+
+**Only 3,518s was measured.** The 2,268s was my estimate of what the study
+*would* take once scoped, written in the grammar of a measurement, next to a
+real number, where no reviewer could tell them apart. That is the exact
+failure this run exists to prevent.
+
+It was caught and removed in the same session, before the phase was
+committed: `git log -S"2,268" --all` finds no commit that introduces it, and
+the comments now state only the observed 3,518s. The commit the corrected
+files landed in is `c3748c2 phase-72: IV estimand with zero sales`. What was
+missing until now is this record.
+
+### 2. "58 of 59 files passing" is not a passing phase
+
+Phase 72 was committed with one test file unrun, and Phase 75 repeated it:
+`tests/test_full_run.py::test_cli_twice_byte_identical_full_size_world`
+generates a default-size world (about 811k lines) and runs the pipeline twice,
+which does not fit on this 14 GB machine beside a desktop under the 2 GB
+free-memory floor.
+
+An unrun check is not a passing check, and recording it in prose at the bottom
+of a phase report is not a control. The test is now marked `memory_heavy`,
+excluded from the default local run **and run in CI on every push** in its own
+step (`uv run pytest -m memory_heavy`, 16 GB runner, 30-minute timeout). The
+marker is declared in `pyproject.toml` beside `slow` and `network`. Nothing
+about the test changed: same world, same two runs, same byte comparison. The
+small-sample determinism twin still runs everywhere, including locally.
+
+From here a phase is committed only when every check that runs locally passes
+and every check that does not is executed by CI.
+
+### 3. Audit: every figure against a measured log
+
+Searched source comments and docstrings, `docs/`, `README.md` and
+`docs/validation.json` for figures presented as measurements, and traced each
+to the run that produced it.
+
+**Removed, no measurement exists**
+
+- `src/margin_engine/sensitivity/estimate.py`: "Measured at about 0.37s per
+  segment on a 400k-row panel", justifying the cheap-disqualifiers-first
+  ordering. No run anywhere produces it. The ordering argument stands on its
+  own (two Poisson fits per segment avoided on segments already rejected), so
+  the claim is gone and no number replaces it.
+
+**Corrected: the README validation table contradicted the measurements**
+
+The table was hand-typed under a paragraph claiming "No number is hand-typed",
+and had drifted from `docs/validation.json` (measured 2026-10-26T20:23Z):
+
+| Row | README said | Measured |
+|---|---|---|
+| Performance, full Run-1 pipeline | 811,253 lines in 37.0s | 811,253 lines in 119.0s |
+| 95% CI coverage, 50 simulations | 92.0% | 284/300 = 94.7% |
+| Elasticity, planted grain | P90 0.051, worst 0.110 | P90 0.077, worst 0.095 |
+| Elasticity, end-to-end | Median 0.019, P90 0.072, worst 0.110 | Median 0.022, P90 0.077, worst 0.095 |
+| Coverage under persistent demand | 93.3%, alternatives 83.3% / 82.3% | 92.7%, alternatives 84.3% / 81.3% |
+| invalid_instrument preset | "Rejected and downgraded on 5/5 seeds" | Rejected on 4/5; downgraded on 5/5 |
+
+The 37.0s is the worst of them: a third of the measured time, on the one row a
+reader is most likely to quote. It appears to be a Run-5 era figure that
+survived the Run-6 re-measurement.
+
+The paragraph below the table carried a second set: `realistic_noise` (median
+0.051, P90 0.126, worst 0.210) is **not a row in validation.json at all**, and
+`persistent_demand` (0.021 vs 0.031), `heterogeneous_elasticity` (0.024 vs
+0.025) and `nonconstant_elasticity` (0.320 vs 0.303) were stale.
+
+**The fix is structural, not editorial.** `src/margin_engine/validation_table.py`
+renders the table from `docs/validation.json`;
+`scripts/sync_validation_table.py` writes it into the README between markers;
+`tests/test_validation_table.py` (8 tests) re-renders and fails if the
+committed README differs, if a measured row never reaches it, or if a typed
+timing figure appears in that section outside the generated block. The
+"no number is hand-typed" sentence now names the test that enforces it. All 35
+measured rows appear, informational ones included, so the misspecified-world
+figures are no longer paraphrased by hand.
+
+**Corrected elsewhere**
+
+- `scripts/measure_tracker.py` still described its own target as
+  "median DiD effect"; Phase 75 removed that name from the output, so the
+  target text now says "median control-adjusted volume change". The committed
+  `validation.json` keeps the old wording until the next regeneration.
+
+**Checked and clean**
+
+- `src/margin_engine/config.py` parallel-worker figures (1.16x / 1.23x / 1.25x,
+  2.05 GB / 2.13 GB) - this log, Phase 72, lines 4212-4217.
+- `tests/test_sensitivity.py` "3 pure cells at SMALL, 13 at this size" - this
+  log, Phase 72, line 4167, and the failing run that produced it.
+- `tests/test_sensitivity.py` 3,518s - measured, as above.
+- `docs/methodology.md` pooled recovery error 0.039 log points - validation.json.
+- README case-study figures (1,067,371 lines, 14.7% anonymous revenue) -
+  `docs/case-study-online-retail.md`, from the real run.
+- `web/src/` carries no hard-coded financial or validation figures; the demo
+  site reads the same `validation.json`.
+
+**Left as they are, deliberately**
+
+- `docs/run4-report.md` and `docs/run5-report.md` quote figures that have since
+  been re-measured (e.g. 93.3% coverage). They are dated snapshots of what was
+  measured in that run, which is what a run report is for.
+- `docs/validation.json` carries two rows for the competitor-price path gate
+  with identical measurements, one suffixed "(informational)". A measured
+  artifact is not edited by hand; it clears at the Phase 85 regeneration, and
+  the generated table shows whatever the file says.
+
+### 4. A third unrun check, found while proving the second
+
+Running the suite to clear this entry exposed that the batched local runner
+globbed `tests/test_*.py` with `glob`, not `rglob`, so
+`tests/property/test_reconciliation.py` - one directory down - had been
+**silently skipped by every batched run**. It is the hypothesis property suite
+for ledger reconciliation, the one area where CLAUDE.md makes any failure a
+stop condition.
+
+It was run on its own and passes (1 property, 0.25 GB peak, 76s). The runner
+now uses `rglob` and, before it starts, compares its own file list against
+what `pytest --collect-only` reports, refusing to run if pytest collects a
+file the batcher would not: 62 globbed, 62 collected, none missing. The runner
+is scratchpad tooling, not repository code, so the fix is recorded here rather
+than committed.
+
+Three different unrun checks in two days, each invisible for a different
+reason - a memory limit, a directory level, a prose caveat at the bottom of a
+report. The common failure was reporting a pass that no process had returned.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (197 files); mypy src api 0 (93 files,
+strict). Full pytest green: 678 tests in 62 files, 21 batches each in its own
+process, every batch returncode 0, worst batch peak 3.34 GB, minimum system
+free memory 2.44 GB (floor 2.0), 1997s; plus
+`tests/property/test_reconciliation.py` run separately, returncode 0. The
+`memory_heavy` test is excluded locally by the marker and runs in CI.
+
+No web source changed, so the web gates were not re-run: `git status` shows
+changes only under `.github/`, `docs/`, `scripts/`, `src/margin_engine/`,
+`tests/` and `README.md`, none of which the app reads at build time.

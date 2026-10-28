@@ -243,10 +243,18 @@ def test_cli_twice_byte_identical_exports(tmp_path: Path) -> None:
     _assert_cli_twice_identical(REPO / "data" / "sample" / "erp", tmp_path)
 
 
+@pytest.mark.memory_heavy
 def test_cli_twice_byte_identical_full_size_world(tmp_path: Path) -> None:
     """Engine determinism at full scale: a default-size generated world
     (seed 42), where solver iteration counts, group cardinalities and float
-    magnitudes all differ from the small committed sample."""
+    magnitudes all differ from the small committed sample.
+
+    Marked memory_heavy: a default-size world is about 811k lines and the
+    pipeline runs twice, which does not fit beside a desktop on a 14 GB
+    machine. CI runs it on a 16 GB runner in its own step, so the test is
+    executed on every push - it is excluded from the local default run, never
+    from the suite. The small-sample twin above runs everywhere.
+    """
     cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=42)
     generate(cfg, tmp_path / "world")
     _assert_cli_twice_identical(tmp_path / "world" / "erp", tmp_path)

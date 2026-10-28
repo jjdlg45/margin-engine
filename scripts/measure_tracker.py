@@ -240,7 +240,7 @@ def main() -> None:
         {
             "check": "Results tracker: planted-intervention recovery",
             "target": (
-                f"pooled recovery |median DiD effect - median planted effect| "
+                f"pooled recovery |median control-adjusted volume change - median planted effect| "
                 f"<= {POOLED_ERROR_BOUND} log points and >= "
                 f"{MIN_MEASURED_SHARE:.0%} of interventions measured "
                 f"(well-identified world, seed 5, 30 planted +8% interventions; a "

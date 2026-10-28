@@ -2542,7 +2542,7 @@ def _total_quantity_estimate(
     # robustness check can only demote, and a segment already demoted cannot be
     # demoted further - so this is pure saved work: two extra Poisson fits per
     # segment that were being spent to re-reject segments the first stage had
-    # already rejected. Measured at about 0.37s per segment on a 400k-row panel.
+    # already rejected.
     reasons: list[str] = []
     if fit.first_stage_f is None or fit.first_stage_f < sc.min_first_stage_f:
         reasons.append(
