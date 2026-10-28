@@ -434,12 +434,17 @@ fiscal:
 compliance:
   robinson_patman:
     enabled: true
-    # Customers are treated as likely competitors when these customer
-    # attributes match; recommended prices for the same item more than the
+    # A CANDIDATE SCREEN (Run 6, Phase 79), not a definition of competition:
+    # customers matching on these attributes are worth looking at, and an
+    # optional reviewed customer_competitors table overrides the screen in
+    # both directions. Recommended prices for the same item more than the
     # threshold apart (relative %, strictly greater) get a review flag with
-    # the cost-to-serve difference attached as supporting documentation.
+    # the buyers' terms and cost-to-serve difference as supporting evidence.
     competitor_attributes: [industry, region]
     price_difference_threshold_pct: 5.0
+    # Flag only pairs a reviewer has confirmed. Off by default: most
+    # deployments have no reviewed competitor map on day one.
+    require_reviewed_map: false
   # The market/competitor price index control is accepted only when the
   # mapping declares public_source: true for it (antitrust: competitors
   # sharing non-public prices through algorithms).

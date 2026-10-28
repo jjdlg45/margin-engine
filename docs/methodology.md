@@ -1243,16 +1243,48 @@ or compliance reviewer would ask for — never to conclude.
 grade and quality to competing buyers at different prices can be unlawful when
 it may harm competition. Recognized defenses include cost justification (the
 price difference reflects differences in the cost of serving the two buyers)
-and meeting competition. The engine raises a *review flag* when two customers
-who are likely competitors of each other — by default, same industry and same
-region, configurable in `compliance.robinson_patman` — carry recommended
-prices for the same item more than a configured threshold apart. Beside every
-flag it shows the cost-to-serve difference between the two customers for that
-item, because that is the first number a cost-justification review needs. The
-flag marks a question, not a violation: whether the customers actually compete,
-whether the goods are of like grade and quality, and whether a defense applies
-are judgments the engine cannot make. Actions on flagged pairs require a
-written justification at approval (Phase 38 guardrail).
+and meeting competition. The engine raises a *review flag* when two
+customers who may compete with each other carry recommended prices for the
+same item more than a configured threshold apart.
+
+**Same industry and region is a candidate screen, not a definition of
+competition** (Run 6, Phase 79). Two distributors in one industry and region
+may not compete at all - one sells to shipyards, the other to hospitals - and
+two in different regions may compete head to head. The screen is what the
+data can do unaided; an optional reviewed `customer_competitors` table
+overrides it in both directions, confirming pairs the screen missed and
+clearing pairs it caught. Every flagged pair states its basis: *reviewed
+competitor* or *screened candidate*. Set
+`compliance.robinson_patman.require_reviewed_map` to flag only pairs a
+reviewer has confirmed.
+
+**A missing attribute is a data-quality status, not a quiet pass.** A customer
+with no industry on file used to drop out of the comparison without a word.
+It is now counted and listed as unscreened, because "these customers do not
+compete" and "we do not know whether they compete" are different answers.
+
+**What each flag carries.** The comparable item, its role and unit of
+measure; the dates the prices and costs come from; both the current and the
+recommended price, on an invoice basis and after the deductions that scale
+with price; the volumes; channel and contract position; the discount, rebate
+and freight-concession terms; the cost to serve per unit with the method that
+produced it (the activity-rate figures are estimates and say so); a
+data-coverage field naming which of these the source actually supplied; and
+any meeting-competition record, contemporaneous bid or reviewer decision from
+an optional `rp_evidence` table. Where no evidence is recorded the output
+says *absent*, not *clear*.
+
+Comparing invoice prices alone can mislead when one buyer takes a rebate and
+the other does not, so the net basis is shown beside it: on the committed
+sample, pairs more than 5% apart on invoice price are often within 4% once
+their terms are applied.
+
+Cost differences are supporting evidence, never a conclusion. The flag marks
+a question: whether the customers actually compete, whether the goods are of
+like grade and quality, and whether a defense applies are judgments the
+engine cannot make. No engine output calls anything a violation, and none
+calls anything compliant. Actions on flagged pairs require a written
+justification at approval (Phase 38 guardrail).
 
 **Algorithmic pricing and information sharing (Sherman Act section 1).**
 Recent enforcement and litigation treat pricing algorithms fed with

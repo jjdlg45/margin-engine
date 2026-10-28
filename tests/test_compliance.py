@@ -114,7 +114,7 @@ def test_disabled_and_missing_attributes_fail_closed() -> None:
     no_attrs = pl.DataFrame({"customer_id": ["A", "B"]})
     res = run_robinson_patman(guidance, no_attrs, None, rules)
     assert res.detail.height == 0
-    assert any("lacks competitor attribute" in n for n in res.notes)
+    assert any("lacks screen attribute" in n for n in res.notes)
     res2 = run_robinson_patman(guidance, None, None, rules)
     assert any("no customers reference table" in n for n in res2.notes)
 

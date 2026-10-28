@@ -859,6 +859,298 @@
    "title": "CausalGate",
    "type": "object"
   },
+  "CompliancePair": {
+   "description": "One Robinson-Patman review flag, with the facts beside it (Phase 79).\n\nA review prompt, never a finding: `pair_basis` says whether a reviewer\nconfirmed that these two customers compete or whether the attribute\nscreen merely suggested it.",
+   "properties": {
+    "channel_a": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Channel A"
+    },
+    "channel_b": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Channel B"
+    },
+    "cts_difference_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Difference Cents"
+    },
+    "cts_method": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Method"
+    },
+    "cts_per_unit_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Per Unit A Cents"
+    },
+    "cts_per_unit_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Per Unit B Cents"
+    },
+    "customer_id_a": {
+     "title": "Customer Id A",
+     "type": "string"
+    },
+    "customer_id_b": {
+     "title": "Customer Id B",
+     "type": "string"
+    },
+    "data_coverage": {
+     "title": "Data Coverage",
+     "type": "string"
+    },
+    "deduction_bp_a": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Deduction Bp A"
+    },
+    "deduction_bp_b": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Deduction Bp B"
+    },
+    "item_id": {
+     "title": "Item Id",
+     "type": "string"
+    },
+    "meeting_competition_record": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Meeting Competition Record"
+    },
+    "net_difference_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Net Difference Pct"
+    },
+    "pair_basis": {
+     "title": "Pair Basis",
+     "type": "string"
+    },
+    "price_difference_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price Difference Pct"
+    },
+    "quantity_a": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quantity A"
+    },
+    "quantity_b": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quantity B"
+    },
+    "recommended_net_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Net A Cents"
+    },
+    "recommended_net_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Net B Cents"
+    },
+    "recommended_price_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Price A Cents"
+    },
+    "recommended_price_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Price B Cents"
+    },
+    "reviewer_decision": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Reviewer Decision"
+    }
+   },
+   "required": [
+    "item_id",
+    "customer_id_a",
+    "customer_id_b",
+    "pair_basis",
+    "recommended_price_a_cents",
+    "recommended_price_b_cents",
+    "recommended_net_a_cents",
+    "recommended_net_b_cents",
+    "price_difference_pct",
+    "net_difference_pct",
+    "quantity_a",
+    "quantity_b",
+    "channel_a",
+    "channel_b",
+    "deduction_bp_a",
+    "deduction_bp_b",
+    "cts_per_unit_a_cents",
+    "cts_per_unit_b_cents",
+    "cts_difference_cents",
+    "cts_method",
+    "data_coverage",
+    "meeting_competition_record",
+    "reviewer_decision"
+   ],
+   "title": "CompliancePair",
+   "type": "object"
+  },
+  "ComplianceSection": {
+   "properties": {
+    "n_screened": {
+     "title": "N Screened",
+     "type": "integer"
+    },
+    "n_unscreened": {
+     "title": "N Unscreened",
+     "type": "integer"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "pairs": {
+     "items": {
+      "$ref": "#/$defs/CompliancePair"
+     },
+     "title": "Pairs",
+     "type": "array"
+    },
+    "screen_attributes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Screen Attributes",
+     "type": "array"
+    }
+   },
+   "required": [
+    "screen_attributes",
+    "n_screened",
+    "n_unscreened",
+    "pairs",
+    "notes"
+   ],
+   "title": "ComplianceSection",
+   "type": "object"
+  },
   "CrossPriceEstimate": {
    "properties": {
     "conditional_effective_f": {
@@ -4418,6 +4710,17 @@
   "bundle_version": {
    "title": "Bundle Version",
    "type": "string"
+  },
+  "compliance": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/ComplianceSection"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
   },
   "data_label": {
    "title": "Data Label",

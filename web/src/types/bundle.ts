@@ -135,6 +135,34 @@ export type Uom = string | null;
 export type VolumeTreatment = string | null;
 export type ActionsTable = ActionRow[];
 export type BundleVersion = string;
+export type NScreened = number;
+export type NUnscreened = number;
+export type Notes1 = string[];
+export type ChannelA = string | null;
+export type ChannelB = string | null;
+export type CtsDifferenceCents = number | null;
+export type CtsMethod = string | null;
+export type CtsPerUnitACents = number | null;
+export type CtsPerUnitBCents = number | null;
+export type CustomerIdA = string;
+export type CustomerIdB = string;
+export type DataCoverage = string;
+export type DeductionBpA = number | null;
+export type DeductionBpB = number | null;
+export type ItemId1 = string;
+export type MeetingCompetitionRecord = string | null;
+export type NetDifferencePct = number | null;
+export type PairBasis = string;
+export type PriceDifferencePct = number | null;
+export type QuantityA = number | null;
+export type QuantityB = number | null;
+export type RecommendedNetACents = number | null;
+export type RecommendedNetBCents = number | null;
+export type RecommendedPriceACents = number | null;
+export type RecommendedPriceBCents = number | null;
+export type ReviewerDecision = string | null;
+export type Pairs = CompliancePair[];
+export type ScreenAttributes = string[];
 export type DataLabel = string;
 export type FlagNote = string;
 export type NCommercialOutlierFlags = number;
@@ -183,7 +211,7 @@ export type FloorIndex = number | null;
 export type InvoiceContributionFloorCents = number | null;
 export type InvoiceFloorCents = number | null;
 export type InvoiceFloorGrossCents = number | null;
-export type ItemId1 = string;
+export type ItemId2 = string;
 export type ItemName1 = string | null;
 export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
@@ -256,7 +284,7 @@ export type InputFiles = {
 }[];
 export type MappingSha256 = string;
 export type NoteOnVolatileFields = string;
-export type Notes1 = string[];
+export type Notes2 = string[];
 export type RulesSha256 = string;
 export type ExpectedGpTotalCents = number;
 export type ExpectedTotalCents = number;
@@ -284,7 +312,7 @@ export type ExpectedPocketGrossProfitChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type GrossPriceOpportunityConservativeCents = number | null;
-export type ItemId2 = string;
+export type ItemId3 = string;
 export type ItemName2 = string | null;
 /**
  * (target - current) / target, from the pair's guidance
@@ -327,7 +355,7 @@ export type Reason1 = string;
 export type Excluded = QuoteExclusion[];
 export type NModeled = number;
 export type NRows1 = number;
-export type Notes2 = string[];
+export type Notes3 = string[];
 export type Unit = string;
 export type WinCurves = WinCurve[] | null;
 export type Auc = number | null;
@@ -434,7 +462,7 @@ export type Plain = string;
  */
 export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
-export type Notes3 = string[];
+export type Notes4 = string[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
 export type AnalyticCiHigh = number | null;
@@ -581,6 +609,7 @@ export interface WebBundle {
   actions: ActionsSection;
   actions_table: ActionsTable;
   bundle_version: BundleVersion;
+  compliance?: ComplianceSection | null;
   data_label: DataLabel;
   dispersion: DispersionSection;
   economics: EconomicsSection;
@@ -790,6 +819,45 @@ export interface ActionOutcome {
   wave?: Wave;
   window_days: WindowDays;
 }
+export interface ComplianceSection {
+  n_screened: NScreened;
+  n_unscreened: NUnscreened;
+  notes: Notes1;
+  pairs: Pairs;
+  screen_attributes: ScreenAttributes;
+}
+/**
+ * One Robinson-Patman review flag, with the facts beside it (Phase 79).
+ *
+ * A review prompt, never a finding: `pair_basis` says whether a reviewer
+ * confirmed that these two customers compete or whether the attribute
+ * screen merely suggested it.
+ */
+export interface CompliancePair {
+  channel_a: ChannelA;
+  channel_b: ChannelB;
+  cts_difference_cents: CtsDifferenceCents;
+  cts_method: CtsMethod;
+  cts_per_unit_a_cents: CtsPerUnitACents;
+  cts_per_unit_b_cents: CtsPerUnitBCents;
+  customer_id_a: CustomerIdA;
+  customer_id_b: CustomerIdB;
+  data_coverage: DataCoverage;
+  deduction_bp_a: DeductionBpA;
+  deduction_bp_b: DeductionBpB;
+  item_id: ItemId1;
+  meeting_competition_record: MeetingCompetitionRecord;
+  net_difference_pct: NetDifferencePct;
+  pair_basis: PairBasis;
+  price_difference_pct: PriceDifferencePct;
+  quantity_a: QuantityA;
+  quantity_b: QuantityB;
+  recommended_net_a_cents: RecommendedNetACents;
+  recommended_net_b_cents: RecommendedNetBCents;
+  recommended_price_a_cents: RecommendedPriceACents;
+  recommended_price_b_cents: RecommendedPriceBCents;
+  reviewer_decision: ReviewerDecision;
+}
 export interface DispersionSection {
   abc_revenue_counts: AbcRevenueCounts;
   flag_note: FlagNote;
@@ -852,7 +920,7 @@ export interface GuidancePair {
   invoice_contribution_floor_cents?: InvoiceContributionFloorCents;
   invoice_floor_cents: InvoiceFloorCents;
   invoice_floor_gross_cents?: InvoiceFloorGrossCents;
-  item_id: ItemId1;
+  item_id: ItemId2;
   item_name?: ItemName1;
   list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
@@ -906,7 +974,7 @@ export interface ManifestInfo {
   input_files: InputFiles;
   mapping_sha256: MappingSha256;
   note_on_volatile_fields: NoteOnVolatileFields;
-  notes: Notes1;
+  notes: Notes2;
   rules_sha256: RulesSha256;
   software_versions: SoftwareVersions;
 }
@@ -949,7 +1017,7 @@ export interface OpportunityRecord {
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   gross_price_opportunity_conservative_cents?: GrossPriceOpportunityConservativeCents;
-  item_id: ItemId2;
+  item_id: ItemId3;
   item_name?: ItemName2;
   pct_below_target?: PctBelowTarget;
   segment: Segment2;
@@ -994,7 +1062,7 @@ export interface QuoteIntake {
   excluded: Excluded;
   n_modeled: NModeled;
   n_rows: NRows1;
-  notes: Notes2;
+  notes: Notes3;
   unit: Unit;
 }
 export interface QuoteExclusion {
@@ -1065,7 +1133,7 @@ export interface SegmentsSection {
   index_distribution: IndexDistribution;
   margin_driver_note: MarginDriverNote;
   margin_driver_rules: MarginDriverRules;
-  notes?: Notes3;
+  notes?: Notes4;
   recommendation_change_share: RecommendationChangeShare;
   rules: Rules;
 }

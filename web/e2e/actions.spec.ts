@@ -287,3 +287,39 @@ test("process view: step tracker and the process explainer", async ({ page }) =>
     }
   }
 });
+
+
+test("a flagged action shows the facts behind the review flag, and no verdict", async ({
+  page,
+}) => {
+  const flagged = bundle.actions_table.find((a) => a.compliance_flags);
+  test.skip(!flagged, "no flagged action in the demo bundle");
+  await page.goto(`/#/actions/${flagged!.action_id}`);
+  await expect(page.getByTestId("compliance-note")).toBeVisible();
+
+  const pairs = (bundle.compliance?.pairs ?? []).filter(
+    (p) =>
+      p.item_id === flagged!.item_id &&
+      (p.customer_id_a === flagged!.customer_id || p.customer_id_b === flagged!.customer_id),
+  );
+  expect(pairs.length).toBeGreaterThan(0);
+  const facts = page.getByTestId("review-facts");
+  await expect(facts).toBeVisible();
+  // A price difference is the start of the question: the defenses live in
+  // the facts beside it, so they have to be on the page.
+  await expect(facts).toContainText("Cost to serve");
+  await expect(facts).toContainText("supporting evidence, not a conclusion");
+  await expect(facts).toContainText("Volume");
+  await expect(facts).toContainText("Facts available");
+  await expect(facts).toContainText(pairs[0].pair_basis);
+  // Absent evidence is absent, not clear.
+  if (!pairs[0].reviewer_decision) {
+    await expect(facts).toContainText("none recorded");
+  }
+
+  // The page never reaches a verdict about the law.
+  const text = (await page.locator("body").innerText()).toLowerCase();
+  for (const word of ["violation", "compliant", "unlawful", "illegal"]) {
+    expect(text, `the action page used the word "${word}"`).not.toContain(word);
+  }
+});

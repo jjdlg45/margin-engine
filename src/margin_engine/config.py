@@ -1012,10 +1012,19 @@ class RobinsonPatmanConfig(StrictModel):
     """
 
     enabled: bool = True
+    # A CANDIDATE SCREEN (Run 6, Phase 79), not a definition of competition.
+    # Two customers sharing these attributes may not compete at all, and two
+    # that do not share them may compete head to head - which is why a
+    # reviewed customer-competitor map overrides the screen in both
+    # directions, and why every flagged pair says which basis it rests on.
     competitor_attributes: tuple[str, ...] = ("industry", "region")
     # Relative difference between the two recommended prices, in percent;
     # strictly-greater-than fires the flag.
     price_difference_threshold_pct: float = Field(default=5.0, ge=0)
+    # When true, only pairs a reviewer has confirmed in the customer_competitors
+    # table are flagged; the attribute screen alone is not enough. Off by
+    # default, because most deployments have no such map on day one.
+    require_reviewed_map: bool = False
 
 
 class ComplianceConfig(StrictModel):

@@ -31,6 +31,8 @@ from margin_engine.webexport.bundle import (
     ActionsSummary,
     CalibrationRow,
     CausalGate,
+    CompliancePair,
+    ComplianceSection,
     CrossPriceEstimate,
     CustomerEconomics,
     CustomerLeakage,
@@ -1157,6 +1159,7 @@ def build_bundle(
         manifest=manifest,
         actions=actions_section,
         actions_table=actions_table,
+        compliance=_compliance_section(res, rules),
     )
 
 
@@ -1344,6 +1347,62 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
     )
 
 
+def _compliance_section(res: FullRunResult, rules: Rules) -> ComplianceSection | None:
+    """The Robinson-Patman review flags, with the facts a reviewer needs."""
+    detail = res.compliance_detail
+    screen = res.compliance_screen
+    if detail is None:
+        return None
+    cols = set(detail.columns)
+
+    def g(row: dict[str, Any], name: str) -> Any:
+        return row.get(name) if name in cols else None
+
+    pairs = [
+        CompliancePair(
+            item_id=str(r["item_id"]),
+            customer_id_a=str(r["customer_id_a"]),
+            customer_id_b=str(r["customer_id_b"]),
+            pair_basis=str(r["pair_basis"]),
+            recommended_price_a_cents=g(r, "recommended_price_a_cents"),
+            recommended_price_b_cents=g(r, "recommended_price_b_cents"),
+            recommended_net_a_cents=g(r, "recommended_net_a_cents"),
+            recommended_net_b_cents=g(r, "recommended_net_b_cents"),
+            price_difference_pct=_r(g(r, "price_difference_pct")),
+            net_difference_pct=_r(g(r, "net_difference_pct")),
+            quantity_a=_r(g(r, "quantity_a")),
+            quantity_b=_r(g(r, "quantity_b")),
+            channel_a=g(r, "channel_a"),
+            channel_b=g(r, "channel_b"),
+            deduction_bp_a=g(r, "deduction_bp_a"),
+            deduction_bp_b=g(r, "deduction_bp_b"),
+            cts_per_unit_a_cents=g(r, "cts_per_unit_a_cents"),
+            cts_per_unit_b_cents=g(r, "cts_per_unit_b_cents"),
+            cts_difference_cents=g(r, "cts_difference_cents"),
+            cts_method=g(r, "cts_method"),
+            data_coverage=str(g(r, "data_coverage") or "none"),
+            meeting_competition_record=g(r, "meeting_competition_record"),
+            reviewer_decision=g(r, "reviewer_decision"),
+        )
+        for r in detail.sort("item_id", "customer_id_a", "customer_id_b").to_dicts()
+    ]
+    n_unscreened = 0
+    if screen is not None and "screen_status" in screen.columns:
+        n_unscreened = screen.filter(pl.col("screen_status") != "screened").height
+        n_screened = screen.height - n_unscreened
+    else:
+        n_screened = 0
+    return ComplianceSection(
+        screen_attributes=[
+            label(a) for a in rules.compliance.robinson_patman.competitor_attributes
+        ],
+        n_screened=n_screened,
+        n_unscreened=n_unscreened,
+        pairs=pairs,
+        notes=[n for n in res.pipeline.notes if "Robinson-Patman" in n],
+    )
+
+
 # Imported late to keep the model namespace tidy at the top of the module.
 from margin_engine.extended.quotes import describe_exclusion  # noqa: E402
 from margin_engine.webexport.bundle import QuoteExclusion  # noqa: E402
@@ -1482,7 +1541,12 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         },
         "tables/opportunities": {"items": opp["top_opportunities"]},
         "tables/customers": {"items": econ["customers"]},
-        "actions": d["actions"],
+        "actions": {
+            **d["actions"],
+            # The review flags travel with the action pages: a reviewer
+            # looking at a flagged action needs the facts beside it.
+            "compliance": d.get("compliance"),
+        },
         "tables/actions": {"items": d["actions_table"]},
     }
     return pages

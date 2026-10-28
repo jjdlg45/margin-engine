@@ -107,6 +107,8 @@ REFERENCE_TABLES = [
     "quotes",
     "substitution_groups",
     "market_price_index",
+    "customer_competitors",
+    "rp_evidence",
     "gl_totals",
     "external_cost_series",
     "fiscal_periods",

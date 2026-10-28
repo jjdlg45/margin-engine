@@ -7,6 +7,7 @@ import type {
   ActionOutcome,
   ActionRow,
   ActionsSection,
+  ComplianceSection,
   ActionsSummary,
   CustomerEconomics,
   DispersionSection,
@@ -148,7 +149,9 @@ export interface MethodologyData {
 
 export interface PageDataMap {
   overview: OverviewData;
-  actions: ActionsSection;
+  // The actions page carries the Robinson-Patman review flags beside the
+  // actions they belong to; the bundle keeps them in their own section.
+  actions: ActionsSection & { compliance?: ComplianceSection | null };
   waterfall: WaterfallData;
   customers: CustomersData;
   segments: SegmentsSection;

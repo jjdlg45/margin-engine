@@ -57,6 +57,19 @@ export function useActionUsers() {
   });
 }
 
+/** Robinson-Patman review flags with their supporting facts.
+ *
+ * Served on the actions page payload, because the reviewer who needs them is
+ * looking at a flagged action. Absent sections are an empty list, never an
+ * error: not every mapping produces flags. */
+export function useComplianceReview() {
+  const page = usePageData("actions");
+  return {
+    ...page,
+    data: page.data?.compliance?.pairs ?? [],
+  };
+}
+
 export function useActionOutcomes() {
   return useQuery({
     queryKey: ["action-outcomes"],

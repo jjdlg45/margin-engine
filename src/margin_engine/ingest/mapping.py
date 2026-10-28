@@ -358,6 +358,10 @@ KNOWN_REFERENCE_TABLES = {
     "quotes",
     "substitution_groups",
     "market_price_index",
+    # Run 6, Phase 79: a reviewer's judgement about which customers actually
+    # compete, and the records that support a Robinson-Patman review.
+    "customer_competitors",
+    "rp_evidence",
     "gl_totals",
     "external_cost_series",
 }

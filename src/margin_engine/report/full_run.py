@@ -81,6 +81,10 @@ class FullRunResult:
     service_flags: pl.DataFrame | None = None
     win_curves: pl.DataFrame | None = None
     quote_intake: QuoteIntake | None = None
+    # Robinson-Patman review (Run 6, Phase 79): the flagged pairs with
+    # their supporting facts, and who could and could not be screened.
+    compliance_detail: pl.DataFrame | None = None
+    compliance_screen: pl.DataFrame | None = None
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
     inventory_identity: pl.DataFrame | None = None
@@ -184,6 +188,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "margin_driver_rules": ["leaf_id"],
     "guidance": ["customer_id", "item_id"],
     "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
+    "compliance_screen": ["customer_id"],
     "actions": ["action_type", "action_id"],
     "action_events": ["action_id", "seq"],
     "action_portfolio_groups": ["overlap_group"],
@@ -397,6 +402,9 @@ def run_full(
             "cts_per_unit_cents",
             "k_variable_per_unit_cents",
             "k_order_per_unit_cents",
+            # Carried so the Robinson-Patman review can say whether the cost
+            # difference beside a flag is an actual or an estimate (79).
+            pl.lit("estimated from configured activity rates").alias("cts_method"),
         )
         if "activity_cts_cents" in res.ledger.columns
         else None
@@ -405,7 +413,12 @@ def run_full(
     # Pricing compliance (Phase 37): Robinson-Patman review flag on competitor
     # pairs, with cost-to-serve differences as supporting documentation.
     compliance_res = run_robinson_patman(
-        guidance_res.guidance, res.reference["customers"], cts_per_unit, rules
+        guidance_res.guidance,
+        res.reference["customers"],
+        cts_per_unit,
+        rules,
+        competitor_map=res.reference.get("customer_competitors"),
+        evidence=res.reference.get("rp_evidence"),
     )
     res.notes.extend(compliance_res.notes)
     guidance_res.guidance = guidance_res.guidance.join(
@@ -714,6 +727,7 @@ def run_full(
         "margin_driver_rules": pl.DataFrame(margin_tree.rules),
         "guidance": guidance_res.guidance,
         "compliance_robinson_patman": compliance_res.detail,
+        "compliance_screen": compliance_res.screen,
         "actions": actions_res.actions,
         "action_events": actions_res.events,
         "action_portfolio_groups": action_portfolio,
@@ -1189,6 +1203,8 @@ def run_full(
         service_flags=cts.service_flags,
         win_curves=win_curves,
         quote_intake=intake_payload,
+        compliance_detail=compliance_res.detail,
+        compliance_screen=compliance_res.screen,
         cross_estimates=cross_estimates,
         inventory_cogs=inventory_cogs,
         inventory_identity=inventory_identity,

@@ -5439,3 +5439,99 @@ files". I composed the sentence before the count printed and did not go back
 to reconcile it; the measured figure is 736 in 65. The commit message was
 amended with it. Exactly the habit the process-correction entry above exists
 to stop, caught here by reading the number the command actually returned.
+
+## Phase 79 — Robinson-Patman review flag (2026-10-27, Run 6 branch)
+
+Finding 17. The flag worked and said too little. It treated "same industry
+and region" as a definition of competition, dropped customers with a missing
+attribute out of the comparison without a word, and handed a reviewer a price
+difference and one cost number.
+
+### Same industry and region is a candidate screen
+
+Two distributors in one industry and region may not compete at all - one
+sells to shipyards, the other to hospitals - and two in different regions may
+compete head to head. The screen is what the data can do unaided.
+
+An optional reviewed `customer_competitors` table now overrides it **in both
+directions**: it confirms pairs the screen missed and clears pairs it caught,
+direction-free (A,B and B,A are one judgement). Every flagged pair states its
+basis - *reviewed competitor* or *screened candidate* - and
+`require_reviewed_map` restricts flags to confirmed pairs for a deployment
+that has done that review.
+
+### A missing attribute is a data-quality status
+
+A customer with no industry on file silently failed to pair with anything.
+Polars does not join on nulls, so nothing was wrong with the arithmetic - and
+nothing was said either. `screen_customers` now returns a status per
+customer, names the attributes that are missing, and the run reports who
+could not be screened, with the sentence that matters: **not screened is not
+the same as not competing**.
+
+Empty strings count as missing too, which is how a real export usually
+expresses an unknown.
+
+### What a flag has to show
+
+A price difference is the start of the question; the defenses - cost
+justification, meeting competition, functional differences between buyers -
+live in the facts beside it. Each flagged pair now carries the comparable
+item with its role and unit of measure; the dates the prices and costs come
+from (named per side when the two differ); the current and recommended price
+on both an invoice and a net-of-deductions basis; volumes; channel and
+contract position; discount, rebate and freight-concession terms; cost to
+serve per unit **with the method that produced it** - the activity-rate
+figures are estimates and say so; a `data_coverage` field naming which of
+these the source actually supplied; and any meeting-competition record,
+contemporaneous bid or reviewer decision from an optional `rp_evidence`
+table. Where no evidence is recorded the output says absent, not clear.
+
+The net basis earns its place immediately. On the committed sample the first
+flagged pair is **7.64% apart on invoice price and 3.57% apart after their
+terms** - one buyer takes a 4.14% deduction and the other 0.37%. A review
+that compared invoice prices alone would be looking at the wrong two numbers.
+
+### What it may never say
+
+A test walks every note, every column name and every value of a flagged row
+and fails on "violation", "compliant", "illegal", "unlawful" or "guaranteed";
+a Playwright test does the same for the rendered action page. Cost
+differences are supporting evidence, and the word used throughout is review.
+
+### What changed in the outputs
+
+Demo world: 27 flagged pair-item combinations across 50 screened customers,
+0 unscreened. All are screened candidates - the sample has no reviewed
+competitor map, and the run says so rather than implying the pairs are
+confirmed. `compliance_screen` is a new export beside
+`compliance_robinson_patman`.
+
+The flags themselves are unchanged in count and membership; what changed is
+how much each one tells the person who has to act on it.
+
+### Tests added
+
+`tests/test_compliance_screen.py`, 15 tests: a missing attribute is
+unscreened rather than cleared, an empty string counts as missing, the run
+names who could not be screened, two customers with nothing on file are not
+thereby alike; a reviewer can clear a screened pair and confirm one, the map
+is direction-free, requiring a map without one flags nothing and says why,
+requiring one drops unconfirmed candidates; a flag carries the reviewer's
+facts, the net basis is compared beside the invoice basis, data coverage
+names what is missing, absent evidence is absent and recorded evidence
+reaches the row; and no output anywhere calls anything a violation or
+compliant.
+
+`web/e2e/actions.spec.ts` gains a test that a flagged action shows the facts
+and reaches no verdict.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 751 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.32 GB, minimum system
+free memory 2.21 GB, zero floor excursions, 1218s. tsc 0; vitest 22/22; vite
+build 0; Playwright 233 passed 3 skipped (exit 0) with no snapshot changes -
+the review facts render on an action detail page, which the snapshot set does
+not cover.

@@ -148,6 +148,47 @@ class SegmentIndexStats(BaseModel):
     p75: float
 
 
+class CompliancePair(BaseModel):
+    """One Robinson-Patman review flag, with the facts beside it (Phase 79).
+
+    A review prompt, never a finding: `pair_basis` says whether a reviewer
+    confirmed that these two customers compete or whether the attribute
+    screen merely suggested it.
+    """
+
+    item_id: str
+    customer_id_a: str
+    customer_id_b: str
+    pair_basis: str
+    recommended_price_a_cents: int | None
+    recommended_price_b_cents: int | None
+    recommended_net_a_cents: int | None
+    recommended_net_b_cents: int | None
+    price_difference_pct: float | None
+    net_difference_pct: float | None
+    quantity_a: float | None
+    quantity_b: float | None
+    channel_a: str | None
+    channel_b: str | None
+    deduction_bp_a: int | None
+    deduction_bp_b: int | None
+    cts_per_unit_a_cents: int | None
+    cts_per_unit_b_cents: int | None
+    cts_difference_cents: int | None
+    cts_method: str | None
+    data_coverage: str
+    meeting_competition_record: str | None
+    reviewer_decision: str | None
+
+
+class ComplianceSection(BaseModel):
+    screen_attributes: list[str]
+    n_screened: int
+    n_unscreened: int
+    pairs: list[CompliancePair]
+    notes: list[str]
+
+
 class SegmentHoldout(BaseModel):
     """Run 6, Phase 76: how the segmentation does on periods it never saw."""
 
@@ -766,3 +807,4 @@ class WebBundle(BaseModel):
     manifest: ManifestInfo
     actions: ActionsSection
     actions_table: list[ActionRow]
+    compliance: ComplianceSection | None = None
