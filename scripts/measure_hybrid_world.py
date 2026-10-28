@@ -119,7 +119,8 @@ def main() -> None:
         payload = json.loads(out_path.read_text(encoding="utf-8"))
         row = {
             "check": CHECK_NAME,
-            "target": "informational: recovery when real cost movements drive the instrument",
+            "target": "informational, hybrid-synthetic evidence: real producer price series drive the "
+            "simulated cost paths, while quantities and the elasticity stay planted",
             "achieved": achieved,
             "passed": True,
             "informational": True,

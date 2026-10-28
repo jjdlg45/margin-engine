@@ -1,0 +1,65 @@
+name: Validation study
+
+# The measured validation table (docs/validation.json and the README table
+# generated from it) comes from a study that takes about an hour and needs
+# more memory than the build machine can spare beside a desktop. Run 6,
+# Phase 78 widened it further - fifteen worlds per gated elasticity target,
+# ten of them seeds never used during development - so it belongs here
+# rather than on a laptop.
+#
+# It does not run on every push: it is slow, and its inputs change only when
+# the engine's estimators do. Trigger it by hand after a phase that could
+# move a measured number, download the artifact, and commit the refreshed
+# docs/validation.json together with the documents regenerated from it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: "Skip the coverage study and the performance run"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+      - name: Sync dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Run the validation study
+        run: |
+          if [ "${{ github.event.inputs.quick }}" = "true" ]; then
+            uv run python scripts/measure_validation.py --quick
+          else
+            uv run python scripts/measure_validation.py
+          fi
+
+      # The README table and docs/validation.md are generated from the JSON,
+      # so they travel with it: committing the measurements without them is
+      # exactly the drift Phase 78 exists to stop.
+      - name: Regenerate the documents
+        if: always()
+        run: uv run python scripts/sync_validation_table.py
+
+      - name: Check the documents agree with the measurements
+        if: always()
+        run: uv run pytest tests/test_validation_table.py -q
+
+      - name: Upload the refreshed documents
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            docs/validation.json
+            docs/validation.md
+            README.md

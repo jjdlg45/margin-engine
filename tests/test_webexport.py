@@ -8,6 +8,8 @@ import hashlib
 import itertools
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import polars as pl
@@ -436,6 +438,60 @@ def test_bundle_byte_identical_across_runs(tmp_path: Path) -> None:
             }
         )
     assert hashes[0] == hashes[1], "all exported files must be byte-identical across runs"
+
+
+def test_bundle_byte_identical_across_processes_and_thread_counts(tmp_path: Path) -> None:
+    """The determinism claim, as far as it can honestly be made (Phase 78).
+
+    The test above runs twice inside ONE process, so it cannot see the thing
+    that actually moves a solver's last digits: BLAS and Polars thread counts
+    change accumulation order, and a Poisson or 2SLS fit stops in a slightly
+    different place. This runs the CLI twice in separate processes with
+    different thread counts and compares every published byte.
+
+    What it establishes: the bundle is stable across process and thread
+    configuration on the tested platform. What it does not: that it is stable
+    across operating systems or BLAS builds, which no test here can reach.
+    The solver-output rounding in `_rs` is what makes the claim hold rather
+    than hold by luck.
+    """
+    import os
+
+    outs = []
+    for i, threads in enumerate(("1", "4"), start=1):
+        out = tmp_path / f"proc{i}"
+        env = {
+            **os.environ,
+            "OMP_NUM_THREADS": threads,
+            "MKL_NUM_THREADS": threads,
+            "OPENBLAS_NUM_THREADS": threads,
+            "POLARS_MAX_THREADS": threads,
+        }
+        r = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "margin_engine.cli",
+                "export-web",
+                "--demo",
+                "--out",
+                str(out),
+            ],
+            cwd=REPO,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        outs.append(
+            {
+                str(f.relative_to(out)): hashlib.sha256(f.read_bytes()).hexdigest()
+                for f in sorted(out.rglob("*.json"))
+            }
+        )
+    assert outs[0].keys() == outs[1].keys()
+    differing = [k for k in outs[0] if outs[0][k] != outs[1][k]]
+    assert not differing, f"bundle files differ across thread counts: {differing}"
 
 
 def test_size_under_5mb(built: tuple[FullRunResult, Rules, WebBundle, Path]) -> None:

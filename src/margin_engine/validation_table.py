@@ -1,15 +1,25 @@
-"""Render the README validation table from the measured results file.
+"""Render the validation documents from the measured results file.
 
 `scripts/measure_validation.py` runs the measurements and writes
-`docs/validation.json`. The README table is generated from that file rather
-than typed, because a typed table drifts: between Run 5 and Run 6 the
-committed README still showed a 37.0s pipeline time against a measured
-119.0s, and a 92.0% coverage figure against a measured 94.7%, while claiming
-"no number is hand-typed".
+`docs/validation.json`. Two documents are generated from it rather than
+typed, because a typed table drifts: between Run 5 and Run 6 the committed
+README still showed a 37.0s pipeline time against a measured 119.0s, and a
+92.0% coverage figure against a measured 94.7%, while claiming "no number is
+hand-typed".
 
-`tests/test_validation_table.py` re-renders this block and fails when the
-committed README differs from the measurements, so the claim is enforced
-rather than asserted.
+Measurements alone were not enough either (Run 6, Finding 22): a row saying
+"Median 0.019" does not say how many worlds it rests on, how it was computed,
+or what a reader may conclude from it. `docs/validation-meta.yaml` carries
+that scope per check, and nothing renders without it.
+
+- The README keeps a compact table: check, target, measured, and how many
+  independent worlds or clusters stand behind the number.
+- `docs/validation.md` carries every row in full, including the method, what
+  the result establishes and what it does not.
+
+`tests/test_validation_table.py` re-renders both and fails when the committed
+documents differ from the measurements, so the claim is enforced rather than
+asserted.
 """
 
 from __future__ import annotations
@@ -18,12 +28,20 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 START = "<!-- validation-table:start -->"
 END = "<!-- validation-table:end -->"
 
 #: Prefix on the measured cell of any row whose target was not met, so a gap
 #: reads as a gap in the README exactly as it does in validation.json.
 GAP_PREFIX = "**KNOWN GAP.** "
+
+META_FIELDS = ("worlds", "method", "establishes", "does_not_establish")
+
+
+class MissingScopeError(ValueError):
+    """A measured check with no entry in validation-meta.yaml."""
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -32,33 +50,125 @@ def load(path: Path) -> dict[str, Any]:
     return doc
 
 
-def _cell(text: str) -> str:
+def load_meta(path: Path) -> dict[str, dict[str, Any]]:
+    """Read the per-check scope document."""
+    meta: dict[str, dict[str, Any]] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return meta
+
+
+def check_meta(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> None:
+    """Every measured check must declare its scope, and vice versa."""
+    checks = [row["check"] for row in doc["results"]]
+    missing = sorted({c for c in checks if c not in meta})
+    if missing:
+        msg = (
+            f"validation checks {missing} have no entry in docs/validation-meta.yaml. "
+            "Every measured row must say how many worlds it rests on, how it was "
+            "computed, what it establishes and what it does not."
+        )
+        raise MissingScopeError(msg)
+    stale = sorted({c for c in meta if c not in checks})
+    if stale:
+        msg = (
+            f"docs/validation-meta.yaml describes checks {stale} that validation.json "
+            "no longer measures. Remove them, or the document describes a result "
+            "nobody produced."
+        )
+        raise MissingScopeError(msg)
+    for name in checks:
+        blank = [f for f in META_FIELDS if not str(meta[name].get(f, "")).strip()]
+        if blank:
+            msg = f"validation check {name!r} leaves {blank} empty in validation-meta.yaml"
+            raise MissingScopeError(msg)
+
+
+def _cell(text: Any) -> str:
     """Make a string safe inside a markdown table cell."""
     return str(text).replace("|", r"\|").replace("\n", " ").strip()
 
 
-def render(doc: dict[str, Any]) -> str:
-    """Render the full README block, markers included."""
+def _provenance(doc: dict[str, Any]) -> str:
     runtime = float(doc.get("runtime_s") or 0.0)
+    return f"Measured {doc['generated_utc']} by `{doc['script']}` in {runtime / 60:,.0f} minutes."
+
+
+def render(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> str:
+    """Render the README block, markers included."""
+    check_meta(doc, meta)
     lines = [
         START,
         "",
         (
-            f"Measured {doc['generated_utc']} by `{doc['script']}` "
-            f"in {runtime / 60:,.0f} minutes. This table is generated from "
-            "`docs/validation.json`; a test fails if the two disagree."
+            f"{_provenance(doc)} This table is generated from `docs/validation.json`; "
+            "a test fails if the two disagree. Method and scope for every row - what "
+            "it establishes and what it does not - are in "
+            "[`docs/validation.md`](docs/validation.md)."
         ),
         "",
-        "| Check | Target | Measured |",
-        "|---|---|---|",
+        "| Check | Target | Measured | Worlds or clusters |",
+        "|---|---|---|---|",
     ]
     for row in doc["results"]:
         achieved = _cell(row["achieved"])
         if not row["passed"] and "KNOWN GAP" not in achieved:
             achieved = GAP_PREFIX + achieved
-        lines.append(f"| {_cell(row['check'])} | {_cell(row['target'])} | {achieved} |")
+        worlds = _cell(meta[row["check"]]["worlds"])
+        lines.append(f"| {_cell(row['check'])} | {_cell(row['target'])} | {achieved} | {worlds} |")
     lines += ["", END]
     return "\n".join(lines)
+
+
+def render_detail(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> str:
+    """Render `docs/validation.md`: every row with its scope."""
+    check_meta(doc, meta)
+    passed = sum(1 for r in doc["results"] if r["passed"])
+    out = [
+        "# Validation results",
+        "",
+        "<!-- Generated by scripts/sync_validation_table.py. Do not edit by hand:",
+        "     the measurements come from docs/validation.json and the scope from",
+        "     docs/validation-meta.yaml. -->",
+        "",
+        _provenance(doc),
+        "",
+        f"{passed} of {len(doc['results'])} checks met their target.",
+        "",
+        "Every row below says how many independent worlds or clusters it rests on,",
+        "how it was computed, and - the part a number on its own cannot say - what",
+        "the result establishes and what it does not. A figure resting on one world",
+        "is one draw, and the row says so.",
+        "",
+    ]
+    for row in doc["results"]:
+        m = meta[row["check"]]
+        out += [
+            f"## {row['check']}",
+            "",
+            f"- **Target** {row['target']}",
+            f"- **Measured** {row['achieved']}",
+            f"- **Result** {'met' if row['passed'] else 'KNOWN GAP - not met'}",
+            f"- **Worlds or clusters** {m['worlds']}",
+            f"- **Method** {m['method']}",
+            f"- **Establishes** {m['establishes']}",
+            f"- **Does not establish** {m['does_not_establish']}",
+        ]
+        if row.get("uncertainty"):
+            out.append(f"- **Uncertainty** {row['uncertainty']}")
+        per_world = row.get("per_world")
+        if per_world:
+            out += [
+                "",
+                "| World | Held out | Segments | Median error | Worst error |",
+                "|---|---|---|---|---|",
+            ]
+            for w in per_world:
+                out.append(
+                    f"| {w.get('world', '')} | {'yes' if w.get('held_out') else 'no'} | "
+                    f"{w.get('n_segments', '')} | {w.get('median_abs_error', '')} | "
+                    f"{w.get('worst_abs_error', '')} |"
+                )
+        out.append("")
+    return "\n".join(out)
 
 
 def splice(readme: str, block: str) -> str:

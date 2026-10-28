@@ -55,9 +55,91 @@ from margin_engine.sensitivity.market_control import SOURCE_MAPPED  # noqa: E402
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
 
 
-def _row(check: str, target: str, achieved: str, passed: bool) -> dict[str, Any]:
+def _row(
+    check: str,
+    target: str,
+    achieved: str,
+    passed: bool,
+    *,
+    per_world: list[dict[str, Any]] | None = None,
+    uncertainty: str | None = None,
+) -> dict[str, Any]:
     print(f"  [{'PASS' if passed else 'FAIL'}] {check}: {achieved}")
-    return {"check": check, "target": target, "achieved": achieved, "passed": bool(passed)}
+    row: dict[str, Any] = {
+        "check": check,
+        "target": target,
+        "achieved": achieved,
+        "passed": bool(passed),
+    }
+    if per_world is not None:
+        row["per_world"] = per_world
+    if uncertainty is not None:
+        row["uncertainty"] = uncertainty
+    return row
+
+
+#: Seeds used while developing and in the committed regression tests.
+#: Results on these are a regression suite, not fresh evidence.
+DEV_SEEDS = list(STUDY_SEEDS)
+#: Seeds introduced in Run 6, Phase 78 and never used during development.
+#: A gated target that holds here holds on worlds nobody tuned against.
+HELD_OUT_SEEDS = [1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049, 1051, 1061]
+assert not set(HELD_OUT_SEEDS) & set(range(100, 150)), (
+    "held-out seeds must not collide with the coverage study's range"
+)
+
+#: How wide a bootstrap interval on the tail statistic is still useful. With
+#: fewer worlds than this needs, the row says the interval is too wide rather
+#: than quoting a point estimate as though it were precise.
+TAIL_PRECISION_GOAL = 0.05
+
+
+def world_bootstrap(
+    by_world: dict[Any, list[float]],
+    stat: Any,
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+    level: float = 0.90,
+) -> tuple[float, float] | None:
+    """Bootstrap a statistic by resampling WORLDS, not observations.
+
+    Every segment inside one world shares that world's draw - the same
+    demand shocks, the same instruments, the same prices - so resampling
+    segments would treat them as independent and report an interval far
+    tighter than the evidence supports (Run 6, Finding 12). The unit of
+    independence is the world, so that is what gets resampled.
+    """
+    worlds = sorted(by_world)
+    if len(worlds) < 3:
+        return None
+    rng = np.random.default_rng(seed)
+    draws = []
+    for _ in range(n_boot):
+        picked = rng.choice(len(worlds), size=len(worlds), replace=True)
+        pooled: list[float] = []
+        for i in picked:
+            pooled.extend(by_world[worlds[i]])
+        if pooled:
+            draws.append(float(stat(pooled)))
+    if not draws:
+        return None
+    lo, hi = (1 - level) / 2, 1 - (1 - level) / 2
+    return float(np.quantile(draws, lo)), float(np.quantile(draws, hi))
+
+
+def _interval_words(ci: tuple[float, float] | None, goal: float | None = None) -> str:
+    if ci is None:
+        return "too few worlds for a world-level interval"
+    width = ci[1] - ci[0]
+    words = f"90% world-level bootstrap interval [{ci[0]:.3f}, {ci[1]:.3f}]"
+    if goal is not None:
+        words += (
+            f"; width {width:.3f} "
+            + ("meets" if width <= goal else "misses")
+            + f" the {goal:.2f} precision goal"
+        )
+    return words
 
 
 def _pytest_pass(node: str) -> bool:
@@ -161,14 +243,20 @@ def segmentation_checks(tmp: Path) -> list[dict[str, Any]]:
     ]
 
 
-def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
+def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any]]:
     rules = rules_full()
     rows = []
     studies = {}
+    seeds = DEV_SEEDS + HELD_OUT_SEEDS
+    if limit is not None:
+        # A smoke run keeps at least one held-out world, so the held-out row
+        # is exercised rather than skipped.
+        seeds = (DEV_SEEDS + HELD_OUT_SEEDS)[: max(2, limit - 1)] + HELD_OUT_SEEDS[:1]
+        seeds = list(dict.fromkeys(seeds))
     for label, engine_seg in (("planted grain", False), ("end-to-end (engine segments)", True)):
-        print(f"elasticity recovery, {label}, seeds {STUDY_SEEDS}...")
+        print(f"elasticity recovery, {label}, seeds {seeds}...")
         results = []
-        for seed in STUDY_SEEDS:
+        for seed in seeds:
             panel, truth, seg_map = build_world_panel(
                 tmp / f"el_{engine_seg}",
                 Preset.WELL_IDENTIFIED,
@@ -189,16 +277,62 @@ def elasticity_checks(tmp: Path) -> list[dict[str, Any]]:
                 r["true_elasticity"] = truth[pseg]
                 results.append(r)
         studies[label] = results
-        errs = sorted(abs(r["iv"] - r["true_elasticity"]) for r in results if r["iv"] is not None)
+        by_world: dict[int, list[float]] = {}
+        for r in results:
+            if r["iv"] is not None:
+                by_world.setdefault(int(r["seed"]), []).append(abs(r["iv"] - r["true_elasticity"]))
+        errs = sorted(e for v in by_world.values() for e in v)
         med, p90, worst = float(np.median(errs)), float(np.quantile(errs, 0.9)), max(errs)
+        ci_med = world_bootstrap(by_world, np.median, seed=1)
+        ci_p90 = world_bootstrap(by_world, lambda v: np.quantile(v, 0.9), seed=2)
+        per_world = [
+            {
+                "world": f"seed {seed}",
+                "held_out": seed in HELD_OUT_SEEDS,
+                "n_segments": len(by_world.get(seed, [])),
+                "median_abs_error": round(float(np.median(by_world[seed])), 4)
+                if by_world.get(seed)
+                else None,
+                "worst_abs_error": round(max(by_world[seed]), 4) if by_world.get(seed) else None,
+            }
+            for seed in seeds
+        ]
+        # The held-out worlds are reported on their own as well: a gated
+        # target that only holds on the seeds used during development is a
+        # regression suite, not evidence (Run 6, Finding 12).
+        held = {k: v for k, v in by_world.items() if k in HELD_OUT_SEEDS}
+        held_errs = sorted(e for v in held.values() for e in v)
         rows.append(
             _row(
-                f"Elasticity recovery, {label}, {len(STUDY_SEEDS)} seeds",
+                f"Elasticity recovery, {label}, {len(seeds)} worlds",
                 "Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported)",
-                f"Median {med:.3f}, P90 {p90:.3f}, worst {worst:.3f}",
+                f"Median {med:.3f}, P90 {p90:.3f}, worst {worst:.3f} over "
+                f"{len(by_world)} worlds ({len(DEV_SEEDS)} development, "
+                f"{len(held)} held out)",
                 med <= 0.10 and p90 <= 0.15,
+                per_world=per_world,
+                uncertainty=(
+                    f"median: {_interval_words(ci_med)}; "
+                    f"P90: {_interval_words(ci_p90, TAIL_PRECISION_GOAL)}"
+                ),
             )
         )
+        if held_errs:
+            h_med = float(np.median(held_errs))
+            h_p90 = float(np.quantile(held_errs, 0.9))
+            rows.append(
+                _row(
+                    f"Elasticity recovery, {label}, held-out worlds only",
+                    "Median abs error ≤ 0.10; P90 ≤ 0.15, on seeds never used in development",
+                    f"Median {h_med:.3f}, P90 {h_p90:.3f}, worst {max(held_errs):.3f} "
+                    f"over {len(held)} worlds",
+                    h_med <= 0.10 and h_p90 <= 0.15,
+                    uncertainty=_interval_words(
+                        world_bootstrap(held, lambda v: np.quantile(v, 0.9), seed=3),
+                        TAIL_PRECISION_GOAL,
+                    ),
+                )
+            )
     study = studies["planted grain"]
     by_seed: dict[int, list[bool]] = {}
     for r in study:
@@ -323,6 +457,9 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
     print("95% CI coverage, 50 simulations (seeds 100-149)... (the long one)")
     rules = rules_full()
     covered, total = 0, 0
+    # Per simulation, so the bootstrap below resamples whole simulations:
+    # the intervals inside one world are not independent of each other.
+    by_sim: dict[int, list[float]] = {}
     for seed in range(100, 150):
         panel, truth, _ = build_world_panel(
             tmp / "cov", Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
@@ -341,13 +478,25 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
                 continue
             t = truth[r["segment"]]
             total += 1
-            covered += int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
+            hit = int(r["iv_ci_low"] - 1e-9 <= t <= r["iv_ci_high"] + 1e-9)
+            covered += hit
+            by_sim.setdefault(seed, []).append(float(hit))
     rate = covered / total
+    # A coverage rate is itself an estimate. 284/300 looks exact and is not:
+    # the simulations are the unit of independence, so the interval comes
+    # from resampling them (Run 6, Finding 12).
+    ci = world_bootstrap(by_sim, np.mean, seed=4)
     return _row(
         "95% CI coverage, 50 simulations",
         "Covers truth 90-98% of the time",
         f"{covered}/{total} = {rate:.1%}",
         0.90 <= rate <= 0.98,
+        uncertainty=(
+            f"90% bootstrap interval on the coverage rate "
+            f"[{ci[0]:.1%}, {ci[1]:.1%}] over {total} intervals"
+            if ci
+            else "too few intervals for a bootstrap"
+        ),
     )
 
 
@@ -803,8 +952,14 @@ def determinism_check(tmp: Path) -> dict[str, Any]:
     ok = hashes[0] == hashes[1]
     return _row(
         "Engine determinism",
-        "Byte-identical bundle across runs on the same input",
-        "Byte-identical" if ok else "DIFFERS",
+        "Byte-identical CSV, Parquet and browser-bundle outputs on the same input",
+        (
+            "Byte-identical across runs, separate processes and thread counts on the "
+            "tested platform; identity across operating systems and BLAS builds is "
+            "untested"
+            if ok
+            else "DIFFERS"
+        ),
         ok,
     )
 
@@ -853,7 +1008,7 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     rows = [
         _row(
             "Performance (full Run-1 pipeline)",
-            "500k+ lines under 2 minutes",
+            "500k+ lines under 2 minutes, on the measured configuration only",
             "Measured by the benchmark CI job (.github/workflows/benchmark.yml) on a fixed "
             "runner, which measures this branch and main back to back and fails the branch "
             "if it is over the bar or more than 10% slower than main. Not measured on a "
@@ -891,6 +1046,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true", help="skip the coverage study and perf run")
     ap.add_argument(
+        "--seeds",
+        type=int,
+        default=None,
+        help=(
+            "run the elasticity study on this many worlds instead of all of them. "
+            "A smoke setting for checking the code path; the committed numbers "
+            "always come from the full set."
+        ),
+    )
+    ap.add_argument(
         "--only-perf",
         action="store_true",
         help="re-measure only the performance check and update it in docs/validation.json",
@@ -918,7 +1083,7 @@ def main() -> None:
         results += fixture_checks()
         results.append(outlier_check(tmp))
         results += segmentation_checks(tmp)
-        results += elasticity_checks(tmp)
+        results += elasticity_checks(tmp, args.seeds)
         if not args.quick:
             results.append(coverage_check(tmp))
             results += cluster_structure_coverage(tmp)

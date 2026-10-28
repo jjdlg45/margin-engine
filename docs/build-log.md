@@ -5270,3 +5270,172 @@ only counts a shortfall against the run when the process tree is itself a
 meaningful consumer, and Windows reports dirty file-cache pages from the
 synthetic-world CSV writes as unavailable. Recorded rather than smoothed
 over; no batch exceeded 3.28 GB of its own.
+
+## Phase 78 — Validation statistics and claims (2026-10-27, Run 6 branch)
+
+Findings 12, 22 and 24. The validation table was a list of point estimates
+with no scope: how many worlds a number rested on, how it was computed, and -
+the part a reader has to guess - what it licenses them to claim.
+
+### Every row now says what it establishes, and what it does not
+
+`docs/validation-meta.yaml` carries, for each of the 35 measured checks: the
+number of independent worlds or clusters behind it, the method, what the
+result establishes, and what it does not. It is written prose, reviewed as
+prose, and joined onto the measurements by check name.
+
+Two documents are generated from the pair:
+
+- the README keeps a compact table - check, target, measured, **worlds or
+  clusters** - so the headline stays scannable;
+- `docs/validation.md` is new and carries every row in full, with method,
+  scope, uncertainty and per-world results.
+
+`check_meta` refuses to render if a measured check has no scope entry, if the
+scope document describes a check nobody measures, or if any of the four
+fields is blank. A new measurement cannot reach the README without someone
+writing down what it means.
+
+Several entries are uncomfortable to write, which is the point. The outlier,
+KVI, segmentation and tracker rows each rest on **one world** - one draw -
+and now say so. The hybrid PPI row says "hybrid-synthetic evidence ...
+quantities and the elasticity are still planted". The performance row says
+the measured configuration only.
+
+### Intervals that resample the right unit
+
+A median over 5 worlds x 6 segments is not 30 independent observations:
+every segment inside one world shares its demand shocks, its instruments and
+its prices. `world_bootstrap` resamples **worlds**, and the measured
+difference is not subtle - on a fixture with real between-world spread the
+world-level interval is more than three times wider than treating each
+observation as independent. That ratio is a test, not a claim.
+
+Gated elasticity targets now report a 90% world-level interval on the median
+and on the P90, and the P90 interval is checked against a stated precision
+goal (width <= 0.05) so "P90 0.077" cannot be read as exact when the evidence
+will not carry it. Interval coverage reports an interval on the coverage rate
+itself, resampling simulations rather than intervals.
+
+### Seeds nobody tuned against
+
+The elasticity study ran on five seeds that are also the committed regression
+seeds - results on them are a regression suite, not fresh evidence. Ten
+**held-out seeds** are added (1009-1061, chosen outside the coverage study's
+100-149 range so "held out" is true rather than decorative), the gated rows
+run on all fifteen worlds, and the held-out worlds are additionally reported
+**on their own**, so a target that only holds where the work was done is
+visible as such.
+
+Per-world results travel with the row: each world's segment count, median and
+worst error, flagged held-out or not, rendered as a table in
+`docs/validation.md`.
+
+### The determinism claim, measured rather than asserted
+
+The bundle determinism test ran twice inside one process, so it could not see
+the thing that actually moves a solver's last digits: BLAS and Polars thread
+counts change accumulation order and an iterative fit stops somewhere
+slightly different.
+
+Measured: the demo bundle is byte-identical across separate processes at 1
+and 4 threads, all 14 published files. That is now a test
+(`test_bundle_byte_identical_across_processes_and_thread_counts`), and the
+claim is worded to what was tested - "byte-identical across runs, separate
+processes and thread counts on the tested platform; identity across operating
+systems and BLAS builds is untested".
+
+To keep it holding rather than holding by luck, `_rs` rounds every
+iterative-solver output to 6 significant digits before it enters the bundle:
+elasticities, standard errors, test statistics, intervals, win-curve
+coefficients, calibration figures, event-study coefficients and the
+segmentation holdout errors - 73 fields. Six digits is three or more beyond
+anything the UI displays and far wider than the drift.
+
+### Wording
+
+- **Online Retail II** is described as the UCI dataset describes it - "real
+  UK online-retail transactions (giftware); many customers are wholesalers" -
+  and the README now states what the case study tests: ingestion and
+  descriptive analytics. It has no cost, no list price and no instruments, so
+  it cannot test margin, floors or causal price response.
+- The **hybrid PPI world** is labeled hybrid-synthetic evidence in its own
+  target text, naming what is real (the producer price series driving cost
+  paths) and what is not (quantities and the elasticity).
+- The **performance** target says "on the measured configuration only".
+
+### Running the enlarged study
+
+Fifteen worlds per gated elasticity target does not fit on a 14 GB laptop
+beside a desktop, and the previous five-world study already took an hour.
+`.github/workflows/validation.yml` runs it on a GitHub runner by manual
+dispatch, regenerates both documents, runs the agreement test, and uploads
+the refreshed files as an artifact. It is not on every push: the inputs change
+only when the estimators do.
+
+**docs/validation.json is therefore unchanged in this phase** - it still
+carries the Phase 71 measurements, and the new per-world and uncertainty
+fields appear when the study is next run. The scope document, the generated
+`docs/validation.md`, the wording fixes and the determinism work all land
+now. Recorded as the one thing in this phase that a CI run, not this commit,
+completes.
+
+### Tests added
+
+`tests/test_validation_statistics.py`, 9 tests: the held-out seeds really are
+disjoint from the development seeds and the coverage range; an interval needs
+more than two worlds; the interval brackets its statistic and is
+reproducible; the precision goal is reported as met or missed; and the
+measured comparison that justifies the whole design - resampling worlds is
+more than three times wider than resampling observations.
+
+`tests/test_validation_table.py` grows from 8 tests to 14: every measured
+check declares its scope, a check without one is refused, scope describing
+nothing measured is refused, a blank scope field is refused, the detail
+document matches the measurements, and every row states what it does not
+establish.
+
+`tests/test_webexport.py` gains the cross-process determinism test.
+
+### The new reporting path, smoke-run
+
+The enlarged elasticity study cannot run here, so the code path was exercised
+with `--seeds 3` rather than left to surface in a four-hour CI job: the
+per-world table, the held-out row and the interval wording all produce, and
+with one held-out world the interval correctly reports "too few worlds for a
+world-level interval" instead of inventing one. Those numbers are a code-path
+check and are not committed anywhere as evidence.
+
+### The memory floor, enforced rather than assumed
+
+That smoke run peaked at 4.37 GB and touched 1.33 GB of free memory - under
+the 2.0 GB floor - without the watchdog firing, because the floor was
+implemented as "sustained for three seconds while our own tree is over 1 GB",
+and the dip was shorter than that. The de-bounce exists for a measured
+reason: a single-sample version killed healthy runs when Windows reported
+dirty file-cache pages from synthetic-world CSV writes as unavailable.
+
+Both can be true, so the guard now has two levels. A dip below 60% of the
+floor is pressure rather than cache and kills immediately, on the first
+sample. Shallower dips keep the three-second rule but are **counted and
+timed**, and every run now reports `floor_excursions`, `floor_seconds` and
+`longest_excursion_s` - so a phase report can say the floor was touched for
+half a second instead of rounding it to "stayed above 2 GB". The earlier
+breaches in this run (1.77 GB during the Phase 77 suite, 1.33 GB here) were
+transient and are recorded rather than smoothed over.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (201 files); mypy src api 0 (93 files,
+strict). Full pytest green: 736 tests in 65 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.39 GB, minimum system
+free memory 2.18 GB, **zero floor excursions** on the tightened watchdog,
+1227s. tsc 0; vitest 22/22; vite build 0; Playwright 231 passed 3 skipped
+(exit 0) with no snapshot changes - the solver rounding is three or more
+digits beyond anything the UI displays, which is the point of it.
+
+Correction, same day: the first version of this section said "743 tests in 66
+files". I composed the sentence before the count printed and did not go back
+to reconcile it; the measured figure is 736 in 65. The commit message was
+amended with it. Exactly the habit the process-correction entry above exists
+to stop, caught here by reading the number the command actually returned.

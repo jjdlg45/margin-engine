@@ -1,0 +1,223 @@
+# What each validation row establishes, and what it does not (Run 6, Phase 78).
+#
+# `docs/validation.json` carries the measurements. This file carries their
+# scope: how many independent worlds or clusters each one rests on, the method
+# behind it, and - the part reviewers kept having to infer - what the result
+# licenses someone to claim and what it does not.
+#
+# Keyed by the `check` string in validation.json. Every check must have an
+# entry; `scripts/measure_validation.py` refuses to write a row without one,
+# and `tests/test_validation_table.py` fails if the two drift apart.
+#
+# `worlds`: independent synthetic worlds, seeds or clusters behind the number.
+# A figure resting on one world says so, because one world is one draw.
+
+Accounting fixtures:
+  worlds: "hand-calculated cases, not worlds"
+  method: "Deterministic fixtures asserted to the cent, run as pytest nodes."
+  establishes: "The waterfall arithmetic matches hand calculation on every modeled case."
+  does_not_establish: "That the cases cover every arrangement a real ERP can produce."
+
+Ledger reconciliation:
+  worlds: "hypothesis-generated inputs, many per run"
+  method: "Property-based tests over varied quantities, prices, sign conventions and deductions."
+  establishes: "Totals reconcile to source for every input the generator produced."
+  does_not_establish: "Reconciliation on input shapes the property generator cannot reach."
+
+Rebate / freight recovery:
+  worlds: "fixtures plus one planted world"
+  method: "Planted rebate and freight amounts compared to recovered; actuals exact, allocations within tolerance."
+  establishes: "Planted amounts are recovered exactly where actual, within 5% where allocated."
+  does_not_establish: "That a real rebate program's terms are captured by the modeled shapes."
+
+Planted outlier detection:
+  worlds: 1
+  method: "Modified robust z-score within peer groups against planted outliers on one default-scale world."
+  establishes: "Recall and false-flag rate against outliers of the planted shape and size."
+  does_not_establish: "Detection of outliers unlike the planted ones, or the right threshold for a real catalog."
+
+Commercial segments vs planted (out-of-sample ARI):
+  worlds: 1
+  method: "Decision tree on the price index with context features only; ARI against planted segments on held-out pairs."
+  establishes: "The planted segment structure is recoverable from context features alone on one world."
+  does_not_establish: "That real commercial structure is tree-shaped, or that one world's ARI is typical."
+
+Segment stability (bootstrap median ARI):
+  worlds: 1
+  method: "Bootstrap resamples of the pairs, partition agreement between each refit and the full fit."
+  establishes: "The partition is stable to resampling the same data."
+  does_not_establish: "Stability over time - that is the separate later-period check on the Segments page."
+
+Elasticity recovery, planted grain, 5 seeds:
+  worlds: 5
+  method: "FE-2SLS per planted segment with both instruments; absolute error against the planted elasticity."
+  establishes: "The estimator recovers a planted constant elasticity when the instruments are valid by construction."
+  does_not_establish: "Accuracy on real data, where no instrument is valid by construction."
+
+Elasticity recovery, end-to-end (engine segments), 5 seeds:
+  worlds: 5
+  method: "As above but on the engine's own segments, scored only on cells that are 90% one planted segment."
+  establishes: "Recovery survives the engine choosing its own segments rather than being handed them."
+  does_not_establish: "Recovery in segments too mixed to score, which are excluded rather than counted."
+
+Naive estimator bias:
+  worlds: 5
+  method: "FE-OLS on price without instruments, compared to the planted elasticity on every seed."
+  establishes: "The planted endogeneity biases the naive estimate in the planted direction every time."
+  does_not_establish: "The size of that bias in a real market."
+
+Causal support reachable:
+  worlds: 1
+  method: "The full gate ladder run on the well-identified preset with an adequate market-price control."
+  establishes: "The top status is attainable when every prespecified criterion is met."
+  does_not_establish: "That the criteria are sufficient for a causal claim on real data."
+
+Competitor-price path gate:
+  worlds: "30 segment-seeds"
+  method: "Count of segment-seeds reaching causal support once the market-price control is required."
+  establishes: "How often the Phase 70 gate binds on a world built to satisfy it."
+  does_not_establish: "That an uncontrolled competitor-price path is absent elsewhere."
+
+Anticipation (lead) test false-rejection rate:
+  worlds: "30 segment-seeds"
+  method: "Future instrument values regressed on current quantity where no anticipation is planted."
+  establishes: "The lead test's false-positive rate and smallest detectable effect on a clean world."
+  does_not_establish: "Its power against a real anticipation channel."
+
+Robust first-stage statistic and robust-set shape:
+  worlds: "30 segment-seeds"
+  method: "Montiel Olea-Pflueger effective F against the published critical value; Anderson-Rubin set shape."
+  establishes: "The robust statistic and the robust set are computed and reported on every segment."
+  does_not_establish: "That a strong first stage makes an exclusion restriction true."
+
+95% CI coverage, 50 simulations:
+  worlds: "50 simulations, 300 intervals"
+  method: "Repeated worlds with known truth; share of 95% intervals containing it."
+  establishes: "Interval coverage under the generator's independent-shock demand process."
+  does_not_establish: "Coverage under serially correlated demand - the persistent-demand rows below are that test."
+
+95% CI coverage under persistent demand, cluster=month (alternative, informational):
+  worlds: "50 simulations, 300 intervals"
+  method: "As above with AR(1) customer demand shocks and clustering by month only."
+  establishes: "That month-only clustering under-covers, which is why it is not the default."
+  does_not_establish: "Anything about the shipped configuration."
+
+95% CI coverage under persistent demand, cluster=month_customer (shipped default):
+  worlds: "50 simulations, 300 intervals"
+  method: "AR(1) customer demand shocks; two-way clustering by month and customer."
+  establishes: "The shipped clustering keeps coverage in band when demand is persistent."
+  does_not_establish: "Coverage with few assignment-level clusters, which the Phase 73 study reports separately."
+
+95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational):
+  worlds: "50 simulations, 300 intervals"
+  method: "As above with clustering at the instrument-assignment level."
+  establishes: "That assignment-level clustering alone does not absorb the customer dimension."
+  does_not_establish: "That assignment-level clustering is wrong in principle - it is right and insufficient here."
+
+weak-instrument preset:
+  worlds: 5
+  method: "A world whose instruments barely move price; status ladder and robust interval inspected."
+  establishes: "Weak identification never reaches causal support, and the robust interval is reported."
+  does_not_establish: "That every form of weak identification is caught."
+
+invalid-instrument preset:
+  worlds: 5
+  method: "One instrument correlated with the demand shock; overidentification test and status."
+  establishes: "The J test rejects and the status is downgraded when the two instruments disagree."
+  does_not_establish: "Detection of a violation both instruments share - the test cannot see it."
+
+price-constant preset:
+  worlds: 1
+  method: "A world with no within-pair price variation; status ladder inspected."
+  establishes: "No price variation produces insufficient data or descriptive only, never higher."
+  does_not_establish: "Anything about elasticity, since none is identified."
+
+sparse preset:
+  worlds: 1
+  method: "A thin world; status ladder inspected."
+  establishes: "Sparse data fails closed rather than producing a confident number."
+  does_not_establish: "The data volume a real deployment needs."
+
+"Misspecified world: persistent_demand (informational)":
+  worlds: 1
+  method: "AR(1) demand shocks; recovery of the planted elasticity reported, not gated."
+  establishes: "How far the estimate moves when the demand process is not the one assumed."
+  does_not_establish: "A pass or a failure - the planted number stops being the estimand once the model is wrong."
+
+"Misspecified world: heterogeneous_elasticity (informational)":
+  worlds: 1
+  method: "Elasticity varying within segment; recovery of the segment average reported."
+  establishes: "The segment estimate lands near the within-segment average."
+  does_not_establish: "That a segment average is the right number for any pair inside it."
+
+"Misspecified world: nonconstant_elasticity (informational)":
+  worlds: 1
+  method: "Curved demand fitted with a constant-elasticity model."
+  establishes: "The size of the error a constant-elasticity model makes on curved demand."
+  does_not_establish: "A pass - the model is wrong by construction and reports a local average."
+
+"Misspecified world: competitor_comovement (informational)":
+  worlds: 1
+  method: "Competitor prices moving with the cost shocks; statuses and recovery reported."
+  establishes: "That the gate withholds causal support when the competitor-price path is live."
+  does_not_establish: "The size of the bias in a real market where competitor prices are unobserved."
+
+KVI candidates:
+  worlds: 1
+  method: "Data-driven candidate score ranked against planted key-value items."
+  establishes: "Recall of planted KVIs in the top-ranked candidates on one world."
+  does_not_establish: "That the score identifies the items a real buyer watches."
+
+Win-curve price coefficient:
+  worlds: 1
+  method: "Logistic fit per segment on decided quotes, clustered; coefficient against planted, per estimated segment."
+  establishes: "Every segment that reaches estimated status recovers the planted coefficient within 15%."
+  does_not_establish: "Anything about segments that do not reach it - they are excluded, not passed."
+
+Engine determinism:
+  worlds: "one world, repeated runs"
+  method: "CSV, Parquet and browser-bundle outputs hashed across repeated runs, separate processes and thread counts."
+  establishes: "Outputs are byte-identical across runs on the tested platform and thread configuration."
+  does_not_establish: "Byte identity across operating systems or BLAS builds, which is untested."
+
+Performance (full Run-1 pipeline):
+  worlds: "one world, one machine"
+  method: "Wall-clock time for the full pipeline on a generated world, on the build machine."
+  establishes: "The measured configuration runs in the stated time on the stated hardware."
+  does_not_establish: "Timing on other hardware; run-to-run spread on this machine is several seconds."
+
+"Competitor-price path gate (informational)":
+  worlds: "30 segment-seeds"
+  method: "Duplicate of the gate row above, retained until the next regeneration."
+  establishes: "The same thing as the row above."
+  does_not_establish: "Anything additional - it is a duplicate, noted rather than edited out of a measured file."
+
+Scenario matrix (full tier):
+  worlds: 300
+  method: "Combinatorial worlds over size, sparsity, missing cost, returns, currency, ERP format and demand preset; invariants checked on each."
+  establishes: "Reconciliation, fail-closed behaviour, determinism, format invariance and monotonicity hold on every world generated."
+  does_not_establish: "Behaviour on input shapes outside the sampled dimensions."
+
+"Hybrid world: real PPI cost paths (informational)":
+  worlds: 1
+  method: "Real BLS producer price series drive the simulated supplier cost paths; everything else is synthetic."
+  establishes: "Hybrid-synthetic evidence that the instrument pipeline works on real-world cost movements."
+  does_not_establish: "Recovery on real demand - the quantities and the elasticity are still planted."
+
+Scale (10M-line pipeline):
+  worlds: "one ladder, one machine"
+  method: "Memory-aware scale ladder; largest rung that fits the machine, with peak memory per line."
+  establishes: "Measured runtime and peak memory at the rungs that fit."
+  does_not_establish: "The 10M-line target, which is an extrapolation from those rungs and remains a known gap."
+
+"Results tracker: planted-intervention recovery":
+  worlds: 1
+  method: "Planted price interventions on chosen pairs; pooled recovery error against the planted effect."
+  establishes: "The tracker recovers a planted effect in pooled aggregate on one world."
+  does_not_establish: "Per-action accuracy - a single pair's window carries far more noise than the pooled figure."
+
+"Results tracker: fail-closed on a sparse world":
+  worlds: 1
+  method: "The same interventions on a sparse world; share of actions that get a number."
+  establishes: "The tracker refuses to measure when the data cannot support it, with reasons."
+  does_not_establish: "That every unmeasurable case is caught."

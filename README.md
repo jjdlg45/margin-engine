@@ -269,7 +269,7 @@ No code changes are needed for a new source system. Three more tools exist for r
 
 ## Case study: Online Retail II (real data)
 
-The engine runs end to end on a real public dataset: the UCI **Online Retail II** export of a UK online wholesaler — 1,067,371 invoice lines, 2009–2011, GBP, with real cancellations, 14.7% of revenue from anonymous customers, non-product fee codes and true duplicate rows, and **no cost, no list price, no instruments**. Every reconciliation check passes exactly (GBP kept per line, converted to USD at monthly ECB reference rates); cancellations classify as returns via a one-line mapping prefix rule; cost-dependent metrics report `cost_unavailable` instead of numbers; elasticity caps at `descriptive_elasticity`, and the no-planted-truth checks show why that gating is right (the backtest loses to a zero-elasticity baseline out of sample; fake-date placebos "detect" effects that cannot be real). Full write-up: [`docs/case-study-online-retail.md`](docs/case-study-online-retail.md); reproduce with [`scripts/download_online_retail.py`](scripts/download_online_retail.py).
+The engine runs end to end on a real public dataset: the UCI **Online Retail II** export of **real UK online-retail transactions (giftware); many customers are wholesalers** — 1,067,371 invoice lines, 2009–2011, GBP, with real cancellations, 14.7% of revenue from anonymous customers, non-product fee codes and true duplicate rows, and **no cost, no list price, no instruments**. Every reconciliation check passes exactly (GBP kept per line, converted to USD at monthly ECB reference rates); cancellations classify as returns via a one-line mapping prefix rule; cost-dependent metrics report `cost_unavailable` instead of numbers; elasticity caps at `descriptive_elasticity`, and the no-planted-truth checks show why that gating is right (the backtest loses to a zero-elasticity baseline out of sample; fake-date placebos "detect" effects that cannot be real). **What this case study tests is ingestion and descriptive analytics**: the dataset has no cost, no list price and no instruments, so it exercises mapping, classification, reconciliation, dispersion and segmentation, and it cannot test margin, floors or causal price response - which is why the engine reports those as unavailable rather than producing them. Full write-up: [`docs/case-study-online-retail.md`](docs/case-study-online-retail.md); reproduce with [`scripts/download_online_retail.py`](scripts/download_online_retail.py).
 
 ## Validation results
 
@@ -277,45 +277,45 @@ Planted truth vs. recovered, on synthetic data. These figures are produced by `s
 
 <!-- validation-table:start -->
 
-Measured 2026-10-26T20:23:17+00:00 by `scripts/measure_validation.py` in 62 minutes. This table is generated from `docs/validation.json`; a test fails if the two disagree.
+Measured 2026-10-26T20:23:17+00:00 by `scripts/measure_validation.py` in 62 minutes. This table is generated from `docs/validation.json`; a test fails if the two disagree. Method and scope for every row - what it establishes and what it does not - are in [`docs/validation.md`](docs/validation.md).
 
-| Check | Target | Measured |
-|---|---|---|
-| Accounting fixtures | Exact to the cent | All hand-calculated fixture tests pass |
-| Ledger reconciliation | Exact to source totals after rounding | Property suite passes (hypothesis-varied inputs) |
-| Rebate / freight recovery | Actual amounts exact; allocated within ±5% of planted | Recovery suite passes (exact + ±5% allocated) |
-| Planted outlier detection | ≥ 90% recall, ≤ 5% false-flag rate | Recall 98.7%, false-flag rate 1.02% |
-| Commercial segments vs planted (out-of-sample ARI) | At least 0.70 on the well-identified preset | ARI 1.000 (seed 3, default scale) |
-| Segment stability (bootstrap median ARI) | ≥ 0.80 | Median ARI 1.000 over 8 resamples |
-| Elasticity recovery, planted grain, 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.019, P90 0.077, worst 0.095 |
-| Elasticity recovery, end-to-end (engine segments), 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.022, P90 0.077, worst 0.095 |
-| Naive estimator bias | Biased in the planted direction (toward zero) on every seed | Toward zero on 5/5 seeds, every segment |
-| Causal support reachable | Reached on the well-identified preset with all criteria enforced | Reached; competitor-price path controlled_by_market_index; market index market_control_adequate |
-| Competitor-price path gate | Informational: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) |
-| Anticipation (lead) test false-rejection rate | Informational: on the well-identified preset no anticipation channel is planted, so every rejection is a false positive | 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes |
-| Robust first-stage statistic and robust-set shape | Informational: the Montiel Olea-Pflueger effective F against the published 23.109 bar, and the shape of the weak-instrument-robust set | Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86 |
-| 95% CI coverage, 50 simulations | Covers truth 90-98% of the time | 284/300 = 94.7% |
-| 95% CI coverage under persistent demand, cluster=month (alternative, informational) | Informational - reported to justify the clustering default | 253/300 = 84.3% |
-| 95% CI coverage under persistent demand, cluster=month_customer (shipped default) | Covers truth 90-98% of the time | 278/300 = 92.7% |
-| 95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational) | Informational - reported to justify the clustering default | 244/300 = 81.3% |
-| weak-instrument preset | Never reaches causal support; weak-IV-robust interval reported | No segment reached causal support; Anderson-Rubin set reported |
-| invalid-instrument preset | Overidentification rejects on ≥ 80% of seeds; status downgraded | Rejected on 4/5 seeds; downgraded on 5/5 |
-| price-constant preset | Insufficient data or descriptive only - never higher | Held for every segment |
-| sparse preset | Insufficient data or descriptive only - never higher | Held for every segment |
-| Misspecified world: persistent_demand (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.031; statuses {causal_elasticity_supported: 8, descriptive_elasticity: 1, iv_estimated_elasticity: 9} |
-| Misspecified world: heterogeneous_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.025; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} |
-| Misspecified world: nonconstant_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.303; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} |
-| Misspecified world: competitor_comovement (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.236; statuses {descriptive_elasticity: 18} |
-| KVI candidates | ≥ 80% of planted KVIs in top-ranked candidates | Recall 96.7% (30 planted) |
-| Win-curve price coefficient | Within ±15% relative of planted, per estimated segment | Worst estimated segment 4.0% (2 estimated, precision-gated) |
-| Engine determinism | Byte-identical bundle across runs on the same input | Byte-identical |
-| Performance (full Run-1 pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 119.0s on AMD64 (Windows) |
-| Competitor-price path gate (informational) | Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) |
-| Scenario matrix (full tier) | every invariant holds on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300 worlds, 300 passed all invariants, 0 failed (0 crashes), 1784s |
-| Hybrid world: real PPI cost paths (informational) | informational: recovery when real cost movements drive the instrument | seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s |
-| Scale (10M-line pipeline) | 10M+ lines under 15 minutes and under 8 GB peak memory | largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest classify waterfall reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement. |
-| Results tracker: planted-intervention recovery | pooled recovery \|median DiD effect - median planted effect\| <= 0.1 log points and >= 50% of interventions measured (well-identified world, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information) | 21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419 |
-| Results tracker: fail-closed on a sparse world | <= 25% of interventions get a number; the rest report insufficient evidence with reasons (sparse preset, same interventions) | 0/30 measured (0%); refusal reasons: {'not enough sales around the implementati': 30} |
+| Check | Target | Measured | Worlds or clusters |
+|---|---|---|---|
+| Accounting fixtures | Exact to the cent | All hand-calculated fixture tests pass | hand-calculated cases, not worlds |
+| Ledger reconciliation | Exact to source totals after rounding | Property suite passes (hypothesis-varied inputs) | hypothesis-generated inputs, many per run |
+| Rebate / freight recovery | Actual amounts exact; allocated within ±5% of planted | Recovery suite passes (exact + ±5% allocated) | fixtures plus one planted world |
+| Planted outlier detection | ≥ 90% recall, ≤ 5% false-flag rate | Recall 98.7%, false-flag rate 1.02% | 1 |
+| Commercial segments vs planted (out-of-sample ARI) | At least 0.70 on the well-identified preset | ARI 1.000 (seed 3, default scale) | 1 |
+| Segment stability (bootstrap median ARI) | ≥ 0.80 | Median ARI 1.000 over 8 resamples | 1 |
+| Elasticity recovery, planted grain, 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.019, P90 0.077, worst 0.095 | 5 |
+| Elasticity recovery, end-to-end (engine segments), 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.022, P90 0.077, worst 0.095 | 5 |
+| Naive estimator bias | Biased in the planted direction (toward zero) on every seed | Toward zero on 5/5 seeds, every segment | 5 |
+| Causal support reachable | Reached on the well-identified preset with all criteria enforced | Reached; competitor-price path controlled_by_market_index; market index market_control_adequate | 1 |
+| Competitor-price path gate | Informational: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) | 30 segment-seeds |
+| Anticipation (lead) test false-rejection rate | Informational: on the well-identified preset no anticipation channel is planted, so every rejection is a false positive | 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes | 30 segment-seeds |
+| Robust first-stage statistic and robust-set shape | Informational: the Montiel Olea-Pflueger effective F against the published 23.109 bar, and the shape of the weak-instrument-robust set | Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86 | 30 segment-seeds |
+| 95% CI coverage, 50 simulations | Covers truth 90-98% of the time | 284/300 = 94.7% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=month (alternative, informational) | Informational - reported to justify the clustering default | 253/300 = 84.3% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=month_customer (shipped default) | Covers truth 90-98% of the time | 278/300 = 92.7% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational) | Informational - reported to justify the clustering default | 244/300 = 81.3% | 50 simulations, 300 intervals |
+| weak-instrument preset | Never reaches causal support; weak-IV-robust interval reported | No segment reached causal support; Anderson-Rubin set reported | 5 |
+| invalid-instrument preset | Overidentification rejects on ≥ 80% of seeds; status downgraded | Rejected on 4/5 seeds; downgraded on 5/5 | 5 |
+| price-constant preset | Insufficient data or descriptive only - never higher | Held for every segment | 1 |
+| sparse preset | Insufficient data or descriptive only - never higher | Held for every segment | 1 |
+| Misspecified world: persistent_demand (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.031; statuses {causal_elasticity_supported: 8, descriptive_elasticity: 1, iv_estimated_elasticity: 9} | 1 |
+| Misspecified world: heterogeneous_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.025; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} | 1 |
+| Misspecified world: nonconstant_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.303; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} | 1 |
+| Misspecified world: competitor_comovement (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.236; statuses {descriptive_elasticity: 18} | 1 |
+| KVI candidates | ≥ 80% of planted KVIs in top-ranked candidates | Recall 96.7% (30 planted) | 1 |
+| Win-curve price coefficient | Within ±15% relative of planted, per estimated segment | Worst estimated segment 4.0% (2 estimated, precision-gated) | 1 |
+| Engine determinism | Byte-identical bundle across runs on the same input | Byte-identical | one world, repeated runs |
+| Performance (full Run-1 pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 119.0s on AMD64 (Windows) | one world, one machine |
+| Competitor-price path gate (informational) | Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) | 30 segment-seeds |
+| Scenario matrix (full tier) | every invariant holds on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300 worlds, 300 passed all invariants, 0 failed (0 crashes), 1784s | 300 |
+| Hybrid world: real PPI cost paths (informational) | informational: recovery when real cost movements drive the instrument | seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s | 1 |
+| Scale (10M-line pipeline) | 10M+ lines under 15 minutes and under 8 GB peak memory | largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest classify waterfall reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement. | one ladder, one machine |
+| Results tracker: planted-intervention recovery | pooled recovery \|median DiD effect - median planted effect\| <= 0.1 log points and >= 50% of interventions measured (well-identified world, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information) | 21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419 | 1 |
+| Results tracker: fail-closed on a sparse world | <= 25% of interventions get a number; the rest report insufficient evidence with reasons (sparse preset, same interventions) | 0/30 measured (0%); refusal reasons: {'not enough sales around the implementati': 30} | 1 |
 
 <!-- validation-table:end -->
 
