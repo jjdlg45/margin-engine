@@ -130,6 +130,7 @@ function SegmentsBody({ s }: { s: SegmentsSection }) {
           </table>
         </ScrollX>
       </Section>
+      {s.holdout && <HoldoutSection h={s.holdout} notes={s.notes ?? []} />}
       <Section
         title="Margin drivers (explanatory, not segments)"
         lede={s.margin_driver_note}
@@ -137,6 +138,74 @@ function SegmentsBody({ s }: { s: SegmentsSection }) {
         <RuleTable rules={s.margin_driver_rules} target="Mean pocket margin" rowWord="Driver" fmt={signedPct} />
       </Section>
     </>
+  );
+}
+
+function HoldoutSection({
+  h,
+  notes,
+}: {
+  h: NonNullable<SegmentsSection["holdout"]>;
+  notes: string[];
+}) {
+  return (
+    <Section
+      title="Tested on later periods"
+      lede={
+        "A bootstrap resamples the same months, so it cannot tell a grouping that " +
+        "will hold next quarter from one that has fitted this quarter's noise. " +
+        "These segments were fitted on the earlier months and scored on months " +
+        "they never saw, against the only baseline worth beating: one median for " +
+        "everybody."
+      }
+    >
+      <ScrollX label="Held-out period results">
+        <table className="max-w-2xl">
+          <tbody>
+            <tr>
+              <th className="left">Months used to fit</th>
+              <td>{count(h.n_fit_periods)}</td>
+            </tr>
+            <tr>
+              <th className="left">Months held out</th>
+              <td>{count(h.n_eval_periods)}</td>
+            </tr>
+            <tr>
+              <th className="left">Customer-item pairs scored</th>
+              <td>{count(h.n_eval_pairs)}</td>
+            </tr>
+            <tr>
+              <th className="left">Average error of the segment medians</th>
+              <td>{h.mae !== null ? num(h.mae, 4) : "—"}</td>
+            </tr>
+            <tr>
+              <th className="left">Average error of a single median</th>
+              <td>{h.mae_baseline !== null ? num(h.mae_baseline, 4) : "—"}</td>
+            </tr>
+            {h.same_period_features.length > 0 && (
+              <tr>
+                <th className="left">
+                  Without {h.same_period_features.join(", ").toLowerCase()}
+                </th>
+                <td>
+                  {h.mae_without_same_period_features !== null
+                    ? num(h.mae_without_same_period_features, 4)
+                    : "—"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </ScrollX>
+      <ul
+        className="m-0 mt-3 max-w-2xl list-disc pl-5 text-sm"
+        data-testid="segment-notes"
+      >
+        {notes.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

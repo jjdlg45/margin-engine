@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -63,6 +63,11 @@ class AmountField(StrictModel):
     sign_convention: SignConvention
     # Only meaningful for revenue-like amounts.
     discounts_embedded: bool | None = None
+    # Whether this amount is ALREADY part of net_amount (Run 6, Phase 63).
+    # Mandatory for tax_amount: an embedded tax must be carved OUT of product
+    # revenue, a separately billed one must never be added in — the engine
+    # refuses to guess which.
+    embedded_in_net: bool | None = None
 
 
 class UnitPriceField(StrictModel):
@@ -135,6 +140,14 @@ class LinesMapping(StrictModel):
     # customer and return freight billed to the customer, both recovery revenue.
     restocking_fee: AmountField | None = None
     return_freight_billed: AmountField | None = None
+    # Taxes / deposits / third-party collections billed on lines (Run 6,
+    # Phase 63): excluded from product revenue by default. embedded_in_net is
+    # mandatory (see AmountField).
+    tax_amount: AmountField | None = None
+    # Return disposition (Run 6, Phase 63): resaleable / damaged / obsolete /
+    # not_received / exchange, normalized via return_disposition_map. Controls
+    # whether the return recovers product cost.
+    return_disposition: KeyField | None = None
     credit_reason: KeyField | None = None
     original_invoice_ref: KeyField | None = None
     sales_rep_id: KeyField | None = None
@@ -142,6 +155,17 @@ class LinesMapping(StrictModel):
     contract_id: KeyField | None = None
     currency: KeyField | None = None
     kit_parent_id: KeyField | None = None
+
+    @model_validator(mode="after")
+    def _tax_semantics_declared(self) -> LinesMapping:
+        if self.tax_amount is not None and self.tax_amount.embedded_in_net is None:
+            msg = (
+                "tax_amount must declare embedded_in_net: true (the tax sits inside "
+                "net_amount and is carved out of product revenue) or false (billed "
+                "separately and never added to revenue). The engine never guesses."
+            )
+            raise MappingError(msg)
+        return self
 
     @model_validator(mode="after")
     def _price_or_net(self) -> LinesMapping:
@@ -188,6 +212,26 @@ class TableInput(StrictModel):
     decimal_separator: Literal[".", ","] | None = None
 
 
+class SourceProvenance(StrictModel):
+    """Where an external series came from (Run 6, Phase 80, Finding 18).
+
+    `series_kind` is load-bearing, not documentation. A producer price index
+    is a COST series: it belongs in the instrument pipeline. A competitor or
+    market SELLING-price index is what the causal gate's competitor-price
+    control needs. Feeding a cost index into that control would look like a
+    control and would not be one, so the kind is declared and checked.
+    """
+
+    provider: str
+    url: str
+    retrieved_utc: str
+    license: str
+    update_cadence: str
+    coverage: str
+    aggregation_level: str
+    series_kind: Literal["selling_price_index", "cost_index", "other"]
+
+
 class ReferenceTable(StrictModel):
     file: str
     # Per-table physical-format overrides (delimiter, encoding,
@@ -197,11 +241,57 @@ class ReferenceTable(StrictModel):
     date_format: str | None = None
     # For .xlsx files: sheet name or zero-based index (default: first sheet).
     sheet: str | int | None = None
-    # Phase 37: the market_price_index table must declare its source PUBLIC
-    # (true) to be used as an elasticity control; anything else and the engine
-    # refuses the control (algorithmic sharing of competitors' non-public
-    # prices raises antitrust concerns). Ignored for other tables.
-    public_source: bool | None = None
+    # Run 6, Phase 80: recorded provenance replaces the Phase 37
+    # `public_source: true` boolean. A flag asserts that a series is public;
+    # provenance says who published it, where it came from, when it was
+    # fetched, on what terms, how often it updates, what it covers and at
+    # what level - the things a reviewer needs to decide whether it is
+    # acceptable and whether it is the right kind of series at all.
+    provenance: SourceProvenance | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_public_source_flag(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "public_source" in data:
+            msg = (
+                "reference table declares 'public_source', which Run 6 (Phase 80) "
+                "replaced with a 'provenance' block: provider, url, retrieved_utc, "
+                "license, update_cadence, coverage, aggregation_level and "
+                "series_kind (selling_price_index, cost_index or other). A boolean "
+                "asserts that a series is public; provenance records who published "
+                "it and on what terms, and series_kind is what stops a cost index "
+                "being used as a competitor-price control."
+            )
+            raise MappingError(msg)
+        return data
+
+
+class ChargeDecl(StrictModel):
+    """What one billed charge code MEANS (Run 6, Phase 63): its economic
+    owner, direction, which pool its dollars belong to, the amount basis, and
+    whether it is already embedded in net_amount. Order-level charges live in
+    their own table, so embedded_in_net must be false for them."""
+
+    economic_owner: str  # e.g. "customer", "carrier", "tax_authority"
+    direction: Literal["revenue_increase", "revenue_reduction", "cost_increase", "cost_reduction"]
+    # billed_revenue: allocated into invoice revenue (the default treatment);
+    # pass_through_revenue: same math, labeled a pass-through (e.g. freight
+    # billed at cost); excluded_liability: taxes, deposits and third-party
+    # collections - NEVER product revenue, kept as a visible liability total.
+    pool: Literal["billed_revenue", "pass_through_revenue", "excluded_liability"]
+    amount_basis: str  # e.g. "per order", "per shipment"
+    embedded_in_net: bool = False
+
+    @model_validator(mode="after")
+    def _order_charges_never_embedded(self) -> ChargeDecl:
+        if self.embedded_in_net:
+            msg = (
+                "charge_declarations describe the order_charges table, which is "
+                "separate from line net amounts; embedded_in_net must be false "
+                "(an embedded tax belongs to the lines' tax_amount field)."
+            )
+            raise MappingError(msg)
+        return self
 
 
 class DisplayConfig(StrictModel):
@@ -233,6 +323,14 @@ class SourceMapping(StrictModel):
     # (customer_error, distributor_error, defective). Unmapped codes become
     # "unspecified" and receive only estimated default handling costs.
     return_reason_map: dict[str, str] = Field(default_factory=dict)
+    # Return disposition normalization (Run 6, Phase 63): source code ->
+    # canonical disposition (resaleable, damaged, obsolete, not_received,
+    # exchange). Unmapped codes keep the raw value and are reported.
+    return_disposition_map: dict[str, str] = Field(default_factory=dict)
+    # Billed-charge semantics by charge code (Run 6, Phase 63). Codes without
+    # a declaration keep the default treatment (allocated into invoice
+    # revenue) and the economic-event taxonomy labels them other adjustments.
+    charge_declarations: dict[str, ChargeDecl] = Field(default_factory=dict)
     # Honest no-cost declaration (Run 4, 28.2): some real exports carry no
     # cost at all (Online Retail II). The engine still refuses a mapping that
     # merely OMITS unit_cost — this flag is the explicit, reviewed statement
@@ -298,6 +396,10 @@ KNOWN_REFERENCE_TABLES = {
     "quotes",
     "substitution_groups",
     "market_price_index",
+    # Run 6, Phase 79: a reviewer's judgement about which customers actually
+    # compete, and the records that support a Robinson-Patman review.
+    "customer_competitors",
+    "rp_evidence",
     "gl_totals",
     "external_cost_series",
 }

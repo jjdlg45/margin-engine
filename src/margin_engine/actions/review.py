@@ -139,6 +139,43 @@ class ReviewPolicy:
             raise ReviewError("justification_required", msg)
 
 
+ACTIVE_PRICE_STATUSES = ("approved", "exported", "implemented")
+
+
+def check_no_duplicate_active_price(
+    action: dict[str, object], actions: pl.DataFrame, statuses: pl.DataFrame
+) -> None:
+    """One active proposed price per customer x item x UOM x effective date
+    (Run 6, Phase 68): approving a price action whose scope_key already has an
+    approved / exported / implemented action is refused - duplicates are
+    blocked at approval, with the competing action named."""
+    if str(action.get("action_type")) not in ("price_change", "below_floor_fix"):
+        return
+    scope = action.get("scope_key")
+    if not scope:
+        return
+    if "scope_key" not in actions.columns:
+        return
+    others = (
+        actions.join(statuses, on="action_id", how="left")
+        .filter(
+            (pl.col("scope_key") == str(scope))
+            & (pl.col("action_id") != str(action["action_id"]))
+            & pl.col("status").is_in(list(ACTIVE_PRICE_STATUSES))
+        )
+        .sort("action_id")
+    )
+    if others.height:
+        competing = others["action_id"].head(3).to_list()
+        msg = (
+            f"another active price action already covers this scope "
+            f"({action.get('scope_key')}): {competing}. One active proposed price "
+            "per customer, item, unit and effective date - supersede or reject "
+            "the competing action first."
+        )
+        raise ReviewError("duplicate_active_price", msg)
+
+
 # Fields an analyst may edit, while the action is not yet approved.
 EDITABLE_FIELDS = ("owner", "due_date", "title", "rationale", "proposed_price_cents")
 EDITABLE_STATUSES = ("proposed", "under_review", "rejected")

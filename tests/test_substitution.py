@@ -83,8 +83,34 @@ def test_unsupported_cases_labeled_not_estimated(world) -> None:
         assert r["reasons"], r
     # Estimates never exist outside identified statuses with diagnostics.
     for r in est.filter(pl.col("status") == STATUS_CROSS_CAUSAL).to_dicts():
-        assert r["min_first_stage_f"] >= 10
+        assert r["min_conditional_effective_f"] >= 10
         assert r["cross_se"] is not None
+
+
+def test_conditional_statistic_is_what_gates_the_cross_status(world) -> None:
+    """Run 6, Phase 71. A marginal first-stage F says the instruments move each
+    price; only the Sanderson-Windmeijer conditional statistic says they move
+    one price independently of the other, which is what a cross-price estimate
+    needs. Both are reported, and the conditional one decides."""
+    _truth, est = world
+    identified = est.filter(pl.col("status").is_in([STATUS_CROSS, STATUS_CROSS_CAUSAL]))
+    assert identified.height > 0
+    for r in est.to_dicts():
+        if r["min_conditional_effective_f"] is None:
+            continue
+        # Both statistics are on the record, so the gap between them is visible.
+        assert r["min_first_stage_f"] is not None
+        assert r["n_clusters"] is not None and r["n_absorbed_parameters"] is not None
+        assert r["first_stage_detail"]
+        strong_enough = r["min_conditional_effective_f"] >= 10
+        assert strong_enough == (r["status"] in (STATUS_CROSS, STATUS_CROSS_CAUSAL)), r
+    # The marginal statistic alone would have reached a different verdict
+    # somewhere, which is the whole reason for the change.
+    disagree = est.filter(
+        pl.col("min_conditional_effective_f").is_not_null()
+        & ((pl.col("min_first_stage_f") >= 10) != (pl.col("min_conditional_effective_f") >= 10))
+    )
+    print(f"\nmarginal vs conditional verdict differs on {disagree.height} pairs")
 
 
 def test_substitution_adjustment_labeled() -> None:

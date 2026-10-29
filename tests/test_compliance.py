@@ -114,14 +114,15 @@ def test_disabled_and_missing_attributes_fail_closed() -> None:
     no_attrs = pl.DataFrame({"customer_id": ["A", "B"]})
     res = run_robinson_patman(guidance, no_attrs, None, rules)
     assert res.detail.height == 0
-    assert any("lacks competitor attribute" in n for n in res.notes)
+    assert any("lacks screen attribute" in n for n in res.notes)
     res2 = run_robinson_patman(guidance, None, None, rules)
     assert any("no customers reference table" in n for n in res2.notes)
 
 
-def test_market_index_requires_declared_public_source(tmp_path: Path) -> None:
-    """A mapped market price index without public_source: true is refused as an
-    elasticity control, with the reason stated; declaring it public uses it."""
+def test_market_index_requires_recorded_provenance(tmp_path: Path) -> None:
+    """A mapped market price index with no recorded provenance is refused as
+    an elasticity control, with the reason stated; recording where the series
+    comes from uses it (Run 6, Phase 80)."""
     from margin_engine.report.full_run import run_full
 
     world = tmp_path / "erp"
@@ -140,14 +141,23 @@ def test_market_index_requires_declared_public_source(tmp_path: Path) -> None:
 
     mapping_raw = yaml.safe_load(MAPPING.read_text(encoding="utf-8"))
     undeclared = tmp_path / "mapping_undeclared.yaml"
-    mapping_raw["reference_tables"]["market_price_index"].pop("public_source", None)
+    mapping_raw["reference_tables"]["market_price_index"].pop("provenance", None)
     undeclared.write_text(yaml.safe_dump(mapping_raw), encoding="utf-8")
 
     res = run_full(world, undeclared, RULES, tmp_path / "out1", validate=False)
     assert any("NOT used as an elasticity control" in n for n in res.pipeline.notes)
 
     declared = tmp_path / "mapping_declared.yaml"
-    mapping_raw["reference_tables"]["market_price_index"]["public_source"] = True
+    mapping_raw["reference_tables"]["market_price_index"]["provenance"] = {
+        "provider": "Example Statistics Office",
+        "url": "https://example.gov/series/widgets",
+        "retrieved_utc": "2026-10-01T00:00:00Z",
+        "license": "public domain",
+        "update_cadence": "monthly",
+        "coverage": "all categories in the sample",
+        "aggregation_level": "item category x month",
+        "series_kind": "selling_price_index",
+    }
     declared.write_text(yaml.safe_dump(mapping_raw), encoding="utf-8")
     res2 = run_full(world, declared, RULES, tmp_path / "out2", validate=False)
     assert not any("NOT used as an elasticity control" in n for n in res2.pipeline.notes)

@@ -10,13 +10,27 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from margin_engine.metrics import metric_label_entries
+
 LABELS: dict[str, dict[str, str]] = {
+    # --- segmentation features (Run 6, Phase 76) ----------------------------
+    "abc_class": {
+        "label": "ABC class",
+        "description": "A, B or C by cumulative share of the configured basis, cut on a "
+        "window that ends before the line's own period; an item with no history in that "
+        "window is unrated.",
+    },
+    "order_size_band": {
+        "label": "order size band",
+        "description": "Small, medium or large by the order's quantity in normalized units. "
+        "Cut on quantity rather than order value, so no realized price enters the feature.",
+    },
     # --- evidence statuses (sensitivity, cross-price) ------------------------
     "causal_elasticity_supported": {
         "label": "Causal, supported",
-        "description": "Every causal criterion passed: strong first stage, overidentification "
-        "not rejected, robust across specifications, tight interval, documented "
-        "exclusion rationale.",
+        "description": "The prespecified diagnostics and documented assumptions passed for "
+        "this estimand and scope; it does not prove the instruments are valid or that "
+        "the result transfers to other customers, markets or times.",
     },
     "iv_estimated_elasticity": {
         "label": "Instrumented estimate",
@@ -247,22 +261,48 @@ LABELS: dict[str, dict[str, str]] = {
     "expected_change": {
         "label": "Volume modeled",
         "description": "Causal-supported elasticity: the expected contribution change "
-        "models the volume response.",
+        "models the volume response. It models how much buying customers buy, and holds "
+        "steady the question of whether they keep buying at all; where the engine could "
+        "estimate that second effect, it is shown beside this figure as an alternative.",
     },
     "sensitivity_range_only": {
         "label": "Range only",
-        "description": "Instrument-level evidence: the volume response is shown only as a "
-        "labeled sensitivity range.",
+        "description": "Instrument-level evidence: the volume response is shown as a "
+        "sensitivity analysis - what the figure would be across a span of plausible price "
+        "responses - and not as a confidence interval around the dollar impact. It also "
+        "covers how much buying customers buy rather than whether they keep buying.",
     },
     "fixed_volume_only": {
         "label": "Fixed volume",
         "description": "No supported elasticity: the figure assumes unchanged volume.",
     },
     "outside_price_support": {
-        "label": "Outside price support",
-        "description": "The proposed move lies outside the price variation the instruments "
-        "ever induced in this segment, so no volume response is modeled - the figure "
-        "assumes unchanged volume.",
+        "label": "Outside measured price movement",
+        "description": "Cost and tariff movements never moved this segment's prices by "
+        "anything like the amount proposed - or moved them either side of it but not at it "
+        "- so there is nothing to base a volume response on. The figure assumes unchanged "
+        "volume.",
+    },
+    # --- deduction treatments (Run 6, Phase 66) ---------------------------------
+    "flat_rate_exact": {
+        "label": "Flat rates, exact",
+        "description": "Every percentage deduction applies independently on the same base "
+        "(net invoiced value), so the flat rate is exact, not an approximation.",
+    },
+    "recomputed_tiered": {
+        "label": "Tiered rebate recomputed",
+        "description": "This customer holds a tiered program, so the rebate was recomputed "
+        "at the candidate revenue - crossing a tier re-rates the whole basis.",
+    },
+    "fixed_rate_approximation": {
+        "label": "Fixed-rate approximation",
+        "description": "This customer's tiered arrangement has no usable tier table, so a "
+        "flat rate stands in - labeled, never silent.",
+    },
+    "competitor_path_uncontrolled": {
+        "label": "Competitor path uncontrolled",
+        "description": "This segment's elasticity answers a market-wide question, so it is "
+        "not applied to a unilateral price move: the figure assumes unchanged volume.",
     },
     "cost_unavailable": {
         "label": "Cost unavailable",
@@ -409,6 +449,452 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "The no-planted-truth checks (temporal backtest, placebo tests, "
         "rolling stability) run as a pipeline stage.",
     },
+    # --- estimands and the competitor-price path (Run 6, Phase 70) --------------
+    "unilateral_own_price_response": {
+        "label": "Unilateral own-price response",
+        "description": "The volume response to moving THIS price while observed "
+        "competitor-price conditions are held constant - the quantity a pricing "
+        "decision actually needs.",
+    },
+    "market_wide_cost_shock_response": {
+        "label": "Market-wide cost-shock response",
+        "description": "The volume response to an industry-wide cost movement, which also "
+        "moved competitor prices. It understates how customers react to a unilateral "
+        "increase, because they had nowhere cheaper to go.",
+    },
+    "descriptive_association": {
+        "label": "Descriptive association",
+        "description": "A measured relationship between price and quantity with no "
+        "instrument behind it, so no causal reading is claimed.",
+    },
+    "understates_sensitivity": {
+        "label": "Understates price sensitivity",
+        "description": "The known direction of the remaining bias: the true unilateral "
+        "response is at least as strong as the figure shown.",
+    },
+    "market_control_adequate": {
+        "label": "Market index adequate",
+        "description": "The public market price index is current, covers the estimation "
+        "window, varies within each period and explains price movement, so it can hold "
+        "competitor-price conditions constant.",
+    },
+    "market_control_absent": {
+        "label": "No market index",
+        "description": "No market price index is mapped, so competitor-price conditions are "
+        "not held constant.",
+    },
+    "market_control_not_public": {
+        "label": "Market index not public",
+        "description": "A market price index is mapped but not declared a public source, so "
+        "it is refused as a control.",
+    },
+    "market_control_stale": {
+        "label": "Market index stale",
+        "description": "The index stops before the estimation window ends, so it cannot "
+        "describe current competitor-price conditions.",
+    },
+    "market_control_incomplete": {
+        "label": "Market index incomplete",
+        "description": "The index covers too few of the segment's estimation rows to hold "
+        "conditions constant across it.",
+    },
+    "market_control_absorbed_by_time_effects": {
+        "label": "Market index absorbed",
+        "description": "The index takes one value per period, so the time fixed effects "
+        "remove it exactly; it needs category or regional detail to control anything.",
+    },
+    "market_control_uninformative": {
+        "label": "Market index uninformative",
+        "description": "The index explains too little price movement to count as evidence of "
+        "a competitor-price condition.",
+    },
+    "market_control_restates_instrument": {
+        "label": "Market index restates an instrument",
+        "description": "The index almost exactly repeats an instrument, so controlling for it "
+        "would remove the identifying variation rather than a separate confound.",
+    },
+    "controlled_by_market_index": {
+        "label": "Competitor path controlled",
+        "description": "Every instrument that needs it has its competitor-price path held "
+        "constant by the public market index.",
+    },
+    "no_competitor_price_path": {
+        "label": "No competitor-price path",
+        "description": "Every instrument's competitor-price path is documented as absent, "
+        "with a written argument in configuration.",
+    },
+    "not_controlled": {
+        "label": "Competitor path not controlled",
+        "description": "At least one instrument's competitor-price path is neither controlled "
+        "nor documented as absent, so the estimate answers a market-wide question.",
+    },
+    "control_coarser_than_instrument": {
+        "label": "Market index too coarse",
+        "description": "The index is coarser than an instrument's own variation, so it cannot "
+        "absorb that instrument's competitor-price movement.",
+    },
+    # --- causal gates (Run 6, Phase 70) ----------------------------------------
+    "exclusion_rationale_documented": {
+        "label": "Exclusion argument documented",
+        "description": "Every instrument carries a written economic argument for why it "
+        "affects quantity only through price.",
+    },
+    "competitor_price_path_addressed": {
+        "label": "Competitor-price path addressed",
+        "description": "Competitor-price conditions are held constant, or every instrument's "
+        "competitor-price path is documented as absent.",
+    },
+    "first_stage_strength": {
+        "label": "First stage strong enough",
+        "description": "The instruments move price hard enough for the estimate to mean "
+        "something; the figure before controlling is shown beside it.",
+    },
+    "cluster_structure_adequate": {
+        "label": "Enough independent clusters",
+        "description": "Cost and tariff movements are assigned to whole suppliers and "
+        "categories, so those are the units that count as independent - not the number of "
+        "invoice lines. Too few of them, and the interval would look far more precise than "
+        "the evidence is.",
+    },
+    "overidentification_not_rejected": {
+        "label": "Overidentification not rejected",
+        "description": "The two instruments agree. This test cannot detect a violation they "
+        "both share.",
+    },
+    "robust_across_specifications": {
+        "label": "Robust across specifications",
+        "description": "Using each instrument alone, and the alternatives, lands close enough "
+        "to the headline estimate.",
+    },
+    "imputed_price_robustness": {
+        "label": "Robust to imputed no-purchase prices",
+        "description": "A month with no purchase has no invoiced price, so the engine fills "
+        "one in. Including those months does not move the estimate materially.",
+    },
+    "interval_precise_enough": {
+        "label": "Interval precise enough",
+        "description": "The 95% interval is narrow enough to act on.",
+    },
+    "weak_instrument_robust_agreement": {
+        "label": "Weak-instrument-robust agreement",
+        "description": "The weak-instrument-robust set is bounded and agrees with the primary "
+        "interval.",
+    },
+    # --- cluster structure (Run 6, Phase 73) -----------------------------------
+    "cluster_supplier": {
+        "label": "Supplier",
+        "description": "Each supplier counts as one independent group, however many months "
+        "and lines it covers. This is where the cost instrument is assigned.",
+    },
+    "cluster_supplier_month": {
+        "label": "Supplier and month",
+        "description": "Each supplier-month counts as one independent group. Only adequate "
+        "when a supplier's cost movements are unrelated from one month to the next.",
+    },
+    "cluster_category": {
+        "label": "Product category",
+        "description": "Each product category counts as one independent group. This is where "
+        "the tariff instrument is assigned.",
+    },
+    "cluster_category_month": {
+        "label": "Product category and month",
+        "description": "Each category-month counts as one independent group. Only adequate "
+        "when a category's tariff movements are unrelated from one month to the next.",
+    },
+    "cluster_month": {
+        "label": "Month",
+        "description": "Each month counts as one independent group, which allows for anything "
+        "that moves all customers together within a month.",
+    },
+    "cluster_month_customer": {
+        "label": "Month and customer",
+        "description": "Allows both for shocks that hit every customer in a month and for a "
+        "customer's own demand carrying over between months.",
+    },
+    "interval_cluster_robust_t": {
+        "label": "Group-robust interval",
+        "description": "The standard interval, which relies on there being enough independent "
+        "groups for its approximation to hold.",
+    },
+    "interval_wild_cluster_bootstrap": {
+        "label": "Resampled interval",
+        "description": "With few independent groups the standard interval is too narrow, so "
+        "the interval is rebuilt by repeatedly re-running the estimate with the groups "
+        "reweighted at random.",
+    },
+    "interval_withdrawn_few_clusters": {
+        "label": "Interval withdrawn",
+        "description": "There are too few independent groups for any interval to be "
+        "trustworthy, so none is reported. The estimate itself is still shown.",
+    },
+    # --- results tracking (Run 6, Phase 75) ------------------------------------
+    "no_pretrend_detected": {
+        "label": "No earlier movement found",
+        "description": "Treated customers were not already moving before the price did, as "
+        "far as this data can see. Which is not the same as a guarantee: the check reports "
+        "what size of earlier movement it could have detected.",
+    },
+    "pretrend_detected": {
+        "label": "Already moving beforehand",
+        "description": "Treated customers' volumes were already moving before the price "
+        "changed, so what happened afterwards cannot be read as an effect of the price.",
+    },
+    "pretrend_not_testable": {
+        "label": "Could not be checked",
+        "description": "Only one period before the change is in the window, so there is "
+        "nothing to compare against - which is not the same as there being nothing there.",
+    },
+    "fully_realized": {
+        "label": "Price moved in full",
+        "description": "The invoiced price moved all the way to the new price.",
+    },
+    "partly_realized": {
+        "label": "Price moved part way",
+        "description": "The invoiced price moved toward the new price but did not reach it.",
+    },
+    "not_realized": {
+        "label": "Price did not move",
+        "description": "The invoiced price stayed where it was, so this action says nothing "
+        "about how customers respond to a price change.",
+    },
+    "moved_the_other_way": {
+        "label": "Price moved the other way",
+        "description": "The invoiced price moved away from the new price rather than toward it.",
+    },
+    "not_known": {
+        "label": "Not known",
+        "description": "No invoice after the change, so there is no invoiced price to compare "
+        "- which happens when the customer stopped buying.",
+    },
+    "pass": {"label": "Passed", "description": "This criterion was met."},
+    "fail": {"label": "Not met", "description": "This criterion was not met."},
+    "not_evaluated": {
+        "label": "Not evaluated",
+        "description": "The data could not support this check, so it is not counted as passed.",
+    },
+    # --- weak-instrument diagnostics (Run 6, Phase 71) --------------------------
+    "ar_set_empty": {
+        "label": "Robust set empty",
+        "description": "No candidate price sensitivity survives the weak-instrument-robust "
+        "test: the instruments reject the model everywhere searched, which is evidence of "
+        "misspecification rather than precision.",
+    },
+    "ar_set_single_point": {
+        "label": "Robust set a single point",
+        "description": "Only one candidate value survives, so the model is rejected almost "
+        "everywhere - evidence against it, not a tight estimate.",
+    },
+    "ar_set_interval": {
+        "label": "Robust set one range",
+        "description": "The weak-instrument-robust set is a single connected range.",
+    },
+    "ar_set_disconnected": {
+        "label": "Robust set disconnected",
+        "description": "The robust set is two or more separate ranges with rejected values "
+        "between them, so no single interval describes it.",
+    },
+    "ar_set_reaches_search_bound": {
+        "label": "Robust set open-ended",
+        "description": "The robust set runs to the edge of the searched range, so it is "
+        "reported as open rather than compressed into an interval.",
+    },
+    "lead_test_passed": {
+        "label": "No anticipation detected",
+        "description": "Future cost and tariff movements do not predict current volume, and "
+        "the interval is tight enough for that to mean something. It tests TIMING only: a "
+        "violation both instruments share in the same period stays invisible to it.",
+    },
+    "lead_test_rejected": {
+        "label": "Anticipation detected",
+        "description": "Future cost and tariff movements predict current volume, which is an "
+        "exclusion violation the overidentification test cannot see.",
+    },
+    "lead_test_immaterial": {
+        "label": "Anticipation detected but immaterial",
+        "description": "Future cost and tariff movements do predict current volume, but "
+        "every effect the interval admits is smaller than the engine treats as material. "
+        "With tens of thousands of rows this check resolves effects far below that bar, "
+        "so it is reported rather than treated as a broken assumption.",
+    },
+    "lead_test_inconclusive": {
+        "label": "Anticipation test inconclusive",
+        "description": "No anticipation effect was detected, but the interval still admits a "
+        "material one: the test lacks the power to clear the channel, so it is not reported "
+        "as a pass.",
+    },
+    "lead_test_unavailable": {
+        "label": "Anticipation test not run",
+        "description": "Too few periods, clusters or complete rows to test anticipation, so "
+        "nothing is claimed about it either way.",
+    },
+    "no_material_anticipation_effect": {
+        "label": "No material anticipation effect",
+        "description": "Future instrument movements do not predict current volume by a "
+        "margin the engine treats as material. A material effect blocks the causal "
+        "status; a detected but immaterial one is reported and does not block; an "
+        "inconclusive result is reported with the smallest effect the test could have "
+        "detected.",
+    },
+    "unclassified_volume_treatment": {
+        "label": "Volume treatment not classified",
+        "description": "This action's volume treatment has no evidence bucket, so its "
+        "prediction error is reported separately rather than pooled with a bucket that "
+        "would describe it wrongly.",
+    },
+    "insufficient_data_total_quantity": {
+        "label": "Total quantity: not enough evidence",
+        "description": "There was not enough to estimate how total quantity responds to "
+        "price, counting months with no purchase. Only the response among buying "
+        "customers is reported.",
+    },
+    "descriptive_total_quantity": {
+        "label": "Total quantity: descriptive only",
+        "description": "A total-quantity response was estimated but not on strong enough "
+        "instruments, or on a panel where too many of the no-purchase months carry an "
+        "imputed price, so it describes an association rather than a response to price.",
+    },
+    "iv_estimated_total_quantity": {
+        "label": "Total quantity: instrumented estimate",
+        "description": "How total quantity responds to price, including whether the "
+        "customer buys at all. This is the highest status this measure can reach: on test "
+        "worlds it recovers the planted response about six times less precisely than the "
+        "buying-customers measure recovers its own, it has no cross-check against a second "
+        "instrument, and the out-of-sample test does not cover it. The engine never prices "
+        "from it.",
+    },
+    "placebo_not_run": {
+        "label": "Placebo check not run",
+        "description": "The shuffled-instrument placebo needs the validation run, so "
+        "nothing is claimed here about whether this design's standard errors are the "
+        "right size.",
+    },
+    "placebo_passed": {
+        "label": "Placebo check passed",
+        "description": "Shuffled instruments reached significance at about the nominal "
+        "rate, so this design's standard errors are the right size. It says nothing "
+        "about whether the real instruments are valid.",
+    },
+    "placebo_underpowered": {
+        "label": "Placebo check not conclusive",
+        "description": "Shuffled instruments did not reach significance more often "
+        "than chance, but too few draws were run for that to clear this design's "
+        "standard errors. The smallest over-rejection the draw count could have "
+        "caught is reported.",
+    },
+    "placebo_over_rejects": {
+        "label": "Placebo check over-rejects",
+        "description": "Shuffled instruments reached significance far more often than "
+        "they should, so the standard errors in this design are too small and a "
+        "significant result on the real instruments is not trustworthy either.",
+    },
+    "overidentification_blind_spot": {
+        "label": "What overidentification cannot see",
+        "description": "The overidentification test compares the instruments against each "
+        "other, so it detects disagreement - never a violation they share. Two industry-wide "
+        "cost instruments can both fail the same way and the test still passes.",
+    },
+    "anderson_rubin_blind_spot": {
+        "label": "What the robust set cannot fix",
+        "description": "The Anderson-Rubin set stays valid when instruments are weak, but it "
+        "cannot repair a wrong exclusion story: it answers 'given these instruments', not "
+        "'are these instruments right'.",
+    },
+    # --- economic event taxonomy (Run 6, Phase 61) ------------------------------
+    "customer_price_concession": {
+        "label": "Customer price concession",
+        "description": "Discounts, rebates, freight concessions and price credits that "
+        "reduce what the customer actually pays.",
+    },
+    "customer_refund_return": {
+        "label": "Customer refund or return",
+        "description": "Product returned by the customer; linked to the original sale "
+        "where the data allows.",
+    },
+    "customer_service_payment": {
+        "label": "Customer service payment",
+        "description": "Restocking fees and return freight billed to the customer - "
+        "recovery revenue, not a price concession.",
+    },
+    "non_price_customer_claim": {
+        "label": "Non-price customer claim",
+        "description": "Damage, shortage, quality or warranty credits - a cost, never a "
+        "reduction of realized price.",
+    },
+    "supplier_rebate_allowance": {
+        "label": "Supplier rebate or allowance",
+        "description": "Vendor consideration that reduces acquisition cost, never "
+        "customer-facing revenue.",
+    },
+    "supplier_quality_claim": {
+        "label": "Supplier quality claim",
+        "description": "A recovery from a supplier for supplier-caused cost; reduces "
+        "cost to serve, with the supplier as counterparty.",
+    },
+    "vendor_distinct_service_reimbursement": {
+        "label": "Vendor payment for a distinct service",
+        "description": "Vendor consideration that pays for a distinct good or service - "
+        "an ASC 705-20 exception that never nets product cost.",
+    },
+    "vendor_selling_cost_reimbursement": {
+        "label": "Vendor selling-cost reimbursement",
+        "description": "Vendor consideration reimbursing identifiable selling costs - an "
+        "ASC 705-20 exception that never nets product cost.",
+    },
+    "freight_pass_through": {
+        "label": "Freight pass-through",
+        "description": "A billed charge the configuration declares as freight passed "
+        "through to the customer.",
+    },
+    "tax_deposit_liability": {
+        "label": "Tax, deposit or third-party collection",
+        "description": "Amounts collected for someone else; excluded from product "
+        "revenue by default.",
+    },
+    "other_adjustment": {
+        "label": "Other adjustment",
+        "description": "An adjustment without a declared classification - stated, never "
+        "silently absorbed.",
+    },
+    "partially_settled": {
+        "label": "Partially settled",
+        "description": "Some of this customer-year's rebate programs settled to actuals; "
+        "the rest remain accrual estimates.",
+    },
+    "fail_closed_negative_basis": {
+        "label": "Fail closed: negative basis",
+        "description": "Returns exceeded purchases in the period, so no rebate accrual "
+        "is invented; the case is reported instead.",
+    },
+    "unallocated_residual": {
+        "label": "Unallocated residual",
+        "description": "A source amount with no matching lines to carry it; kept as a "
+        "visible residual, never forced onto lines.",
+    },
+    # --- monthly GL variance check (Run 6, Phase 64) ----------------------------
+    "gl_exact": {
+        "label": "GL exact",
+        "description": "Every compared month-measure matches the general ledger to the cent.",
+    },
+    "gl_within_tolerance": {
+        "label": "GL within tolerance",
+        "description": "Every compared month-measure sits inside the configured variance "
+        "tolerance; the variances are shown, never hidden.",
+    },
+    "gl_variances_outside_tolerance": {
+        "label": "GL variances outside tolerance",
+        "description": "At least one month-measure differs from the general ledger beyond "
+        "the tolerance - flagged for review, never suppressed.",
+    },
+    "gl_not_supplied": {
+        "label": "Not testable (no GL supplied)",
+        "description": "No general-ledger totals were mapped, so the variance check could "
+        "not run; source-total reconciliation remains exact and always on.",
+    },
+    "source_totals_reconciled": {
+        "label": "Source totals reconciled",
+        "description": "Ledger totals tie to the source export exactly - the always-on "
+        "check the GL variance control builds on.",
+    },
     # --- statuses used by the report/UI for reconciliation ---------------------
     "reconciled": {
         "label": "Reconciled",
@@ -419,6 +905,11 @@ LABELS: dict[str, dict[str, str]] = {
         "description": "At least one reconciliation check did not tie to source totals.",
     },
 }
+
+# Metric definitions (Run 6, 60.1) are authored once in margin_engine.metrics
+# and merged here, so the web bundle, the HTML report and the generated
+# docs/metric-dictionary.md all serve the same words.
+LABELS.update(metric_label_entries())
 
 
 _CODE_TOKEN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
@@ -462,6 +953,7 @@ _FEATURE_NOUNS: dict[str, str] = {
     "item_role": "items",
     "order_size_band": "orders",
     "revenue_abc": "revenue class",
+    "abc_class": "items",
 }
 
 _VALUE_WORDS: dict[str, str] = {
@@ -483,6 +975,9 @@ _ORDERED_LEVELS: dict[str, list[str]] = {
     "cost_ratio_band": ["low", "mid", "high"],
     "order_size_band": ["small", "medium", "large"],
     "revenue_abc": ["A", "B", "C"],
+    # "unrated" is a level, not a gap: an item with no history in the lookback
+    # window has no class, and saying so beats quietly calling it a C.
+    "abc_class": ["A", "B", "C", "unrated"],
 }
 
 # Band features whose plain phrase is not "<levels> <noun>".
@@ -545,6 +1040,8 @@ def _include_phrase(feature: str, values: list[str], acronyms: frozenset[str] = 
         return f"{vals} {_BAND_PHRASES[feature]}"
     if feature == "revenue_abc":
         return f"revenue class {vals}"
+    if feature == "abc_class":
+        return f"ABC class {vals}"
     noun = _FEATURE_NOUNS.get(feature, feature.replace("_", " "))
     return f"{vals} {noun}"
 
@@ -587,6 +1084,7 @@ _ONE_HOT_FEATURES = (
     "channel",
     "contract_type",
     "revenue_abc",
+    "abc_class",
 )
 
 

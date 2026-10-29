@@ -25,6 +25,7 @@ from sklearn.metrics import adjusted_rand_score
 from sklearn.tree import DecisionTreeRegressor, _tree
 
 from margin_engine.config import Rules, TreeConfig
+from margin_engine.labels import label
 
 CONTEXT_FEATURES = [
     "industry",
@@ -35,9 +36,23 @@ CONTEXT_FEATURES = [
     "item_family",
     "item_role",
     "order_size_band",
-    "revenue_abc",
+    "abc_class",
 ]
 MARGIN_EXTRA_FEATURES = ["discount_pct_band", "rebate_rate_band", "cost_ratio_band"]
+
+
+@dataclass
+class HoldoutEvaluation:
+    """How a segmentation fit on earlier periods does on later ones."""
+
+    n_fit_periods: int
+    n_eval_periods: int
+    n_eval_pairs: int
+    mae: float | None
+    mae_baseline: float | None
+    mae_without_same_period_features: float | None
+    same_period_features: list[str]
+    note: str
 
 
 @dataclass
@@ -51,17 +66,31 @@ class TreeResult:
     out_of_sample_ari_vs_planted: float | None = None
     bootstrap_median_ari: float | None = None
     recommendation_change_share: float | None = None
+    holdout: HoldoutEvaluation | None = None
     notes: list[str] = field(default_factory=list)
 
 
 def _order_size_band(df: pl.DataFrame) -> pl.DataFrame:
-    order_net = pl.col("net_amount_cents").sum().over("order_id")
-    q = df.select(pl.col("net_amount_cents").sum().over("order_id").alias("_o"))["_o"]
+    """Terciles of order size, cut on QUANTITY.
+
+    It was cut on order net value until Run 6. Net value is price x quantity
+    over the same period the commercial tree is explaining, so the band handed
+    the tree a coarse copy of the price it was fitting (Finding 11). Quantity
+    carries the same business meaning - how big an order is - without the
+    price in it.
+    """
+    size_col = "quantity_norm" if "quantity_norm" in df.columns else "quantity"
+    if size_col not in df.columns:
+        return df.with_columns(pl.lit("unknown").alias("order_size_band"))
+    order_qty = pl.col(size_col).sum().over("order_id")
+    q = df.select(pl.col(size_col).sum().over("order_id").alias("_o"))["_o"]
     lo, hi = q.quantile(0.33), q.quantile(0.67)
+    if lo is None or hi is None:
+        return df.with_columns(pl.lit("unknown").alias("order_size_band"))
     return df.with_columns(
-        pl.when(order_net <= lo)
+        pl.when(order_qty <= lo)
         .then(pl.lit("small"))
-        .when(order_net <= hi)
+        .when(order_qty <= hi)
         .then(pl.lit("medium"))
         .otherwise(pl.lit("large"))
         .alias("order_size_band")
@@ -91,8 +120,26 @@ def prepare_segmentation_frame(
     return df
 
 
-def _leakage_guard(feature_names: list[str], rules: Rules) -> None:
-    forbidden = rules.segmentation.forbidden_commercial_features
+def _leakage_guard(feature_names: list[str], rules: Rules) -> list[str]:
+    """Refuse any commercial feature that carries what the tree is explaining.
+
+    Three tests, because a name check on its own is a spell-checker: until
+    Run 6 the guard passed `revenue_abc` - a feature built from outcome-period
+    revenue, which is price x quantity - because its name contains none of the
+    forbidden words (Finding 11). Since 60.4 every commercial feature declares
+    its lineage, and the decisive test reads that declaration.
+
+    1. The name still may not contain a forbidden term.
+    2. Every feature must HAVE a lineage entry. An undeclared feature is
+       refused rather than assumed innocent.
+    3. A feature whose lineage says it embeds the realized price is refused,
+       whatever it is called.
+
+    Returns the features that are same-period but price-free, so the caller
+    can report them instead of pretending they are not there.
+    """
+    sc = rules.segmentation
+    forbidden = sc.forbidden_commercial_features
     bad = [f for f in feature_names if any(term in f.lower() for term in forbidden)]
     if bad:
         msg = (
@@ -100,6 +147,24 @@ def _leakage_guard(feature_names: list[str], rules: Rules) -> None:
             f"forbidden terms {list(forbidden)}"
         )
         raise ValueError(msg)
+    undeclared = [f for f in feature_names if f not in sc.feature_lineage]
+    if undeclared:
+        msg = (
+            f"leakage guard: commercial segmentation features {undeclared} have no "
+            "feature_lineage entry. Declare source columns, formula, reference "
+            "window, whether the feature uses outcome-period data and whether it "
+            "embeds the realized price (segmentation.feature_lineage)."
+        )
+        raise ValueError(msg)
+    priced = [f for f in feature_names if sc.feature_lineage[f].embeds_realized_price]
+    if priced:
+        msg = (
+            f"leakage guard: commercial segmentation features {priced} declare that "
+            "they embed the realized price, which is the target of this tree. Use a "
+            "lagged or price-free basis, or move the feature to the margin-driver tree."
+        )
+        raise ValueError(msg)
+    return [f for f in feature_names if sc.feature_lineage[f].uses_outcome_period_data]
 
 
 def _encode(df: pl.DataFrame, features: list[str]) -> tuple[np.ndarray, list[str]]:
@@ -133,6 +198,69 @@ class TargetEncoder:
             }
         return self
 
+    def fit_cross_fitted(
+        self, df: pl.DataFrame, target: str, *, n_folds: int = 5, seed: int = 0
+    ) -> np.ndarray:
+        """Fit the full-sample maps and return an OUT-OF-FOLD encoded matrix.
+
+        An encoding fit on the rows it then encodes gives each category the
+        mean of the very targets the tree is about to split on, so a thin
+        category looks like a clean split of its own target values and the
+        tree takes it (Run 6, Finding 11). The matrix returned here encodes
+        every row from the OTHER folds only, so the split has to survive data
+        it was not built from. `self.maps` stay full-sample, because at
+        predict time there is no fold to hold out.
+
+        Folds are a seeded permutation, so the same frame and seed give the
+        same assignment on every run.
+
+        Each fold's encoding is computed by SUBTRACTION rather than by
+        refitting: the per-category totals are accumulated once with the fold
+        as a second axis, and a fold's "fit on the others" is the column total
+        minus that fold's own. The arithmetic is identical to refitting
+        n_folds times - the test asserts that - but it costs one pass instead
+        of n_folds, which matters because this runs on every bootstrap refit.
+        """
+        self.fit(df, target)
+        n = df.height
+        if n_folds < 2 or n < n_folds * 2:
+            # Too few rows to hold any out: fall back to the in-sample
+            # encoding rather than encode from almost nothing.
+            return self.transform(df)
+        rng = np.random.default_rng(seed)
+        fold = rng.permutation(n) % n_folds
+        y = df[target].to_numpy().astype(np.float64)
+
+        # bincount, not np.add.at: the latter is unbuffered and dominates the
+        # whole segmentation stage when it runs on every bootstrap refit.
+        fold_sum = np.bincount(fold, weights=y, minlength=n_folds)
+        fold_n = np.bincount(fold, minlength=n_folds).astype(np.float64)
+        # The global mean a refit on the other folds would have used.
+        rest_total = np.maximum(float(n) - fold_n, 1.0)
+        rest_global = (float(y.sum()) - fold_sum) / rest_total
+
+        out = np.empty((n, len(self.features)), dtype=np.float64)
+        for j, f in enumerate(self.features):
+            idx = df[f].cast(pl.String).cast(pl.Categorical).to_physical().to_numpy()
+            n_cat = int(idx.max()) + 1 if idx.size else 0
+            cell = idx * n_folds + fold
+            size = n_cat * n_folds
+            cat_fold_sum = np.bincount(cell, weights=y, minlength=size).reshape(n_cat, n_folds)
+            cat_fold_n = (
+                np.bincount(cell, minlength=size).astype(np.float64).reshape(n_cat, n_folds)
+            )
+            rest_sum = cat_fold_sum.sum(axis=1)[:, None] - cat_fold_sum
+            rest_n = cat_fold_n.sum(axis=1)[:, None] - cat_fold_n
+            denom = rest_n + self.k
+            enc = np.divide(
+                rest_sum + self.k * rest_global[None, :],
+                denom,
+                out=np.broadcast_to(rest_global[None, :], rest_n.shape).copy(),
+                where=denom > 0,
+            )
+            out[:, j] = enc[idx, fold]
+        return out
+
     def transform(self, df: pl.DataFrame) -> np.ndarray:
         cols = []
         for f in self.features:
@@ -147,6 +275,125 @@ class TargetEncoder:
 
     def categories_above(self, feature: str, threshold: float) -> list[str]:
         return sorted(c for c, v in self.maps[feature].items() if v > threshold)
+
+
+def _pairs_for(work: pl.DataFrame, features: list[str]) -> pl.DataFrame:
+    """One row per customer x item pair: median price index, modal context."""
+    keys = ["customer_id", "item_id"]
+    return (
+        work.group_by(keys)
+        .agg(
+            pl.col("price_index").median().alias("price_index"),
+            *[pl.col(f).sort().mode().sort().first().alias(f) for f in features],
+        )
+        .sort(keys)
+    )
+
+
+def _holdout_mae(
+    fit_pairs: pl.DataFrame,
+    eval_pairs: pl.DataFrame,
+    features: list[str],
+    tc: TreeConfig,
+    folds: int,
+    seed: int,
+) -> float | None:
+    """Mean absolute error of the fitted segment means on the later periods."""
+    if not features or fit_pairs.height < 20 or eval_pairs.height == 0:
+        return None
+    enc = TargetEncoder(list(features))
+    x = enc.fit_cross_fitted(fit_pairs, "price_index", n_folds=folds, seed=seed)
+    model = DecisionTreeRegressor(
+        max_depth=tc.max_depth,
+        min_samples_leaf=max(20, int(0.02 * fit_pairs.height)),
+        random_state=0,
+    )
+    model.fit(x, fit_pairs["price_index"].to_numpy())
+    pred = model.predict(enc.transform(eval_pairs))
+    return float(np.mean(np.abs(eval_pairs["price_index"].to_numpy() - pred)))
+
+
+def time_based_holdout(
+    work: pl.DataFrame, features: list[str], rules: Rules, *, seed: int = 0
+) -> HoldoutEvaluation | None:
+    """Fit on the earlier periods, score on the later ones (Run 6, Phase 76).
+
+    A bootstrap resamples the same months, so it cannot tell a segmentation
+    that will still hold next quarter from one that has fitted this quarter's
+    noise. This splits on TIME instead: segments are grown on the first
+    `holdout_fit_period_share` of calendar months and scored by how well their
+    means predict the pairs in the later months, against the only baseline
+    worth beating - one median for everybody.
+
+    It runs twice: with every context feature, and again without the features
+    whose lineage declares they come from the same period as the target. The
+    difference is what those features are worth out of time, as a number
+    rather than an argument.
+    """
+    if "invoice_date" not in work.columns:
+        return None
+    sc = rules.segmentation
+    df = work.with_columns(
+        (pl.col("invoice_date").dt.year() * 12 + pl.col("invoice_date").dt.month()).alias("_m")
+    ).filter(pl.col("_m").is_not_null())
+    periods = sorted(int(v) for v in df["_m"].unique().to_list())
+    if len(periods) < 4:
+        return HoldoutEvaluation(
+            n_fit_periods=len(periods),
+            n_eval_periods=0,
+            n_eval_pairs=0,
+            mae=None,
+            mae_baseline=None,
+            mae_without_same_period_features=None,
+            same_period_features=[],
+            note=(
+                f"{len(periods)} periods of history is too short to hold later "
+                "periods out; the time-based check is unavailable"
+            ),
+        )
+    cut = max(1, min(len(periods) - 1, int(np.ceil(len(periods) * sc.holdout_fit_period_share))))
+    fit_periods, eval_periods = periods[:cut], periods[cut:]
+    fit_pairs = _pairs_for(df.filter(pl.col("_m") <= fit_periods[-1]), features)
+    eval_pairs = _pairs_for(df.filter(pl.col("_m") > fit_periods[-1]), features)
+
+    same_period = [
+        f
+        for f in features
+        if f in sc.feature_lineage and sc.feature_lineage[f].uses_outcome_period_data
+    ]
+    lean = [f for f in features if f not in same_period]
+    tc = sc.commercial_tree
+    folds = sc.target_encoding_folds
+    mae = _holdout_mae(fit_pairs, eval_pairs, features, tc, folds, seed)
+    mae_lean = _holdout_mae(fit_pairs, eval_pairs, lean, tc, folds, seed)
+    baseline = None
+    if eval_pairs.height and fit_pairs.height:
+        centre = float(np.median(fit_pairs["price_index"].to_numpy()))
+        baseline = float(np.mean(np.abs(eval_pairs["price_index"].to_numpy() - centre)))
+    if mae is None or baseline is None:
+        note = "not enough pairs in the later periods to score the segmentation"
+    elif mae < baseline:
+        note = (
+            f"segments fit on the first {len(fit_periods)} periods predict the later "
+            f"{len(eval_periods)} better than a single median "
+            f"({mae:.4f} against {baseline:.4f} mean absolute error)"
+        )
+    else:
+        note = (
+            f"segments fit on the first {len(fit_periods)} periods do NOT beat a single "
+            f"median on the later {len(eval_periods)} "
+            f"({mae:.4f} against {baseline:.4f} mean absolute error)"
+        )
+    return HoldoutEvaluation(
+        n_fit_periods=len(fit_periods),
+        n_eval_periods=len(eval_periods),
+        n_eval_pairs=int(eval_pairs.height),
+        mae=mae,
+        mae_baseline=baseline,
+        mae_without_same_period_features=mae_lean,
+        same_period_features=same_period,
+        note=note,
+    )
 
 
 def _min_leaf(df_height: int, tc: TreeConfig) -> int:
@@ -535,7 +782,19 @@ def fit_commercial_segments(
         )
         .sort(pair_keys)
     )
-    _leakage_guard(CONTEXT_FEATURES, rules)
+    same_period_features = _leakage_guard(CONTEXT_FEATURES, rules)
+    if same_period_features:
+        one = len(same_period_features) == 1
+        notes_pre.append(
+            ("context feature " if one else "context features ")
+            + ", ".join(label(f).lower() for f in same_period_features)
+            + (" is" if one else " are")
+            + " measured over the same period as the price index it helps explain. "
+            + ("It carries" if one else "They carry")
+            + " no realized price - the leakage guard refuses any feature that "
+            "does - but the time-based check reports what the feature is worth "
+            "out of time"
+        )
     names = list(CONTEXT_FEATURES)
     pairs["price_index"].to_numpy()
 
@@ -567,9 +826,19 @@ def fit_commercial_segments(
         indistinguishable leaves, enforce minimums — all at pair level
         (line counts carried as weights), so bootstraps stay cheap."""
         fit_pairs = pairs[fit_idx.tolist()]
-        enc = TargetEncoder(names).fit(fit_pairs, "price_index")
+        enc = TargetEncoder(names)
+        # Out-of-fold encoding while the tree is grown (Run 6, Phase 76): an
+        # in-sample encoding hands each category the mean of the targets the
+        # split is about to be scored on. enc.maps stay full-sample, because
+        # assignment and prediction have no fold to hold out.
+        x_fit = enc.fit_cross_fitted(
+            fit_pairs,
+            "price_index",
+            n_folds=rules.segmentation.target_encoding_folds,
+            seed=seed,
+        )
         m = DecisionTreeRegressor(max_depth=tc.max_depth, min_samples_leaf=pair_min, random_state=0)
-        m.fit(enc.transform(fit_pairs), fit_pairs["price_index"].to_numpy())
+        m.fit(x_fit, fit_pairs["price_index"].to_numpy())
         # Consolidation means computed on the fitting pairs only.
         fit_leaves = m.apply(enc.transform(fit_pairs))
         cell_of = _consolidate_by_mean(fit_leaves, fit_pairs["price_index"].to_numpy(), threshold)
@@ -627,6 +896,21 @@ def fit_commercial_segments(
         pl.Series("segment_leaf", full_leaves.astype(np.int64))
     )
     _ = y_pairs
+    holdout = time_based_holdout(work, names, rules, seed=seed)
+    if holdout is not None:
+        notes.append(holdout.note)
+        if (
+            holdout.mae is not None
+            and holdout.mae_without_same_period_features is not None
+            and holdout.same_period_features
+        ):
+            delta = holdout.mae_without_same_period_features - holdout.mae
+            direction = "worse" if delta > 0 else "better"
+            notes.append(
+                "dropping the same-period features ("
+                + ", ".join(label(f).lower() for f in holdout.same_period_features)
+                + f") makes the later-period error {abs(delta):.4f} {direction}"
+            )
     return TreeResult(
         kind="commercial_segments",
         target="price_index",
@@ -637,6 +921,7 @@ def fit_commercial_segments(
         out_of_sample_ari_vs_planted=ari,
         bootstrap_median_ari=float(np.median(aris)) if aris else None,
         recommendation_change_share=float(np.mean(changed_shares)) if changed_shares else None,
+        holdout=holdout,
         notes=notes,
     )
 

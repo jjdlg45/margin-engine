@@ -110,17 +110,20 @@ def reconcile(
             )
             rep.add(f"net_amount_conservation_{cur}", total, ledger_src + removed_src)
 
-    # 3. Billed charges: allocated + residual == source table total.
+    # 3. Billed charges: allocated + unallocated residual + charges declared
+    # as excluded liabilities (Run 6, Phase 63: taxes, deposits, third-party
+    # collections never enter product revenue) == source table total.
     if order_charges is not None:
         alloc = int(wf["billed_charge_alloc_cents"].fill_null(0).sum())
         resid = residuals.get("billed_charges_unallocated_cents", 0)
+        excl = residuals.get("billed_charges_excluded_liability_cents", 0)
         total = int(order_charges["amount_cents"].sum())
         rep.add(
             "billed_charges_allocation",
             total,
-            alloc + resid,
+            alloc + resid + excl,
             allocated_cents=alloc,
-            residual_cents=resid,
+            residual_cents=resid + excl,
             source_total_cents=total,
         )
     # 4. Settlement rebates: allocated + residual == settlement table total.
@@ -156,12 +159,12 @@ def reconcile(
             0,
             int(wf["kit_revenue_realloc_cents"].fill_null(0).sum()),
         )
-    # 4b. Tiered settlements: actual allocations on settled years + residual
-    # == settlement table total.
+    # 4b. Tiered settlements: actual allocations + residual == settlement table
+    # total. Summed over every line: a program that did not settle contributes
+    # zero, and a partially settled customer-year (Run 6, Phase 61: several
+    # simultaneous programs) carries exactly its settled programs' allocations.
     if tiered_settlements is not None and "tiered_rebate_status" in wf.columns:
-        alloc = int(
-            wf.filter(pl.col("tiered_rebate_status") == "actual")["tiered_actual_alloc_cents"].sum()
-        )
+        alloc = int(wf["tiered_actual_alloc_cents"].fill_null(0).sum())
         resid = residuals.get("tiered_settlements_unallocated_cents", 0)
         total = int(tiered_settlements["amount_cents"].sum())
         rep.add(

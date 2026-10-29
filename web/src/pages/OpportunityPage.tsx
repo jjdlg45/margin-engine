@@ -243,6 +243,11 @@ export function OpportunityPage() {
                   {dollarsShort(o.expected_total_cents)}
                 </p>
                 <p className="m-0 text-caption secondary">{o.window_label}, causal-supported records only</p>
+                <p className="m-0 mt-1 text-caption secondary">
+                  Pocket gross profit basis (before estimated cost-to-serve):{" "}
+                  {dollarsShort(o.expected_gp_total_cents ?? 0)} - a separate
+                  metric, never summed with the contribution figure.
+                </p>
                 <p className="mb-0 mt-2 text-caption secondary">
                   {o.expected_total_note}
                   {o.n_outside_price_support > 0 && (

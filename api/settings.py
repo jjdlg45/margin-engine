@@ -86,6 +86,37 @@ class Settings:
     uploads_dir: Path = field(
         default_factory=lambda: _env_path("MARGIN_API_UPLOADS_DIR", REPO / ".api_state" / "uploads")
     )
+    # --- identity and production hardening (Run 6, Phase 82) --------------
+    # "local" keeps the Phase 39 behaviour: X-User names a configured user,
+    # which is identity, not authentication, and the mode name says so.
+    # "production" rejects client-supplied identity entirely and requires a
+    # bearer token the server issued.
+    mode: str = field(default_factory=lambda: os.environ.get("MARGIN_API_MODE", "local"))
+    # user_id|display name|roles|password_hash, one per line or
+    # semicolon-separated. Required in production mode.
+    accounts_spec: str = field(default_factory=lambda: os.environ.get("MARGIN_API_ACCOUNTS", ""))
+    session_ttl_s: float = field(
+        default_factory=lambda: float(os.environ.get("MARGIN_API_SESSION_TTL_S", str(12 * 3600)))
+    )
+    audit_log: Path = field(
+        default_factory=lambda: _env_path("MARGIN_API_AUDIT_LOG", REPO / ".api_state" / "audit.log")
+    )
+    audit_enabled: bool = field(
+        default_factory=lambda: os.environ.get("MARGIN_API_AUDIT", "1") != "0"
+    )
+    # Production mode will not start unless the operator declares that the
+    # state directory sits on encrypted storage. The engine cannot verify
+    # that from inside the process, and a silent assumption is worse than a
+    # refusal: DuckDB has no at-rest encryption of its own, so uploads,
+    # action history and the audit log are protected by the volume or not at
+    # all. Declaring it is a decision someone has to make and own.
+    storage_encrypted: bool = field(
+        default_factory=lambda: os.environ.get("MARGIN_API_STORAGE_ENCRYPTED") == "1"
+    )
+    # Uploaded files are deleted after this many days. 0 keeps them.
+    uploads_retention_days: float = field(
+        default_factory=lambda: float(os.environ.get("MARGIN_API_UPLOADS_RETENTION_DAYS", "7"))
+    )
     users_spec: str = field(
         default_factory=lambda: os.environ.get(
             "MARGIN_API_USERS",

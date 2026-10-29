@@ -7,6 +7,7 @@ import type {
   ActionOutcome,
   ActionRow,
   ActionsSection,
+  ComplianceSection,
   ActionsSummary,
   CustomerEconomics,
   DispersionSection,
@@ -116,8 +117,10 @@ export interface OpportunityData {
   leakage_total_cents: number;
   gross_total_cents: number;
   gross_conservative_total_cents: number | null;
+  expected_gp_total_cents: number;
   expected_total_cents: number;
   expected_total_note: string;
+  optimizer_objective: string;
   n_records: number;
   n_cost_unavailable: number;
   n_outside_price_support: number;
@@ -146,7 +149,9 @@ export interface MethodologyData {
 
 export interface PageDataMap {
   overview: OverviewData;
-  actions: ActionsSection;
+  // The actions page carries the Robinson-Patman review flags beside the
+  // actions they belong to; the bundle keeps them in their own section.
+  actions: ActionsSection & { compliance?: ComplianceSection | null };
   waterfall: WaterfallData;
   customers: CustomersData;
   segments: SegmentsSection;

@@ -20,6 +20,14 @@ transactions:
   flag_lookalike_duplicates: true
   price_credit_reasons: [price_correction, customer_rebate]
   cost_credit_reasons: [damage, shortage, quality, warranty]
+  # Credit reasons whose counterparty is the supplier (Run 6, Phase 61):
+  # recoveries for supplier-caused cost. None exist in the synthetic ERP.
+  supplier_claim_reasons: []
+  # Economic-event classification of billed order charges by charge code
+  # (Run 6, Phase 61). The synthetic ERP bills outbound freight as FRT_OUT;
+  # undeclared codes are reported as other adjustments, never guessed.
+  charge_event_types:
+    FRT_OUT: freight_pass_through
 
 hierarchy:
   analysis_level: ship_to
@@ -73,6 +81,16 @@ segmentation:
   bootstrap_resamples: 30
   abc_a_share: 0.80
   abc_b_share: 0.15
+  # The ABC class the commercial tree may see (Run 6, Phase 76). Cut on a
+  # window that ENDS the period before each line, so the feature cannot carry
+  # the price it is used to explain. "units" or "orders" drop price from the
+  # basis entirely. The reported ABC table is unaffected.
+  abc_feature_basis: revenue
+  abc_feature_lag_periods: 6
+  # Out-of-fold target encoding while the tree is grown.
+  target_encoding_folds: 5
+  # Share of months used to fit the time-based holdout; the rest are scored.
+  holdout_fit_period_share: 0.75
 
 price_guidance:
   band_percentiles: [0.25, 0.50, 0.75]
@@ -91,18 +109,122 @@ sensitivity:
   panel_period: month
   active_assortment_lookback_months: 6
   min_first_stage_f: 10.0
+  # The GATE uses the Montiel Olea-Pflueger effective F, whose critical value is
+  # derived for an arbitrary clustered variance structure; min_first_stage_f
+  # above stays the reported rule-of-thumb and the bar for the instrumented
+  # status. 23.109 is the published 10% relative-bias value.
+  min_effective_first_stage_f: 23.109
+  # Anticipation (lead) test: do FUTURE cost and tariff movements predict
+  # current volume? The overidentification test compares the instruments
+  # against each other and cannot see a violation they share; this one can see
+  # that violation when it takes the form of timing.
+  lead_test_horizon: 2
+  lead_test_alpha: 0.05
+  # In log-volume units per unit of the aggregate lead regressor, where one
+  # unit is one standard deviation of a single lead. The whole contemporaneous
+  # price channel is about 0.08 in those units on the demo world, so a value
+  # much above 0.1 would be larger than the entire effect the instruments
+  # identify. It governs BOTH branches: an effect below it is reported as
+  # detected but immaterial rather than blocking the causal status, and a
+  # non-rejection whose interval still admits it is reported as inconclusive
+  # rather than as a pass.
+  lead_test_meaningful_effect: 0.05
+  # Minimum residual degrees of freedom before the test will run. A row count
+  # alone let saturated designs through, where pair and period fixed effects
+  # absorb more parameters than there are rows and any coefficient becomes an
+  # enormous test statistic.
+  lead_test_min_residual_dof: 30
   robustness_max_spread: 0.20
   max_ci_width: 1.0
   overid_alpha: 0.05
-  # Two-way clustering (month AND customer, Cameron-Gelbach-Miller): demand
-  # shocks correlate across the items a customer buys in one month AND, when
-  # demand is persistent, across months within a customer. Chosen by the
-  # persistent-demand coverage study (Run 4, 24.5; recorded in
-  # docs/validation.json): under AR(1) customer demand, month-only clustering
-  # covers ~78% and supplier x month ~77%, while month x customer stays within
-  # the 90-98% target - and on the iid well-identified world it matches
-  # month-only coverage exactly, so nothing is given up.
+  # Where errors are grouped for inference. Six options; see methodology.md,
+  # "Clustering, and what counts as an independent observation".
+  #
+  # Run 6 (Phase 73) added the four INSTRUMENT-ASSIGNMENT levels - supplier,
+  # supplier x month, product category, category x month - because cost shocks
+  # arrive by supplier and tariff shocks by category, so those are the units
+  # whose errors move together. Grouping there is the theoretically right
+  # thing and it is measured here rather than assumed, because at a realistic
+  # supplier count it runs out of groups: twelve suppliers are twelve
+  # independent groups however many invoice lines they cover.
+  #
+  # Coverage under AR(1) customer demand, measured across clustering options
+  # on the same worlds (Run 4 24.5 at 50 seeds, re-measured in Run 6 Phase 73
+  # with the assignment levels added; both in docs/validation.json):
+  #     month x customer      94%   - inside the 90-98% target
+  #     supplier              86%   - best assignment level, with the
+  #                                   small-cluster bootstrap applied
+  #     month                 83%
+  #     supplier x month      81%
+  #     category x month      81%
+  #     product category       -    - eight groups, no interval reported
+  #
+  # Two-way month-and-customer stays the default. What breaks coverage under
+  # persistent demand is the customer dimension - shocks that carry over
+  # between months within a customer - and no supplier-level grouping absorbs
+  # it. The Cameron-Gelbach-Miller two-way form absorbs both that and the
+  # within-month correlation across the items a customer buys.
   cluster_level: month_customer
+  # Quote intake (Run 6, Phase 77). Only a decided quote is evidence about
+  # price: before this, anything that was not "W" counted as a loss, so an
+  # open quote read as the customer saying no. A code in none of these lists
+  # is excluded as unrecognized, never assumed to be a loss.
+  quote_outcome_won: [W, WON, WIN, ACCEPTED]
+  quote_outcome_lost: [L, LOST, LOSS, REJECTED]
+  quote_outcome_open: [O, OPEN, PENDING, QUOTED]
+  quote_outcome_withdrawn: [X, WITHDRAWN, CANCELLED, CANCELED]
+  quote_outcome_expired: [E, EXPIRED, LAPSED]
+  # One decision is one observation: with a quote id, revisions collapse to
+  # the latest version of their opportunity.
+  quote_unit: auto
+  win_curve_controls: [time, log_quantity]
+  # Quotes to one customer are not independent draws.
+  win_curve_cluster: auto
+  win_curve_holdout_share: 0.25
+  win_curve_min_holdout: 100
+  win_curve_calibration_band: [0.5, 2.0]
+  # Small-cluster policy (Run 6, Phase 73). Clustering where an instrument is
+  # ASSIGNED is the correct level and the expensive one: twelve suppliers are
+  # twelve independent groups however many invoice lines they cover.
+  #
+  # The threshold is read against the EFFECTIVE cluster count - clusters
+  # weighted by how much identifying variation each carries - so a world where
+  # one supplier does most of the moving cannot pass on a raw count. 15 keeps
+  # the shipped two-way month-and-customer grouping (about 21 effective on
+  # these panels) on the analytic interval, which the 50-simulation
+  # persistent-demand study measured inside the 90-98% band, and withdraws
+  # supplier (about 8.5) and product category (about 7.0), which it cannot
+  # measure because they are too few to produce an interval at all.
+  # Identification-support rule (Run 6, Phase 74). A volume forecast is only
+  # worth making where cost and tariff movements actually moved price. The
+  # outer bounds are these quantiles of the instrument-predicted within
+  # log-price movement - residualized for the fixed effects and the market
+  # control, so it is movement around each pair's own price path.
+  price_support_lo_quantile: 0.05
+  price_support_hi_quantile: 0.95
+  # Inside those bounds support is not assumed uniform. A proposed move needs
+  # at least `min_support_observations` of those movements within
+  # `price_support_window` log units of it. A segment whose instruments pushed
+  # price around -6% and around +4%, with nothing between, supports neither a
+  # flat price nor a 1% change, and the rule refuses both even though they sit
+  # inside the outer bounds. Where support is one connected stretch - every
+  # segment on the demo world - this is exactly the outer-bounds test it
+  # replaces.
+  #
+  # 2% is roughly a third of the movement the instruments induce on these
+  # panels (about -6% to +6%), so the window is wide enough to accumulate a
+  # count and narrow enough that two genuinely separate clusters stay
+  # separate. 30 is the smallest count at which the local density is being
+  # measured rather than guessed.
+  price_support_window: 0.02
+  min_support_observations: 30
+  min_assignment_clusters: 15
+  small_cluster_method: wild_bootstrap
+  # Below this RAW count the bootstrap stops being a remedy. 8 is the lowest
+  # count at which the symmetric wild bootstrap-t was measured to improve on
+  # the analytic interval rather than add noise (see docs/build-log.md).
+  min_bootstrap_clusters: 8
+  wild_bootstrap_reps: 999
   # Where the supplier cost instrument comes from (Run 4, 27.6):
   #   reference_table  a mapped supplier_cost_index table (default)
   #   receipts         built from purchase/receipt history (mix-corrected
@@ -110,6 +232,46 @@ sensitivity:
   #   external         a public series (e.g. BLS PPI) mapped to categories via
   #                    external_index_map, then to suppliers by modal category
   instrument_source: reference_table
+  # Total-quantity estimand (Run 6, Phase 72): an IV-Poisson control function
+  # over the panel INCLUDING months with no purchase, answering how expected
+  # quantity responds to price counting whether the customer buys at all. It
+  # is reported beside the headline elasticity and never above it: its ladder
+  # has no causal tier, so the optimizer never prices from it.
+  iv_ppml_enabled: true
+  # Above this share of no-purchase months carrying an imputed price, the
+  # estimand is demoted to descriptive: those rows carry the whole
+  # extensive-margin signal, and an imputed price is not an observation of the
+  # price that produced them.
+  iv_ppml_max_imputed_share: 0.50
+  # Re-estimate under alternative zero-row price and availability assumptions
+  # and demote past this gap. This one GATES the status, so it stays on: an
+  # estimate that depends on which guess was made about the no-purchase months
+  # is not an instrumented measurement of anything.
+  iv_ppml_zero_row_robustness: true
+  iv_ppml_max_zero_row_gap: 0.30
+  # Segments estimated concurrently (Run 6, Phase 72). A memory dial as much
+  # as a speed one: each concurrent segment holds its own filtered panel.
+  # Measured on the demo panel at 1.23x with three workers and 2.05 GB peak;
+  # four buys 0.02x more for more memory. Results are byte-identical at every
+  # worker count - segments are independent and the order is restored before
+  # anything is built.
+  max_parallel_segments: 3
+  # The two pure DIAGNOSTICS are off in the shipped pipeline and on in the
+  # validation study, because each costs whole extra fits per segment and the
+  # Run-1 performance target is measured on this configuration. Neither
+  # changes a status.
+  #   bootstrap_reps        a pair cluster bootstrap that refits the first
+  #                         stage per replicate, so its interval carries the
+  #                         generated-regressor noise the analytic
+  #                         cluster-robust standard error omits. One fit per
+  #                         replicate.
+  #   split_panel_jackknife the half-panel correction for the
+  #                         incidental-parameter bias IV-PPML with
+  #                         high-dimensional fixed effects carries at short T.
+  #                         Two fits, reported, never adopted as the point
+  #                         estimate.
+  iv_ppml_bootstrap_reps: 0
+  iv_ppml_split_panel_jackknife: false
   # Validation without planted truth (Run 4, 27.4): temporal backtest, placebo
   # tests and rolling-window stability in the report. Informational only.
   real_data_validation: true
@@ -127,6 +289,62 @@ sensitivity:
         for an item does not depend on the supplier's upstream costs except
         through the price they are charged. Valid unless customers observe and
         react to supplier conditions directly (e.g. anticipated shortages).
+      # Plausible non-price paths to quantity and how each is addressed
+      # (Run 6, 60.4). The causal gate reads the competitor_prices path.
+      paths_to_quantity:
+        - channel: availability
+          resolved_by: fixed_effects
+          treatment: >
+            A cost shock can coincide with a shortage that limits what the
+            distributor can ship. Zero rows exist only where the item was
+            available (sold to anyone that month), so market-wide stockout
+            months carry no zero rows; residual within-month rationing is not
+            observable and remains a stated limitation.
+        - channel: lead_times
+          resolved_by: fixed_effects
+          treatment: >
+            Longer supplier lead times could suppress orders independently of
+            price. Not observed in the data; month and item-role-by-month
+            fixed effects absorb market-wide timing shifts, and the pair fixed
+            effect absorbs stable supplier service differences. Unresolved
+            within-month, pair-specific lead-time shocks remain a limitation.
+        - channel: supplier_changes
+          resolved_by: no_path
+          treatment: >
+            A customer could switch suppliers in response to the shock rather
+            than change total purchases. Estimation is per item, so switching
+            appears as a quantity response to price, which is the estimand's
+            own-item scope; cross-item substitution is modeled only within
+            declared substitution groups.
+        - channel: competitor_prices
+          resolved_by: market_price_control
+          # The CONDITION a customer faces is the market price for the item
+          # class they are buying: they compare sellers of the same item, not
+          # sellers using the same upstream supplier. So a category-level
+          # published index is the right grain for this channel even though
+          # the instrument itself varies by supplier and month.
+          channel_grain: "item_category:month"
+          treatment: >
+            Industry-wide input cost shocks also move competitor prices, so
+            part of the measured response is to the market moving, not to a
+            unilateral move. Held constant by the public category-level market
+            price index, which measures the competitor-price condition a
+            customer faces for the item class. Without an adequate index the
+            estimate understates unilateral own-price sensitivity and the
+            causal gate caps the status (Phase 70).
+        - channel: expectations
+          resolved_by: fixed_effects
+          treatment: >
+            Customers who anticipate further increases may pre-buy. The month
+            fixed effects absorb common anticipation; pair-specific hoarding
+            is not observable and remains a stated limitation.
+        - channel: substitution
+          resolved_by: no_path
+          treatment: >
+            Substitution to other items in the assortment is modeled only
+            within declared substitution groups (cross-price module);
+            elsewhere the estimand is the own-item response including any
+            substitution away.
     - name: category_tariff_shock
       column: category_tariff_shock
       varies_at: "item_category:month"
@@ -136,6 +354,46 @@ sensitivity:
         and tariffs affect purchase quantity only through the realized price.
         Valid unless demand and tariff policy share a driver (e.g. a boom in a
         sector that also triggers protection).
+      paths_to_quantity:
+        - channel: availability
+          resolved_by: fixed_effects
+          treatment: >
+            A tariff can reroute or delay imports for the whole category. The
+            availability proxy (item sold to anyone that month) removes
+            market-wide outage months from the zero rows; partial category
+            shortages are not observable and remain a stated limitation.
+        - channel: lead_times
+          resolved_by: fixed_effects
+          treatment: >
+            Customs changes can slow the whole category at once; month and
+            item-role-by-month fixed effects absorb common timing shifts.
+        - channel: supplier_changes
+          resolved_by: no_path
+          treatment: >
+            Distributors may re-source within the category; the instrument
+            varies at category level, so re-sourcing inside the category does
+            not move it, and the estimand is the own-item response.
+        - channel: competitor_prices
+          resolved_by: market_price_control
+          channel_grain: "item_category:month"
+          treatment: >
+            A tariff raises every seller's landed cost in the category, so
+            competitor prices move with the instrument by construction - at
+            exactly the category grain the published index measures. Held
+            constant by that index; without an adequate one the causal gate
+            caps the status (Phase 70).
+        - channel: expectations
+          resolved_by: fixed_effects
+          treatment: >
+            Announced tariffs invite pre-buying before the effective date.
+            Month fixed effects absorb common anticipation; the effective-date
+            semantics put the cost change in the correct month.
+        - channel: substitution
+          resolved_by: no_path
+          treatment: >
+            Substitution toward untariffed categories is outside the own-item
+            estimand; within-category substitution is modeled only inside
+            declared substitution groups.
 
 opportunity:
   baseline_window_months: 12
@@ -176,16 +434,27 @@ fiscal:
 compliance:
   robinson_patman:
     enabled: true
-    # Customers are treated as likely competitors when these customer
-    # attributes match; recommended prices for the same item more than the
+    # A CANDIDATE SCREEN (Run 6, Phase 79), not a definition of competition:
+    # customers matching on these attributes are worth looking at, and an
+    # optional reviewed customer_competitors table overrides the screen in
+    # both directions. Recommended prices for the same item more than the
     # threshold apart (relative %, strictly greater) get a review flag with
-    # the cost-to-serve difference attached as supporting documentation.
+    # the buyers' terms and cost-to-serve difference as supporting evidence.
     competitor_attributes: [industry, region]
     price_difference_threshold_pct: 5.0
-  # The market/competitor price index control is accepted only when the
-  # mapping declares public_source: true for it (antitrust: competitors
-  # sharing non-public prices through algorithms).
-  market_index_public_source_required: true
+    # Flag only pairs a reviewer has confirmed. Off by default: most
+    # deployments have no reviewed competitor map on day one.
+    require_reviewed_map: false
+  # The market/competitor price index control is accepted only with recorded
+  # provenance (Run 6, Phase 80): provider, url, retrieval time, licence,
+  # cadence, coverage, aggregation level and series kind. A cost index is
+  # refused for this role by name - it belongs in the instrument pipeline.
+  # (Antitrust: competitors sharing non-public prices through algorithms.)
+  market_index_provenance_required: true
+  # Publishers this deployment accepts. Empty means any recorded provenance
+  # is accepted and the run says so; require_allowlist makes it binding.
+  market_index_allowed_providers: []
+  market_index_require_allowlist: false
 
 # Action generation (Run 5, Phase 38). Dates anchor to the data's last invoice
 # date, so a given world always generates identical actions.
@@ -215,3 +484,11 @@ drift:
   data_quality_change_pp: 2.0    # data-quality rate change, percentage points
   status_share_change: 0.2       # guidance status count: relative change...
   min_status_count_change: 5     # ...AND at least this many pairs
+
+# Memory behaviour at scale (Run 6, Phase 83). spill_ledger writes the
+# financial ledger to Parquet after the accounting stages finish with it and
+# drops it from memory for the analytic middle of the run. Off by default:
+# the in-memory path is the measured configuration, and the spill path's
+# outputs are byte-identical to it by test.
+scale:
+  spill_ledger: false

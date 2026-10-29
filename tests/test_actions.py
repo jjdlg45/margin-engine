@@ -98,9 +98,11 @@ def test_volume_evidence_labeling(sample_run: FullRunResult) -> None:
     actions = sample_run.actions
     assert actions is not None
     pc = actions.filter(pl.col("action_type") == "price_change")
-    expected = pc.filter(pl.col("impact_basis") == "expected_contribution_change")
+    # Two expected-change bases since Phase 65, each named, never conflated.
+    expected_bases = ["expected_contribution_change", "expected_pocket_gross_profit_change"]
+    expected = pc.filter(pl.col("impact_basis").is_in(expected_bases))
     assert (expected["volume_treatment"] == "expected_change").all()
-    fixed = pc.filter(pl.col("impact_basis") != "expected_contribution_change")
+    fixed = pc.filter(~pl.col("impact_basis").is_in(expected_bases))
     assert (fixed["volume_treatment"] != "expected_change").all()
 
 

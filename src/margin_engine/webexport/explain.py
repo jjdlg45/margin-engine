@@ -87,9 +87,11 @@ def opportunity_summary(row: dict[str, Any]) -> str:
     tail = {
         "expected_change": "causal evidence models the volume response.",
         "sensitivity_range_only": "instrument-level evidence limits the volume "
-        "response to a labeled range.",
-        "outside_price_support": "the move exceeds the segment's identified "
-        "price range, so no volume response is modeled.",
+        "response to a sensitivity analysis, not a confidence interval around "
+        "the dollar impact.",
+        "outside_price_support": "the move lands where cost and tariff "
+        "movements never moved this segment's prices, so no volume response is "
+        "modeled.",
         "cost_unavailable": "no unit cost is known, so cost-dependent figures are not produced.",
     }.get(treatment, "no volume response is modeled.")
     if cur is not None and target is not None and target > 0:
@@ -104,30 +106,47 @@ def opportunity_summary(row: dict[str, Any]) -> str:
 def opportunity_explanation(row: dict[str, Any]) -> str:
     """Why this opportunity is sized the way it is, from its own numbers."""
     gross = row.get("gross_price_opportunity_cents")
-    expected = row.get("expected_contribution_change_cents")
+    expected_contrib = row.get("expected_contribution_change_cents")
+    expected_gp = row.get("expected_pocket_gross_profit_change_cents")
     treatment = row.get("volume_treatment") or "fixed_volume"
     status = row.get("evidence_status") or "insufficient_data"
     base = (
         f"Closing the gap to the proposed pocket price is worth {_dollars(gross)} "
         "over the baseline window, assuming volume does not change."
     )
-    if treatment == "expected_change" and expected is not None:
+    if treatment == "expected_change" and expected_contrib is not None:
         return (
             base + f" This segment's elasticity is causal-supported, so the engine also "
             f"models the volume response: the expected contribution change is "
-            f"{_dollars(expected)}."
+            f"{_dollars(expected_contrib)} (unit economics net of estimated "
+            f"cost-to-serve; the pocket gross profit basis is "
+            f"{_dollars(expected_gp) if expected_gp is not None else 'unavailable'})."
+        )
+    if treatment == "expected_change" and expected_gp is not None:
+        return (
+            base + f" This segment's elasticity is causal-supported, so the engine also "
+            f"models the volume response: the expected pocket gross profit change is "
+            f"{_dollars(expected_gp)}. No cost-to-serve estimate is supported for "
+            f"this pair, so no contribution figure is shown."
         )
     if treatment == "sensitivity_range_only":
         return (
             base + f" The segment's elasticity evidence is {_label(status).lower()}, so "
-            "the volume response is shown only as a labeled sensitivity range, not as "
-            "a point estimate."
+            "the volume response is shown as a sensitivity analysis across a span of "
+            "plausible price responses - not as a point estimate, and not as a "
+            "confidence interval around the dollar impact."
         )
     if treatment == "outside_price_support":
+        distance = row.get("price_support_distance")
+        how_far = (
+            f" The nearest movement of that kind is {abs(float(distance)):.1%} away."
+            if distance is not None and float(distance) > 0
+            else ""
+        )
         return (
-            base + " The proposed move lies outside the price variation the "
-            "instruments ever induced in this segment, so the engine refuses to "
-            "extrapolate a volume response - the figure assumes unchanged volume."
+            base + " Cost and tariff movements never moved this segment's prices by "
+            "anything like the amount proposed, so the engine has nothing to base a "
+            "volume response on and the figure assumes unchanged volume." + how_far
         )
     if treatment == "cost_unavailable":
         return (

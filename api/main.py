@@ -16,6 +16,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from api.actions_routes import router as actions_router
+from api.audit import AuditLog
+from api.auth import AuthError, build_authenticator
 from api.filters import paginate
 from api.load_routes import router as load_router
 from api.ratelimit import TokenBucketLimiter
@@ -39,6 +41,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         log.info("action store reset (MARGIN_API_ACTIONS_RESET): %s", s.actions_db)
     action_store = ActionStore(s.actions_db)
     review_policy = ReviewPolicy.from_spec(s.users_spec)
+    # Identity (Run 6, Phase 82). build_authenticator refuses a production
+    # deployment nobody could log in to, which is better than serving one.
+    auth = build_authenticator(
+        mode=s.mode,
+        users_spec=s.users_spec,
+        accounts_spec=s.accounts_spec,
+        session_ttl_s=s.session_ttl_s,
+    )
+    if auth.production and not s.storage_encrypted:
+        msg = (
+            "production mode refuses to start unless MARGIN_API_STORAGE_ENCRYPTED=1. "
+            "DuckDB has no at-rest encryption of its own, so uploads, review "
+            "history and the audit log are protected by the volume or not at all. "
+            "Set it once the state directory is on encrypted storage; see "
+            "docs/deploy-api.md."
+        )
+        raise RuntimeError(msg)
+    audit = AuditLog(s.audit_log, enabled=s.audit_enabled)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -74,8 +94,94 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = s
     app.state.action_store = action_store
     app.state.review_policy = review_policy
+    app.state.auth = auth
+    app.state.audit = audit
     app.include_router(actions_router)
     app.include_router(load_router)
+
+    @app.exception_handler(AuthError)
+    async def _auth_error(_request: Request, exc: AuthError) -> Response:
+        return JSONResponse(
+            status_code=exc.status, content={"detail": exc.message, "code": exc.code}
+        )
+
+    @app.post("/api/auth/login")
+    async def login(request: Request, body: dict[str, Any]) -> Response:
+        """Exchange an account password for a bearer token (production mode).
+
+        The failure is deliberately uninformative - unknown user and wrong
+        password give the same answer - and the audit log records the
+        attempt with the id that was tried, never what was tried with it.
+        """
+        if not auth.production:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": (
+                        "this server runs in local mode, where X-User names a "
+                        "configured user. Set MARGIN_API_MODE=production to use "
+                        "accounts and tokens."
+                    ),
+                    "code": "not_production_mode",
+                },
+            )
+        user_id = str(body.get("user_id") or "")
+        try:
+            token, expires, principal = auth.login(user_id, str(body.get("password") or ""))
+        except AuthError as exc:
+            audit.record(
+                action="auth.login", user_id=user_id or None, status=exc.status, detail=exc.code
+            )
+            raise
+        audit.record(action="auth.login", user_id=principal.user_id, status=200)
+        return JSONResponse(
+            content={
+                "token": token,
+                "expires_epoch": round(expires),
+                "user_id": principal.user_id,
+                "display_name": principal.display_name,
+                "roles": sorted(principal.roles),
+            }
+        )
+
+    @app.post("/api/auth/logout")
+    async def logout(request: Request) -> Response:
+        header = request.headers.get("authorization") or ""
+        _, _, token = header.partition(" ")
+        if token:
+            auth.sessions.revoke(token)
+        audit.record(action="auth.logout", user_id=None, status=200)
+        return JSONResponse(content={"status": "ok"})
+
+    @app.get("/api/auth/me")
+    async def whoami(request: Request) -> Response:
+        principal = auth.resolve(
+            header_user=request.headers.get("x-user"),
+            authorization=request.headers.get("authorization"),
+        )
+        if principal is None:
+            return JSONResponse(
+                content={
+                    "mode": s.mode,
+                    "authenticated": False,
+                    "note": (
+                        "local mode: send X-User with a configured name. This is "
+                        "identity, not authentication."
+                        if not auth.production
+                        else "production mode: authenticate at /api/auth/login."
+                    ),
+                }
+            )
+        return JSONResponse(
+            content={
+                "mode": s.mode,
+                "authenticated": True,
+                "user_id": principal.user_id,
+                "display_name": principal.display_name,
+                "roles": sorted(principal.roles),
+                "auth_method": principal.auth_method,
+            }
+        )
 
     @app.middleware("http")
     async def rate_limit(request: Request, call_next: Any) -> Response:
@@ -126,6 +232,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "bundle_version": snap.app.get("bundle_version"),
             "engine_version": snap.app.get("engine_version"),
             "loaded_utc": snap.loaded_utc.isoformat(timespec="seconds"),
+            # Traceability (Run 6, Phase 84): which configuration, mapping,
+            # inputs and fitted model this API is serving numbers from.
+            "rules_sha256": snap.app.get("rules_sha256"),
+            "mapping_sha256": snap.app.get("mapping_sha256"),
+            "model_fingerprint": snap.app.get("model_fingerprint"),
+            "config_fingerprint": snap.app.get("config_fingerprint"),
+            "input_fingerprint": snap.app.get("input_fingerprint"),
         }
 
     @app.get("/api/app")

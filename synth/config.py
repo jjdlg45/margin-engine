@@ -8,6 +8,7 @@ defaults so presets are comparable.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,10 +35,22 @@ class Preset(StrEnum):
     # demand curvature makes elasticity depend on the price level (the
     # constant-elasticity log-log model is wrong by construction);
     NONCONSTANT_ELASTICITY = "nonconstant_elasticity"
+    # Run 6 (Phase 73): the cluster-structure world. Few suppliers and few
+    # categories, a short panel, and strongly serially correlated supplier and
+    # category shocks - so the units the instruments are ASSIGNED to are few
+    # and each one's movement is correlated across the whole panel. Demand
+    # stays independent, so whatever coverage does here is the instrument
+    # side's doing and not the demand side's.
+    FEW_CLUSTERS = "few_clusters"
     # competitor prices co-move with the cost instruments and shift demand:
     # the exclusion restriction is violated for BOTH instruments in a way
     # overidentification cannot detect (both move together).
     COMPETITOR_COMOVEMENT = "competitor_comovement"
+    # purchase incidence depends on price, so total expected quantity has an
+    # extensive margin the conditional estimand cannot see. The target for a
+    # zeros-inclusive estimator is the planted TOTAL elasticity recorded in
+    # ground truth, not the segment's intensive elasticity (Run 6, Phase 72).
+    EXTENSIVE_MARGIN = "extensive_margin"
 
 
 class MessRates(BaseModel):
@@ -93,6 +106,17 @@ class DemandParams(BaseModel):
     tariff_shock_sd: float = 0.04
     # Pass-through of instrument shocks into realized price (first-stage strength).
     price_passthrough: float = 0.75
+    # Published market price index (Run 6, Phase 70). Emitted on EVERY world so
+    # the causal gate's supported path stays demonstrable. category_monthly
+    # varies across categories within a month (usable as a control);
+    # national_monthly is one value per month, which the estimator's time
+    # fixed effects absorb exactly - the deliberately inadequate variant.
+    market_passthrough: float = 0.75
+    market_noise_sd: float = 0.02
+    market_index_granularity: Literal["category_monthly", "national_monthly"] = "category_monthly"
+    # Dedicated RNG seed offset: drawing the index's noise from the world rng
+    # would shift every existing world's prices and planted truth.
+    market_index_seed: int = 90_001
     # Endogenous rep discounting: d(log price)/d(demand shock). Positive means
     # reps cut price when demand is weak -> naive OLS biased TOWARD ZERO.
     endogeneity_gamma: float = 0.08
@@ -117,6 +141,18 @@ class DemandParams(BaseModel):
     purchase_prob: float = 0.60
     # Probability a customer also carries any given KVI item (Phase 15).
     kvi_carriage_prob: float = 0.5
+    # Price-driven extensive margin (Run 6, Phase 72). Purchase incidence is a
+    # logit in the SAME regressor the intensive margin uses, log(P / P_ref):
+    #   logit p_it = logit(purchase_prob_i) + beta_ext * (log_p_rel_it - ext_price_ref)
+    # At 0.0 incidence does not depend on price, which is every world generated
+    # before this existed, and the code takes the untouched array rather than
+    # round-tripping it through the logit - see the guard in synth/demand.py.
+    beta_ext: float = 0.0
+    # Reference point for the incidence logit. 0.0 reads naturally (the
+    # configured probability is the incidence at the item's reference list
+    # price) but shifts average incidence, and so the world's line count,
+    # because the mean of log_p_rel is below zero.
+    ext_price_ref: float = 0.0
 
 
 class GeneratorConfig(BaseModel):
@@ -250,7 +286,28 @@ class GeneratorConfig(BaseModel):
         elif preset is Preset.NONCONSTANT_ELASTICITY:
             demand = demand.model_copy(update={"elasticity_curvature": -1.5})
         elif preset is Preset.COMPETITOR_COMOVEMENT:
-            demand = demand.model_copy(update={"competitor_comovement": 0.8})
+            # The published index is also made inadequate here (one national
+            # value per month): the world where competitor prices move with
+            # the instruments is exactly the world whose published series
+            # cannot hold those conditions constant, so the gate must refuse.
+            demand = demand.model_copy(
+                update={
+                    "competitor_comovement": 0.8,
+                    "market_index_granularity": "national_monthly",
+                }
+            )
+        elif preset is Preset.FEW_CLUSTERS:
+            demand = demand.model_copy(update={"instrument_ar": 0.85})
+            base["n_suppliers"] = 5
+            base["n_categories"] = 4
+            base["months"] = 12
+        elif preset is Preset.EXTENSIVE_MARGIN:
+            # A ten per cent price rise moves a normal pair's monthly incidence
+            # from 0.600 to about 0.566. The extensive contribution to the total
+            # elasticity is beta_ext x (1 - incidence), so it is largest exactly
+            # where incidence has room to fall: about -0.30 for the dense
+            # segments and -1.29 for the long-tail one.
+            demand = demand.model_copy(update={"beta_ext": -1.5})
         base["demand"] = demand
         if preset is Preset.SPARSE:
             base["n_customers"] = 40

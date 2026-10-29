@@ -72,6 +72,29 @@
      ],
      "title": "Contribution Before Cents"
     },
+    "control_adjusted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Control Adjusted Volume Ratio"
+    },
+    "control_exclusions": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Control Exclusions"
+    },
     "control_volume_ratio": {
      "anyOf": [
       {
@@ -83,16 +106,17 @@
      ],
      "title": "Control Volume Ratio"
     },
-    "did_volume_ratio": {
+    "implementation_compliance": {
      "anyOf": [
       {
-       "type": "number"
+       "type": "string"
       },
       {
        "type": "null"
       }
      ],
-     "title": "Did Volume Ratio"
+     "default": null,
+     "title": "Implementation Compliance"
     },
     "implemented_on": {
      "title": "Implemented On",
@@ -101,6 +125,18 @@
     "n_control_pairs": {
      "title": "N Control Pairs",
      "type": "integer"
+    },
+    "n_control_pairs_excluded": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Control Pairs Excluded"
     },
     "outcome_reason": {
      "title": "Outcome Reason",
@@ -209,6 +245,18 @@
      ],
      "title": "Realization Pct"
     },
+    "stopped_buying": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Stopped Buying"
+    },
     "treated_volume_ratio": {
      "anyOf": [
       {
@@ -231,6 +279,18 @@
      ],
      "title": "Volume Error Log Points"
     },
+    "wave": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wave"
+    },
     "window_days": {
      "title": "Window Days",
      "type": "integer"
@@ -249,7 +309,7 @@
     "treated_volume_ratio",
     "control_volume_ratio",
     "n_control_pairs",
-    "did_volume_ratio",
+    "control_adjusted_volume_ratio",
     "volume_error_log_points",
     "pocket_margin_before",
     "pocket_margin_after",
@@ -582,6 +642,17 @@
      "title": "Demo History",
      "type": "boolean"
     },
+    "event_study": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/EventStudySection"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "facets": {
      "additionalProperties": {
       "items": {
@@ -599,10 +670,24 @@
      "title": "Notes",
      "type": "array"
     },
+    "overlap_groups": {
+     "items": {
+      "$ref": "#/$defs/OverlapGroup"
+     },
+     "title": "Overlap Groups",
+     "type": "array"
+    },
     "read_only": {
      "description": "True in the static demo: the review workflow needs the API",
      "title": "Read Only",
      "type": "boolean"
+    },
+    "results_breakdown": {
+     "items": {
+      "$ref": "#/$defs/ResultsBreakdownRow"
+     },
+     "title": "Results Breakdown",
+     "type": "array"
     },
     "summary": {
      "$ref": "#/$defs/ActionsSummary"
@@ -718,6 +803,18 @@
      "title": "N Measured",
      "type": "integer"
     },
+    "n_stopped_buying": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Stopped Buying"
+    },
     "status": {
      "title": "Status",
      "type": "string"
@@ -733,8 +830,341 @@
    "title": "CalibrationRow",
    "type": "object"
   },
+  "CausalGate": {
+   "description": "One causal criterion's outcome (Run 6, Phase 70). Machine-readable so\nthe UI renders a checklist instead of parsing prose.",
+   "properties": {
+    "detail": {
+     "title": "Detail",
+     "type": "string"
+    },
+    "gate": {
+     "title": "Gate",
+     "type": "string"
+    },
+    "order": {
+     "title": "Order",
+     "type": "integer"
+    },
+    "result": {
+     "title": "Result",
+     "type": "string"
+    }
+   },
+   "required": [
+    "order",
+    "gate",
+    "result",
+    "detail"
+   ],
+   "title": "CausalGate",
+   "type": "object"
+  },
+  "CompliancePair": {
+   "description": "One Robinson-Patman review flag, with the facts beside it (Phase 79).\n\nA review prompt, never a finding: `pair_basis` says whether a reviewer\nconfirmed that these two customers compete or whether the attribute\nscreen merely suggested it.",
+   "properties": {
+    "channel_a": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Channel A"
+    },
+    "channel_b": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Channel B"
+    },
+    "cts_difference_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Difference Cents"
+    },
+    "cts_method": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Method"
+    },
+    "cts_per_unit_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Per Unit A Cents"
+    },
+    "cts_per_unit_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cts Per Unit B Cents"
+    },
+    "customer_id_a": {
+     "title": "Customer Id A",
+     "type": "string"
+    },
+    "customer_id_b": {
+     "title": "Customer Id B",
+     "type": "string"
+    },
+    "data_coverage": {
+     "title": "Data Coverage",
+     "type": "string"
+    },
+    "deduction_bp_a": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Deduction Bp A"
+    },
+    "deduction_bp_b": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Deduction Bp B"
+    },
+    "item_id": {
+     "title": "Item Id",
+     "type": "string"
+    },
+    "meeting_competition_record": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Meeting Competition Record"
+    },
+    "net_difference_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Net Difference Pct"
+    },
+    "pair_basis": {
+     "title": "Pair Basis",
+     "type": "string"
+    },
+    "price_difference_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price Difference Pct"
+    },
+    "quantity_a": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quantity A"
+    },
+    "quantity_b": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quantity B"
+    },
+    "recommended_net_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Net A Cents"
+    },
+    "recommended_net_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Net B Cents"
+    },
+    "recommended_price_a_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Price A Cents"
+    },
+    "recommended_price_b_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Recommended Price B Cents"
+    },
+    "reviewer_decision": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Reviewer Decision"
+    }
+   },
+   "required": [
+    "item_id",
+    "customer_id_a",
+    "customer_id_b",
+    "pair_basis",
+    "recommended_price_a_cents",
+    "recommended_price_b_cents",
+    "recommended_net_a_cents",
+    "recommended_net_b_cents",
+    "price_difference_pct",
+    "net_difference_pct",
+    "quantity_a",
+    "quantity_b",
+    "channel_a",
+    "channel_b",
+    "deduction_bp_a",
+    "deduction_bp_b",
+    "cts_per_unit_a_cents",
+    "cts_per_unit_b_cents",
+    "cts_difference_cents",
+    "cts_method",
+    "data_coverage",
+    "meeting_competition_record",
+    "reviewer_decision"
+   ],
+   "title": "CompliancePair",
+   "type": "object"
+  },
+  "ComplianceSection": {
+   "properties": {
+    "n_screened": {
+     "title": "N Screened",
+     "type": "integer"
+    },
+    "n_unscreened": {
+     "title": "N Unscreened",
+     "type": "integer"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "pairs": {
+     "items": {
+      "$ref": "#/$defs/CompliancePair"
+     },
+     "title": "Pairs",
+     "type": "array"
+    },
+    "screen_attributes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Screen Attributes",
+     "type": "array"
+    }
+   },
+   "required": [
+    "screen_attributes",
+    "n_screened",
+    "n_unscreened",
+    "pairs",
+    "notes"
+   ],
+   "title": "ComplianceSection",
+   "type": "object"
+  },
   "CrossPriceEstimate": {
    "properties": {
+    "conditional_effective_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Conditional Effective F"
+    },
     "cross_elasticity": {
      "anyOf": [
       {
@@ -757,6 +1187,11 @@
      ],
      "title": "Cross Se"
     },
+    "first_stage_detail": {
+     "default": "",
+     "title": "First Stage Detail",
+     "type": "string"
+    },
     "group_id": {
      "title": "Group Id",
      "type": "string"
@@ -768,6 +1203,42 @@
     "item_b": {
      "title": "Item B",
      "type": "string"
+    },
+    "marginal_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Marginal First Stage F"
+    },
+    "n_absorbed_parameters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Absorbed Parameters"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
     },
     "n_obs": {
      "title": "N Obs",
@@ -966,6 +1437,179 @@
     "orders"
    ],
    "title": "EconomicsSection",
+   "type": "object"
+  },
+  "EventStudyCoefficient": {
+   "properties": {
+    "ci_high_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci High Pct"
+    },
+    "ci_low_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ci Low Pct"
+    },
+    "coefficient_pct": {
+     "title": "Coefficient Pct",
+     "type": "number"
+    },
+    "event_time": {
+     "title": "Event Time",
+     "type": "integer"
+    },
+    "n_treated_pairs": {
+     "title": "N Treated Pairs",
+     "type": "integer"
+    },
+    "period": {
+     "title": "Period",
+     "type": "string"
+    },
+    "se_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Se Pct"
+    }
+   },
+   "required": [
+    "event_time",
+    "coefficient_pct",
+    "se_pct",
+    "ci_low_pct",
+    "ci_high_pct",
+    "n_treated_pairs",
+    "period"
+   ],
+   "title": "EventStudyCoefficient",
+   "type": "object"
+  },
+  "EventStudySection": {
+   "description": "The pooled estimate, separate from the per-action control-adjusted\nchanges because it rests on assumptions they do not (Run 6, Phase 75).",
+   "properties": {
+    "att_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Ci High"
+    },
+    "att_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Ci Low"
+    },
+    "att_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Pct"
+    },
+    "att_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Att Se"
+    },
+    "coefficients": {
+     "items": {
+      "$ref": "#/$defs/EventStudyCoefficient"
+     },
+     "title": "Coefficients",
+     "type": "array"
+    },
+    "estimand": {
+     "title": "Estimand",
+     "type": "string"
+    },
+    "n_cohorts": {
+     "title": "N Cohorts",
+     "type": "integer"
+    },
+    "n_control_pairs": {
+     "title": "N Control Pairs",
+     "type": "integer"
+    },
+    "n_rows": {
+     "title": "N Rows",
+     "type": "integer"
+    },
+    "n_treated_pairs": {
+     "title": "N Treated Pairs",
+     "type": "integer"
+    },
+    "pretrend_detail": {
+     "title": "Pretrend Detail",
+     "type": "string"
+    },
+    "pretrend_status": {
+     "title": "Pretrend Status",
+     "type": "string"
+    },
+    "reason": {
+     "title": "Reason",
+     "type": "string"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "status",
+    "reason",
+    "estimand",
+    "pretrend_status",
+    "pretrend_detail",
+    "n_treated_pairs",
+    "n_control_pairs",
+    "n_cohorts",
+    "n_rows"
+   ],
+   "title": "EventStudySection",
    "type": "object"
   },
   "GroupWaterfall": {
@@ -1345,6 +1989,16 @@
      "title": "Cleaning Decisions",
      "type": "object"
     },
+    "config_fingerprint": {
+     "default": "",
+     "title": "Config Fingerprint",
+     "type": "string"
+    },
+    "engine_version": {
+     "default": "",
+     "title": "Engine Version",
+     "type": "string"
+    },
     "input_files": {
      "items": {
       "additionalProperties": {
@@ -1355,8 +2009,18 @@
      "title": "Input Files",
      "type": "array"
     },
+    "input_fingerprint": {
+     "default": "",
+     "title": "Input Fingerprint",
+     "type": "string"
+    },
     "mapping_sha256": {
      "title": "Mapping Sha256",
+     "type": "string"
+    },
+    "model_fingerprint": {
+     "default": "",
+     "title": "Model Fingerprint",
      "type": "string"
     },
     "note_on_volatile_fields": {
@@ -1417,6 +2081,11 @@
      "default": null,
      "title": "Customer Name"
     },
+    "deduction_treatment": {
+     "default": "flat_rate_exact",
+     "title": "Deduction Treatment",
+     "type": "string"
+    },
     "evidence_status": {
      "anyOf": [
       {
@@ -1438,6 +2107,18 @@
       }
      ],
      "title": "Expected Contribution Change Cents"
+    },
+    "expected_pocket_gross_profit_change_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Expected Pocket Gross Profit Change Cents"
     },
     "explanation": {
      "title": "Explanation",
@@ -1525,6 +2206,11 @@
   },
   "OpportunitySection": {
    "properties": {
+    "expected_gp_total_cents": {
+     "default": 0,
+     "title": "Expected Gp Total Cents",
+     "type": "integer"
+    },
     "expected_total_cents": {
      "title": "Expected Total Cents",
      "type": "integer"
@@ -1576,6 +2262,11 @@
     },
     "never_summed_note": {
      "title": "Never Summed Note",
+     "type": "string"
+    },
+    "optimizer_objective": {
+     "default": "pocket_gross_profit",
+     "title": "Optimizer Objective",
      "type": "string"
     },
     "top_opportunities": {
@@ -1653,6 +2344,17 @@
      ],
      "title": "Inventory Absent Reason"
     },
+    "quote_intake": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/QuoteIntake"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "win_curves": {
      "anyOf": [
       {
@@ -1728,6 +2430,48 @@
    "title": "OrderEconomicsSummary",
    "type": "object"
   },
+  "OverlapGroup": {
+   "description": "Overlapping action scopes (Run 6, Phase 68): the naive sum is shown\nonly to make double counting visible; the portfolio estimate is the joint\nfigure under one baseline and is NEVER added to the single-action lists.",
+   "properties": {
+    "action_ids": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Action Ids",
+     "type": "array"
+    },
+    "n_actions": {
+     "title": "N Actions",
+     "type": "integer"
+    },
+    "naive_sum_cents": {
+     "title": "Naive Sum Cents",
+     "type": "integer"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "overlap_group": {
+     "title": "Overlap Group",
+     "type": "string"
+    },
+    "portfolio_estimate_cents": {
+     "title": "Portfolio Estimate Cents",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "overlap_group",
+    "n_actions",
+    "action_ids",
+    "naive_sum_cents",
+    "portfolio_estimate_cents",
+    "note"
+   ],
+   "title": "OverlapGroup",
+   "type": "object"
+  },
   "PeerGroupStat": {
    "properties": {
     "iqr": {
@@ -1779,6 +2523,64 @@
     "n_commercial_outlier_flags"
    ],
    "title": "PeerGroupStat",
+   "type": "object"
+  },
+  "QuoteExclusion": {
+   "properties": {
+    "n": {
+     "title": "N",
+     "type": "integer"
+    },
+    "reason": {
+     "title": "Reason",
+     "type": "string"
+    }
+   },
+   "required": [
+    "reason",
+    "n"
+   ],
+   "title": "QuoteExclusion",
+   "type": "object"
+  },
+  "QuoteIntake": {
+   "description": "Run 6, Phase 77: every quote row, and where it went.",
+   "properties": {
+    "excluded": {
+     "items": {
+      "$ref": "#/$defs/QuoteExclusion"
+     },
+     "title": "Excluded",
+     "type": "array"
+    },
+    "n_modeled": {
+     "title": "N Modeled",
+     "type": "integer"
+    },
+    "n_rows": {
+     "title": "N Rows",
+     "type": "integer"
+    },
+    "notes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "unit": {
+     "title": "Unit",
+     "type": "string"
+    }
+   },
+   "required": [
+    "n_rows",
+    "unit",
+    "n_modeled",
+    "excluded",
+    "notes"
+   ],
+   "title": "QuoteIntake",
    "type": "object"
   },
   "ReconciliationCheck": {
@@ -1876,6 +2678,59 @@
     "where_listed"
    ],
    "title": "Residual",
+   "type": "object"
+  },
+  "ResultsBreakdownRow": {
+   "description": "Measured results split by wave, segment, action type, evidence and how\nfaithfully the price actually moved (Run 6, Phase 75). One pooled median\nhides where a number came from.",
+   "properties": {
+    "dimension": {
+     "title": "Dimension",
+     "type": "string"
+    },
+    "median_control_adjusted_volume_ratio": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Control Adjusted Volume Ratio"
+    },
+    "median_realization_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Median Realization Pct"
+    },
+    "n_measured": {
+     "title": "N Measured",
+     "type": "integer"
+    },
+    "n_stopped_buying": {
+     "title": "N Stopped Buying",
+     "type": "integer"
+    },
+    "value": {
+     "title": "Value",
+     "type": "string"
+    }
+   },
+   "required": [
+    "dimension",
+    "value",
+    "n_measured",
+    "n_stopped_buying",
+    "median_control_adjusted_volume_ratio",
+    "median_realization_pct"
+   ],
+   "title": "ResultsBreakdownRow",
    "type": "object"
   },
   "ScenarioGrid": {
@@ -1985,6 +2840,79 @@
     "contribution_effect_supported_everywhere"
    ],
    "title": "ScenarioGridPoint",
+   "type": "object"
+  },
+  "SegmentHoldout": {
+   "description": "Run 6, Phase 76: how the segmentation does on periods it never saw.",
+   "properties": {
+    "mae": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae"
+    },
+    "mae_baseline": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae Baseline"
+    },
+    "mae_without_same_period_features": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Mae Without Same Period Features"
+    },
+    "n_eval_pairs": {
+     "title": "N Eval Pairs",
+     "type": "integer"
+    },
+    "n_eval_periods": {
+     "title": "N Eval Periods",
+     "type": "integer"
+    },
+    "n_fit_periods": {
+     "title": "N Fit Periods",
+     "type": "integer"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "same_period_features": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Same Period Features",
+     "type": "array"
+    }
+   },
+   "required": [
+    "n_fit_periods",
+    "n_eval_periods",
+    "n_eval_pairs",
+    "mae",
+    "mae_baseline",
+    "mae_without_same_period_features",
+    "same_period_features",
+    "note"
+   ],
+   "title": "SegmentHoldout",
    "type": "object"
   },
   "SegmentIndexStats": {
@@ -2113,6 +3041,17 @@
      ],
      "title": "Bootstrap Median Ari"
     },
+    "holdout": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/SegmentHoldout"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
     "index_distribution": {
      "items": {
       "$ref": "#/$defs/SegmentIndexStats"
@@ -2129,6 +3068,14 @@
       "$ref": "#/$defs/SegmentRule"
      },
      "title": "Margin Driver Rules",
+     "type": "array"
+    },
+    "notes": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Notes",
      "type": "array"
     },
     "recommendation_change_share": {
@@ -2163,6 +3110,30 @@
   },
   "SensitivitySegment": {
    "properties": {
+    "analytic_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Analytic Ci High"
+    },
+    "analytic_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Analytic Ci Low"
+    },
     "ar_bounded": {
      "anyOf": [
       {
@@ -2197,6 +3168,90 @@
      ],
      "title": "Ar Ci Low"
     },
+    "ar_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Detail"
+    },
+    "ar_display_reliable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Display Reliable"
+    },
+    "ar_hull_hi": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Hull Hi"
+    },
+    "ar_hull_lo": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Hull Lo"
+    },
+    "ar_measure": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Measure"
+    },
+    "ar_n_components": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar N Components"
+    },
+    "ar_shape": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ar Shape"
+    },
     "carried_forward_share": {
      "anyOf": [
       {
@@ -2209,6 +3264,133 @@
      "default": null,
      "title": "Carried Forward Share"
     },
+    "causal_gates": {
+     "items": {
+      "$ref": "#/$defs/CausalGate"
+     },
+     "title": "Causal Gates",
+     "type": "array"
+    },
+    "cluster_level_used": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Cluster Level Used"
+    },
+    "cluster_variation_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Cluster Variation Detail"
+    },
+    "competitor_path_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Competitor Path Detail"
+    },
+    "competitor_path_resolution": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Competitor Path Resolution"
+    },
+    "effective_clusters": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective Clusters"
+    },
+    "effective_f_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective F Detail"
+    },
+    "effective_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective First Stage F"
+    },
+    "effective_k": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effective K"
+    },
+    "estimand": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Estimand"
+    },
+    "estimand_bias_direction": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Estimand Bias Direction"
+    },
     "first_stage_f": {
      "anyOf": [
       {
@@ -2220,6 +3402,18 @@
      ],
      "title": "First Stage F"
     },
+    "first_stage_f_uncontrolled": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "First Stage F Uncontrolled"
+    },
     "identifying_coverage": {
      "anyOf": [
       {
@@ -2230,6 +3424,18 @@
       }
      ],
      "title": "Identifying Coverage"
+    },
+    "imputed_price_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Imputed Price Share"
     },
     "iv": {
      "anyOf": [
@@ -2264,6 +3470,222 @@
      ],
      "title": "Iv Ci Low"
     },
+    "iv_ppml": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml"
+    },
+    "iv_ppml_first_stage_f": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml First Stage F"
+    },
+    "iv_ppml_inference": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Inference"
+    },
+    "iv_ppml_n_rows": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml N Rows"
+    },
+    "iv_ppml_range_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Range High"
+    },
+    "iv_ppml_range_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Range Low"
+    },
+    "iv_ppml_reasons": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Reasons"
+    },
+    "iv_ppml_rows_dropped": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Rows Dropped"
+    },
+    "iv_ppml_sample_losses": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Sample Losses"
+    },
+    "iv_ppml_se_analytic": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Se Analytic"
+    },
+    "iv_ppml_se_bootstrap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Se Bootstrap"
+    },
+    "iv_ppml_spj": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj"
+    },
+    "iv_ppml_spj_bias": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj Bias"
+    },
+    "iv_ppml_spj_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Spj Detail"
+    },
+    "iv_ppml_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Status"
+    },
+    "iv_ppml_units_dropped": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Units Dropped"
+    },
+    "iv_ppml_zero_row_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Zero Row Detail"
+    },
+    "iv_ppml_zero_row_gap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Iv Ppml Zero Row Gap"
+    },
     "iv_se": {
      "anyOf": [
       {
@@ -2275,10 +3697,226 @@
      ],
      "title": "Iv Se"
     },
+    "lead_test_bound": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Bound"
+    },
+    "lead_test_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Detail"
+    },
+    "lead_test_horizon": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Horizon"
+    },
+    "lead_test_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test P"
+    },
+    "lead_test_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Lead Test Status"
+    },
+    "market_control_coverage": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Coverage"
+    },
+    "market_control_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Detail"
+    },
+    "market_control_instrument_r2": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Instrument R2"
+    },
+    "market_control_lag_periods": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Lag Periods"
+    },
+    "market_control_price_r2": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Price R2"
+    },
+    "market_control_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Status"
+    },
     "market_control_used": {
      "default": false,
      "title": "Market Control Used",
      "type": "boolean"
+    },
+    "market_control_within_cell_values": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Market Control Within Cell Values"
+    },
+    "max_cluster_variation_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Cluster Variation Share"
+    },
+    "n_absorbed_parameters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Absorbed Parameters"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
+    },
+    "n_clusters_by_dimension": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters By Dimension"
+    },
+    "n_clusters_with_instrument_variation": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters With Instrument Variation"
+    },
+    "n_identified_instruments": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Identified Instruments"
     },
     "n_obs": {
      "title": "N Obs",
@@ -2318,6 +3956,30 @@
      "title": "Naive Vs Iv Note",
      "type": "string"
     },
+    "observed_log_hi": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Observed Log Hi"
+    },
+    "observed_log_lo": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Observed Log Lo"
+    },
     "overid_j": {
      "anyOf": [
       {
@@ -2339,6 +4001,47 @@
       }
      ],
      "title": "Overid P"
+    },
+    "placebo_actual_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Actual P"
+    },
+    "placebo_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Detail"
+    },
+    "placebo_share_significant": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Placebo Share Significant"
+    },
+    "placebo_status": {
+     "default": "placebo_not_run",
+     "title": "Placebo Status",
+     "type": "string"
     },
     "ppml": {
      "anyOf": [
@@ -2367,6 +4070,54 @@
      "title": "Price Cv Within",
      "type": "number"
     },
+    "price_source_mix": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Price Source Mix"
+    },
+    "primary_interval_basis": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Primary Interval Basis"
+    },
+    "robustness_excluded_weak": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Robustness Excluded Weak"
+    },
+    "robustness_n_specifications": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Robustness N Specifications"
+    },
     "robustness_spread": {
      "anyOf": [
       {
@@ -2382,6 +4133,30 @@
      "title": "Segment",
      "type": "integer"
     },
+    "small_cluster_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Small Cluster Detail"
+    },
+    "small_cluster_method_used": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Small Cluster Method Used"
+    },
     "status": {
      "title": "Status",
      "type": "string"
@@ -2389,6 +4164,18 @@
     "status_reasons": {
      "title": "Status Reasons",
      "type": "string"
+    },
+    "support_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Detail"
     },
     "support_log_hi": {
      "anyOf": [
@@ -2413,6 +4200,102 @@
      ],
      "default": null,
      "title": "Support Log Lo"
+    },
+    "support_min_observations": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Min Observations"
+    },
+    "support_n": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support N"
+    },
+    "support_n_regions": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support N Regions"
+    },
+    "support_regions": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Regions"
+    },
+    "support_window": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Support Window"
+    },
+    "wild_bootstrap_reps_used": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Bootstrap Reps Used"
+    },
+    "wild_ci_high": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Ci High"
+    },
+    "wild_ci_low": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Wild Ci Low"
     }
    },
    "required": [
@@ -2482,6 +4365,12 @@
      "title": "N Sales Observations",
      "type": "integer"
     },
+    "n_visible_residuals": {
+     "default": 0,
+     "description": "Nonzero reconciliation residuals kept visible",
+     "title": "N Visible Residuals",
+     "type": "integer"
+    },
     "net_revenue_cents": {
      "description": "Gross sales plus returns - matches economics",
      "title": "Net Revenue Cents",
@@ -2517,6 +4406,12 @@
     "returns_cents": {
      "description": "Linked return lines (negative)",
      "title": "Returns Cents",
+     "type": "integer"
+    },
+    "visible_residual_cents": {
+     "default": 0,
+     "description": "Sum of absolute visible residual amounts",
+     "title": "Visible Residual Cents",
      "type": "integer"
     },
     "window_label": {
@@ -2639,6 +4534,59 @@
   },
   "WinCurve": {
    "properties": {
+    "auc": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Auc"
+    },
+    "brier": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Brier"
+    },
+    "calibration_intercept": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Calibration Intercept"
+    },
+    "calibration_slope": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Calibration Slope"
+    },
+    "calibration_status": {
+     "default": "not testable",
+     "title": "Calibration Status",
+     "type": "string"
+    },
     "ci_high": {
      "anyOf": [
       {
@@ -2661,8 +4609,45 @@
      ],
      "title": "Ci Low"
     },
+    "cluster_level": {
+     "default": "none",
+     "title": "Cluster Level",
+     "type": "string"
+    },
+    "controls": {
+     "default": "",
+     "title": "Controls",
+     "type": "string"
+    },
+    "holdout_n": {
+     "default": 0,
+     "title": "Holdout N",
+     "type": "integer"
+    },
+    "n_clusters": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "N Clusters"
+    },
+    "n_lost": {
+     "default": 0,
+     "title": "N Lost",
+     "type": "integer"
+    },
     "n_quotes": {
      "title": "N Quotes",
+     "type": "integer"
+    },
+    "n_won": {
+     "default": 0,
+     "title": "N Won",
      "type": "integer"
     },
     "negotiation_gap": {
@@ -2745,6 +4730,17 @@
   "bundle_version": {
    "title": "Bundle Version",
    "type": "string"
+  },
+  "compliance": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/ComplianceSection"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
   },
   "data_label": {
    "title": "Data Label",

@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -73,6 +73,16 @@ class TransactionsConfig(StrictModel):
     price_credit_reasons: tuple[str, ...] = ("price_correction", "customer_rebate")
     # Reasons routed to cost categories instead of revenue.
     cost_credit_reasons: tuple[str, ...] = ("damage", "shortage", "quality", "warranty")
+    # Reasons whose counterparty is the SUPPLIER (Run 6, Phase 61): recoveries
+    # for supplier-caused damage and similar claims. They never touch customer
+    # revenue; their dollars land in cost-to-serve with the supplier named as
+    # the counterparty in the economic-event taxonomy.
+    supplier_claim_reasons: tuple[str, ...] = ()
+    # Economic-event classification of billed order charges by charge code
+    # (Run 6, Phase 61), e.g. {"FRT": "freight_pass_through"}. Codes not listed
+    # stay `other_adjustment` with a stated note - the engine never guesses
+    # what a charge code means.
+    charge_event_types: dict[str, str] = Field(default_factory=dict)
     zero_quantity_treatment: Literal["exclude_and_flag"] = "exclude_and_flag"
 
 
@@ -122,6 +132,21 @@ class ReturnsConfig(StrictModel):
             ),
         }
     )
+    # Return disposition -> whether product cost is recovered (Run 6, Phase
+    # 63). Resaleable and exchange returns put the product back (recovered,
+    # the historical behavior and the default for unknown or absent
+    # dispositions - stated in the run notes); damaged, obsolete and
+    # not-received returns recover nothing, so the loss stays in cost of
+    # goods sold.
+    disposition_cost_recovery: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "resaleable": True,
+            "exchange": True,
+            "damaged": False,
+            "obsolete": False,
+            "not_received": False,
+        }
+    )
     # Handling cost estimates applied to every return line (labeled estimated).
     default_handling_cost_per_return_cents: int = Field(default=1500, ge=0)
     default_handling_cost_per_unit_cents: int = Field(default=50, ge=0)
@@ -169,9 +194,32 @@ class CostToServeConfig(StrictModel):
     per_line_cents: int = Field(default=150, ge=0)
     per_delivery_cents: int = Field(default=900, ge=0)
     special_handling_per_unit_cents: int = Field(default=0, ge=0)
+    # Cost pools (Run 6, Phase 63): every activity rate belongs to exactly one
+    # named pool, and a pool covered by an ACTUAL expense source must never
+    # also be estimated by a rate. The engine resolves the default overlap -
+    # the per-delivery rate proxies outbound freight, so it switches OFF
+    # whenever an actual freight log exists (stated in the run notes); any
+    # OTHER rate assigned to an actually-covered pool fails the run.
+    activity_pools: dict[str, str] = Field(
+        default_factory=lambda: {
+            "per_order": "order_service",
+            "per_line": "line_service",
+            "per_delivery": "outbound_freight",
+            "special_handling": "special_handling",
+        }
+    )
     # Service-policy flag thresholds (separate from pricing opportunities).
     min_order_value_cents: int = Field(default=50_000, ge=0)
     max_orders_per_month: float = Field(default=6.0, gt=0)
+
+    @model_validator(mode="after")
+    def _pools_cover_known_rates(self) -> CostToServeConfig:
+        known = {"per_order", "per_line", "per_delivery", "special_handling"}
+        bad = set(self.activity_pools) - known
+        if bad:
+            msg = f"cost_to_serve.activity_pools names unknown rates {sorted(bad)}; known: {sorted(known)}"
+            raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +291,71 @@ class TreeConfig(StrictModel):
     min_leaf_items: int = Field(default=10, ge=1)
 
 
+class FeatureLineage(StrictModel):
+    """Lineage metadata for one segmentation feature (Run 6, 60.4): where it
+    comes from, how it is computed, over what window, and whether that window
+    overlaps the outcome period. The leakage guard reads this metadata (not
+    only name heuristics), so a feature built from outcome-period dollars is
+    visible as such even when its name says nothing about price."""
+
+    source_columns: tuple[str, ...]
+    formula: str
+    reference_window: str
+    uses_outcome_period_data: bool
+    # Run 6, Phase 76. The guard keys on THIS, not on the flag above: what
+    # breaks a tree fit on the price index is a feature built from the
+    # realized price of the period being explained. Contemporaneous but
+    # price-free context (order size in units) is a weaker concern - it is
+    # reported, not refused.
+    embeds_realized_price: bool = False
+
+
+def _default_feature_lineage() -> dict[str, FeatureLineage]:
+    static_customer = FeatureLineage(
+        source_columns=("customers.*",),
+        formula="customer master attribute, as mapped",
+        reference_window="static attribute (not derived from transactions)",
+        uses_outcome_period_data=False,
+    )
+    static_item = FeatureLineage(
+        source_columns=("items.*",),
+        formula="item master attribute, as mapped",
+        reference_window="static attribute (not derived from transactions)",
+        uses_outcome_period_data=False,
+    )
+    return {
+        "industry": static_customer,
+        "size_band": static_customer,
+        "region": static_customer,
+        "channel": static_customer,
+        "contract_type": static_customer,
+        "item_family": static_item,
+        "item_role": static_item,
+        "order_size_band": FeatureLineage(
+            source_columns=("quantity_norm", "order_id"),
+            formula="terciles of order quantity in normalized units",
+            reference_window="fitting sample (same period as the target)",
+            # Same period as the target, so it is reported as such - but since
+            # Phase 76 the bands are cut on quantity, not order net value, so
+            # no realized price enters the feature.
+            uses_outcome_period_data=True,
+            embeds_realized_price=False,
+        ),
+        "abc_class": FeatureLineage(
+            source_columns=("net_amount_cents", "quantity_norm", "order_id", "item_id"),
+            formula=(
+                "A/B/C cumulative-share classes per item, cut on the configured "
+                "basis (abc_feature_basis) over a window that ends before the "
+                "line's own period; items with no history in that window are "
+                "unrated"
+            ),
+            reference_window="the abc_feature_lag_periods periods before each line's period",
+            uses_outcome_period_data=False,
+            embeds_realized_price=False,
+        ),
+    }
+
+
 class SegmentationConfig(StrictModel):
     # Commercial segments: context features only — leakage guard.
     commercial_tree: TreeConfig = TreeConfig(max_depth=5)
@@ -256,7 +369,7 @@ class SegmentationConfig(StrictModel):
         "item_family",
         "item_role",
         "order_size_band",
-        "revenue_abc",
+        "abc_class",
     )
     # Columns that must never appear in commercial-segment features.
     forbidden_commercial_features: tuple[str, ...] = (
@@ -266,6 +379,24 @@ class SegmentationConfig(StrictModel):
         "rebate",
         "margin",
     )
+    # Lineage metadata per feature (Run 6, 60.4): every context feature must
+    # declare where it comes from and whether it uses outcome-period data.
+    feature_lineage: dict[str, FeatureLineage] = Field(default_factory=_default_feature_lineage)
+    # ABC as a SEGMENTATION FEATURE (Run 6, Phase 76). The reported ABC table
+    # is unchanged; this is the lagged class the commercial tree may see.
+    # "revenue" keeps the familiar business meaning, "units" and "orders" drop
+    # price from the basis entirely.
+    abc_feature_basis: Literal["revenue", "units", "orders"] = "revenue"
+    # How many periods of history the class is cut on. The window ENDS the
+    # period before each line, so a line's own month never contributes.
+    abc_feature_lag_periods: int = Field(default=6, ge=1)
+    # Out-of-fold target encoding while the tree is grown (Run 6, Phase 76):
+    # an in-sample encoding hands a high-cardinality category the leaf mean it
+    # is about to be scored against.
+    target_encoding_folds: int = Field(default=5, ge=2)
+    # Share of PERIODS (earliest first) used to fit the time-based holdout
+    # evaluation; the rest are held out.
+    holdout_fit_period_share: float = Field(default=0.75, gt=0, lt=1)
     bootstrap_resamples: int = Field(default=30, ge=2)
     # Cells whose mean normalized price index differs by less than this are not
     # commercially distinct and are consolidated into one segment.
@@ -273,6 +404,19 @@ class SegmentationConfig(StrictModel):
     # ABC splits by cumulative share: A = top 80%, B = next 15%, C = last 5%.
     abc_a_share: float = 0.80
     abc_b_share: float = 0.15
+
+    @model_validator(mode="after")
+    def _lineage_covers_context_features(self) -> SegmentationConfig:
+        missing = [f for f in self.context_features if f not in self.feature_lineage]
+        if missing:
+            msg = (
+                f"segmentation: context features {missing} have no feature_lineage "
+                "entry (Run 6, 60.4). Every segmentation feature must declare its "
+                "source columns, formula, reference window and whether it uses "
+                "outcome-period data."
+            )
+            raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +457,29 @@ class PriceGuidanceConfig(StrictModel):
     # below the margin by a fraction of a cent.
     floor_rounding: Literal["ceiling", "half_even"] = "ceiling"
     min_band_observations: int = Field(default=10, ge=1)
+    # Band independence (Run 6, Phase 67 / Finding 10): observations are
+    # already independent units (one median per customer x item x month), and
+    # a band additionally needs this many DISTINCT customers - a band built
+    # from one customer's history is that customer's history, not a market
+    # reference. Distinct customers, pairs, months and list regimes are
+    # reported per band either way.
+    min_band_customers: int = Field(default=5, ge=1)
+    # Contribution-floor scope (Run 6, Phase 67): when min_contribution_margin
+    # is set, apply it only to these item roles / channels (empty = all).
+    # Order-type scoping would need an order-level floor, which does not exist
+    # at pair grain - stated in the methodology as a limitation.
+    contribution_floor_item_roles: tuple[str, ...] = ()
+    contribution_floor_channels: tuple[str, ...] = ()
+    # Roles whose below-floor prices are EXPLICITLY AUTHORIZED policy (loss
+    # leaders, strategic key-value items, end-of-life clearances): their
+    # below-floor statuses stay visible, but fix actions generate BLOCKED with
+    # the authorization shown - a policy override exists only here, never
+    # implicitly.
+    authorized_below_floor_roles: tuple[str, ...] = ()
+    # ERP price precision (Run 6, Phase 67): optimized and proposed prices are
+    # rounded to this increment (cents); 1 = no constraint. Rounding never
+    # goes below the binding floor.
+    price_increment_cents: int = Field(default=1, ge=1)
     # Floor-index comparisons (floor / list vs realized index) require a valid
     # list price. A list in force but older than this many months at the pair's
     # last sale is STALE: the pair keeps dollar floors but gets no floor-index
@@ -333,6 +500,43 @@ class PriceGuidanceConfig(StrictModel):
 # ---------------------------------------------------------------------------
 
 
+class InstrumentPath(StrictModel):
+    """One plausible path from the instrument to quantity other than through
+    the endogenous price (Run 6, 60.4): the channel (availability, lead times,
+    supplier changes, competitor prices, expectations, substitution, ...) and
+    how the analysis addresses it (a control, an argument for why it is
+    absent, or an honest statement that it is unresolved)."""
+
+    channel: str
+    treatment: str
+    # Machine-readable half of `treatment` (Run 6, Phase 70). The causal gate
+    # reads this for the competitor_prices channel. Defaults to `unresolved`
+    # so omitting documentation can never be rewarded, and `no_path` requires
+    # a written treatment to count (enforced by the resolver).
+    resolved_by: Literal["market_price_control", "fixed_effects", "no_path", "unresolved"] = (
+        "unresolved"
+    )
+    # The grain at which THIS CHANNEL operates (Run 6, Phase 70), e.g.
+    # "item_category:month" when the competitor-price condition a customer
+    # faces is the market price for the item class rather than the supplier's
+    # own. A control must be at least as fine as the CHANNEL's grain, not the
+    # instrument's: an instrument can vary more finely than the confound it
+    # travels through. Unset falls back to the instrument's own variation,
+    # which is the conservative reading.
+    channel_grain: str | None = None
+
+    @model_validator(mode="after")
+    def _no_path_needs_an_argument(self) -> InstrumentPath:
+        if self.resolved_by == "no_path" and not self.treatment.strip():
+            msg = (
+                f"instrument path '{self.channel}' declares resolved_by: no_path but "
+                "gives no treatment text. Claiming a channel does not exist requires "
+                "a written argument - a one-word switch must not lift a causal gate."
+            )
+            raise ValueError(msg)
+        return self
+
+
 class InstrumentConfig(StrictModel):
     name: str
     column: str
@@ -340,6 +544,11 @@ class InstrumentConfig(StrictModel):
     # Required for causal_elasticity_supported: a documented economic argument
     # for why the instrument is excludable. No rationale, no top status.
     exclusion_rationale: str | None = None
+    # Plausible non-price paths to quantity and how each is addressed (Run 6,
+    # 60.4). The causal gate reads the competitor-price path (Phase 70): an
+    # instrument with no documented treatment of that path cannot support the
+    # top status without a market-price control.
+    paths_to_quantity: tuple[InstrumentPath, ...] = ()
 
 
 class SensitivityConfig(StrictModel):
@@ -352,18 +561,147 @@ class SensitivityConfig(StrictModel):
     robustness_max_spread: float = Field(default=0.20, gt=0)
     max_ci_width: float = Field(default=1.0, gt=0)
     overid_alpha: float = Field(default=0.05, gt=0, lt=1)
-    # Cluster level for IV inference. "supplier_month" is where the cost
-    # instrument varies (spec default); "month" is coarser and also absorbs
-    # customer-month demand-shock correlation across suppliers — use it when
-    # residuals are correlated across items a customer buys in the same month.
-    # "month_customer" clusters two-way (month and customer), for customer
-    # demand shocks that persist over time (Run 4, 24.5). The shipped default
-    # in rules.yaml is chosen by the persistent-demand coverage study recorded
-    # in validation.json, not here.
-    cluster_level: Literal["supplier_month", "month", "month_customer"] = "supplier_month"
+    # Cluster level for IV inference.
+    #
+    # Instrument-ASSIGNMENT levels (Run 6, Phase 73): "supplier" and "category"
+    # are the units the two instruments are assigned to, so all of a unit's
+    # variation over time sits inside one cluster. "supplier_month" and
+    # "category_month" are the finer assignment-x-period cells; they are only
+    # adequate when the shocks are serially INDEPENDENT within the unit, which
+    # neither simulated nor real input-cost series usually are.
+    #
+    # Outcome-correlation levels: "month" absorbs customer-month demand-shock
+    # correlation across suppliers; "month_customer" clusters two-way (month
+    # and customer) for customer demand shocks that persist over time
+    # (Run 4, 24.5).
+    #
+    # The shipped default in rules.yaml is chosen by the coverage studies
+    # recorded in validation.json, not here.
+    cluster_level: Literal[
+        "supplier",
+        "supplier_month",
+        "category",
+        "category_month",
+        "month",
+        "month_customer",
+    ] = "supplier_month"
+    # Small-cluster policy (Run 6, Phase 73). Clustering at the level the
+    # instrument is assigned to buys correctness at the price of cluster
+    # count: a world with twelve suppliers has twelve clusters, where the
+    # cluster-robust t interval is badly undersized however many ROWS it has.
+    #
+    # The threshold is read against the EFFECTIVE cluster count - clusters
+    # weighted by the identifying variation each carries - because a cluster
+    # whose instrument never moves tells the coefficient nothing however many
+    # rows it holds. At or above it the analytic interval is used as before.
+    # Below it, `small_cluster_method` decides:
+    #   wild_bootstrap  a wild cluster bootstrap-t interval replaces the
+    #                   analytic one for reporting AND for the precision gate
+    #   fail_closed     no instrumented status at all below the threshold
+    # Either way the count and the method are reported.
+    # Identification support (Run 6, Phase 74). The outer bounds are these
+    # quantiles of the instrument-predicted within log-price movement. Inside
+    # them support is not assumed uniform: a proposed move must have at least
+    # `min_support_observations` of those movements within
+    # `price_support_window` log units of it, so a move landing in a gap
+    # between two clusters of movement is refused like one beyond the bounds.
+    price_support_lo_quantile: float = Field(default=0.05, gt=0, lt=1)
+    price_support_hi_quantile: float = Field(default=0.95, gt=0, lt=1)
+    price_support_window: float = Field(default=0.02, gt=0)
+    min_support_observations: int = Field(default=30, ge=1)
+    min_assignment_clusters: int = Field(default=15, ge=2)
+    small_cluster_method: Literal["wild_bootstrap", "fail_closed"] = "wild_bootstrap"
+    # Below this many RAW clusters the bootstrap stops being a remedy and the
+    # estimator fails closed whatever `small_cluster_method` says. 8 is the
+    # lowest count at which the symmetric wild bootstrap-t was measured to
+    # improve on the analytic interval rather than add noise (the measurements
+    # are in docs/build-log.md, Phase 73). Below about six it also runs out of
+    # distinct Rademacher weightings - 2^G of them - but the accuracy gives
+    # out first, so that is not what the threshold is set by.
+    min_bootstrap_clusters: int = Field(default=8, ge=2)
+    wild_bootstrap_reps: int = Field(default=999, ge=99)
     # causal_elasticity_supported additionally requires the Anderson-Rubin set
     # to be bounded and no wider than this multiple of the primary CI (24.7).
     ar_max_width_ratio: float = Field(default=1.5, gt=0)
+    # Market/competitor price control adequacy (Run 6, Phase 70). There is
+    # deliberately NO switch to disable the competitor-price gate: the only
+    # routes to the top status are an adequate control or an instrument whose
+    # competitor-price path is documented as absent with a written argument.
+    # Share of a segment's estimation rows the index must cover.
+    market_control_min_coverage: float = Field(default=1.0, gt=0, le=1)
+    # How many periods the index may stop short of the estimation window.
+    market_control_max_staleness_periods: int = Field(default=1, ge=0)
+    # RELEVANCE, not magnitude: the share of within-pair price movement the
+    # index must explain to count as evidence of a competitor-price condition.
+    # A control that explains nothing cannot hold anything constant - and a
+    # faithful control is EXPECTED to correlate with industry-wide cost
+    # instruments, so correlation is never itself disqualifying.
+    market_control_min_price_r2: float = Field(default=0.01, ge=0, le=1)
+    # Only NEAR-EXACT restatement of an instrument is refused: controlling for
+    # it would remove the identifying variation rather than a confound.
+    market_control_restatement_r2: float = Field(default=0.99, gt=0, le=1)
+    # Robust weak-instrument diagnostics (Run 6, Phase 71). The effective-F
+    # bar is the PUBLISHED Montiel Olea-Pflueger simplified critical value at
+    # the 10% worst-case-bias threshold; the classical F >= 10 above stays a
+    # REPORTED heuristic with no derived critical value for this variance
+    # structure. Only this bar gates.
+    min_effective_first_stage_f: float = Field(default=23.109, gt=0)
+    # Anticipation (lead) test: how many future periods to test, the level,
+    # and the coefficient magnitude treated as economically material. An
+    # interval that cannot exclude that magnitude is INCONCLUSIVE, because a
+    # non-rejection of a low-power test is not evidence of exogeneity.
+    # Default horizon 2: pre-buying ahead of an announced tariff typically
+    # runs two to three months, against which a single lead has little power.
+    lead_test_horizon: int = Field(default=2, ge=1)
+    lead_test_alpha: float = Field(default=0.05, gt=0, lt=1)
+    # In log-volume units per unit of the aggregate lead regressor, where one
+    # unit is one standard deviation of a single lead. The whole contemporaneous
+    # price channel is about 0.08 in those units on the demo world, so the old
+    # default of 0.50 was roughly six times the entire effect the instruments
+    # identify: it made the underpowered verdict unreachable and let a
+    # statistically significant but immaterial effect block the causal status.
+    lead_test_meaningful_effect: float = Field(default=0.05, gt=0)
+    # Minimum residual degrees of freedom for the anticipation test. Row count
+    # alone let saturated designs through, where the fixed effects absorb more
+    # parameters than there are rows.
+    lead_test_min_residual_dof: int = Field(default=30, ge=1)
+    # Total-quantity estimand (Run 6, Phase 72): an IV-Poisson control function
+    # on the panel including its zero rows. Reported beside the conditional
+    # estimate and never above it - the ladder has no causal tier - so this
+    # switch controls whether it is computed at all, not whether it may price.
+    iv_ppml_enabled: bool = True
+    # Above this share of imputed zero-row prices the estimand is reported as
+    # descriptive: the zero rows carry the entire extensive-margin signal, and
+    # an imputed price is not an observation of the price that produced it.
+    iv_ppml_max_imputed_share: float = Field(default=0.50, gt=0, le=1)
+    # Pair cluster bootstrap replicates for the total-quantity estimate's
+    # resampled interval. Zero means the analytic clustered standard error is
+    # the only one reported, and the estimate says so: a replicate refits the
+    # whole procedure, first stage included, which is the only way to carry the
+    # generated-regressor noise the analytic figure omits, and also the reason
+    # it costs roughly one point estimate each. Measured on the demo world at
+    # about one second per replicate per segment, so the shipped pipeline runs
+    # at zero and the validation studies raise it.
+    iv_ppml_bootstrap_reps: int = Field(default=0, ge=0, le=2000)
+    # Half-panel jackknife for the incidental-parameter bias IV-PPML with
+    # high-dimensional fixed effects carries at short T. Two extra fits, so it
+    # stays on by default; it is reported as a diagnostic, never adopted as the
+    # point estimate.
+    iv_ppml_split_panel_jackknife: bool = False
+    # Re-estimate the total-quantity response under alternative zero-row price
+    # and availability assumptions, and demote past the gap below. Two extra
+    # point fits per segment, no diagnostics on them.
+    iv_ppml_zero_row_robustness: bool = True
+    iv_ppml_max_zero_row_gap: float = Field(default=0.30, gt=0)
+    # Segments estimated concurrently. Each concurrent segment holds its own
+    # filtered panel, so this is a memory dial as much as a speed one, and the
+    # default comes from measurement rather than the core count. On a
+    # 400k-row demo panel with six segments: 1.16x at two workers, 1.23x at
+    # three (2.05 GB peak), 1.25x at four (2.13 GB). Three takes almost all
+    # the available gain and leaves margin for larger panels. The ceiling is
+    # load imbalance, not the worker count - segments run 21k to 154k rows,
+    # so the largest one is the critical path however many workers there are.
+    max_parallel_segments: int = Field(default=3, ge=1, le=32)
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)
@@ -400,6 +738,37 @@ class SensitivityConfig(StrictModel):
     # standard error (se / |coefficient|) is at or under this; noisier fits are
     # insufficient_precision -- reported with their CI, never accuracy-gated.
     win_curve_max_rel_se: float = Field(default=0.10, gt=0)
+    # --- quote intake (Run 6, Phase 77) -------------------------------------
+    # Which source outcome codes mean what. Only decided quotes - won or lost
+    # - can enter a win/loss model; an open quote has no outcome yet and a
+    # withdrawn one was never decided on price. Before Phase 77 anything that
+    # was not "W" counted as a loss, which turns an unfinished pipeline into
+    # evidence that the price was too high. A code in none of these lists is
+    # excluded as unrecognized and reported, never assumed to be a loss.
+    quote_outcome_won: tuple[str, ...] = ("W", "WON", "WIN", "ACCEPTED")
+    quote_outcome_lost: tuple[str, ...] = ("L", "LOST", "LOSS", "REJECTED")
+    quote_outcome_open: tuple[str, ...] = ("O", "OPEN", "PENDING", "QUOTED")
+    quote_outcome_withdrawn: tuple[str, ...] = ("X", "WITHDRAWN", "CANCELLED", "CANCELED")
+    quote_outcome_expired: tuple[str, ...] = ("E", "EXPIRED", "LAPSED")
+    # What one observation is. "auto" uses the opportunity (quote_id) when the
+    # mapping provides one and the line otherwise, and says which it used.
+    # Revisions of the same opportunity are one decision, not several, so only
+    # the latest version of each is modeled.
+    quote_unit: Literal["auto", "line", "opportunity"] = "auto"
+    # Covariates beyond the price index, used where the column exists.
+    win_curve_controls: tuple[str, ...] = ("time", "log_quantity")
+    # Standard errors cluster here. Quotes on one opportunity, to one customer
+    # or from one rep are not independent draws. "auto" takes the finest level
+    # the data supports (opportunity, then customer, then rep).
+    win_curve_cluster: Literal["auto", "quote", "customer", "rep", "none"] = "auto"
+    # The most recent share of quotes is held out to check whether the fitted
+    # probabilities are calibrated out of sample, not only precise in sample.
+    win_curve_holdout_share: float = Field(default=0.25, gt=0, lt=1)
+    win_curve_min_holdout: int = Field(default=100, ge=10)
+    # A holdout calibration slope outside this band means the curve's
+    # probabilities are the wrong shape, however tight its standard error:
+    # the status drops to insufficient_precision with that reason.
+    win_curve_calibration_band: tuple[float, float] = (0.5, 2.0)
     min_price_variation_cv: float = Field(default=0.01, ge=0)
 
 
@@ -415,6 +784,22 @@ class OpportunityConfig(StrictModel):
     # Expected contribution change only at causal_elasticity_supported;
     # iv_estimated shown as a labeled sensitivity range; else fixed-volume only.
     volume_response_requires: Literal["causal_elasticity_supported"] = "causal_elasticity_supported"
+    # Optimizer objective (Run 6, Phase 65): pocket gross profit
+    # (P(1-d) - F - C) or contribution (also subtracts per-unit cost-to-serve
+    # K, estimated from activity rates). Every optimizer output names its
+    # objective; a pair without a supported K keeps the provisional target
+    # under the contribution objective instead of borrowing a generic number.
+    optimizer_objective: Literal["pocket_gross_profit", "contribution"] = "pocket_gross_profit"
+    # How per-order and per-delivery costs respond to a volume change (Run 6,
+    # Phase 65 / Finding 8). fixed_order_frequency: customers keep their
+    # ordering cadence, so order quantities scale with volume and the TOTAL
+    # per-order cost is volume-constant - it drops out of marginal economics.
+    # fixed_order_size: order counts scale with volume, so per-order cost is
+    # marginal per unit. The contribution optimizer re-optimizes numerically
+    # under the declared response.
+    order_cost_response: Literal["fixed_order_frequency", "fixed_order_size"] = (
+        "fixed_order_frequency"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +917,39 @@ class PriceExportConfig(StrictModel):
         return self
 
 
+class RevalidationConfig(StrictModel):
+    """Stale-action policy (Run 6, Phase 69). A proposal is a claim about the
+    world at generation time; approval and export revalidate it against the
+    engine's current outputs. Moves beyond these thresholds send it back for
+    re-review rather than letting a stale number through."""
+
+    enabled: bool = True
+    # Relative moves (fraction) beyond which re-review is required.
+    floor_change_pct: float = Field(default=0.02, ge=0)
+    impact_change_pct: float = Field(default=0.20, ge=0)
+    current_price_change_pct: float = Field(default=0.02, ge=0)
+    # A proposal older than this many days is expired: it must be regenerated
+    # or re-reviewed, never approved on its original evidence.
+    expiry_days: int = Field(default=90, ge=1)
+
+
 class ActionsConfig(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_tracking_key(cls, data: object) -> object:
+        if isinstance(data, dict) and "tracking_min_after_sales" in data:
+            msg = (
+                "actions.tracking_min_after_sales was renamed to "
+                "tracking_min_before_sales (Run 6, Phase 75). It used to gate on "
+                "sales AFTER implementation, which refused to measure exactly the "
+                "pairs that stopped buying - the outcome that matters most. The "
+                "minimum now applies to the BEFORE window, which is the baseline; "
+                "an empty after window is recorded as a volume ratio of zero and a "
+                "stopped-buying flag. Rename the key in rules.yaml."
+            )
+            raise ValueError(msg)
+        return data
+
     """Action generation (Phase 38). Dates are anchored to the data's last
     invoice date so generation is deterministic for a given world."""
 
@@ -553,13 +970,31 @@ class ActionsConfig(StrictModel):
     # Deterministic cap per action type (largest expected impact first).
     max_actions_per_type: int = Field(default=200, ge=1)
     price_export: PriceExportConfig = PriceExportConfig()
-    # Results tracking (Phase 41): measurement window after implementation,
-    # evidence gates for the difference-in-differences comparison, and the
-    # minimum measured actions before a calibration number is shown.
+    # Results tracking (Phase 41, reworked in Run 6 Phase 75): the measurement
+    # window either side of implementation, the evidence gates for the
+    # control-adjusted comparison, and the minimum measured actions before a
+    # calibration number is shown.
     tracking_window_days: int = Field(default=90, ge=1)
     tracking_min_control_pairs: int = Field(default=5, ge=1)
-    tracking_min_after_sales: int = Field(default=3, ge=1)
+    # The BEFORE window is the baseline and has to be real. The AFTER window is
+    # the outcome, and an empty one is the most informative outcome there is -
+    # the customer stopped buying - so it is never a reason to refuse to
+    # measure. That is the whole point of the Run 6 Phase 75 rename.
+    tracking_min_before_sales: int = Field(default=3, ge=1)
     calibration_min_actions: int = Field(default=10, ge=1)
+    # Pooled event-study estimate (Run 6, Phase 75). Treated pairs are compared
+    # with never-treated and NOT-YET-treated pairs over event time, so an
+    # already-treated pair is never used as somebody else's control.
+    event_study_leads: int = Field(default=3, ge=1)
+    event_study_lags: int = Field(default=3, ge=1)
+    event_study_min_treated_pairs: int = Field(default=20, ge=2)
+    event_study_min_control_pairs: int = Field(default=20, ge=2)
+    # A pre-trend coefficient this far from zero (log points) is reported as a
+    # failed parallel-trends check. A pre-trend that is merely not significant
+    # is never reported as a pass: the test's power is reported beside it.
+    event_study_max_pretrend: float = Field(default=0.10, gt=0)
+    # Stale-action revalidation and expiry (Run 6, Phase 69).
+    revalidation: RevalidationConfig = RevalidationConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -577,20 +1012,63 @@ class RobinsonPatmanConfig(StrictModel):
     """
 
     enabled: bool = True
+    # A CANDIDATE SCREEN (Run 6, Phase 79), not a definition of competition.
+    # Two customers sharing these attributes may not compete at all, and two
+    # that do not share them may compete head to head - which is why a
+    # reviewed customer-competitor map overrides the screen in both
+    # directions, and why every flagged pair says which basis it rests on.
     competitor_attributes: tuple[str, ...] = ("industry", "region")
     # Relative difference between the two recommended prices, in percent;
     # strictly-greater-than fires the flag.
     price_difference_threshold_pct: float = Field(default=5.0, ge=0)
+    # When true, only pairs a reviewer has confirmed in the customer_competitors
+    # table are flagged; the attribute screen alone is not enough. Off by
+    # default, because most deployments have no such map on day one.
+    require_reviewed_map: bool = False
+
+
+class ScaleConfig(StrictModel):
+    """Memory behaviour at scale (Run 6, Phase 83, Finding 23).
+
+    spill_ledger writes the financial ledger to Parquet after the accounting
+    stages finish with it and drops it from memory for the heavy middle of
+    the run (dispersion through opportunity), reading back projections where
+    a stage needs a slice and the full frame once, at the reporting tail.
+    Off by default: the in-memory path is the measured configuration, and the
+    spill path's outputs are byte-identical to it by test, not by assumption.
+    """
+
+    spill_ledger: bool = False
 
 
 class ComplianceConfig(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_renamed_public_source_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "market_index_public_source_required" in data:
+            msg = (
+                "compliance.market_index_public_source_required was replaced in "
+                "Run 6 (Phase 80) by market_index_provenance_required. The gate no "
+                "longer reads a boolean on the mapping: it reads a recorded "
+                "provenance block, and refuses a series whose kind is a cost index "
+                "rather than a market selling-price index."
+            )
+            raise ValueError(msg)
+        return data
+
     robinson_patman: RobinsonPatmanConfig = RobinsonPatmanConfig()
-    # The market/competitor price index control is accepted from PUBLIC
-    # sources only (the mapping must declare public_source: true): feeding
+    # The market/competitor price index control is accepted only with
+    # recorded provenance (Run 6, Phase 80): provider, url, retrieval time,
+    # licence, cadence, coverage, aggregation level and series kind. Feeding
     # competitors' non-public prices through a pricing algorithm raises
-    # antitrust concerns, so the engine refuses the control rather than
-    # assume. Documented in docs/methodology.md (Pricing-law considerations).
-    market_index_public_source_required: bool = True
+    # antitrust concerns, so the engine refuses a series it cannot account
+    # for. Documented in docs/methodology.md (Pricing-law considerations).
+    market_index_provenance_required: bool = True
+    # Production deployments name the publishers they accept. Empty means any
+    # recorded provenance is accepted, and the run says so rather than
+    # implying someone approved the source.
+    market_index_allowed_providers: tuple[str, ...] = ()
+    market_index_require_allowlist: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +1125,7 @@ class Rules(StrictModel):
     reporting: ReportingConfig = ReportingConfig()
     fiscal: FiscalConfig = FiscalConfig()
     compliance: ComplianceConfig = ComplianceConfig()
+    scale: ScaleConfig = ScaleConfig()
     actions: ActionsConfig = ActionsConfig()
     drift: DriftConfig = DriftConfig()
 

@@ -54,3 +54,23 @@ jobs and the optional `-m network` test group.
 | Key / terms | None; US government work (public domain). No published rate limit — client uses 2 s spacing, 30-day cache |
 | **Documented limitation** | The endpoint serves the **current revision only — no history**. A constant rate has no identifying variation, so HTS rates feed cost/tariff **pass-through scenarios**, never the tariff instrument (which still requires an effective-dated tariff_schedule table). Compound/specific rates ("2.5c/kg + 4%") are kept as raw text, never coerced to a percentage |
 | Fixture | `tests/fixtures/hts_8501_8516.json` — a recorded real export (440 rows, HTS 8501-8516) |
+
+## Series kinds and the role each one may play (Run 6, Phase 80)
+
+Every external series mapped into the engine declares a `provenance` block
+(provider, url, retrieved_utc, license, update_cadence, coverage,
+aggregation_level, series_kind). The kind is not documentation - it decides
+what the series is allowed to do.
+
+| Series kind | Example | May be used as | Refused as |
+|---|---|---|---|
+| `cost_index` | BLS producer price index | the supplier cost instrument | the competitor-price control |
+| `selling_price_index` | a published market price index | the competitor-price control | an instrument |
+| `other` | anything else | neither role | both |
+
+The two refusals are not symmetric pedantry. A cost index used as a
+competitor-price control would look like a control and would not be one: the
+same cost shocks that identify the elasticity also move it. A selling-price
+series used as an instrument would be the channel the exclusion restriction
+has to rule out - and feeding competitors' prices into a pricing model is the
+antitrust concern itself, not a modelling nicety.

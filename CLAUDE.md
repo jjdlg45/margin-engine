@@ -819,3 +819,213 @@ Dockerfile and compose file for API + UI + scheduler. CI builds the image and ru
 - Methodology: action generation rules, guardrails, the results-tracking method and its limits, pricing-law considerations.
 - `docs/run5-report.md`: every phase, what changed, tests added, before/after numbers (memory and runtime per line, action counts, tracker recovery), known gaps, and decisions waiting on the owner.
 - Final commit on `run5`, then **stop**. Do not merge, do not push.
+
+---
+
+# RUN 6 — Independent review remediation
+
+**Source:** an independent methodology review of commit `d641fc8` (24 findings, answers to 9 questions, edge-case lists, a phased plan, and an acceptance-test matrix). Every code-level claim below was checked against the repository; status is marked **[confirmed in code]**, **[confirmed in docs]**, **[policy decision]**, or **[already correct, add test]**.
+
+**Goal:** make every metric say exactly what it measures, make the causal claims match the estimand, close the accounting and workflow gaps, and stop overclaiming anywhere.
+
+---
+
+## 0. Run mode and rules
+
+- **Branch** `run6` from `main`. Never commit to `main`; never push. The owner pushes and opens a PR, which runs CI, the Linux browser gates, and Docker.
+- **Continuous run**, phases in order; one commit per phase (`phase-N: <summary>`); stop only on a stop condition.
+- **After every phase:** ruff, ruff format, `mypy src api`, full pytest, tsc, vitest, build, Playwright as applicable. **Confirm each exit code from the process itself.** Append a phase report to `docs/build-log.md`.
+- **14 GB RAM machine:** run heavy jobs (full suite, validation script, simulation studies, scale ladder) as background processes writing to log files.
+- **Verify like CI before the final commit:** fresh clone of `run6`, `uv sync --frozen --all-groups`, full pytest; then the Pages steps (`export-web --demo`, `npm ci`, build, `CI=true SKIP_SNAPSHOTS=1 npx playwright test`).
+- **Stop conditions:** a check fails after 3 attempts; an existing validation target fails (report actuals, never loosen); the spec doesn't answer a business-logic question.
+- **Language:** plain English everywhere a person reads; no raw codes. Never use "violation", "compliant", "guaranteed", "proven", or "GAAP figure" for engine outputs.
+- **Numbers that change are expected.** Several fixes deliberately change headline numbers (expected impact, statuses, tracker results). Record before/after values for every changed headline in the build log and the final report.
+
+---
+
+## Phase 60 — Contracts before code (review Phase 0)
+
+60.1 **Metric dictionary** `docs/metric-dictionary.md`: list price, invoice product price, invoice revenue, pocket revenue, pocket gross profit, contribution, contribution after activity, observed leakage, gross price opportunity, expected pocket-gross-profit change, expected contribution change. For each: formula, units, denominator, price basis, what's included and excluded, and actual/allocated/estimated status. The UI tooltips and report labels read from it.
+
+60.2 **Equation sheet** `docs/equations.md`: every floor, opportunity level, optimizer, win curve, and tracker metric, with price basis and deduction/cost assumptions stated.
+
+60.3 **Estimator specification** in methodology: for naive FE-OLS, PPML, FE-2SLS, and the new estimator from Phase 72: dependent variable, sample, treatment of zeros, endogenous regressor, instrument matrix, fixed effects, weights, clustering, dropped/separated observations, and the **named estimand** (e.g. "conditional quantity among buying pairs" vs "total expected quantity including whether the customer buys at all").
+
+60.4 **Feature lineage and assumption metadata** in the config schema: each segmentation feature declares source columns, formula, reference window, and whether it uses outcome-period data; each instrument declares its plausible paths to quantity (availability, lead times, supplier changes, competitor prices, expectations, substitution) and how each is addressed.
+
+---
+
+## Phase 61–64 — Finance and accounting integrity (review Phase 1)
+
+### Phase 61 — Economic event taxonomy (Finding 5) [confirmed in docs]
+- Classify every adjustment independently of raw ERP labels: customer price concession, customer refund/return, customer service payment, non-price customer claim, supplier rebate/allowance, supplier quality claim, vendor reimbursement for a distinct service, freight pass-through, tax/deposit/liability, other.
+- Every adjustment carries: counterparty, direction, related source document, original invoice/line, contractual program, earn period, settlement period, eligible basis, estimate-vs-actual status, and a reversal/true-up link.
+- **Vendor consideration** follows ASC 705-20 concepts: reduces acquisition cost by default, with configurable exceptions (payment for a distinct good/service, reimbursement of identifiable selling costs, manufacturer incentives). Vendor rebates on inventory still on hand stay in a separate **vendor rebate roll-forward** rather than hitting current-period line cost.
+- Edge-case fixtures: a credit memo posted to the original invoice and also present in a separate credit export (counted once); a voided-and-replaced invoice; a customer claim caused by supplier damage; a supplier rebate with inventory still on hand; a vendor payment for a distinct marketing service; a negative net rebate basis (returns exceed purchases → fail closed or contract-specific attribution); multiple simultaneous programs with overlapping eligibility.
+
+### Phase 62 — Rebate lifecycle subledger (Finding 5C)
+- Represent rebates as a lifecycle: estimate → revisions → settlement → reversal/true-up. **Invariant:** opening accrual + new estimates + revisions − settlements − reversals = closing balance; each settlement is applied exactly once and replaces the corresponding estimate.
+- Fixtures: monthly estimate settled quarterly then retroactively changed; tier crossing that changes previously allocated lines; clawback; a return after the rebate period and after settlement.
+
+### Phase 63 — Freight, charges, and non-overlapping cost pools (Finding 6) [confirmed in code]
+- Every charge declares economic owner, direction, revenue/cost pool, amount basis, source, and whether it's already embedded in net amount. Taxes, deposits, and third-party collections are excluded from product revenue by default.
+- **Double-count fix:** activity rates (per order/line/delivery) and actual cost pools (allocated freight expense, claims, return handling, return freight) get a `cost_pool_id`. Each real expense pool is assigned to exactly one of actual cost-to-serve or activity estimate; an overlap check fails the run if a pool is counted twice. Default: the per-delivery activity rate excludes outbound freight whenever actual freight expense is present.
+- **Price index basis** [already correct, add test]: the realized unit price is `net_amount / quantity` and excludes allocated billed charges. Add a test that billed freight never enters the price index.
+- Returns gain a disposition (resaleable, damaged, obsolete, not received, exchange) controlling whether product cost is recovered.
+
+### Phase 64 — Books tie-out as a control, and honest headline (Finding 7) [confirmed]
+- Rename to **"Monthly GL variance check."** Show engine total, GL total, signed and absolute variance, variance %, tolerance used, fiscal-period mapping, account mapping, and unresolved reconciling items; net sales and COGS reconciled separately.
+- Distinct statuses: `source totals reconciled`, `GL within tolerance`, `GL exact`, `not testable (GL not supplied)`. Guard zero, negative, and tiny denominators.
+- Include a sample of line → invoice → GL trace evidence in the report.
+- **Headline:** change "Every dollar accounted for." to **"Every source dollar reconciled or explained."** Residuals and coverage appear next to it.
+
+**Exit gate:** 20 hand-picked fixture cases trace from source document → line waterfall → rebate subledger → inventory/COGS effect → monthly GL bridge, every difference explained.
+
+---
+
+## Phase 65–69 — Pricing math and action integrity (review Phase 2)
+
+### Phase 65 — Contribution vs. gross profit, and the win-curve objective (Finding 1) [confirmed in code]
+- Report **two** expected-change metrics, never conflated:
+  - **Expected pocket-gross-profit change:** c(P) = P(1 − d) − F − C (today's formula, renamed).
+  - **Expected contribution change:** subtracts per-unit cost-to-serve K: c(P) = P(1 − d) − F − C − K, labeled estimated when K comes from config rates.
+- The optimizer objective is configurable (`pocket_gross_profit` or `contribution`), and every output names its objective. Re-optimize numerically when d, F, or K depend on quantity.
+- **Win-curve objective** (currently `(price − cost) × P_win`): translate the quote price index into a monetary price, apply d and F (and K under the contribution objective), then multiply by win probability.
+- **Per-unit K definition** (Finding 8): document and implement exactly how per-order and per-delivery costs become per-unit K (expected basket quantity, order frequency, line count), so the floor and the optimizer can't be circular. If K can't be supported, the contribution floor reports `contribution floor unavailable` instead of using a generic number.
+- Tests: high-price/high-service customer vs. low-price/low-service customer (rankings differ by objective); price increase that changes order quantity and per-order allocation; quote optimum differs between gross margin and pocket contribution.
+
+### Phase 66 — Deductions with explicit denominators (Finding 8)
+- Represent each adjustment as: % of invoice value, % of eligible net purchases, amount per unit, per order, per shipment, tiered/cumulative formula, or unknown, with an explicit denominator and sequencing rule. Sum rates only when they share a base and apply independently; otherwise compound or compute from the contract formula.
+- Tiered, retroactive, or quantity-dependent arrangements are **recomputed** at the candidate price and predicted quantity; otherwise the (1 − d) result is labeled **"fixed-rate approximation."**
+- Report **known deduction coverage** (share of d that is observed, contract-derived, inferred, or missing).
+- Exit gate: fixtures prove reported impact equals a recomputed baseline-vs-scenario ledger for flat-rate, fixed, tiered, and mixed deduction arrangements.
+
+### Phase 67 — Floors and bands guardrails (Findings 9, 10) [policy decision]
+- **Contribution floor stays opt-in** (default off). When enabled, show the K assumptions that make it bind; allow policy by item role, contract, channel, and order type.
+- Bands state their weighting (default: one median per customer × item × month, pair-weighted). `min_band_observations` counts **independent** units; report distinct customers, pairs, months, and list regimes behind each band.
+- Disclose list provenance, customer eligibility (contract-specific lists), and UOM basis. Historical margin uses the dated historical cost; current guidance uses the current cost, both labeled.
+- Target and start are unavailable (not historical-only defaults) when the floor is above the corridor, the list is stale, or the segment is thin.
+- Edge cases: loss leaders, strategic KVIs, end-of-life and substitute items (policy override only with explicit authorization); same code with different grade/pack/UOM (no peer comparison without an equivalence map); price increments, pack sizes, and ERP precision.
+
+### Phase 68 — Action overlap and portfolio totals (Finding 16) [confirmed in code: no overlap guard exists]
+- Every action gets `scope_key`, baseline period, intervention, affected pair/order/customer set, scenario ID, and `overlap_group`.
+- **One active proposed price per customer × item × UOM × effective date:** duplicates are merged, superseded, or blocked at approval/export.
+- **Cross-scope overlap:** a category pass-through and a pair price change on the same items can't both count; selected actions are combined in a **portfolio scenario** under a common baseline, never summed.
+- UI, CSV, and API keep single-action impact, scenario impact, and non-additive portfolio estimate distinct.
+
+### Phase 69 — Stale actions and safe transitions (Findings 19, 20) [confirmed in code: no revalidation or concurrency control]
+- Each proposal stores input, config, and model fingerprints plus the key values used. At approval and export, revalidate current price, list age, floor, contract protection, exclusions, duplicates, and compliance flags; show the differences; require re-review when the floor or impact moves beyond thresholds; keep both versions in the audit trail. Actions get an expiry policy.
+- **Concurrency:** every transition carries an expected event sequence number; conflicting simultaneous requests get a 409 and no state change.
+- **Export recovery:** a crash between writing the file and updating status recovers idempotently; re-export never reintroduces superseded or implemented prices.
+
+---
+
+## Phase 70–74 — Econometric estimand and inference (review Phase 3)
+
+### Phase 70 — Competitor-price path in the causal gate (Findings 2, 13) [policy decision]
+- Name the estimand: **unilateral own-price response holding observed competitor-price conditions constant.**
+- **Gate change:** `causal_elasticity_supported` requires an adequate market/competitor price control (present, fresh, at a matching granularity, not collinear) **or** an instrument explicitly documented as having no competitor-price path. Otherwise the status caps at `iv_estimated_elasticity` with the reason "competitor-price path not controlled," and the estimate is described as a response to market-wide cost shocks.
+- **Demo continuity:** the generator produces a synthetic public market price index for the demo world, so the supported path stays demonstrable.
+- Add a machine-readable **`causal_status_reasons`** list (each gate passed or failed) shown in the UI, e.g. "strong first stage; market-price exclusion risk unresolved."
+- UI definitions: `causal_elasticity_supported` means "the prespecified diagnostics and documented assumptions passed for this estimand and scope; it doesn't prove the instruments are valid or that the result transfers to other customers, markets, or times."
+- Tests: both instruments move competitor prices → no causal status without the control; stale, missing, collinear, or coarse control → explicit downgrade reason; shared invalid exclusion with a non-rejected J test → no automatic causal status.
+
+### Phase 71 — Robust weak-instrument diagnostics (Findings 4, 13)
+- Keep F ≥ 10 as a reported heuristic, and add a robust/effective first-stage statistic appropriate to the clustered variance structure (Montiel Olea–Pflueger family) used in the gate.
+- Make the J-test and Anderson-Rubin interpretations permanent tooltips: J can't detect a violation shared by both instruments; AR is robust to weak instruments but can't fix a wrong exclusion story.
+- Unbounded or disconnected AR sets are reported as such, never compressed into a symmetric interval.
+- Add placebo and lead tests for instruments (future cost shocks shouldn't predict current quantity).
+
+### Phase 72 — IV estimand with zero sales (Finding 3) [confirmed in code: FE-2SLS uses log quantity, dropping zero rows]
+- Implement an IV estimator that includes zeros: **IV-PPML via control function** (first-stage residual included in the PPML equation), with bootstrap or jackknife inference, validated on planted worlds with a real extensive margin (customers who stop buying). Recent work on IV-PPML with high-dimensional fixed effects (Kwon, Larch, Yoon & Yotov, 2026, CESifo WP 12641) shows incidental-parameter bias needs correcting (split-panel jackknife); evaluate that approach and document the choice.
+- The opportunity optimizer uses the **total-quantity** estimate when available. When only the positive-quantity 2SLS estimate passes, it's labeled "conditional quantity elasticity (buying customers only)" and **not** used alone to forecast total volume.
+- **Zero-row flags:** `assortment_known`, `availability_observed | proxied`, `price_observed | carried_forward`, `zero_reason_known | unknown`. Test alternative carry-forward and availability assumptions; downgrade when the elasticity moves materially.
+- Report rows and units lost to fixed effects, separation, missing price, or missing instruments.
+
+### Phase 73 — Clustering at the instrument-assignment level (Finding 4)
+- Add supplier, supplier × month, category, and category × month to the cluster options; report the number of independent clusters and the distribution of instrument variation per cluster.
+- Coverage simulations with **serially correlated supplier and category shocks**, few suppliers/categories, and short time series. Choose the default from those studies; with too few assignment clusters, use small-cluster methods (e.g. wild cluster bootstrap) or fail closed.
+
+### Phase 74 — Price-support guard refinement (Finding 14)
+- Label it an "identification-support rule." Document that support is computed on residualized, within-pair movements after fixed effects and controls.
+- Require enough observations near the proposed move; report the boundary, observed price distribution, instrument-support distribution, and distance to boundary. Stress-test skewed and multimodal support (disconnected regions).
+- At IV-estimated status, ranges are labeled "sensitivity analysis," not confidence intervals for business impact.
+
+**Exit gate:** causal support can't be awarded in any world with an unresolved exclusion path, bad assignment-level inference, weak identification, an unsupported price move, or a conditional-only estimand used for total volume. The report shows why.
+
+---
+
+## Phase 75–78 — Results tracker and validation (review Phase 4)
+
+### Phase 75 — Tracker design (Finding 15) [confirmed in code: survivorship filter `qty_b > 0 & qty_a > 0`, median control ratio]
+- **Rename** the output "control-adjusted volume change" until it qualifies as a formal difference-in-differences estimate.
+- **Stop-buying is an outcome, not missing data:** treated pairs with zero after-window purchases count as a volume ratio of 0 (with a separate "stopped buying" flag) in both per-action results and pooled calibration. Controls must not be restricted to pairs that bought in both windows either.
+- Formal estimator for pooled calibration: event-study / modern staggered DiD following Baker, Callaway, Cunningham, Goodman-Bacon & Sant'Anna, "Difference-in-Differences Designs: A Practitioner's Guide" (*Journal of Economic Literature*). State the estimand; report pre-trend diagnostics (never treating a non-significant pre-trend as proof).
+- **Clean controls:** untreated through the whole window, not treated later in it, not affected by substitutable/repriced items or the same campaign.
+- Report treated, untreated, and excluded counts with reasons, and results by wave, segment, action type, evidence status, and implementation compliance. Recommend phased or randomized rollouts / matched holdouts where feasible.
+- Exit gate: a selected-treatment world, a non-parallel-trend world, a stop-buying world, and a staggered-treatment world all produce honest refusals or properly downgraded estimates.
+
+### Phase 76 — Segmentation leakage (Finding 11) [confirmed in code: `revenue_abc` is a segmentation feature; target encoding fit on the full fitting sample]
+- Replace contemporaneous revenue ABC with a **pre-period** revenue ABC or lagged unit/order-frequency ABC; the leakage guard uses lineage metadata (Phase 60.4), not only name heuristics.
+- **Cross-fitted target encoding** (out-of-fold) during tree fitting.
+- Evaluate with a time-based holdout and with/without potentially endogenous features. Add a planted world where revenue ABC and price index correlate for reasons unrelated to true segments; the tree must not "recover" truth through the shortcut.
+
+### Phase 77 — Win curves beyond a standard-error gate (Finding 21)
+- Define the quote unit (opportunity, version, line, deal) and deduplicate revisions. **Only won/lost outcomes enter the model**; open, withdrawn, and expired quotes are excluded with reason codes (today any non-"W" counts as a loss [confirmed in code]).
+- Controls for segment/customer/product/time where supported; cluster by opportunity/customer/rep.
+- Holdout calibration (calibration slope/intercept, Brier score, discrimination) and subgroup checks; the quote count and relative-SE gate remain calibrated starting points.
+
+### Phase 78 — Validation statistics and claims (Findings 12, 22, 24)
+- Increase worlds/seeds for gated targets (chosen by a precision goal for tail error and coverage); report per-world results with **world-level bootstrap uncertainty** around medians, P90s, and coverage. Add held-out seeds never used during development; keep the fixed regression suite labeled separately.
+- Every validation row shows target, measured, number of worlds or independent clusters, method, what it establishes, and what it doesn't.
+- **Wording fixes:**
+  - Online Retail II: "real UK online-retail transactions (giftware); many customers are wholesalers," matching the UCI description, and state it tests ingestion and descriptive analytics only.
+  - Hybrid PPI world: "hybrid-synthetic evidence."
+  - Determinism: "Engine CSV/Parquet and ledger outputs are byte-identical under the tested environment; the browser bundle has a tracked last-digit stability gap." Then round solver outputs before bundling and test byte stability of the bundle too.
+  - Performance claims apply to the measured configuration only.
+
+---
+
+## Phase 79–81 — Compliance (Findings 17, 18)
+
+### Phase 79 — Robinson-Patman review flag
+- Label stays "Robinson-Patman review flag"; never "violation" or "compliant."
+- Industry + region is a configurable **candidate screen**, enrichable by a reviewed customer-competitor map; missing attributes produce a data-quality status, never a silent default.
+- Each flag shows comparable item/grade/UOM, dates, actual and recommended net prices, volume/functional differences, discount/rebate/freight/service terms, cost-to-serve method (actual vs. estimated), and data coverage. Cost differences are supporting evidence only.
+- Evidence fields for meeting-competition records, contemporaneous bids/quotes, and the reviewer's decision.
+
+### Phase 80 — Market data provenance
+- Replace the `public_source: true` flag with recorded provenance: provider, URL, retrieval timestamp, license/terms, update cadence, coverage, aggregation level. Production uses a source allowlist or manual approval.
+- Distinguish public **cost indexes** (e.g. PPI) from market **selling-price** indexes and document each one's role.
+
+### Phase 81 — Methodology wording
+- Pricing-law section updated: review flags and the public-data rule are guardrails, not legal safe harbors (reference the DOJ's September 2026 proposed consent decree with Pinnacle on algorithmic coordination as context). Orientation, not legal advice.
+
+---
+
+## Phase 82–84 — Production controls and scale (review Phase 5)
+
+### Phase 82 — Authenticated production mode (Finding 19)
+- A `production` mode (local single-user mode stays the default and is documented as such): real authentication (OIDC integration hook plus local accounts with hashed passwords), server-side roles, separation of duties enforced on immutable user IDs (creator, submitter, approver, exporter), access/audit log, upload size and type limits, safe temporary files, retention and deletion, and encrypted storage where the stack supports it. The client never supplies its own identity in production mode.
+- Tests: spoofed identity rejected; self-approval rejected server-side; unauthorized read of another user's upload rejected; sensitive data absent from logs, exceptions, and temp files.
+
+### Phase 83 — Spill-to-Parquet scale path (Finding 23)
+- Spill the ledger to Parquet between stages and scan with per-stage column projections; avoid materializing unneeded detail in `FullRunResult`. Define which stages need global sorts/groups and which run partitioned.
+- Track peak memory per stage; benchmark at multiple row counts and cardinalities.
+- **Parity:** the spill path's outputs equal the in-memory path's to the cent, including allocations and tie-breaking.
+- The 10M-line target stays a KNOWN GAP until measured within 8 GB and 15 minutes.
+
+### Phase 84 — Version traceability
+- UI and API outputs carry engine version, source manifest, and model/config hashes.
+
+---
+
+## Phase 85 — Acceptance-test matrix and report
+
+85.1 Implement the reviewer's acceptance matrix as named test families: money/allocation, credits, rebate lifecycle, return accounting, freight, margin objective, price deductions, floor, segment leakage, IV exclusion, IV zeros, cluster structure, weak IV, price support, results tracker, action overlap, stale action, maker-checker, export recovery, UCI real-data scope, scale parity, determinism scope.
+
+85.2 Add the remaining edge cases from the review not covered above: spreadsheets with formulas, date serials, hidden rows, and mixed separators; mapping changes between runs (outputs keep mapping/config version); one action spanning multiple UOMs or ship-tos; customer parent/child contracts; FX analytical vs. book-translation policy.
+
+85.3 `docs/run6-report.md`: every finding (1–24) → what changed, tests added, before/after headline numbers (expected impacts, status counts, tracker results, coverage), what remains open and why, and decisions for the owner. Update README, methodology, metric dictionary, and the validation table from validation.json.
+
+Final commit on `run6`, then **stop**. Do not merge, do not push.

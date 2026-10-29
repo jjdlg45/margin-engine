@@ -76,6 +76,19 @@ def test_health_and_version(client: TestClient) -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     v = client.get("/api/version").json()
     assert v["api_version"] and v["bundle_version"]
+    # Traceability (Run 6, Phase 84): the API names the configuration,
+    # mapping, inputs and fitted model it is serving numbers from, and the
+    # identifiers are the bundle's own, not re-derived ones.
+    app = client.get("/api/app").json()
+    for key in (
+        "rules_sha256",
+        "mapping_sha256",
+        "model_fingerprint",
+        "config_fingerprint",
+        "input_fingerprint",
+    ):
+        assert v[key], f"/api/version is missing {key}"
+        assert v[key] == app[key]
 
 
 def test_app_matches_contract_schema(client: TestClient) -> None:

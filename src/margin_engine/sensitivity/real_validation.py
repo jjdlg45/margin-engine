@@ -38,6 +38,11 @@ from margin_engine.sensitivity.estimate import (
     estimate_segment,
 )
 
+# The significance level the shuffled-instrument placebo counts rejections
+# at. The verdict that reads those counts uses the same number, so the two
+# cannot drift apart.
+PLACEBO_NOMINAL_ALPHA = 0.05
+
 
 @dataclass
 class RealValidationResult:
@@ -100,7 +105,11 @@ def backtest_elasticity(panel: pl.DataFrame, rules: Rules) -> tuple[pl.DataFrame
     for seg in _segments(panel):
         seg_panel = panel.filter(pl.col("segment_leaf") == seg)
         train = seg_panel.filter(pl.col("month_idx") <= cutoff)
-        est = estimate_segment(train, rules, seg)
+        # The backtest scores the CONDITIONAL estimate: it predicts
+        # positive-quantity rows, so the total-quantity estimand is outside
+        # what it validates (stated as a limitation of that estimand). Fitting
+        # it per training window would be discarded work.
+        est = estimate_segment(train, rules, seg, with_total_quantity=False)
         if est.iv is not None and est.status in (STATUS_IV, STATUS_CAUSAL):
             beta, model = est.iv, "iv"
         elif est.naive_fe_ols is not None:
@@ -371,7 +380,7 @@ def placebo_tests(
                         "share_strong_first_stage": float(
                             np.mean(np.array(fstats) >= sc.min_first_stage_f)
                         ),
-                        "share_significant": float(np.mean(arr < 0.05)),
+                        "share_significant": float(np.mean(arr < PLACEBO_NOMINAL_ALPHA)),
                     }
                 )
 

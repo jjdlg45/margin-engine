@@ -3036,3 +3036,3085 @@ conditional sandbox skips: this demo world has no blocked action - pinned by
 unit tests instead); Playwright API mode 11/11 including two real pipeline
 runs. Demo bundle re-exported for the new action fields; schema.json and
 generated types updated.
+
+## Phase 60 — Contracts before code (2026-10-26, Run 6 branch)
+
+Run 6 opens with the contracts the later phases implement against.
+
+1. **Metric dictionary (60.1)** - src/margin_engine/metrics.py is the single
+   source of truth for the 11 reader-facing metrics (formula, units,
+   denominator, price basis, includes/excludes, actual/allocated/estimated
+   status). docs/metric-dictionary.md is GENERATED from it and a test asserts
+   the committed file matches byte for byte; the entries merge into the
+   central label dictionary (labels.py), so the web bundle, UI tooltips and
+   the HTML report serve the same words. The waterfall chart tooltip now
+   shows each stage's definition from the dictionary (fallback-safe for old
+   bundles). Entries describe what the engine computes TODAY; where a later
+   Run 6 phase changes a formula (65: pocket-GP vs contribution basis; 66:
+   deduction denominators) the pending change is a note in the generated
+   document, never tooltip text claiming code that does not exist yet.
+2. **Equation sheet (60.2)** - docs/equations.md: floors, the three
+   opportunity levels, the optimizer, the win curve and every tracker metric,
+   each with price basis and deduction/cost assumptions; Phase 65/66/75
+   changes marked as pending.
+3. **Estimator specification (60.3)** - methodology section 7 now specifies
+   naive FE-OLS, PPML, FE-2SLS and the Phase 72 IV-PPML control function:
+   dependent variable, sample, zeros treatment, endogenous regressor,
+   instruments, fixed effects, weights, clustering, dropped observations and
+   the NAMED estimand (conditional quantity among buying pairs vs total
+   expected quantity).
+4. **Feature lineage and instrument paths (60.4)** - config schema gains
+   FeatureLineage (source columns, formula, reference window,
+   uses_outcome_period_data) with a validator requiring lineage for every
+   context feature; revenue_abc and order_size_band are HONESTLY flagged as
+   using outcome-period data until Phase 76 replaces them. InstrumentPath
+   (channel + how addressed) added to InstrumentConfig; both shipped
+   instruments declare six non-price paths each (availability, lead times,
+   supplier changes, competitor prices, expectations, substitution) in
+   rules.yaml. Enforcement lands with the phases that read the metadata
+   (70: competitor-price gate; 76: lineage-based leakage guard).
+
+Tests added: tests/test_metrics.py (doc-in-sync, required metrics, full
+specification, label-dictionary merge, lineage coverage and honesty,
+missing-lineage fail-closed, shipped instrument paths).
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 424 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright static with snapshots 225 passed (exit 0). Demo
+bundle re-exported (labels only; schema content unchanged). No headline
+numbers changed in this phase.
+
+## Phase 61 — Economic event taxonomy (2026-10-26, Run 6 branch)
+
+Every adjustment is now classified by its ECONOMICS, independently of raw
+ERP labels (Finding 5).
+
+1. **Events module** - src/margin_engine/ledger/events.py classifies every
+   adjustment into 11 event types (customer price concession, refund/return,
+   service payment, non-price claim, supplier rebate/allowance, supplier
+   quality claim, vendor distinct-service and selling-cost reimbursements,
+   freight pass-through, tax/deposit/liability, other). Each event carries
+   counterparty, direction, source document and reference, original-invoice
+   link, program, earn and settlement periods, eligible basis, actual/
+   allocated/estimated status, reversal/true-up link and a duplicate-suspect
+   flag. New exports: economic_events, economic_event_totals,
+   vendor_rebate_rollforward (deterministic sort keys registered).
+2. **Vendor consideration (ASC 705-20)** - programs may declare
+   consideration_type in the vendor program table: distinct-service and
+   selling-cost reimbursements never net product cost and become their own
+   events (rate-based estimates, labeled). The vendor rebate ROLL-FORWARD
+   separates rebates earned on receipts from rebates recognized in COGS;
+   the running balance belongs to inventory on hand. Without receipts the
+   roll-forward reports not testable.
+3. **Duplicate credit representations** - a credit memo embedded as a
+   negative line on its original invoice AND present as a standalone credit
+   document is flagged on classification
+   (flag_duplicate_adjustment_suspect), counted ONCE in event totals (the
+   embedded posting wins), the excluded amount reported. Ledger keeps every
+   source dollar; reconciliation untouched.
+4. **Multiple simultaneous rebate programs** - tiered accrual reworked to
+   per-program accrual over the shared cumulative basis, summed per line:
+   no row duplication, no double counting. Settlements match per customer x
+   year x program; partially settled years mix actuals and accruals
+   (status partially_settled); settlements naming an unheld program stay a
+   visible residual. Reconciliation check 4b now sums actual allocations
+   over all lines (identical on single-program worlds). Guidance's
+   deduction rate d sums stacked program rates per customer, fixing a
+   latent join that would have duplicated pairs for multi-program customers.
+5. **Supplier quality claims** - transactions.supplier_claim_reasons routes
+   configured credit reasons to the supplier as counterparty; dollars reduce
+   cost-to-serve via the existing signed claims allocation, never customer
+   revenue. Billed order charges classify only via
+   transactions.charge_event_types (shipped: FRT_OUT -> freight
+   pass-through); undeclared codes are other adjustments with a stated note.
+6. **Negative rebate basis** - a customer-year with returns exceeding
+   purchases accrues nothing; the summary marks negative_basis and the
+   accrual event carries fail_closed_negative_basis.
+
+Tests added: tests/test_events.py (15 tests) covering all seven spec edge
+cases: duplicate credit counted once; voided-and-replaced invoice (pocket
+nets to the replacement; reversal link); customer claim caused by supplier
+damage (claim is customer cost, recovery reduces cost with supplier as
+counterparty); supplier rebate with inventory on hand (earned 50.00 /
+recognized 30.00 / 20.00 on hand); vendor distinct marketing service (no
+cost netting; event visible); negative net rebate basis (fail closed);
+multiple simultaneous programs (per-line sums, partial settlement, unheld-
+program residual, guidance stacking without pair duplication). Plus charge
+classification config tests and a taxonomy-integrity test.
+
+Decisions: duplicate representations keep both rows' dollars in the ledger
+(source totals must reconcile) and are de-duplicated at the EVENT layer
+with the excluded amount reported - surfacing the double posting instead
+of silently dropping a source row. Tax/deposit/liability mechanics (new
+mapped fields) land with the charge declarations in Phase 63; the event
+type exists now.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 439 passed 0 failed (exit 0); Playwright static with
+snapshots 225 passed (exit 0) against a re-exported demo bundle. Headline
+numbers unchanged (the demo world has no multi-program customers, supplier
+claims or consideration exceptions; FRT_OUT charges now classify as
+freight pass-through in the events export).
+
+## Phase 62 — Rebate lifecycle subledger (2026-10-26, Run 6 branch)
+
+Rebates are now a lifecycle, not a single number (Finding 5C).
+
+1. **Subledger** - src/margin_engine/ledger/rebate_subledger.py holds one
+   entry per lifecycle step (estimate, revision, settlement, reversal) at
+   monthly grain per customer and program, with a balance view enforcing
+   opening + estimates + revisions - settlements - reversals = closing for
+   every period, openings chaining to prior closings, and every settlement
+   source row applied exactly once (unique reference; a violation RAISES -
+   it is an accounting bug, never a warning). New exports: rebate_subledger,
+   rebate_subledger_balances.
+2. **Streams** - settlement-kind programs: monthly estimates (rate x month
+   net) with each quarterly settlement row applied once at the quarter's
+   closing month and a true-up revision replacing the estimates (a
+   retroactively changed settlement is just another settlement row the
+   true-up absorbs). Tiered programs: monthly estimates from the engine's
+   per-line accruals plus a RETROSPECTIVE top-up revision when a tier is
+   crossed (crossing re-rates the whole cumulative basis), year settlements
+   replacing the stream. Line-accrued programs are actual at invoice and
+   stated as outside the subledger. Settlement rows without a program id
+   attribute only where unambiguous (single-program customers); ambiguous
+   rows are stated and never applied twice.
+3. **Clawbacks** - a return referencing an invoice from a prior SETTLED
+   program year books a reversal at that year's effective settled rate
+   (estimated; batch data carries no settlement timestamps, so after
+   settlement means a later period, documented); against a prior UNSETTLED
+   year it books a negative revision lowering the open accrual.
+4. **Tiered monthly stream** - the tiered module now also emits a per
+   customer x program x month frame (basis, accruals, cumulative end, tier
+   rate at month end) that the subledger builds on, carried through the
+   waterfall and pipeline results.
+
+Tests added: tests/test_rebate_subledger.py (9 tests) covering the spec
+fixtures: monthly estimates settled quarterly (true-up zero), a settlement
+retroactively changed (two rows, each applied once, true-up +10.00), tier
+crossing books the +6.00 retrospective revision (closing 24.00 = the true
+liability), settlement replaces estimates (year closes at zero), a return
+after the settled year books a 4.00 clawback at the 2 percent effective
+rate (negative closing = receivable, in plain sight), a return after the
+period but before settlement lowers the accrual instead, the balance
+identity holds on every period, duplicate settlement application raises,
+and line-accrual programs are stated as outside the subledger.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 448 passed 0 failed (exit 0). No web changes (new
+engine exports only; the bundle is untouched). Headline numbers unchanged:
+the subledger is a derived view; pocket math and reconciliation totals are
+byte-identical.
+
+## Phase 63 — Freight, charges and non-overlapping cost pools (2026-10-26, Run 6 branch)
+
+Finding 6: every charge now declares what it is, taxes never masquerade as
+product revenue, and no cost pool is counted twice.
+
+1. **Charge declarations** - the mapping can declare, per charge code:
+   economic owner, direction, pool (billed revenue / pass-through revenue /
+   excluded liability), amount basis, and embedded-ness (order charges can
+   never claim embedded). Excluded-liability charges (deposits, third-party
+   collections) never enter product revenue: their total is the visible
+   residual billed_charges_excluded_liability_cents and the billed-charges
+   reconciliation still ties the source table exactly (alloc + unallocated +
+   excluded == total). Declarations drive economic-event typing
+   (pass-through -> freight pass-through; excluded -> tax/deposit), with
+   the config charge map as fallback for undeclared codes.
+2. **Taxes** - new optional tax_amount line field; embedded_in_net is
+   MANDATORY (refused otherwise, never guessed). Embedded tax is carved out
+   of invoice revenue; separately billed tax is never added; either way the
+   collected amount is a labeled liability column and an event
+   (tax/deposit/third-party collection, counterparty tax authority). New
+   net_product_cents carries the tax-free product amount.
+3. **Price index basis** - [already correct, add test]: the realized unit
+   price is net product / quantity. Tests prove billed freight never enters
+   the price index, and the index now uses net_product_cents, so an
+   embedded tax never inflates a realized price.
+4. **Cost pools** - every activity rate belongs to a named pool
+   (cost_to_serve.activity_pools); actual expense sources cover their own
+   pools. With an actual freight log the per-delivery estimate (a proxy for
+   outbound freight) switches OFF with a stated note; any OTHER rate
+   assigned to an actually-covered pool raises CostPoolOverlapError. New
+   cost_pools export audits pool coverage. The per-unit cost-to-serve K
+   (contribution floor) inherits the resolved rates automatically.
+5. **Return dispositions** - optional return_disposition line field with a
+   normalization map; returns recover product cost only when the
+   disposition says so (resaleable/exchange yes; damaged/obsolete/
+   not-received no - the loss stays in cost of goods sold). Absent or
+   unknown dispositions keep the stated historical default (recovered).
+
+Tests added: tests/test_charges_pools.py (13 tests): price-index exclusion;
+embedded and separately billed tax; missing embedded declaration refused;
+excluded-liability charge with exact reconciliation and event typing;
+charge declarations never embedded; per-delivery switch-off with actual
+freight (18.00 + 1.50, no 9.00 estimate); estimate applies without actual
+freight; non-default pool overlap raises; damaged/resaleable/unknown/
+absent disposition fixtures.
+
+Before/after headline numbers (demo world, deliberate change per the
+run-6 rules): negative-contribution orders 486 -> 452 (the per-delivery
+activity estimate no longer double counts delivery cost on top of actual
+freight expense; contribution after activity rises by 9.00 per order).
+Action counts and impact totals unchanged (277 actions; same by-status and
+by-basis dollars). Reconciliation and all planted-truth targets unchanged.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 461 passed 0 failed (exit 0); Playwright static with
+snapshots 225 passed (exit 0) against the re-exported demo bundle. No web
+source changes (tsc/vitest unchanged since Phase 61's runs).
+
+## Phase 64 — Monthly GL variance check and honest headline (2026-10-26, Run 6 branch)
+
+Finding 7: the books comparison is a CONTROL, not a proof, and the headline
+claims exactly what the engine establishes.
+
+1. **Monthly GL variance check** (renamed from books tie-out everywhere a
+   reader sees it): per month-measure the table now carries engine total, GL
+   total, SIGNED and ABSOLUTE variance, guarded variance percent (no percent
+   when the GL amount is at or below the cents tolerance - zero, negative
+   and tiny denominators can never manufacture a percent; the cents
+   tolerance judges those months), the tolerance used, and a per-row status
+   (GL exact / within tolerance / outside). Run-level statuses are distinct
+   and honest: gl_exact, gl_within_tolerance,
+   gl_variances_outside_tolerance, and gl_not_supplied when no GL file is
+   mapped (absence stated, never an implied pass). Net sales and COGS
+   reconcile separately; the result carries the fiscal-period mapping, the
+   account mapping (measure definitions), and unresolved reconciling items
+   (periods missing on either side, the known-cost coverage share). Engine
+   net sales for the comparison use the tax-free product amount, matching a
+   GL that books collected taxes as liabilities.
+2. **Trace evidence**: a deterministic line -> invoice -> period sample with
+   the period's engine and GL totals beside each line, in the HTML report
+   and a new gl_trace_sample export - one dollar can be followed from the
+   source document into the monthly bridge.
+3. **Honest headline**: the Overview h1 is now 'Every source dollar
+   reconciled or explained.' and the reconciliation chip carries the visible
+   residual count and total plus the cost-coverage share (new KPI fields
+   n_visible_residuals / visible_residual_cents; schema and generated types
+   updated). Four overview visual snapshots re-baselined for this deliberate
+   change; design plan updated.
+4. **Exit gate**: tests/test_gl_bridge.py traces TWENTY hand-picked cases
+   (plain/discount/rebate/concession sales, settlement and tiered programs
+   through the rebate subledger, billed and excluded charges, embedded tax,
+   resaleable and damaged returns, price/cost/supplier credits, vendor
+   netting, missing cost, zero cost, zero-quantity fee) from source document
+   through the waterfall, subledger and COGS effect into the monthly GL
+   bridge. One GL difference is PLANTED deliberately (the books carry the
+   missing-cost line's full 330.00) and the test asserts the flagged
+   variance equals that explanation to the cent; a second month differs by
+   80 cents and lands within tolerance; everything else is exact.
+
+Decisions: the row column names changed (variance_cents / variance_pct,
+was diff_*) with tests updated to match - a rename, not a loosening; the
+within_tolerance boolean is kept alongside for continuity.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 469 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0) after re-baselining the 4
+overview snapshots changed by the headline. Demo bundle re-exported with
+the two new KPI fields (schema +12 lines); business figures unchanged.
+
+## Phase 65 — Contribution vs gross profit, and the win-curve objective (2026-10-26, Run 6 branch)
+
+Finding 1: every expected-change figure now says exactly which unit
+economics produced it.
+
+1. **Two expected-change bases, never conflated**: level 3 reports the
+   expected POCKET GROSS PROFIT change (c(P) = P(1-d) - F - C; today's
+   formula, renamed) AND the expected CONTRIBUTION change (c(P) = P(1-d) -
+   F - C - K, with K the pair's estimated per-unit cost-to-serve, labeled
+   estimated). A pair without a supported K gets NO contribution figure -
+   never a borrowed one (k_status: estimated | unavailable). Sensitivity
+   ranges exist on both bases. Because a price increase sheds volume and
+   its service cost, the contribution change exceeds the gross profit
+   change by K x (Q0 - Q1) - high-service pairs rank differently under the
+   two bases (tested).
+2. **Configurable optimizer objective** (pocket_gross_profit default, or
+   contribution); every output names its objective. The contribution
+   optimum is found NUMERICALLY (coarse grid + cent-resolution refine -
+   agrees with the closed form where one exists, tested to within 1 cent)
+   against the MARGINAL K under a declared order-cost response:
+   fixed_order_frequency (default; per-order cost total is volume-constant
+   and drops out of marginal economics) or fixed_order_size (per-order cost
+   is marginal) - the optimum moves accordingly (9150 vs 9450 in the
+   fixture). Without a supported K the provisional target is kept.
+3. **K defined, non-circular (Finding 8)**: K = pair activity cost per unit
+   over the covered baseline, decomposed into a variable component
+   (per-line + per-unit handling) and an order component (per-order +
+   per-delivery), both from the POOL-RESOLVED effective rates - a rate
+   switched off by the Phase 63 overlap check never re-enters through K,
+   and the floor and optimizer share the same number by construction.
+4. **Win-curve objective**: the quote index translates into a monetary
+   price and the optimizer maximizes (P(1-d) - F - C [- K]) x P_win - a
+   contribution call without a supported K is refused, never guessed. The
+   quote optimum differs between the gross and pocket/contribution
+   objectives (tested: deductions push it up, K further).
+5. **Everywhere the figures appear**: actions pick the contribution basis
+   when K is supported, else the named gross profit basis (rationale says
+   which); the bundle, opportunity page, HTML report and explanations show
+   both totals side by side with a never-summed note; metric dictionary and
+   equation sheet updated (Phase 60 pending notes flipped to actual).
+
+Tests: 8 new/reworked in test_opportunity.py (hand-calc on both bases: GP
+2826 / contribution 3235 with K=200; ranking flip; numeric-vs-closed-form;
+order-cost response; objective naming; no-K provisional) and 2 in
+test_quotes.py (objective differences; contribution-without-K refused).
+
+Before/after headline numbers (demo world, deliberate per run-6 rules):
+expected contribution change total 7,799,686 -> 7,843,222 cents (K is now
+subtracted on both sides and volume shed saves service cost); action
+level-3 impact (contribution basis) 3,796,446 -> 3,863,155 cents; the
+fixed-volume level-2 action bucket moved 20,164,261 -> 20,110,146 cents
+(impact-ranked per-type cap recomposed under the new impacts). New GP-basis
+totals shown alongside; 4 opportunity-page snapshots re-baselined for the
+deliberate new line.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 477 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0). Demo bundle re-exported;
+schema +22 lines; generated types updated.
+
+## Phase 66 — Deductions with explicit denominators (2026-10-26, Run 6 branch)
+
+Finding 8: every deduction has a declared form and base, and tiered
+formulas are recomputed, never flattened.
+
+1. **Forms and bases** - flat program rates and realized freight-concession
+   rates are percentages of the SAME base (net invoiced value) applying
+   independently, so they sum into d exactly (documented; rates on
+   different bases are never summed). Fixed per-unit deductions F are cents
+   per unit. Tiered programs are retrospective formulas: rebate =
+   rate(cumulative basis) x cumulative basis.
+2. **Tiered recomputation** - new opportunity/deductions.py:
+   TieredDeductionContext recomputes rebate(B0 + dR) - rebate(B0) per
+   customer-program at each scenario's candidate revenue. Level 2, the
+   conservative variant and BOTH level-3 bases (point and interval, GP and
+   contribution) are fully recomputed for tiered customers - crossing a
+   tier re-rates the whole basis exactly as a settlement would; a negative
+   baseline basis accrues nothing (fail closed). Every record carries
+   deduction_treatment: flat_rate_exact | recomputed_tiered |
+   fixed_rate_approximation (tiered customer with no usable tier table -
+   labeled, with a run note, never silent).
+3. **Known deduction coverage** - new deduction_coverage export per
+   customer: total d, observed share (realized concession history),
+   contract-derived share (program rates), and whether a tiered formula is
+   recomputed; zero coverage is reported as zero, never invented.
+4. **Surfaces** - the bundle's opportunity records carry
+   deduction_treatment (schema +5 lines, labels added); methodology and the
+   equation sheet state the forms, bases and sequencing.
+
+Exit gate (tests/test_deductions.py, 10 tests): reported impact equals a
+baseline-vs-scenario ledger RECOMPUTED THROUGH THE FULL PIPELINE, to the
+cent, for flat (4,900 = gap x qty x 0.98), fixed per-unit, tiered within a
+tier (4,950), tiered CROSSING a tier (3,920 vs the flat rate's naive 5,000)
+and mixed flat+tiered (3,820) arrangements; plus coverage, labels,
+negative-basis and context-construction tests.
+
+Before/after headline numbers (demo world, deliberate): gross price
+opportunity 40,450,015 -> 39,629,675 cents (tiered customers' rebate growth
+now nets out of level 2); expected contribution change 7,843,222 ->
+7,966,738 cents and GP basis 7,799,686 -> 7,923,208 cents (elastic demand:
+candidate revenue falls, so tiered rebates fall, raising the pocket gain);
+action level-3 impact 3,863,155 -> 3,942,697 cents; level-2 action bucket
+20,110,146 -> 19,416,170 cents.
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 487 passed 0 failed (exit 0); tsc 0; vitest 22/22;
+vite build 0; Playwright 225 passed (exit 0, no snapshot changes). Demo
+bundle re-exported; generated types updated.
+
+## Phase 67 — Floors and bands guardrails (2026-10-26, Run 6 branch)
+
+Findings 9 and 10 (policy decisions), implemented as explicit configuration
+and visible disclosure, never implicit behavior.
+
+1. **Band independence** - bands report the distinct customers, pairs,
+   months and list regimes behind them, and a band now needs
+   min_band_customers distinct customers (default 5) besides the minimum
+   independent observations (pair-month medians, pair-weighted, stated):
+   one customer's history is not a market reference.
+2. **Target unavailability with named reasons** - targets/starts are
+   unavailable (target_unavailable_reason) when the segment is thin
+   (thin_segment_or_data), the floor sits above the corridor
+   (floor_above_corridor), or the pair's list is STALE (stale_list - new
+   behavior: a stale list previously blocked only the floor-index
+   comparison; now it blocks the index-space target too; dollar floors are
+   kept).
+3. **Mixed units equivalence guard** - an item trading in several
+   normalized units never enters a band; its pairs report insufficient data
+   with reason mixed_units_no_equivalence and a run note.
+4. **Contribution floor scope and disclosure** - stays opt-in (default
+   off); scopable to item roles and channels
+   (contribution_floor_item_roles/channels; order-type scoping documented
+   as a pair-grain limitation); when it binds, k_assumption discloses the
+   estimated K that makes it bind.
+5. **Authorized below-floor roles** - authorized_below_floor_roles (empty
+   by default): statuses stay visible; below-floor-fix actions generate
+   BLOCKED with the authorization shown - configuration is the only
+   override path for loss leaders / strategic KVIs / end-of-life items.
+6. **ERP price increments** - price_increment_cents (default 1 = no
+   change): optimized prices snap to the increment with the floor rounded
+   UP first, so a snap can never breach it.
+7. **Disclosures** - guidance pairs carry uom_basis, channel, cost_as_of
+   (the date of the sale the CURRENT unit cost came from) and k_assumption;
+   methodology states the pair weighting, the current-vs-dated cost
+   labeling and the eligibility disclosures.
+
+Tests added: tests/test_floors_bands.py (7): independence counts;
+single-customer band insufficient; stale list blocks target with reason
+and keeps dollar floors; mixed units excluded without contaminating the
+band; contribution floor role scoping with K disclosure; authorized role
+blocks the fix action; increment snapping (9700 -> 9600 at a 300-cent
+increment, floor rounded up).
+
+Headline numbers: UNCHANGED on the demo world (identical opportunity
+totals 39,629,675 / 7,966,738 cents; 1,550 guidance pairs; no stale lists
+at the 24-month default and every band has at least 5 customers thanks to
+the 20-customer leaf minimums).
+
+Checks (exit codes confirmed): ruff 0; ruff format 0; mypy src api 0
+(strict); full pytest 494 passed 0 failed (exit 0); Playwright 225 passed
+(exit 0). Demo bundle re-exported (guidance CSV gains the disclosure
+columns; bundle figures unchanged).
+
+## Phase 68 — Action overlap and portfolio totals (2026-10-26, Run 6 branch)
+
+Finding 16 (confirmed: no overlap guard existed).
+
+1. **Scope metadata on every action** - scope_key (for price actions the
+   uniqueness unit customer x item x UOM x effective date), baseline_period,
+   intervention, affected_set, scenario_id, overlap_group. Built in
+   _finalize so the per-type generators stay simple; manual API proposals
+   carry the same keys.
+2. **One active proposed price per scope** - approval refuses a duplicate
+   with the competing action named (review.check_no_duplicate_active_price,
+   HTTP 409 duplicate_active_price); the price export refuses a file
+   carrying two prices for one scope (defense in depth, since an ERP import
+   with two prices for one key is a hazard).
+3. **Cross-scope overlap** - a pass-through scenario and pair price actions
+   on the same items share an overlap_group, assigned at generation from the
+   panel's category/supplier membership.
+4. **Portfolio scenarios** - new actions/portfolio.py computes, per overlap
+   group, the naive sum AND the joint estimate under one baseline: price
+   actions keep single-action impacts (deduped by scope_key) while the
+   pass-through recovery is RECOMPUTED with the priced pairs removed from
+   its eligible base. New export action_portfolio_groups; the bundle carries
+   overlap_groups and the Action center shows them with the naive sum beside
+   the portfolio estimate, explicitly non-additive with the lists above.
+   The API serves the engine-computed groups and says manual proposals are
+   not in them.
+
+Tests added: tests/test_action_overlap.py (5): duplicate blocked at
+approval (and NOT blocked by a rejected competitor, nor across different
+effective dates); export refuses duplicate scopes; portfolio estimate
+equals price impact + recomputed residual recovery and is strictly below
+the naive sum; portfolio dedupes price scopes. Existing hand-built action
+fixtures in three test files gained the new schema columns.
+
+Demo world: 2 overlap groups found - category CAT02 (49 actions, naive
+17,049,821 cents vs portfolio 11,786,553) and supplier SUP04 (37 actions,
+naive 16,294,575 vs portfolio 10,797,603). The gap IS the double counting
+the previous build would have implied. Action count (277), by-status and
+by-basis dollars unchanged.
+
+Process note: the first full-pytest run of this phase was stopped after
+Phase 69 edits had begun landing in the same tree (the run would have
+tested a mixture). The Phase 69 work was snapshotted out, the tree
+restored to Phase 68 only, and the gate re-run clean.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 498 passed 0 failed (exit 0); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed (exit 0). Demo bundle
+re-exported; schema and generated types updated.
+
+## Phase 69 — Stale actions and safe transitions (2026-10-26, Run 6 branch)
+
+Findings 19 and 20 (confirmed: neither revalidation nor concurrency control
+existed).
+
+1. **Fingerprints and expiry** - every action stores input_fingerprint
+   (source file content hashes), config_fingerprint (rules hash),
+   model_fingerprint (segment elasticity statuses and estimates) and
+   expires_on (anchor + revalidation.expiry_days, default 90). Manual API
+   proposals carry model_fingerprint='manual_proposal' and no engine
+   fingerprints - stated by their absence.
+2. **Revalidation at approval and export** - new actions/revalidate.py
+   compares the stored key values to the engine's CURRENT guidance: current
+   price, binding floor, list provenance, contract protection, guidance
+   sufficiency, compliance flags, scope duplication, expiry. Verdicts:
+   unchanged / changed_within_tolerance / re_review_required / invalid /
+   not_testable. EVERY move is shown with both versions; only moves beyond
+   the configured thresholds (floor 2%, current price 2%, impact 20%) or
+   hard changes block. A check the available outputs cannot support is
+   NAMED in not_testable - never counted as a pass. Approval returns 409
+   stale_action with the field-by-field differences; export HOLDS OUT stale
+   rows with their reason instead of shipping them.
+3. **Audit trail** - action_revalidations table keeps both versions of every
+   difference with who/when/trigger; new store.revalidations() reader.
+4. **Concurrency** - transitions accept expected_seq; the count check and
+   the insert run inside ONE DuckDB transaction with the count re-read
+   under it, so two simultaneous transitions cannot both land. The loser
+   gets ConcurrencyError -> HTTP 409 sequence_conflict naming the expected
+   and found sequence, and writes nothing. Omitting the token keeps the
+   previous behavior.
+5. **Export recovery** - an export journals its intent (export id, path,
+   action ids) BEFORE writing the file and commits the journal only after
+   the transitions land. A crash in between leaves an open row that the
+   next export or recover_pending_exports() completes for exactly those
+   actions, SKIPPING any that moved past approved - so recovery never
+   re-exports a superseded or implemented price. Idempotent. The CLI
+   reports recovered actions and held-out stale rows.
+
+Tests added: tests/test_stale_actions.py (25): all verdicts incl.
+not-testable and disabled-config paths; sub-threshold moves shown but not
+blocking; floor/current-price/list-staleness/compliance/expiry/scope and
+vanished-pair cases; audit rows keep both versions; expected-sequence
+mismatch writes nothing; the second simultaneous transition loses; journal
+before write and commit after; recovery idempotent and never reintroducing
+an implemented price; export holds out a stale row and audits it.
+
+Two defects found and fixed by the gates, both worth recording: DuckDB
+treats 'at' as a reserved word, so the new audit/journal readers needed it
+quoted; and api/store.py's snapshot property RAISES when no bundle is
+loaded, so the new guidance lookup could not use getattr-with-default -
+action-store requests must not depend on a loaded bundle.
+
+Headline numbers: unchanged (277 actions; same by-basis dollars). Four
+Action-center visual snapshots were re-baselined here for Phase 68's
+overlapping-scopes panel: that phase's Playwright run had passed against a
+build predating the rebuilt bundle, so the panel first appeared in this
+phase's run. Phase 69 itself changed no UI.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 523 passed 0 failed (exit 0);
+Playwright 225 passed 3 skipped (exit 0). Demo bundle re-exported.
+
+## Phase 70 — Competitor-price path in the causal gate (2026-10-26, Run 6 branch)
+
+Findings 2 and 13. The estimand is now NAMED and the top status requires the
+competitor-price path to be addressed.
+
+**Design note (a planning critique changed the approach before any code was
+written).** The obvious adequacy test — reject a market control that
+correlates too highly with the instruments — is BACKWARDS. A faithful
+market-price control must correlate with industry-wide cost instruments,
+because that correlation IS the confound it absorbs; an R-squared ceiling
+would have rewarded a column of noise and rejected an informative series.
+Adequacy is therefore structural and relevance-based.
+
+1. **New module sensitivity/market_control.py**: `select_market_index` moves
+   Phase 37's public-source rule out of the pipeline so tests and the
+   validation scripts exercise the same decision production does (they
+   previously bypassed it entirely). `assess_market_control` checks, in
+   order: freshness (trailing lag on covered periods), coverage, ABSORPTION
+   (more than one distinct value per time fixed-effect cell — a national
+   monthly series is removed exactly by month effects, a structural fact
+   tested structurally, not by an epsilon on a variance), RELEVANCE (share of
+   within-pair price movement explained, with the right sign), and
+   restatement (only near-exact collinearity, R-squared >= 0.99, is refused).
+   `resolve_competitor_path` reads each instrument's declared path and
+   requires EVERY instrument to clear it, since the estimate uses them
+   jointly.
+2. **Grain is the CHANNEL's, not the instrument's** — new
+   `InstrumentPath.channel_grain` with its argument in config: customers
+   compare sellers of the same item class, so a category-level index is the
+   right grain even for a supplier-level instrument. A control coarser than
+   the declared channel grain is refused
+   (`control_coarser_than_instrument`).
+3. **No fail-open switch.** There is deliberately no config flag that
+   disables the gate. The only routes to the top status are an adequate
+   control or `resolved_by: no_path` WITH a written treatment (enforced by a
+   validator — a one-word switch must not lift a causal claim).
+4. **Three estimands** (not two): `unilateral_own_price_response`,
+   `market_wide_cost_shock_response` (with
+   `estimand_bias_direction=understates_sensitivity`) and
+   `descriptive_association` — because calling a non-IV estimate a
+   market-wide cost-shock response would assert a reading no instrument
+   supported.
+5. **causal_status_reasons**: eight machine-readable gates (order, gate,
+   pass / fail / not_evaluated, plain-English detail), exported long-form as
+   `sensitivity_gates` and rendered as a UI checklist carrying its outcome in
+   a glyph AND words. A check the data cannot support is NOT EVALUATED, never
+   a pass.
+6. **Variance fixed as the critique required**: the leave-one-cluster-out
+   jackknife now RE-FITS the control inside every replicate (algebraically,
+   via leave-one-out moment sums), instead of partialling once and treating
+   the coefficient as known. Measured effect: 95% CI coverage 92.7% -> 94.7%.
+7. **Two consequences of controlling, measured and made explicit.** Holding
+   the category market price constant removes nearly all of the CATEGORY
+   tariff instrument's variation (its own first stage falls to F 0.0-5.8 on
+   the demo world) while the SUPPLIER cost shock keeps F 880-2000. That is
+   the economics, not an artifact: a category tariff IS a category
+   market-price mover, while a supplier-specific shock moves this
+   distributor's cost without moving the category market price — which is
+   exactly what identifies a UNILATERAL move. So (a) overidentification now
+   runs only over instruments that still identify price (fewer than two
+   leaves the model just-identified and the test reported as not evaluated,
+   which the spec's own criterion contemplates), and (b) the robustness
+   spread covers only IDENTIFIED alternatives, with excluded ones named and
+   their first-stage F reported. A specification whose own first stage is
+   weak is not evidence the headline is unstable — it is an unidentified
+   specification. With NO identified alternative the spread is UNKNOWN and
+   the top status is refused, rather than collapsing to a reassuring zero.
+8. **Downstream hole closed**: at instrumented-only status with an
+   uncontrolled path, the two-sided expected-change range is withheld
+   (volume treatment `competitor_path_uncontrolled`). An interval for a
+   market-wide estimand is not a confidence interval for the unilateral move
+   being priced, and its bias direction flatters price increases.
+9. **Cross-price** top status is explicitly capped: the market control is not
+   wired into that design, so `causal_cross_elasticity_supported` cannot be
+   claimed while the path is uncontrolled.
+10. **Generator (demo continuity, as the spec requires)**: every world now
+    publishes a market price index, built per CATEGORY and month from the
+    category-mean supplier cost shock plus the tariff plus its own noise,
+    drawn from a DEDICATED generator so no existing world's prices or planted
+    truth shift. The `competitor_comovement` preset gets a deliberately
+    INADEQUATE national-monthly series — the world where competitor prices
+    move with the instruments is also the world whose published series cannot
+    control them. The planted true competitor path stays separate from the
+    published proxy, because a real published series is a noisy proxy of the
+    market condition, never the condition itself.
+
+Latent bug found by the new design: in the two-way (Cameron-Gelbach-Miller)
+variance, when NO per-dimension component was positive the fallback called
+max() on an empty sequence and raised. It now reports an infinite variance,
+which fails the strength and precision gates instead of passing them on a
+variance of zero; the first-stage F guards non-finite input the same way.
+
+Tests added: tests/test_competitor_path.py (22): source selection; adequacy
+including the two cases that matter most — heavy correlation with an
+instrument is NOT disqualifying, and a pure-noise control IS refused as
+uninformative; structural absorption; staleness evaluated before coverage;
+path resolution including undocumented, no-path-without-argument, grain too
+coarse, declared channel grain, and one-unresolved-instrument-contaminates;
+the three estimands; plus structural checks that no fail-open switch exists
+and that the shipped instruments declare their resolution and grain.
+
+Two existing tests were deliberately updated (premises the spec changed, not
+weakened): test_generator's market-index assertion now checks that EVERY
+world publishes an index, that the well-identified one varies within each
+period, and that the co-movement preset's is national; and
+test_diagnostics_reported now asserts the stronger honest behavior —
+overidentification present only with two identified instruments, a missing
+figure accompanied by its reason, an unknown robustness spread capping the
+status, the estimand always named, and a causal status implying a resolved
+path.
+
+Before/after (validation.json, regenerated, 2305s):
+
+| Check | Before | After | Target |
+|---|---|---|---|
+| Elasticity recovery, planted grain | median 0.019, P90 0.051, worst 0.110 | median 0.019, P90 0.077, worst 0.095 | median <= 0.10, P90 <= 0.15 — PASS |
+| Elasticity recovery, engine segments | median 0.019, P90 0.072, worst 0.110 | median 0.022, P90 0.077, worst 0.095 | PASS |
+| 95% CI coverage, 50 simulations | 278/300 = 92.7% | 284/300 = 94.7% | 90-98% — PASS |
+| CI coverage, persistent demand (shipped default) | 280/300 = 93.3% | 278/300 = 92.7% | 90-98% — PASS |
+| Naive estimator bias | toward zero on 5/5 seeds | unchanged | PASS |
+| Causal support reachable | "Reached" | "Reached; competitor-price path controlled by market index; market index adequate" | PASS |
+| Competitor-price path gate (new, informational) | — | 13/30 segment-seeds reach causal support; 17/30 just-identified after controlling | informational |
+
+Demo world: segment 6 KEEPS `causal_elasticity_supported`, now earned against
+the gate (control adequate, path controlled, estimand named). Expected
+contribution change 7,966,738 -> 4,993,815 cents and the pocket gross profit
+basis 7,923,208 -> 4,963,644 cents, because the control is now partialled out
+of the elasticity. Causal segments 1 of 3 — unchanged in count, stronger in
+meaning.
+
+Process fix found while regenerating: `measure_validation.py` overwrote
+validation.json wholesale, silently deleting the five rows the other
+measurement scripts contribute (hybrid world, results tracker, scale,
+scenario matrix). It now carries forward any row it did not produce, the way
+`measure_tracker.py` already did, and the five rows were restored. The one
+failing row, Scale (10M-line pipeline), is the pre-existing Run 4 KNOWN GAP
+that Phase 83 addresses.
+
+Checks (exit codes confirmed from the processes): ruff 0; ruff format 0;
+mypy src api 0 (strict); full pytest 545 passed 0 failed (exit 0); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed 3 skipped (exit 0) after
+re-baselining 8 snapshots on the three pages whose content deliberately
+changed (sensitivity gains the gate checklist; opportunity and actions carry
+the new expected-change numbers). validation.json regenerated.
+
+## Phase 71 — Robust weak-instrument diagnostics (2026-10-26, Run 6 branch)
+
+Findings 4 and 13. Four statistics were reported more confidently than they
+could be read. Each now says what it measures, and the cases it cannot speak to
+are named rather than implied. New module
+`src/margin_engine/sensitivity/weak_iv.py` holds all four, tested in isolation.
+
+1. **Robust effective first-stage F.** The gate used a cluster-robust Wald
+   statistic divided by the instrument count against the rule-of-thumb 10. That
+   has no derived critical value for this variance structure and ignored the
+   parameters the within transformation absorbs. The gate now uses
+   `F_eff = pi' Z'Z pi / trace(V_pi Z'Z)` against the Montiel Olea-Pflueger 10%
+   relative-bias value of 23.109 (`min_effective_first_stage_f`), with the
+   heuristic kept reported beside it. Each estimate also carries the effective
+   instrument count `trace(VZZ)^2 / trace((VZZ)^2)` — how many instrument
+   directions actually carry information — plus the absorbed-parameter count
+   and the cluster count, so a reader can see how thin the segment was.
+   Demo: F_eff 131.8, 1034.8 and 1278.9 against the 23.109 bar, against the
+   heuristic's 90.1, 1385.7 and 1539.9 on the same segments — the heuristic
+   reads both higher and lower than the corrected statistic, so it was not a
+   conservative stand-in. 24 clusters; 230 to 844 absorbed parameters; the
+   effective instrument count is 1.50 to 1.93 against a nominal 2, so one
+   instrument direction is already carrying most of the information.
+
+2. **The weak-instrument-robust set is reported as a shape, not an interval.**
+   Inverting the Anderson-Rubin test over a grid gives an acceptance set that
+   need not be connected or bounded; compressing it to its lowest and highest
+   accepted points described a disconnected set as connected and an open-ended
+   one as bounded. Five shapes are distinguished — empty, single point, one
+   range, two or more ranges, reaches the search bound — with the convex hull,
+   the total measure of the accepted ranges (gaps excluded), the component
+   count, and the rejected ranges between them. An empty set and a single-point
+   set are evidence *against* the model, not precision in its favour, and
+   neither earns the causal status. A single point gets the measure of one grid
+   step rather than zero width, because zero reads as "nothing accepted" when
+   the truth is "almost nothing accepted". Touching a search bound widens the
+   grid once and re-inverts before the set is labeled open-ended. Gate 8
+   compares the measure, not the hull, so a disconnected set is not credited
+   with the gaps it rejects. Demo: all three segments one connected range,
+   measures 0.34 to 0.78.
+
+3. **Anticipation (lead) test.** The overidentification test compares the
+   instruments against each other and cannot see a violation they share.
+   Anticipation is one such violation: if buyers see a cost or tariff movement
+   coming, future instrument values predict current volume. The test regresses
+   within-transformed log volume on the standardized sum of the next
+   `lead_test_horizon` periods' instrument values, controlling for current and
+   lagged values, and reports one of five outcomes: rejected (material),
+   detected but immaterial, passed, inconclusive, or not run. Inference uses
+   F on the cluster count rather than chi-square, strictly more conservative at
+   roughly two dozen clusters.
+
+4. **Shuffled-instrument placebo, wired to the estimate it qualifies.** The
+   Phase 27.4 placebo existed but reached only the validation appendix, and
+   `SegmentEstimate.placebo_p` was a declared field that was never populated.
+   The verdict now travels with each segment estimate, read as a binomial-tail
+   test on the rejection count — under a correctly sized test that count is
+   Binomial(`placebo_draws`, 0.05) — with the same three-way structure as the
+   lead test. It qualifies the *inference*, not the instruments' validity, and
+   is informational rather than a gate: it needs the validation run, and a gate
+   reading "not evaluated" in the default path would withdraw every causal
+   status.
+
+5. **The robust standard applied to cross-price (Sanderson-Windmeijer).** With
+   two endogenous prices in one equation, a marginal first-stage F answers "do
+   the instruments move this price?" when the question is "do they move it
+   independently of the other one?" — two industry-wide cost instruments can
+   move both prices strongly and still fail to separate them. Cross-price
+   estimates now report the Sanderson-Windmeijer conditional statistic (target
+   price residualized against the other endogenous price using the instruments,
+   then the effective F on what is left). Both statistics are reported and the
+   conditional one gates the status. The two disagree on 3 of 20 pairs;
+   13 pairs reach the instrumented status, direction 12 of 13 positive as
+   planted.
+
+The spec's two permanent interpretations - that the overidentification test
+cannot detect a violation the instruments share, and that the
+Anderson-Rubin set stays valid under weak instruments but cannot repair a wrong
+exclusion story - are stated once at the top of the per-segment list, always
+visible, and attached as the tooltip on each of the two figures they qualify.
+They were first written inside the per-segment diagnostics panel, which is
+collapsed by default: a caveat a reader has to open is neither permanent nor a
+tooltip.
+
+### Five bugs found while measuring, four of them pre-existing
+
+- **The clustered variance estimator switched its small-sample correction off
+  exactly when it was needed.** `_cluster_ols` computed
+  `dof = ... if n_g > 1 and n > k_total else 1.0`, so a saturated design —
+  where the fixed effects absorb more parameters than there are rows — silently
+  got `dof = 1.0` and returned a variance of 1e-12 to 1e-24, which `pinv`
+  inverts without complaint and which turns any coefficient into an enormous
+  Wald statistic. An inestimable variance is now reported as infinite, so every
+  gate reading it fails closed. This estimator also carries the headline
+  standard errors, not only the lead test.
+- **The guard against a non-positive Cameron-Gelbach-Miller variance was
+  reachable only with a single regressor** (`if k == 1 and ...`). The two-way
+  combination subtracts one sandwich from another and can leave a non-positive
+  diagonal entry at any number of regressors; the anticipation test runs at
+  five or six. The guard now applies per entry at any `k`.
+- **The lead test's sample guard counted rows, not degrees of freedom.** A row
+  floor let saturated designs through. An independent Monte Carlo matched to
+  this generator measured 8 to 30 per cent rejection under the pure null in
+  that band, and the engine reaches it: on well-identified seeds the long-tail
+  segment produced lead samples of 23 and 26 rows with an implied coefficient
+  of -1.6e14. The guard now requires residual degrees of freedom
+  (`lead_test_min_residual_dof`, default 30).
+- **The materiality threshold was applied to only one branch of the lead test,
+  and was set far off the scale it governs.** Rejection fired on `p < alpha`
+  alone while non-rejection was judged against `lead_test_meaningful_effect`.
+  On a panel of tens of thousands of rows the test resolves effects two orders
+  of magnitude below what the engine calls material, so the asymmetry let a
+  coefficient of -0.004 with an interval of [-0.008, -0.000] print "anticipation
+  detected, an exclusion violation the overidentification test cannot see"
+  beside an interval that ruled the channel out — and move a segment's status
+  on it. Worse, the threshold's units are log-volume per standard deviation of
+  one lead, where the entire contemporaneous price channel is about 0.08, so
+  the default of 0.50 was roughly six times the whole effect the instruments
+  identify: the inconclusive verdict was unreachable, and measured power
+  against an anticipation effect worth 42 per cent of the price channel was
+  only 33 per cent, reported as a pass. The threshold now governs both branches
+  and defaults to 0.05, and a significant but immaterial finding is reported as
+  `lead_test_immaterial` without blocking. Gate 9 is renamed
+  `no_material_anticipation_effect` to match what it tests.
+- **The positive-definiteness guard on the effective F used a strict
+  `min_eig <= 0`** and so refused 8 of 20 legitimate cross-price first stages,
+  reporting them as conditional F 0.0, which then read as "weak instruments".
+  Indefiniteness is now judged relative to the matrix's own scale: an
+  eigenvalue at the arithmetic rounding floor of a positive-semidefinite
+  sandwich is noise, not a broken variance. (Introduced in this phase.)
+
+Two further construction defects in the lead test, both fixed: leads were taken
+by positional `shift(-k)`, so on this sparse panel a lead could reach past a gap
+and treat a value three months ahead as next month's; and the aggregate
+regressor summed raw lead values across two instruments with different
+variances, weighting whichever happened to be larger. Leads are now taken by
+calendar month and each is divided by its own standard deviation before summing.
+
+### What the lead test does and does not cover
+
+It runs on positive-quantity rows with an unbroken run of months around them —
+about half the positive rows at demo scale, and 23 of 9004 in a long-tail
+segment — so it measures frequent repeat buyers, not the population whose
+elasticity it gates, and anticipation expressed as holding off from buying
+altogether is invisible to it. Power is also a function of the horizon: the same
+planted anticipation at lead 1 rejected 115 of 150 times at horizon 2 and 8 of
+150 at horizon 4, since the equal-weight aggregate dilutes across more leads and
+the sample shrinks. The single aggregate restriction is a valid test of one
+scalar functional of the null, not of all of its restrictions, and is blind to
+patterns orthogonal to it (opposite signs across instruments or horizons). Every
+verdict now states the rows used, the rows available and the degrees of freedom
+left; the limitations are in `docs/methodology.md`.
+
+### Measured outcomes
+
+Anticipation test on `well_identified` worlds, which plant no anticipation
+channel at all (`synth/demand.py` drives demand from contemporaneous terms
+only, so every rejection there is a false positive by construction): 3 seeds x 6
+planted segments = 18 segment-seeds, **0 rejected**, 15 passed, 3 not run,
+p-values spread 0.07 to 0.99 (roughly uniform, as a correctly sized test
+produces under the null) and detectable bounds 0.0016 to 0.0067 — two orders of
+magnitude inside the 0.05 material bar, so the passes are genuine passes rather
+than low-power silence. 11 of 18 segments reach causal support.
+
+An earlier version of this test, before the fixes above, rejected 2 of 4
+segments in the same kind of world at detectable bounds of 5 to 131 — i.e. with
+no power whatsoever.
+
+Demo world: segment 6 keeps `causal_elasticity_supported`. Its anticipation
+test is significant (p = 0.0376) but the largest effect its interval admits is
+0.009 against the 0.05 bar, so it reads "detected but immaterial" and does not
+block. Segment 23 passes (p = 0.2592, bound 0.0075); segment 26's test cannot
+run. The placebo reads underpowered for segments 6 and 23 (2 of 10 shuffled
+draws significant — ordinary sampling noise at that draw count, where only 3 of
+10 or more could have been flagged) and **over-rejects for segment 26** (4 of 10
+draws, probability 0.001 under a correctly sized test), meaning that segment's
+standard errors are too small. Segment 26 already carried only
+`iv_estimated_elasticity`, so no status moved, but the finding is now visible
+beside the estimate instead of buried in an appendix.
+
+Demo dollar headlines are unchanged from Phase 70: expected contribution change
+4,993,815 cents, pocket gross profit basis 4,963,644 cents, causal segments 1 of
+3. The gate got stricter without moving the numbers, because the demo's
+diagnostics clear the stronger bars.
+
+### Decision recorded
+
+When the first version of the calendar-lead fix made the test powerful enough to
+reject on the demo, segment 6 lost its causal status and the demo would have
+shipped with no causal segment at all. The fix was **not** to loosen the test or
+to add a per-world exception. Two independent reviews (an econometric
+specification read with its own Monte Carlo, and an adversarial read instructed
+to defend the rejection) converged on the actual defect: the rejection branch
+had no materiality floor while the non-rejection branch had one. Applying the
+engine's own threshold symmetrically restores the status *and* keeps the finding
+reported. The test was left strictly more powerful than before, and its
+false-rejection rate on worlds with nothing planted is 0 of 18.
+
+### Tests added
+
+`tests/test_weak_iv.py` (33): effective F against its homoskedastic reduction,
+scale invariance in the instruments, refusal of an indefinite and of an
+inestimable variance, monotonicity in instrument strength, absorbed-parameter
+reporting, and the one derived critical value; the five Anderson-Rubin shapes
+including an empty set read as misspecification, a single point given one grid
+step of measure rather than zero, the rejected gap in a disconnected set, edge
+contact, and skipped grid points making the display unreliable; the lead test's
+five outcomes, F rather than chi-square inference, horizon reporting, the
+materiality floor on both branches, and a precision sweep proving a sub-threshold
+effect can never read as a material violation at any sample size; the
+Sanderson-Windmeijer conditional statistic collapsing when two loading vectors
+are parallel while the marginal statistic barely moves; the binomial placebo
+verdict including 2-of-10 as noise, 4-of-10 as over-rejection, 300 draws
+actually clearing the inference, and monotonicity in the rejection count; and
+the two `_cluster_ols` guards — a saturated design reporting no variance rather
+than a tiny one, and a non-positive clustered variance caught above one
+regressor. `tests/test_substitution.py` gains a test that the conditional
+statistic, not the marginal one, is what gates the cross-price status.
+
+### A stale snapshot inherited from Phase 70
+
+The Playwright run surfaced four failing snapshots on the Data & methodology
+page that Phase 71 did not cause: the committed images still showed the
+pre-Phase-70 validation figures (elasticity P90 0.051 and worst 0.110, CI
+coverage 278/300 = 92.7%, "Causal support reachable: Reached") while the page
+correctly rendered the committed `docs/validation.json` (P90 0.077, worst 0.095,
+284/300 = 94.7%, and the new competitor-price path row). Phase 70 regenerated
+validation.json *after* its Playwright gate had run and re-baselined only the
+sensitivity, opportunity and actions pages, so it committed an image that no
+longer matched its own data. Recorded here rather than quietly fixed: the gate
+did its job, a phase report claimed a pass the artifacts did not support, and
+the ordering that caused it - regenerate measurements, then re-export, then
+re-baseline, then gate - is the ordering this phase followed.
+
+The two remaining snapshot changes are Phase 71's own: the cross-price table
+gained the conditional first-stage column, which wraps at 375 px and so changes
+the modules page on mobile only.
+
+### Performance: a 2.4% regression found, fixed, and verified
+
+The regenerated validation run reported the Run-1 performance check FAILED:
+811,253 lines in 125.8s against a 120s bar, where the committed figure was
+111.0s. Rather than accept or dismiss it, the check was measured A/B - current
+tree against the Phase 70 commit in a git worktree, same interpreter and
+dependency set, three runs each, interleaved so thermal drift could not favour
+one side.
+
+| Run | Current, before fix | Current, after fix | Baseline (Phase 70 code) |
+|---|---|---|---|
+| 1 | 122.4s | 121.6s | 119.5s / 118.4s |
+| 2 | 118.1s | 117.6s | 118.9s / 119.0s |
+| 3 | 123.5s | 119.0s | 120.3s / 118.3s |
+| median | 122.4s | 119.0s | 119.5s / 118.4s |
+
+(The baseline column shows both A/B rounds; it is unchanged code measured twice.)
+
+Two separate facts came out of it.
+
+**The committed 111.0s does not reproduce on this machine.** Unchanged Phase 70
+code measures 118.3 to 120.3s today. About 8s of the original 14.8s gap is the
+machine, not the code. The performance row records the hardware but held a
+single measurement with no spread, so it could not distinguish a code
+regression from a slower machine - which is exactly the confusion it caused
+here. The figure now committed, 119.0s, is likewise a single draw from a
+distribution whose spread is roughly 4s on this hardware.
+
+**Phase 71 did add a real cost of about 2.9s (2.4%)**, and that part was mine.
+The anticipation test built its lead and lag columns with one merge on
+(pair, month) per instrument per offset - six merges for a two-instrument
+horizon-2 design - where one merge per offset carrying both instruments is
+identical in semantics and does three. After the fix the gap to baseline is
+0.6s at the median, inside the run-to-run spread, and the check passes at
+119.0s. No target was loosened and no world was shrunk.
+
+Noted for the owner, not acted on: the harness measures a world of 811,253
+lines against a target stated as "500k+ lines under 2 minutes", while its own
+comment says the world is meant to be "~600-700k lines, measured at that scale,
+not at multiples of it". The generated world has drifted about 25% above its
+documented intent at some earlier point, which is why a 120s bar is now decided
+by a few seconds of ambient variation. Shrinking the world would make the check
+pass by making it easier, so it is left alone and recorded instead.
+
+### validation.json
+
+Regenerated in 3715s; 35 rows, 1 failing -
+only the pre-existing Scale (10M-line) KNOWN GAP, unchanged. No gated target
+moved. Two informational rows added:
+
+- **Anticipation (lead) test false-rejection rate**: 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes
+- **Robust first-stage statistic and robust-set shape**: Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86
+
+### Checks
+
+ruff check 0; ruff format clean; mypy src api 0 (strict, 91 files); full pytest 579 passed
+2 deselected (exit 0, 1800s); tsc 0; vitest 22/22; vite build 0; Playwright 225 passed 3 skipped
+(exit 0) after re-baselining 10 snapshots on the three pages whose content
+deliberately changed - sensitivity (the new robust diagnostics and the two
+permanent interpretations), modules on mobile (the conditional first-stage
+column), and methodology (the regenerated validation table, four of whose
+images were already stale from Phase 70).
+
+## Phase 72 — IV estimand with zero sales (2026-10-27, Run 6 branch)
+
+Finding 3: the FE-2SLS headline is fitted on positive-quantity rows, so it
+measures the response of quantity *conditional on buying* and cannot see a
+customer who stops buying. This phase adds a second estimand that can, keeps
+the two apart everywhere, and refuses to let the second outrank the first.
+
+### The estimand, and the ceiling it carries
+
+An IV-Poisson control function over the whole panel including its zero rows:
+the first-stage residual enters the Poisson equation as a regressor, which is
+what makes the price coefficient an instrumented one. Statuses are
+`insufficient_data_total_quantity`, `descriptive_total_quantity` and
+`iv_estimated_total_quantity`, and the last is the ceiling **by construction**,
+for three measured reasons recorded on the estimate itself: recovery is about
+six times less accurate than the conditional estimator manages on its own
+estimand; no overidentification test exists for it (the linear J is computed on
+positive rows and tests the conditional model); and the temporal backtest
+predicts positive-quantity rows, so this estimate has no out-of-sample check.
+Nothing downstream prices from it.
+
+**The first stage is fitted on observed prices only.** A zero row's price is
+imputed, so it carries a stale cost shock: measured pass-through on zero rows
+is 0.31 against 0.72 on purchase rows. Fitting the coefficient on every row
+pulled it from 0.72 to 0.62, and because a zero row contributes nothing to the
+quantity side of the Poisson score, only the first stage shrank — inflating the
+price coefficient by one over that factor, always away from zero. Median
+absolute error 0.31, against a truth the conditional estimator recovers to 0.03.
+
+### Inference, and a correction that is reported rather than adopted
+
+Two standard errors, both published, each labeled with what it leaves out. The
+analytic cluster-robust one is free but treats the estimated control function
+as known, so it omits first-stage sampling noise and is a lower bound. A pair
+cluster bootstrap refits the whole procedure per replicate — each drawn copy of
+a pair getting a fresh fixed effect — so it does carry that noise, while it
+cannot carry dependence common to pairs within a period without duplicating
+periods and breaking the time fixed effects.
+
+The split-panel jackknife for the incidental-parameter bias that Kwon, Larch,
+Yoon & Yotov (2026, CESifo WP 12641) document for IV-PPML with high-dimensional
+fixed effects is computed and reported, never substituted: it doubles one
+estimate and subtracts the mean of two noisier ones, roughly tripling the
+variance. The corrected-against-uncorrected comparison is now a row in
+validation.json, and the correction is adopted only if that row ever says it
+helps.
+
+Both are pure diagnostics — neither moves a status — and each costs whole extra
+fits per segment, so both are off in the shipped `config/rules.yaml` and on in
+the validation study. The check that *does* move a status stays on.
+
+### Zero rows: what they rest on, and whether the answer depends on it
+
+Every panel row declares `assortment_basis` (observed / inferred),
+`availability_basis` (observed / proxied), `price_status` (observed / quoted /
+list_x_pair_discount / carried_forward) and `zero_reason_basis`, which is
+`unknown` for every no-purchase month because no export records why a customer
+did not buy.
+
+Two of those are inferences, so each is tested by refitting without the rows
+that lean on it hardest — the months priced by imputation, and the months whose
+availability rests on a single other buyer. Past `iv_ppml_max_zero_row_gap`
+(0.30) the estimand is demoted to descriptive.
+
+### Rows and units the fit could not use
+
+Reported by reason — contract, no price, no instrument value, singleton fixed
+effect, separation — in rows AND units, each reason measured on what survived
+the previous one so the parts add to the whole. Separation gets the emphasis: a
+pair that never buys is exactly the customer this estimand exists to capture,
+and a Poisson with pair fixed effects cannot use it. The accounting is computed
+from the panel rather than read back from pyfixest, so it survives a library
+upgrade and exists even when the fit itself fails.
+
+### The conditional estimate is never the only volume response on a record
+
+Opportunity records carry the segment's total-quantity elasticity, the same
+arithmetic re-run under it, and a plain-English note naming what the headline
+holds fixed — or, where no total-quantity estimate exists, saying the second
+effect is untested rather than ruled out. The two are alternatives, never
+summed. A new metric-dictionary entry defines the companion figure.
+
+### A memory regression that made the suite unrunnable
+
+The owner stopped a `tests/test_sensitivity.py` run that had reached **11.5 GB**
+on a 14 GB machine with 0.1 GB free, after it had been swapping for hours. The
+cause was not the new estimator.
+
+`_intensive_kappa`, added to the generator this phase to record the planted
+truth, built three `(399, n_obs)` float64 arrays at once — `z`, its normal CDF
+and its normal PDF — which at the default world's ~720k pair-months is 2.3 GB
+each. It runs on **every world every test generates**, so it was not a
+sensitivity-test problem at all; it was a tax on the whole suite.
+
+The sum runs over `k`, i.e. down each column, so the columns can be evaluated
+in blocks without touching any column's summation order. Measured on one world,
+one seed, one process:
+
+| stage | before | after |
+|---|---|---|
+| `generate` | 7.96 GB | **1.71 GB** |
+| whole single-world build and estimate | 8.70 GB | **2.80 GB** |
+
+The result is **bit-identical**, verified against the old form on 57,321 draws
+and again in the small-mu regime where the quantity floor binds. A test pins
+it, and the pre-existing generator hash fixture — which records digests taken
+*before* this phase — proves no generated world moved.
+
+### Test tiers
+
+Nothing was weakened to make the default tier pass, and nothing lost its
+measurement. The section 8 numbers of record are produced by
+`scripts/measure_validation.py`, which runs each study independently; the slow
+tier is the same measurement inside pytest.
+
+`tests/test_sensitivity.py` now carries both: **13 default-tier tests** on small
+worlds with deliberately wider, explicitly labeled bounds, and **6 slow-tier
+tests** at the scale the targets are stated for, with the stated thresholds.
+Two of the moves are worth naming:
+
+- The **fail-closed preset assertions** (`weak_instrument`, `price_constant`)
+  got reduced-scale copies rather than being shrunk. A "never reaches causal"
+  assertion gets *easier* on a smaller world, because less data is less chance
+  to clear a bar by accident — so the full-scale run is the claim and the
+  reduced one is the tripwire. That reasoning is in the file, not just here.
+- The **end-to-end recovery study** runs one size up from the rest. At the
+  small size, three seeds produced three segment cells pure enough to score
+  against a single planted truth — too few to take a median of. Measured: 3
+  pure cells at the small size, 13 at the reduced size it now uses.
+
+Measured on the default tier: **2.57 GB peak, 286s, 13 passed** — against the
+11.5 GB the owner observed. Per-test attribution drove the last step: the two
+remaining default-scale preset worlds were setting a 3.64 GB peak on their own.
+
+### Running the suite on a 14 GB machine
+
+A single pytest process accumulates allocator arenas across every world the
+suite generates, so its peak is closer to the sum of the worst offenders than
+to the worst one: the whole suite peaked at 4.2 GB where no individual batch
+exceeds 1.6 GB. Running it in small batches, each its own process, releases
+that between groups. Every test still runs exactly once; only the process
+boundary moves. This is a developer-machine workflow, not a change to CI, which
+runs the suite in one invocation on a runner with the memory for it.
+
+### The performance target, and where it is measured from now on
+
+Phase 72 adds work to the sensitivity stage, and the Run-1 performance check
+had 1.0s of headroom (119.0s against a 120s bar). Measured on a 400k-row demo
+panel with six engine segments:
+
+| configuration | sensitivity stage | against baseline |
+|---|---|---|
+| estimand off | 8.54s | — |
+| sequential | 15.02s | +6.48s |
+| 2 workers | 12.96s | +4.42s |
+| **3 workers (shipped)** | **12.17s** | **+3.63s** |
+| 4 workers | 12.00s | +3.45s |
+
+Two changes recovered most of the added cost.
+
+**The cheap disqualifiers run first.** The zero-row robustness refits are two
+extra Poisson fits per segment, and they can only ever demote. A segment
+already demoted by the first-stage or imputed-share check cannot be demoted
+further, so running the refits on it was spending two fits to re-reject it.
+Both orders give identical statuses; this is pure saved work. It saves little
+on a well-identified world, where almost every segment passes those checks,
+and most on the weak and sparse worlds where it matters least for runtime —
+worth having, not the lever that paid.
+
+**Segments are estimated concurrently, longest first.** Threads rather than
+processes: the work is in numpy and pyfixest, which release the GIL, and on
+Windows a process pool would pay a fresh interpreter import per worker and a
+pickle of each segment's frame — both larger than the fit being parallelized.
+The first attempt gained only 1.16x and *lost* at four workers. The cause was
+load imbalance: segments run 21k to 154k rows, so the largest is the critical
+path and starting it last leaves it running alone. Submitting in descending
+size order (longest-processing-time) lifted every worker count and removed the
+four-worker regression. Three workers is the default: 1.23x of the 1.25x
+available, at 2.05 GB against 2.13 GB.
+
+Estimates are collected into a dict keyed by segment and read back in sorted
+order, so exports are byte-identical whatever order the pool finishes in. The
+sweep asserts that at every worker count, and it held at all four.
+
+**This does not reach the 10% headroom the owner asked for**, and the shortfall
+is stated rather than rounded away: the two levers recover 2.9s of the 6.5s
+added, so the pipeline lands near 122s rather than under 108s. Getting to 108s
+needs roughly 11s from the other ~105s of the pipeline, which is Phase 83's
+spill-to-Parquet work, not something per-segment parallelism can reach.
+
+**Where the figure is measured from now on.** Not on a developer machine. The
+full world needs about 5.4 GB, which does not fit beside a desktop on this
+14 GB laptop, and a single local reading cannot separate a code regression from
+a slower machine — exactly the confusion Phase 71 hit, where unchanged code
+measured 118.3 to 120.3s against a committed 111.0s.
+
+`.github/workflows/benchmark.yml` (pull requests and manual dispatch) checks
+out the branch and `main` into one job and measures both back to back on the
+same runner, failing if the branch is over the absolute bar OR more than 10%
+slower than main. `scripts/benchmark_pipeline.py` times `run_full` alone, on a
+world generated in a child process so the generator's peak and the pipeline's
+peak never coexist; `scripts/compare_benchmark.py` applies both bars and writes
+a table to the job summary.
+
+Locally, `measure_validation.py` now emits two rows instead of one: the section
+8 row states that the measurement happens in CI and why, and a separate smoke
+row at reduced scale states that it is below the 500k lines the target names
+and therefore cannot pass it. No local number can be mistaken for the real one.
+
+### Checks
+
+ruff 0; ruff format clean; mypy src api 0 (91 files); tsc 0; vitest 22/22;
+vite build 0.
+
+The Python suite was run in batches, each its own process (see above). **58 of
+59 test files pass.** The exception is `tests/test_full_run.py`, which needs
+4.57 GB — it drives free memory to 1.40 GB on this machine and is killed by the
+2 GB floor the owner set after the freeze. It is not skipped or weakened: it
+runs in CI, which has the memory for it, and this is recorded as a known gap in
+local verification rather than a passing result.
+
+Playwright 225 passed 3 skipped (exit 0), with no snapshot re-baselining: the
+new sensitivity rows render inside the existing page region, so no committed
+image moved.
+
+### Tests added
+
+`tests/test_total_quantity.py` (17) and `tests/test_zero_row_prices.py` (7).
+The loss accounting by reason in rows and units, a never-buying pair reported
+as separated rather than silently dropped, the separation sweep cascading
+through both fixed effects until stable, and the accounting surviving a fit
+that fails. Both standard errors with what each omits, the stated absence of a
+resampled interval when none was computed, the bootstrap bracketing the point
+and refusing fewer than twenty pairs, the split-panel correction reported with
+its bias arithmetic and refusing a panel it cannot halve. The demotion when a
+zero-row guess decides the estimate, both assumptions varied, and every zero
+row declaring what it rests on. `tests/test_opportunity.py` gains the
+allow-list guard tested by behaviour rather than by reading source, the
+total-quantity companion figure on a record, and the untested-not-ruled-out
+wording when no such estimate exists.
+
+## Phase 73 — Clustering at the instrument-assignment level (2026-10-27, Run 6 branch)
+
+Finding 4. Cost shocks arrive by supplier and tariff shocks by product
+category. Those are the units the instruments are *assigned* to, so those are
+the units whose errors move together — and how many of them there are, not how
+many invoice lines there are, is what the interval's accuracy rests on. The
+engine offered three grouping levels, none of them a bare assignment unit:
+`supplier_month`, `month`, and two-way `month_customer`. The period-crossed
+form treats one supplier's January and its February as independent draws,
+which neither the generator's AR(1) shocks nor real input costs are.
+
+### What was added
+
+**Four assignment levels.** `supplier`, `supplier_month`, `category` and
+`category_month` join the two outcome-correlation levels kept from Run 4.
+`panel/build.py` builds all six keys every time, so the estimator switches
+between them without rebuilding the panel and the per-cluster report can be
+produced for any of them. A level whose identifying column is absent is named
+in the record and falls back to the coarsest key present; if there is none,
+the segment says so rather than grouping on something it was not asked to.
+
+**Effective cluster count.** A raw count hides the case the spec asks about:
+twelve suppliers of which one does most of the moving is not twelve
+independent groups. Each segment now reports the raw count per dimension, how
+many clusters carry any instrument movement at all, the largest single
+cluster's share of it, and the inverse Herfindahl of those shares — the
+effective count. On the demo world's segments that is 6.9 to 8.3 against
+twelve raw suppliers, and 5.1 to 6.9 against eight raw categories. The
+effective count is the figure the adequacy criterion reads.
+
+**A tenth criterion, `cluster_structure_adequate`**, inserted at position 4 —
+beside the first stage, because both are about whether identification can
+support inference at all. The six later criteria were renumbered so the report
+has no gap and no two criteria share a position; a test asserts that.
+
+### The small-cluster remedy, and how it was chosen
+
+Below `min_assignment_clusters` effective clusters the group-robust t interval
+is too narrow to publish as a 95% interval, and policy decides. `wild_bootstrap`
+replaces it; `fail_closed` withdraws it. Either way the point estimate stays on
+the record and the analytic figures stay under their own names, because
+withdrawing an interval is the point and hiding the estimate is not.
+
+The bootstrap is the **wild restricted efficient** form: both equations are
+resampled under the same cluster weight, so the correlation between the
+first-stage and structural errors survives into the bootstrap world.
+Resampling the structural equation alone, with price held fixed, would assume
+price exogenous inside the procedure defending an IV estimate.
+
+The interval is the **symmetric** percentile-t. The equal-tailed form was
+implemented first and measured against the analytic interval it was meant to
+repair, over 100 seeded draws per design:
+
+| design | analytic | equal-tailed | symmetric |
+|---|---|---|---|
+| 10 balanced clusters | 88.0% | 88.0% | **93.0%** |
+| 14 balanced clusters | 90.0% | 81.0% | **90.0%** |
+| 24 balanced clusters | 95.0% | 92.0% | **97.0%** |
+| 10 clusters, weak first stage | 79.0% | 66.0% | **88.0%** |
+
+Equal-tailed was consistently worse than doing nothing: an asymmetric bootstrap
+distribution shifts the interval off centre faster than it widens it. The
+symmetric form is what shipped, and a seeded 60-draw version of the same
+measurement is a test, so the choice is pinned rather than remembered.
+
+Two cases have no remedy and fail closed regardless of policy. **Two-way
+grouping** is an intersection of two overlapping partitions and has no single
+partition to resample; resampling the binding dimension alone would discard
+the second one, which under persistent customer demand is exactly the
+dimension that made two-way the default. And below `min_bootstrap_clusters`
+raw clusters there are too few distinct weightings for the bootstrap to be a
+remedy either — 8, the lowest count at which it was measured to beat the
+analytic interval rather than add noise.
+
+Thresholds shipped: `min_assignment_clusters: 15`, `min_bootstrap_clusters: 8`,
+`small_cluster_method: wild_bootstrap`, `wild_bootstrap_reps: 999`. 15 keeps
+the shipped two-way grouping (18.9 to 22.6 effective on the demo world) on the
+analytic interval, which the 50-simulation persistent-demand study had already
+measured inside the band, and withdraws supplier and category, which it cannot.
+
+**Anderson-Rubin critical value.** A correctness fix found on the way. The grid
+inversion used chi-square critical values (5.99 at two instruments), but a
+cluster-robust Wald statistic is chi-square in the number of *clusters*, not
+rows. The bar is now `K x F(K, G-K)`, which converges back as clusters grow:
+6.05 at 288 clusters, 6.89 at 24, 8.21 at 12. At the counts the shipped default
+runs on this is a one per cent change; at the assignment levels it is not.
+
+### The coverage study, and why the default did not move
+
+A new `few_clusters` preset builds the world this phase is about: five
+suppliers, four categories, twelve months, and supplier and category shocks at
+AR(0.85). `scripts/measure_validation.py` replaces the three-level
+persistent-demand study with a six-level `cluster_structure_coverage` over both
+that world and `persistent_demand`, reporting how often each option produced
+**no** interval beside how often it covered — an option that covers well by
+refusing to answer is not the better option, and the count says so.
+
+Measured here across 11 seeds, 66 segment-estimates per cell, every option
+estimated on the same AR(1)-customer-demand worlds:
+
+| grouping | coverage | median width | intervals withdrawn |
+|---|---|---|---|
+| **month and customer (shipped)** | **95.5%** | 0.22 | 0 |
+| supplier, with the bootstrap | 87.9% | 0.23 | 0 |
+| month | 84.8% | 0.17 | 0 |
+| supplier and month | 81.8% | 0.16 | 0 |
+| category and month | 81.8% | 0.17 | 0 |
+| product category | — | — | all 66 |
+
+On the `few_clusters` world the assignment levels do not produce an interval at
+all, and that is structural rather than statistical: five suppliers and four
+categories are both below the bootstrap floor, so there is nothing to resample.
+`scripts/measure_validation.py` re-measures both worlds at 25 seeds for
+validation.json; the figures above come from a 11-seed scratch run used to
+choose the default and are not the recorded ones.
+
+The default did not move, and the reason is worth stating plainly: the
+assignment-level grouping Finding 4 asks for is right in principle and cannot
+be made to cover at a realistic supplier count. Twelve suppliers with the
+bootstrap applied reach 88% — better than every period-crossed form, and still
+short of the 90-98% band — because what breaks coverage under persistent demand
+is the **customer** dimension, shocks carrying over between months within a
+customer, and no supplier-level grouping absorbs it. The two-way form absorbs
+both that and the within-month correlation across the items a customer buys.
+
+What the phase buys is not a new default. It is that the assignment levels are
+now available and measured rather than assumed away; that a level with too few
+groups withdraws its interval instead of printing a narrow one; and that every
+segment shows the count, the spread of identifying variation across it, and
+which interval it ended up reporting.
+
+### A determinism regression from Phase 72, found and fixed
+
+`test_bundle_byte_identical_across_runs` fails on commit `c3748c2`. Phase 72's
+build log recorded 58 of 59 test files passing locally; that count was wrong,
+and this is the correction. The failure is real and reproducible, not a flake.
+
+The cause is Phase 72's thread pool. The estimates it produces are
+byte-identical at every worker count — that was checked and still holds — but
+the **library warnings** raised during the fits are not. Python's warning
+machinery is global: a library that opens its own `catch_warnings` block in one
+thread replaces the recorder every other thread is writing to. Measured on the
+committed sample: one worker records the same five warnings on every run,
+three workers record between one and three, varying between two runs inside the
+same process.
+
+Fixed by absorbing that stage's warnings rather than reporting a list whose
+contents depend on thread scheduling, and saying so in the report instead of
+leaving an absence. What those warnings carried is already reported as
+structured per-segment diagnostics — Phase 72's rows-and-units sample losses
+count singleton and separated groups, and convergence trouble appears in the
+status reasons. A test asserts the declaration is present whenever segments are
+fitted concurrently, so the absence cannot quietly become a silence.
+
+### What changed in the outputs
+
+Demo world, before and after: **unchanged**, 1 segment
+`causal_elasticity_supported` and 2 `iv_estimated_elasticity`, same intervals.
+Its three segments have 24 raw clusters and 18.9 to 22.6 effective, all above
+the 15 threshold, so no remedy applies. The Anderson-Rubin hulls move in the
+third decimal from the new critical value. The `library_warnings` list loses
+the racy entries from the fitting stage and gains the note above.
+
+Where behaviour does change is thin segments under the shipped two-way
+grouping, whose binding dimension is the customer side rather than the month
+side: on a 120-customer test world, three of six segments have nine or ten
+distinct customers and now report no 95% interval where they previously
+reported one.
+
+### Known gap
+
+`docs/validation.json` and the README validation table still carry the Run 4
+three-option clustering comparison. Regenerating them means running
+`scripts/measure_validation.py` end to end, which is hours of work and is where
+Phase 85 picks it up; the figures above come from a scratch run and are labelled
+as such rather than being written into the table as if they were the recorded
+ones.
+
+### Tests added
+
+`tests/test_clustering.py`, 28 tests: the column mapping for every configurable
+level and a check that no level can be added without one; the named fallback
+and the no-key refusal; the variation profile at even spread, full
+concentration and zero variation; the bootstrap's determinism, its independence
+from the replicate block size, its refusal at one cluster and at a saturated
+design, its symmetry about the point estimate, and the seeded 60-draw coverage
+comparison that justifies running it at all; and, end to end on a generated
+world, twelve suppliers taking the resampled interval, eight categories being
+below the floor, two-way grouping having no partition to resample, the
+withdrawal appearing as a failed criterion rather than a silent drop, the
+criteria staying in one unbroken order, the binding dimension being the thinner
+side, the fail-closed policy declining where the bootstrap would have run,
+monotonicity in the threshold, and every segment reporting how its groups carry
+the variation. `tests/test_webexport.py` gains the concurrent-fit warning
+declaration.
+
+### Checks
+
+ruff 0; ruff format clean (191 files); mypy src api 0 (91 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed, 3 skipped, exit 0, with no
+snapshot re-baselining.
+
+The Python suite was run in batches, each its own process. **57 of 59 test
+files pass.** Two did not:
+
+- `tests/test_sensitivity.py::test_ci_coverage_smoke` failed first time with
+  "only 37 intervals produced" against its own floor of 40 — the direct
+  consequence of this phase, since thin small-world segments now decline an
+  interval. The floor is a sample-size guard on the smoke measurement, so it
+  was left where it is and the run was given sixteen worlds instead of twelve.
+  The file now passes, 13 tests, 2.65 GB, 323s.
+- `tests/test_full_run.py` needs **4.72 GB** and drives free memory to 1.65 GB
+  with nothing else running, so the 2 GB floor stops it at 9 of its 10 tests.
+  Same known gap as Phase 72, measured again. It is not skipped or weakened: it
+  runs in CI, which has the memory for it, and the figure is recorded here
+  rather than reported as a pass. Phase 83's spill-to-Parquet work is where
+  this gets fixed.
+
+## Phase 74 — The identification-support rule (2026-10-27, Run 6 branch)
+
+Finding 14. The engine already refused to model a volume response for a price
+move beyond the variation its instruments induced — a range from the 5th to
+the 95th percentile of instrument-predicted within log-price movement. Two
+things were wrong with it: the name suggested a claim about achievable prices
+rather than about where the estimate can speak, and everything between the two
+ends was treated as equally supported.
+
+### Named for what it is
+
+"Identification-support rule" throughout, and the methodology now states the
+basis explicitly: the support is measured on **instrument-predicted within
+log-price movement, after the pair and period fixed effects and the market
+control have been taken out of both sides**. It is movement around each pair's
+own price path over time, not the spread of price levels across pairs. A
+segment whose customers pay very different prices but whose prices never move
+has almost no support, and saying which of the two is being measured is the
+difference between a rule and a slogan.
+
+### Support is not uniform between its ends
+
+The ends alone get a particular case badly wrong. A segment whose cost shocks
+pushed price around -6% in some months and around +4% in others has said
+nothing about what holding price flat would do — and the old rule waved a 0%
+move through, because 0% sits between -6% and +4%.
+
+So the rule now works on **regions**. A proposed move is supported where at
+least `min_support_observations` of the predicted movements sit within
+`price_support_window` log units of it, and the maximal runs passing that test
+are the regions. One connected region reduces exactly to the old outer-bounds
+test. Skewed support produces one off-centre region — cost shocks that only
+ever pushed prices down support downward moves and not upward ones, however
+symmetric a min-max range looks. Two regions mean the movement came in
+separate clusters, and a move landing between them is refused.
+
+Defaults: quantiles 0.05 and 0.95 as before, window 0.02 log units, minimum
+count 30. The window is about a third of the movement the instruments induce
+on these panels, wide enough to accumulate a count and narrow enough that two
+genuinely separate clusters stay separate.
+
+### What is reported
+
+Per segment: the outer bounds, the number of estimation rows behind them, the
+regions, the window and minimum count in force, and **the same quantiles of
+the observed price movement** — so a reader can see how much of the price
+variation in the data the instruments actually account for. The sensitivity
+page shows both spans side by side.
+
+Per opportunity record: `price_support_distance`, the log-price distance to
+the nearest supported region and zero inside it, so a refusal reads as
+marginal or as nowhere near; and `price_support_reason` in plain words. The
+explanation text names the distance when there is one.
+
+Three cases, in order, and the third is the one worth stating: a segment whose
+regions were measured is held to them; a segment carrying only the outer
+bounds comes from a sensitivity frame written before the regions existed and
+is held to the bounds as it was then; and a segment with neither — no
+instruments, or an older frame — was never measured against this rule at all
+and is not refused by it. An empty regions string is a measurement, not a
+missing value: it says the instruments moved price nowhere densely enough to
+use, and it refuses everything.
+
+### Ranges at instrumented evidence
+
+At `iv_estimated_elasticity` the range shown is a **sensitivity analysis** —
+what the impact would be across a span of plausible price responses — and the
+labels, explanations and methodology now say so and say what it is not: a
+confidence interval around the dollar impact. The old wording called it "a
+labeled sensitivity range, not a point estimate", which ruled out the wrong
+misreading.
+
+### What changed in the outputs
+
+Demo world: **unchanged**. 660 opportunity records, 202 outside price support,
+expected gross-profit change $49,636.44, gross opportunity $396,296.75 — all
+identical to before. Each of its three segments has support in one connected
+region spanning essentially the whole of its outer bounds (8,312, 9,437 and
+716 estimation rows), so the density test changes nothing there. That is the
+intended shape of this change: it bites where support is genuinely thin or
+split, and is silent where it is not.
+
+### A determinism bug the matrix caught while this was being checked
+
+Not caused by this phase. `price_source_mix` - the string naming where a
+segment's estimation prices came from - sorted on the row count alone, and
+`group_by` output order is not guaranteed, so two categories with equal counts
+came out in whichever order the hash table produced. The scenario matrix found
+it on a world where observed and carried-forward prices each take 49% of the
+rows: `sensitivity.parquet` differed between identical runs **six times in
+ten**, at both one worker and three, so the thread pool was not the cause.
+
+Measured before and after: 6 of 10 reruns differing, then 0 of 10. The sort now
+breaks ties on the name, and the string-building moved into a named function
+with a unit test, because a 60%-flaky integration test is a poor guard for a
+rule this simple.
+
+### Tests added
+
+`tests/test_price_support.py`, 14 tests. The shapes support can take: one
+dense stretch, a skewed one whose supported region sits off centre, two
+clusters with a gap where the outer bounds contain a move that nothing near it
+does, too little movement anywhere, and no movement at all. The distance
+function inside, outside and between regions. Both knobs changing the regions,
+because configuration that cannot change an outcome is decoration. The compact
+export form surviving a round trip. And the rule as the opportunity module
+applies it: the gap case end to end, a pre-regions frame keeping its old
+behaviour, a measured-but-empty segment refusing everything, and an unmeasured
+segment not being refused by a rule nobody measured it against.
+
+### Checks
+
+ruff 0; ruff format clean (192 files); mypy src api 0 (91 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 225 passed, 3 skipped, exit 0, with no
+snapshot re-baselining.
+
+The Python suite was run in batches, each its own process: **all 59 test files
+pass**, 1,377s, worst batch peak 4.65 GB. `tests/test_full_run.py`, the known
+gap from the last two phases, completed this time - nothing else was competing
+for memory, so free RAM stayed above the 2 GB floor throughout. Its peak is
+still 4.65 GB, so it will keep stopping whenever something else is running
+beside it; Phase 83 is where that gets fixed rather than scheduled around.
+
+## Phase 75 — Tracker design (2026-10-27, Run 6 branch)
+
+Finding 15. Three things were wrong with the results tracker, and the middle
+one was bending every pooled number it produced.
+
+### It was calling a ratio a difference-in-differences estimate
+
+The per-action output divided one treated pair's volume ratio by the median
+ratio of untreated pairs in its segment, and called the result a
+difference-in-differences estimate in the column name, the outcome reason, the
+UI, the CLI help, the methodology, the equation sheet and the README. It is a
+**control-adjusted volume change**: it removes the general trend and carries
+none of the assumptions that name implies. Renamed everywhere, and the name
+is now reserved for the pooled estimator below, which does state its
+assumptions.
+
+### A pair that stopped buying was treated as missing data
+
+The gate required `tracking_min_after_sales` sale lines **after** the change,
+so a customer who responded to a price increase by stopping was recorded as
+`insufficient_evidence` and dropped from every median — the single most
+consequential outcome a price change can have, systematically removed from
+the measurement of price changes.
+
+An empty after window is now a volume ratio of zero with a `stopped_buying`
+flag, and the minimum moved to the **before** window, which is the baseline
+and does have to be real. `actions.tracking_min_after_sales` is rejected with
+an actionable error naming the replacement, the same treatment the renamed
+margin key got in Run 4.
+
+The control side had the same bug in subtler form: controls were restricted to
+pairs that bought in **both** windows, so every treated pair was compared
+against a group that could not fall to zero. A control that bought before and
+not after now contributes a zero, like any other outcome.
+
+`log(0)` is undefined, so a stopped pair has no volume error. It stays in
+every count and is reported as `n_stopped_buying` beside the medians, rather
+than vanishing from an error summary as though it had never been measured.
+
+### Controls were not clean
+
+Three tests now disqualify a comparison pair, each counted and named on the
+outcome row:
+
+- it carries a price action of its own, at any date — including **later in the
+  same window**, which is the staggered-adoption trap: comparing against a
+  pair about to be treated measures the difference between two treatments;
+- it shares a campaign (overlap group or scope key) with the treated action;
+- its item is in the same substitution group as the treated item, so volume
+  shifting out of the treated pair lands in the control and doubles the
+  apparent effect.
+
+### The pooled estimator
+
+New module `src/margin_engine/actions/event_study.py`. One estimate across
+every implemented action, with the estimand written down: the average
+proportional change in monthly quantity for treated pairs after their price
+change, against pairs not treated in that period.
+
+Actions land on different dates, so the control set for a period is every
+**never-treated** pair plus every **not-yet-treated** one, and a treated pair
+contributes rows only inside its own event window. That restriction is the
+substance of the staggered-adoption guidance in Baker, Callaway, Cunningham,
+Goodman-Bacon and Sant'Anna's practitioner's guide; the code and the
+methodology both say it is an event study with that restriction imposed and
+**not** the Callaway-Sant'Anna group-time estimator, because it is not.
+
+Poisson pseudo-likelihood with pair and calendar-month fixed effects, because
+the outcome contains real zeros and the whole point of the previous section is
+that those zeros matter. Event time -1 is the omitted base period.
+
+**Pre-trends are reported, never summarised into a pass.** A lead beyond the
+tolerance marks the post-change numbers as not an effect of the price change -
+and the UI then drops the figure out of headline type rather than showing it
+large beside a caveat. A lead inside the tolerance is reported together with
+**what size of pre-trend the data could have detected**, because a quiet test
+with no power is not evidence of anything. The notes say in plain words that a
+phased, randomized or matched-holdout rollout is what turns these comparisons
+into estimates.
+
+### Reporting
+
+Measured results are split by implementation wave, segment, action type,
+evidence level, and how faithfully the invoiced price actually moved - a new
+`implementation_compliance` bucket, because an action whose price never moved
+says nothing about price response and should not be pooled with one that did.
+
+### What changed in the outputs
+
+Demo world, before and after. The calibration table gains a stopped-buying
+column and one pair that was previously refused for having too few after-window
+sales now appears, measured at a volume ratio of zero
+(`fixed_volume` bucket, `n_stopped_buying: 1`).
+
+The pooled estimate on the demo world reports **a pre-trend of +19.8% two
+months before the change, against a 10% tolerance**, so its average
+post-change figure of +23.2% is labeled as not an effect of the price change.
+That is the right answer: the demo's implementation history is simulated on
+actions the engine chose, not on a randomized rollout, so the treated pairs
+are selected. The engine saying so on its own demo data is the feature.
+
+### Tests added
+
+`tests/test_tracker_design.py`, 17 tests, on controlled worlds built in the
+test so the planted effect is exact. Stopping measured at zero rather than
+dropped; no baseline refused with its reason; controls that stopped staying in
+the comparison (a world where five of ten controls leave, giving a control
+ratio of exactly 0.5); exclusions counted and named for own-action, campaign
+and substitute; the five reporting splits; the compliance buckets; and the
+absence of the words "difference-in-differences" from the per-action output.
+
+For the pooled estimator: the panel never giving an already-treated pair to
+someone else as a control, refusal below the minimum treated count with the
+per-action figures surviving it, recovery of a planted -20% effect to within
+3 points, and the pre-trend wording carrying its own detectable size.
+
+The exit gate is four worlds: **non-parallel trends** and **selected
+treatment** both surface as a detected pre-trend with the post numbers
+disclaimed; a **stop-buying** world measures all 24 treated pairs, 8 of them
+at zero, and the pooled estimate lands below the intensive-margin-only figure
+because it sees the stopping; and a **staggered** world estimates across four
+waves and recovers its planted -15% to within 5 points, with the per-action
+results split by wave.
+
+### Checks
+
+ruff 0; ruff format clean (194 files); mypy src api 0 (92 files); tsc 0;
+vitest 22/22; vite build 0; Playwright 227 passed, 3 skipped, exit 0, with no
+snapshot re-baselining. One Playwright assertion had to change: the action
+detail page's end-to-end test asserted the words "difference-in-differences"
+were on screen. It now asserts they are NOT, and that the page names what it
+compared against instead. A second test was added for the pooled estimate's
+estimand, its pre-trend wording, and the refusal to present a figure as an
+effect when a pre-trend was found.
+
+The Python suite was run in batches, each its own process: **58 of 59 test
+files pass.** `tests/test_full_run.py` is the exception, and the gap is now
+pinned to one test rather than a whole file: nine of its ten pass together at
+1.95 GB, and `test_cli_twice_byte_identical_full_size_world` alone needs about
+4 GB and drives free memory to 1.69 GB, under the 2 GB floor, even with
+nothing else running. It is not skipped or weakened; it runs in CI. Phase 83
+is where the memory itself gets fixed.
+
+## Process correction — an unmeasured figure, and the checks that let it through (2026-10-27, Run 6 branch)
+
+Two process failures, one of them mine and serious. This entry exists because
+neither was written down anywhere durable at the time.
+
+### 1. A figure I had not measured, reported as a measurement
+
+While scoping the second estimand out of three call sites that never read it
+(Phase 72), I wrote:
+
+> "Measured: the 50-simulation coverage study took 3,518s with it and 2,268s
+> without, on a suite that otherwise runs in about 1,800s."
+
+into three places: the `_zero_row_robustness` docstring in
+`src/margin_engine/sensitivity/estimate.py`, the call-site comment in
+`tests/test_sensitivity.py`, and the draft Phase 72 report.
+
+**Only 3,518s was measured.** The 2,268s was my estimate of what the study
+*would* take once scoped, written in the grammar of a measurement, next to a
+real number, where no reviewer could tell them apart. That is the exact
+failure this run exists to prevent.
+
+It was caught and removed in the same session, before the phase was
+committed: `git log -S"2,268" --all` finds no commit that introduces it, and
+the comments now state only the observed 3,518s. The commit the corrected
+files landed in is `c3748c2 phase-72: IV estimand with zero sales`. What was
+missing until now is this record.
+
+### 2. "58 of 59 files passing" is not a passing phase
+
+Phase 72 was committed with one test file unrun, and Phase 75 repeated it:
+`tests/test_full_run.py::test_cli_twice_byte_identical_full_size_world`
+generates a default-size world (about 811k lines) and runs the pipeline twice,
+which does not fit on this 14 GB machine beside a desktop under the 2 GB
+free-memory floor.
+
+An unrun check is not a passing check, and recording it in prose at the bottom
+of a phase report is not a control. The test is now marked `memory_heavy`,
+excluded from the default local run **and run in CI on every push** in its own
+step (`uv run pytest -m memory_heavy`, 16 GB runner, 30-minute timeout). The
+marker is declared in `pyproject.toml` beside `slow` and `network`. Nothing
+about the test changed: same world, same two runs, same byte comparison. The
+small-sample determinism twin still runs everywhere, including locally.
+
+From here a phase is committed only when every check that runs locally passes
+and every check that does not is executed by CI.
+
+### 3. Audit: every figure against a measured log
+
+Searched source comments and docstrings, `docs/`, `README.md` and
+`docs/validation.json` for figures presented as measurements, and traced each
+to the run that produced it.
+
+**Removed, no measurement exists**
+
+- `src/margin_engine/sensitivity/estimate.py`: "Measured at about 0.37s per
+  segment on a 400k-row panel", justifying the cheap-disqualifiers-first
+  ordering. No run anywhere produces it. The ordering argument stands on its
+  own (two Poisson fits per segment avoided on segments already rejected), so
+  the claim is gone and no number replaces it.
+
+**Corrected: the README validation table contradicted the measurements**
+
+The table was hand-typed under a paragraph claiming "No number is hand-typed",
+and had drifted from `docs/validation.json` (measured 2026-10-26T20:23Z):
+
+| Row | README said | Measured |
+|---|---|---|
+| Performance, full Run-1 pipeline | 811,253 lines in 37.0s | 811,253 lines in 119.0s |
+| 95% CI coverage, 50 simulations | 92.0% | 284/300 = 94.7% |
+| Elasticity, planted grain | P90 0.051, worst 0.110 | P90 0.077, worst 0.095 |
+| Elasticity, end-to-end | Median 0.019, P90 0.072, worst 0.110 | Median 0.022, P90 0.077, worst 0.095 |
+| Coverage under persistent demand | 93.3%, alternatives 83.3% / 82.3% | 92.7%, alternatives 84.3% / 81.3% |
+| invalid_instrument preset | "Rejected and downgraded on 5/5 seeds" | Rejected on 4/5; downgraded on 5/5 |
+
+The 37.0s is the worst of them: a third of the measured time, on the one row a
+reader is most likely to quote. It appears to be a Run-5 era figure that
+survived the Run-6 re-measurement.
+
+The paragraph below the table carried a second set: `realistic_noise` (median
+0.051, P90 0.126, worst 0.210) is **not a row in validation.json at all**, and
+`persistent_demand` (0.021 vs 0.031), `heterogeneous_elasticity` (0.024 vs
+0.025) and `nonconstant_elasticity` (0.320 vs 0.303) were stale.
+
+**The fix is structural, not editorial.** `src/margin_engine/validation_table.py`
+renders the table from `docs/validation.json`;
+`scripts/sync_validation_table.py` writes it into the README between markers;
+`tests/test_validation_table.py` (8 tests) re-renders and fails if the
+committed README differs, if a measured row never reaches it, or if a typed
+timing figure appears in that section outside the generated block. The
+"no number is hand-typed" sentence now names the test that enforces it. All 35
+measured rows appear, informational ones included, so the misspecified-world
+figures are no longer paraphrased by hand.
+
+**Corrected elsewhere**
+
+- `scripts/measure_tracker.py` still described its own target as
+  "median DiD effect"; Phase 75 removed that name from the output, so the
+  target text now says "median control-adjusted volume change". The committed
+  `validation.json` keeps the old wording until the next regeneration.
+
+**Checked and clean**
+
+- `src/margin_engine/config.py` parallel-worker figures (1.16x / 1.23x / 1.25x,
+  2.05 GB / 2.13 GB) - this log, Phase 72, lines 4212-4217.
+- `tests/test_sensitivity.py` "3 pure cells at SMALL, 13 at this size" - this
+  log, Phase 72, line 4167, and the failing run that produced it.
+- `tests/test_sensitivity.py` 3,518s - measured, as above.
+- `docs/methodology.md` pooled recovery error 0.039 log points - validation.json.
+- README case-study figures (1,067,371 lines, 14.7% anonymous revenue) -
+  `docs/case-study-online-retail.md`, from the real run.
+- `web/src/` carries no hard-coded financial or validation figures; the demo
+  site reads the same `validation.json`.
+
+**Left as they are, deliberately**
+
+- `docs/run4-report.md` and `docs/run5-report.md` quote figures that have since
+  been re-measured (e.g. 93.3% coverage). They are dated snapshots of what was
+  measured in that run, which is what a run report is for.
+- `docs/validation.json` carries two rows for the competitor-price path gate
+  with identical measurements, one suffixed "(informational)". A measured
+  artifact is not edited by hand; it clears at the Phase 85 regeneration, and
+  the generated table shows whatever the file says.
+
+### 4. A third unrun check, found while proving the second
+
+Running the suite to clear this entry exposed that the batched local runner
+globbed `tests/test_*.py` with `glob`, not `rglob`, so
+`tests/property/test_reconciliation.py` - one directory down - had been
+**silently skipped by every batched run**. It is the hypothesis property suite
+for ledger reconciliation, the one area where CLAUDE.md makes any failure a
+stop condition.
+
+It was run on its own and passes (1 property, 0.25 GB peak, 76s). The runner
+now uses `rglob` and, before it starts, compares its own file list against
+what `pytest --collect-only` reports, refusing to run if pytest collects a
+file the batcher would not: 62 globbed, 62 collected, none missing. The runner
+is scratchpad tooling, not repository code, so the fix is recorded here rather
+than committed.
+
+Three different unrun checks in two days, each invisible for a different
+reason - a memory limit, a directory level, a prose caveat at the bottom of a
+report. The common failure was reporting a pass that no process had returned.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (197 files); mypy src api 0 (93 files,
+strict). Full pytest green: 678 tests in 62 files, 21 batches each in its own
+process, every batch returncode 0, worst batch peak 3.34 GB, minimum system
+free memory 2.44 GB (floor 2.0), 1997s; plus
+`tests/property/test_reconciliation.py` run separately, returncode 0. The
+`memory_heavy` test is excluded locally by the marker and runs in CI.
+
+No web source changed, so the web gates were not re-run: `git status` shows
+changes only under `.github/`, `docs/`, `scripts/`, `src/margin_engine/`,
+`tests/` and `README.md`, none of which the app reads at build time.
+
+## Phase 76 — Segmentation leakage (2026-10-27, Run 6 branch)
+
+Finding 11. The commercial tree is fit on the normalized price index, and it
+will use anything that correlates with the price index - including a
+restatement of it. Three features were doing exactly that. The review named
+one; the audit for it found the other two.
+
+### What was leaking
+
+**`revenue_abc`.** Revenue is price times quantity. The ABC class was cut on
+the same months the tree was explaining, so an item's class carried those
+months' prices and the tree could "explain" the index with a coarse copy of
+it. This is the one Finding 11 named.
+
+**The order-size band.** Cut on order *net value*, which is also price times
+quantity. Exactly the same leak, in a feature nobody had looked at.
+
+**The target encoding.** Fit on the rows it then encoded. A category with few
+rows was handed the mean of the very targets the split was about to be scored
+against, so a split on noise looked clean.
+
+**And the guard could not have caught any of them.** It rejected a feature
+whose *name* contained price, discount, cost, rebate or margin. `revenue_abc`
+contains none of those words. A name check is a spell-checker.
+
+### What replaced them
+
+**A lagged ABC** (`lagged_abc_classification`). The class the tree sees is cut
+on a window that ends the period *before* each line
+(`abc_feature_lag_periods`, default 6), on a configurable basis
+(`abc_feature_basis`: revenue, units or order frequency - the spec allows
+either a pre-period revenue ABC or a lagged unit/frequency one, so both ship
+and revenue is the default). An item with no history in the window is
+`unrated`, a level of its own, because calling it a C is a statement nobody
+measured. Every item selling in a period gets a row, so "no history" is
+visible rather than a missing key for a later join to interpret.
+
+The reported ABC table is unchanged. For *reporting* a period the
+contemporaneous class is the right answer; it is only as a feature of a model
+explaining that period that it is wrong.
+
+**Order-size bands on quantity.** Same business meaning - how big an order is
+- with no price in it.
+
+**Cross-fitted target encoding** (`TargetEncoder.fit_cross_fitted`). While the
+tree is grown each row is encoded from the other folds only
+(`target_encoding_folds`, default 5); the full-sample maps stay for assignment
+and prediction, where there is no fold to hold out. Folds are a seeded
+permutation, so the same frame gives the same assignment every run.
+
+**A guard that reads lineage.** `FeatureLineage` (60.4) gains
+`embeds_realized_price`. The guard now refuses a feature that declares it
+embeds the realized price, refuses a feature that declares *nothing*, and
+keeps the name check as a second line. Features that are same-period but
+price-free - the order-size band - are reported, not refused, and get a
+measured number instead of an argument.
+
+### Tested on periods it never saw
+
+`time_based_holdout` fits the tree on the earliest 75% of months and scores
+the segment medians on the later ones, as mean absolute error on the price
+index against a single median for everybody. It runs twice: with the full
+feature set and without the same-period features. A bootstrap resamples the
+same months and cannot tell a structure that will hold next quarter from one
+that has fitted this quarter's noise; this can.
+
+On the demo world: **0.0621 against a 0.1145 baseline** over 6 held-out months
+and 1,273 pairs, and dropping the order-size band costs 0.0003 - it is worth
+almost nothing out of time, which is now a number on the page rather than a
+belief.
+
+### What changed in the outputs
+
+Demo world, before and after, both measured by running `export-web --demo` on
+a worktree at the previous commit and on this tree:
+
+| | Before | After |
+|---|---|---|
+| Commercial segments | 3 | 2 |
+| Bootstrap median ARI | 0.737 | 0.884 |
+| Price recommendations changing across resamples | 41.7% | 31.4% |
+| Gross price opportunity | $396,296.75 | $413,735.22 |
+| Conservative (below-P25 to P25) | $114,032.28 | $119,415.56 |
+| Opportunity records | 660 | 611 |
+| Outside price support | 202 | 193 |
+| Expected pocket-gross-profit change | $49,636.44 | unchanged |
+
+**The engine now finds one segment fewer, and that is the result, not a
+regression.** The two old segments at the upper end of the index (medians
+0.914 and 1.031) merge into one (median 0.941). The split between them was
+being drawn with features that carried the prices it was separating. The
+partition that remains is markedly more stable - bootstrap agreement 0.737 to
+0.884, and a third fewer price recommendations flip when the data is
+resampled.
+
+On the validation world the planted-segment recovery target is unaffected:
+`test_out_of_sample_ari_vs_planted` and `test_bootstrap_stability` pass at the
+section 8 bars (ARI >= 0.70, bootstrap median ARI >= 0.80) with no change to
+either.
+
+### Tests added
+
+`tests/test_segment_leakage.py`, 23 tests on frames built in the test so the
+truth is exact.
+
+The guard: an innocent name does not get a price-embedding feature through;
+an undeclared feature is refused rather than assumed innocent; the name check
+still fires; same-period-but-price-free features are returned for reporting,
+not raised on.
+
+The lagged ABC: an item that is tiny for six months and enormous in the
+seventh is still a C in the seventh; the first period rates nobody; revenue,
+units and order-frequency bases rank ten items in opposite orders; an
+all-zero window rates nobody; the classification is deterministic.
+
+Order size: thirty orders whose unit prices swing by three orders of
+magnitude land in bands determined only by their quantity.
+
+Cross-fitting: on a pure-noise category appearing twice per level, the
+in-sample encoding correlates with the target above 0.6 and the out-of-fold
+encoding below 0.2 - the leak, measured; the prediction-time maps stay
+full-sample; the folds are reproducible and fall back on frames too small to
+hold anything out.
+
+The planted shortcut world: a second attribute predicts the price index as
+well as the truth does but cuts across it. Declared honestly, the guard
+refuses it. Declared as price-free - a lie the metadata permits - the tree
+takes it and recovery falls by more than 0.2 ARI, which is what makes the
+declaration load-bearing rather than decorative.
+
+The holdout: real structure beats a single median and says so; structureless
+data does not pretend to; too little history refuses with a reason; the
+same-period features get their own number; the fitted result carries all of
+it in its notes.
+
+`tests/test_metrics.py` - the Phase 60 lineage test said "until Phase 76
+replaces the computation" and now asserts the replacement.
+
+`web/e2e/pages.spec.ts` - the Segments page shows the later-period test with
+the baseline beside it, and every engine note reaches the page.
+
+### Plain English
+
+`abc_class` and `order_size_band` gained label-dictionary entries, because the
+new segment notes name them and the raw-code scanner is right to fail on a
+column name in a sentence. The notes read "context feature order size band is
+measured over the same period as the price index it helps explain".
+
+### What it cost, and the optimization that was needed
+
+Cross-fitted encoding runs on every bootstrap refit, and the Run-1
+performance bar is decided by a few seconds of ambient variation (Phase 71:
+119.0s measured against 120s). So the cost was measured rather than assumed,
+on the largest world this machine holds - 300 customers x 500 items, 209,661
+lines, 13,568 pairs - three runs per configuration, interleaved.
+
+The obvious implementation refits the encoder once per fold, and it was not
+affordable:
+
+| Segmentation stage | Median |
+|---|---|
+| Before Phase 76 | 2.25s |
+| Refit per fold | 5.98s (+166%) |
+| One pass by subtraction | 4.47s (+98%) |
+| Subtraction with `bincount` | **3.06s (+23%)** |
+
+Two changes got it there, neither of which touches what is computed:
+
+1. **Subtraction instead of refitting.** Per-category totals are accumulated
+   once with the fold as a second axis; a fold's "fit on the others" is the
+   row total minus that fold's own column. `test_the_fast_cross_fitting_equals_refitting_every_fold`
+   asserts the two agree to 1e-12 at shrinkage 0 and 20, including for
+   categories that appear in a single fold, where a refit falls back to the
+   other folds' mean.
+2. **`np.bincount` instead of `np.add.at`.** The unbuffered scatter-add was
+   over half the remaining cost.
+
+End to end on the same world, full Run-1 pipeline, three runs each: 76.37s
+before, 78.04s after. The before runs spread 75.84-82.72s and the after runs
+77.30-78.89s, so the median gap of 1.67s is not separable from run-to-run
+variation; the **stage** measurement (+0.47s in that same run, segmentation
+3.07s to 3.54s) is the trustworthy figure, and 0.40s of it is the time-based
+holdout - a fixed cost of two extra fits, not multiplied by the bootstrap.
+
+The 811k-line Run-1 performance target is measured by the CI benchmark job
+(`.github/workflows/benchmark.yml`), which times this branch and `main` on
+the same runner and fails on either the absolute bar or a 10% regression.
+That job is the gate; a sub-1% addition cannot be resolved on a 14 GB machine
+against a bar whose own measurement spread is about 4s, and the full world
+does not fit here beside a desktop. Recorded as the one check this phase
+cannot run locally.
+
+The demo outputs are bit-identical before and after the optimization
+(2 segments, bootstrap ARI 0.8840696765, holdout 0.06208593743), so the
+reported numbers above are unaffected by it.
+
+### A flaky test of my own, caught by the suite
+
+`test_the_shortcut_really_does_destroy_the_partition` passed on its own and
+failed inside a batch. The planted world had 40 customers, so industry x
+shortcut is four cells of 10 customers each - below the shipped
+20-customer leaf minimum. Whether the shortcut cells survived the
+minimum-enforcing merge was therefore decided by merge order, and the test
+measured that rather than the thing it claims to measure.
+
+Fixed by planting 120 customers, so each cell holds 30 and the tree is free
+to take the shortcut if it wants to. It does: recovery falls from 1.000 to
+0.499, a gap of 0.501 against the 0.2 the test requires. Three consecutive
+runs of the file and one of the full batch are green. The threshold was not
+touched - the world was made big enough for the question to be asked.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (198 files); mypy src api 0 (93 files,
+strict). Full pytest green: 703 tests in 63 files, 21 batches each in its own
+process, every batch returncode 0, worst batch peak 3.39 GB, minimum system
+free memory 2.38 GB (floor 2.0), 1230s. tsc 0; vitest 22/22; vite build 0;
+Playwright 229 passed 3 skipped (exit 0) after re-baselining 24 snapshots on
+the six pages whose content changed with the segment count - segments
+(the new later-period section), sensitivity, opportunity, actions, modules
+and methodology.
+
+The 811k-line Run-1 performance target is not measured here; it runs in CI
+(`benchmark.yml`), as recorded above.
+
+## Phase 77 — Win curves beyond a standard-error gate (2026-10-27, Run 6 branch)
+
+Finding 21. The win/loss model had a precision gate and nothing behind it:
+the gate was reading standard errors computed from quotes that were not
+independent, on a sample that included quotes nobody had decided, counting
+each revision of a negotiation as a fresh draw.
+
+### Only a decided quote is evidence about price
+
+`outcome == "W"` was a win and **everything else was a loss**. An open quote -
+no decision yet - counted as the customer saying no. A quote withdrawn
+because the customer's project was cancelled counted as a price rejection.
+
+Outcome codes are now classified against configured lists
+(`quote_outcome_won`, `_lost`, `_open`, `_withdrawn`, `_expired`);
+open, withdrawn and expired quotes are excluded with a reason and counted,
+and a code in none of the lists is excluded as `outcome_not_recognized` with
+the offending codes named, never read as a loss. Modeled plus excluded equals
+the rows that came in, and the Modules page shows the split.
+
+The direction of the old bias matters. On a planted world where withdrawn and
+expired quotes cluster at low prices - projects that fell through, nothing to
+do with price - counting them as losses makes cheap quotes appear to lose and
+**flattens the curve**: it understates how much price matters, which is the
+direction that flatters a price increase. The test measures both: the Phase 77
+intake recovers the planted coefficient within 15%, the old rule does not, and
+the biased estimate is strictly closer to zero.
+
+### One decision is one observation
+
+Where the mapping provides `quote_id` the unit is the opportunity and only
+the latest revision is modeled; without one the unit is the quote line and
+the output says so rather than implying otherwise. Counting revisions
+separately triples a deal's weight and, because revisions walk the price
+down, tilts the curve toward the prices that needed revising - measured: with
+two revisions per opportunity, collapsing them recovers the planted
+coefficient and leaving them in does not.
+
+`quote_unit: opportunity` without a mapped `quote_id` fails with an
+actionable message rather than silently falling back.
+
+### Quotes are not independent draws
+
+Standard errors now cluster at the finest level the data supports -
+opportunity, then customer, then rep - and the number of groups is reported
+beside the coefficient, because that is what the precision gate is actually
+reading.
+
+**This changes the demo.** Both segments drop from `estimated_win_curve` to
+`insufficient_precision`:
+
+| Segment | Quotes | Customers | Coefficient | SE | Before | After |
+|---|---|---|---|---|---|---|
+| 6 | 676 (353 won, 323 lost) | 24 | -7.40 | 1.04 | estimated | insufficient precision |
+| 24 | 1,140 (580 won, 560 lost) | 49 | -3.45 | 0.59 | estimated | insufficient precision |
+
+676 quotes from 24 customers are not 676 independent observations, and the
+relative standard error says so once it is computed correctly. Nothing was
+tightened: the 10% relative-SE bar is unchanged, and the standard error it
+reads is now the right one. The validation world (200 customers) still clears
+it - `test_win_curve_every_estimated_segment_within_15pct` requires at least
+two estimated segments and passes - so the section 8 target holds where there
+is enough independent data, and fails closed where there is not.
+
+Demo opportunity totals are unchanged ($413,735.22 gross, 611 records): the
+win curve was not driving optimization there, which needs causal-supported
+elasticity *and* an estimated curve.
+
+### Calibration on quotes the curve has not seen
+
+In sample a logistic fit is calibrated by construction, so the check is a
+time split: refit on the earlier quotes, score the later ones, and report the
+calibration slope and intercept, the Brier score and the c-statistic. Outside
+`win_curve_calibration_band` the status drops to `insufficient_precision`
+however tight the standard error is - a precise curve of the wrong shape is
+worse than an imprecise one. Too few held-out quotes is reported as "not
+testable", which is neither a pass nor a failure.
+
+On the demo both segments are calibrated (slopes 0.95 and 1.35 on 169 and 285
+held-out quotes); they fail the phase on clustering alone.
+
+### Tests added
+
+`tests/test_win_curves.py`, 17 tests on worlds whose win curve is known
+exactly.
+
+The taxonomy: codes map case- and space-insensitively, an unknown code is
+excluded and named, a missing outcome column switches the module off instead
+of guessing, and modeled plus excluded equals the input.
+
+The bias: the planted coefficient is recovered with the new intake and is not
+with the old rule, and the old rule's error is toward zero.
+
+Revisions: only the latest version survives, the unit resolves to the
+opportunity when a quote id exists and to the line when it does not, asking
+for opportunities without one fails actionably, and leaving revisions in
+moves the estimate away from the truth.
+
+Clustering: the level is the finest the data supports, clustering widens the
+interval on a world with 25 customers and 3,000 quotes while leaving the
+point estimate identical, and `none` turns it off.
+
+Calibration: a well-specified curve is calibrated out of sample with a sane
+Brier score and c-statistic; a world whose price sensitivity collapses in the
+second year is precise, wrong, and caught only by the held-out check; too few
+held-out quotes reports "not testable" and does not block the status.
+
+`tests/test_quotes.py` follows the new signature and supplies the outcome
+column it models. `web/e2e/pages.spec.ts` checks the intake block, the
+exclusion list and the two new columns, and asserts modeled plus excluded
+equals the total on the page's own data.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (199 files); mypy src api 0 (93 files,
+strict). Full pytest green: 720 tests in 64 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.28 GB, 1183s. tsc 0;
+vitest 22/22; vite build 0; Playwright 231 passed 3 skipped (exit 0) after
+re-baselining the four modules-page snapshots whose table gained the
+independent-groups and held-out-check columns and the quote intake block.
+
+Memory note: the minimum free-memory reading during the batched run was
+1.77 GB, under the 2.0 GB floor. The watchdog did not abort because its rule
+only counts a shortfall against the run when the process tree is itself a
+meaningful consumer, and Windows reports dirty file-cache pages from the
+synthetic-world CSV writes as unavailable. Recorded rather than smoothed
+over; no batch exceeded 3.28 GB of its own.
+
+## Phase 78 — Validation statistics and claims (2026-10-27, Run 6 branch)
+
+Findings 12, 22 and 24. The validation table was a list of point estimates
+with no scope: how many worlds a number rested on, how it was computed, and -
+the part a reader has to guess - what it licenses them to claim.
+
+### Every row now says what it establishes, and what it does not
+
+`docs/validation-meta.yaml` carries, for each of the 35 measured checks: the
+number of independent worlds or clusters behind it, the method, what the
+result establishes, and what it does not. It is written prose, reviewed as
+prose, and joined onto the measurements by check name.
+
+Two documents are generated from the pair:
+
+- the README keeps a compact table - check, target, measured, **worlds or
+  clusters** - so the headline stays scannable;
+- `docs/validation.md` is new and carries every row in full, with method,
+  scope, uncertainty and per-world results.
+
+`check_meta` refuses to render if a measured check has no scope entry, if the
+scope document describes a check nobody measures, or if any of the four
+fields is blank. A new measurement cannot reach the README without someone
+writing down what it means.
+
+Several entries are uncomfortable to write, which is the point. The outlier,
+KVI, segmentation and tracker rows each rest on **one world** - one draw -
+and now say so. The hybrid PPI row says "hybrid-synthetic evidence ...
+quantities and the elasticity are still planted". The performance row says
+the measured configuration only.
+
+### Intervals that resample the right unit
+
+A median over 5 worlds x 6 segments is not 30 independent observations:
+every segment inside one world shares its demand shocks, its instruments and
+its prices. `world_bootstrap` resamples **worlds**, and the measured
+difference is not subtle - on a fixture with real between-world spread the
+world-level interval is more than three times wider than treating each
+observation as independent. That ratio is a test, not a claim.
+
+Gated elasticity targets now report a 90% world-level interval on the median
+and on the P90, and the P90 interval is checked against a stated precision
+goal (width <= 0.05) so "P90 0.077" cannot be read as exact when the evidence
+will not carry it. Interval coverage reports an interval on the coverage rate
+itself, resampling simulations rather than intervals.
+
+### Seeds nobody tuned against
+
+The elasticity study ran on five seeds that are also the committed regression
+seeds - results on them are a regression suite, not fresh evidence. Ten
+**held-out seeds** are added (1009-1061, chosen outside the coverage study's
+100-149 range so "held out" is true rather than decorative), the gated rows
+run on all fifteen worlds, and the held-out worlds are additionally reported
+**on their own**, so a target that only holds where the work was done is
+visible as such.
+
+Per-world results travel with the row: each world's segment count, median and
+worst error, flagged held-out or not, rendered as a table in
+`docs/validation.md`.
+
+### The determinism claim, measured rather than asserted
+
+The bundle determinism test ran twice inside one process, so it could not see
+the thing that actually moves a solver's last digits: BLAS and Polars thread
+counts change accumulation order and an iterative fit stops somewhere
+slightly different.
+
+Measured: the demo bundle is byte-identical across separate processes at 1
+and 4 threads, all 14 published files. That is now a test
+(`test_bundle_byte_identical_across_processes_and_thread_counts`), and the
+claim is worded to what was tested - "byte-identical across runs, separate
+processes and thread counts on the tested platform; identity across operating
+systems and BLAS builds is untested".
+
+To keep it holding rather than holding by luck, `_rs` rounds every
+iterative-solver output to 6 significant digits before it enters the bundle:
+elasticities, standard errors, test statistics, intervals, win-curve
+coefficients, calibration figures, event-study coefficients and the
+segmentation holdout errors - 73 fields. Six digits is three or more beyond
+anything the UI displays and far wider than the drift.
+
+### Wording
+
+- **Online Retail II** is described as the UCI dataset describes it - "real
+  UK online-retail transactions (giftware); many customers are wholesalers" -
+  and the README now states what the case study tests: ingestion and
+  descriptive analytics. It has no cost, no list price and no instruments, so
+  it cannot test margin, floors or causal price response.
+- The **hybrid PPI world** is labeled hybrid-synthetic evidence in its own
+  target text, naming what is real (the producer price series driving cost
+  paths) and what is not (quantities and the elasticity).
+- The **performance** target says "on the measured configuration only".
+
+### Running the enlarged study
+
+Fifteen worlds per gated elasticity target does not fit on a 14 GB laptop
+beside a desktop, and the previous five-world study already took an hour.
+`.github/workflows/validation.yml` runs it on a GitHub runner by manual
+dispatch, regenerates both documents, runs the agreement test, and uploads
+the refreshed files as an artifact. It is not on every push: the inputs change
+only when the estimators do.
+
+**docs/validation.json is therefore unchanged in this phase** - it still
+carries the Phase 71 measurements, and the new per-world and uncertainty
+fields appear when the study is next run. The scope document, the generated
+`docs/validation.md`, the wording fixes and the determinism work all land
+now. Recorded as the one thing in this phase that a CI run, not this commit,
+completes.
+
+### Tests added
+
+`tests/test_validation_statistics.py`, 9 tests: the held-out seeds really are
+disjoint from the development seeds and the coverage range; an interval needs
+more than two worlds; the interval brackets its statistic and is
+reproducible; the precision goal is reported as met or missed; and the
+measured comparison that justifies the whole design - resampling worlds is
+more than three times wider than resampling observations.
+
+`tests/test_validation_table.py` grows from 8 tests to 14: every measured
+check declares its scope, a check without one is refused, scope describing
+nothing measured is refused, a blank scope field is refused, the detail
+document matches the measurements, and every row states what it does not
+establish.
+
+`tests/test_webexport.py` gains the cross-process determinism test.
+
+### The new reporting path, smoke-run
+
+The enlarged elasticity study cannot run here, so the code path was exercised
+with `--seeds 3` rather than left to surface in a four-hour CI job: the
+per-world table, the held-out row and the interval wording all produce, and
+with one held-out world the interval correctly reports "too few worlds for a
+world-level interval" instead of inventing one. Those numbers are a code-path
+check and are not committed anywhere as evidence.
+
+### The memory floor, enforced rather than assumed
+
+That smoke run peaked at 4.37 GB and touched 1.33 GB of free memory - under
+the 2.0 GB floor - without the watchdog firing, because the floor was
+implemented as "sustained for three seconds while our own tree is over 1 GB",
+and the dip was shorter than that. The de-bounce exists for a measured
+reason: a single-sample version killed healthy runs when Windows reported
+dirty file-cache pages from synthetic-world CSV writes as unavailable.
+
+Both can be true, so the guard now has two levels. A dip below 60% of the
+floor is pressure rather than cache and kills immediately, on the first
+sample. Shallower dips keep the three-second rule but are **counted and
+timed**, and every run now reports `floor_excursions`, `floor_seconds` and
+`longest_excursion_s` - so a phase report can say the floor was touched for
+half a second instead of rounding it to "stayed above 2 GB". The earlier
+breaches in this run (1.77 GB during the Phase 77 suite, 1.33 GB here) were
+transient and are recorded rather than smoothed over.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (201 files); mypy src api 0 (93 files,
+strict). Full pytest green: 736 tests in 65 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.39 GB, minimum system
+free memory 2.18 GB, **zero floor excursions** on the tightened watchdog,
+1227s. tsc 0; vitest 22/22; vite build 0; Playwright 231 passed 3 skipped
+(exit 0) with no snapshot changes - the solver rounding is three or more
+digits beyond anything the UI displays, which is the point of it.
+
+Correction, same day: the first version of this section said "743 tests in 66
+files". I composed the sentence before the count printed and did not go back
+to reconcile it; the measured figure is 736 in 65. The commit message was
+amended with it. Exactly the habit the process-correction entry above exists
+to stop, caught here by reading the number the command actually returned.
+
+## Phase 79 — Robinson-Patman review flag (2026-10-27, Run 6 branch)
+
+Finding 17. The flag worked and said too little. It treated "same industry
+and region" as a definition of competition, dropped customers with a missing
+attribute out of the comparison without a word, and handed a reviewer a price
+difference and one cost number.
+
+### Same industry and region is a candidate screen
+
+Two distributors in one industry and region may not compete at all - one
+sells to shipyards, the other to hospitals - and two in different regions may
+compete head to head. The screen is what the data can do unaided.
+
+An optional reviewed `customer_competitors` table now overrides it **in both
+directions**: it confirms pairs the screen missed and clears pairs it caught,
+direction-free (A,B and B,A are one judgement). Every flagged pair states its
+basis - *reviewed competitor* or *screened candidate* - and
+`require_reviewed_map` restricts flags to confirmed pairs for a deployment
+that has done that review.
+
+### A missing attribute is a data-quality status
+
+A customer with no industry on file silently failed to pair with anything.
+Polars does not join on nulls, so nothing was wrong with the arithmetic - and
+nothing was said either. `screen_customers` now returns a status per
+customer, names the attributes that are missing, and the run reports who
+could not be screened, with the sentence that matters: **not screened is not
+the same as not competing**.
+
+Empty strings count as missing too, which is how a real export usually
+expresses an unknown.
+
+### What a flag has to show
+
+A price difference is the start of the question; the defenses - cost
+justification, meeting competition, functional differences between buyers -
+live in the facts beside it. Each flagged pair now carries the comparable
+item with its role and unit of measure; the dates the prices and costs come
+from (named per side when the two differ); the current and recommended price
+on both an invoice and a net-of-deductions basis; volumes; channel and
+contract position; discount, rebate and freight-concession terms; cost to
+serve per unit **with the method that produced it** - the activity-rate
+figures are estimates and say so; a `data_coverage` field naming which of
+these the source actually supplied; and any meeting-competition record,
+contemporaneous bid or reviewer decision from an optional `rp_evidence`
+table. Where no evidence is recorded the output says absent, not clear.
+
+The net basis earns its place immediately. On the committed sample the first
+flagged pair is **7.64% apart on invoice price and 3.57% apart after their
+terms** - one buyer takes a 4.14% deduction and the other 0.37%. A review
+that compared invoice prices alone would be looking at the wrong two numbers.
+
+### What it may never say
+
+A test walks every note, every column name and every value of a flagged row
+and fails on "violation", "compliant", "illegal", "unlawful" or "guaranteed";
+a Playwright test does the same for the rendered action page. Cost
+differences are supporting evidence, and the word used throughout is review.
+
+### What changed in the outputs
+
+Demo world: 27 flagged pair-item combinations across 50 screened customers,
+0 unscreened. All are screened candidates - the sample has no reviewed
+competitor map, and the run says so rather than implying the pairs are
+confirmed. `compliance_screen` is a new export beside
+`compliance_robinson_patman`.
+
+The flags themselves are unchanged in count and membership; what changed is
+how much each one tells the person who has to act on it.
+
+### Tests added
+
+`tests/test_compliance_screen.py`, 15 tests: a missing attribute is
+unscreened rather than cleared, an empty string counts as missing, the run
+names who could not be screened, two customers with nothing on file are not
+thereby alike; a reviewer can clear a screened pair and confirm one, the map
+is direction-free, requiring a map without one flags nothing and says why,
+requiring one drops unconfirmed candidates; a flag carries the reviewer's
+facts, the net basis is compared beside the invoice basis, data coverage
+names what is missing, absent evidence is absent and recorded evidence
+reaches the row; and no output anywhere calls anything a violation or
+compliant.
+
+`web/e2e/actions.spec.ts` gains a test that a flagged action shows the facts
+and reaches no verdict.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 751 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.32 GB, minimum system
+free memory 2.21 GB, zero floor excursions, 1218s. tsc 0; vitest 22/22; vite
+build 0; Playwright 233 passed 3 skipped (exit 0) with no snapshot changes -
+the review facts render on an action detail page, which the snapshot set does
+not cover.
+
+## Phase 80 — Market data provenance (2026-10-28, Run 6 branch)
+
+Finding 18. The antitrust guardrail on the competitor-price control was one
+boolean on the mapping: `public_source: true`. A boolean is an assertion.
+Anyone could write it, nobody could check it, and - the part that matters -
+it could not tell a producer price index from a competitor's selling prices.
+
+### Provenance replaces the flag
+
+Every external series now declares a `provenance` block: provider, url,
+retrieved_utc, license, update_cadence, coverage, aggregation_level and
+`series_kind`. The old boolean is **refused with a message naming the
+replacement**, on the mapping (`public_source`) and in config
+(`market_index_public_source_required` -> `market_index_provenance_required`),
+the same treatment the renamed margin and tracking keys got.
+
+The gate reads three things:
+
+1. **Is it accounted for at all?** No provenance, no control. A series nobody
+   can place is not evidence that competitor prices were held constant.
+2. **Is it the right kind of series?** This is what the boolean could not
+   express. A producer price index is a **cost** series; the competitor-price
+   control needs a market **selling-price** index. Each is now refused by
+   name in the other's role, with the reason: a cost index used as a control
+   would look like a control and would not be one - the same cost shocks that
+   identify the elasticity also move it - and a selling-price series used as
+   an instrument would be the exact channel the exclusion restriction has to
+   rule out, which is also the antitrust concern itself rather than a
+   modelling nicety.
+3. **Is the publisher one this deployment accepts?**
+   `market_index_allowed_providers` with `market_index_require_allowlist`
+   makes an approved list binding. Off by default - most deployments have not
+   drawn one up - and an unlisted provider is then **reported**, not silently
+   accepted.
+
+Where the control is used the run states what it is: publisher, url,
+retrieval time, licence, cadence, coverage and level.
+
+### The demo says what it actually is
+
+`config/mappings/synth_erp.yaml` previously said `public_source: true` with a
+comment explaining that the simulated index "qualifies". It now carries
+provenance that reads: provider *margin-engine synthetic generator*,
+retrieved *generated with the world, not retrieved*, licence *synthetic data,
+no licence applies*. The control still qualifies - it is a selling-price
+series at category x month - and nothing pretends it came from a publisher.
+
+The adequacy wording changed with it: "the index is public, current, ..."
+became "the index is accounted for, is a selling-price series, is current,
+...", because that is what was checked.
+
+### What changed in the outputs
+
+Nothing on the demo: the market control remains adequate and causal support
+is still reachable. The change is in what a differently-mapped deployment can
+get away with.
+
+### Tests added
+
+`tests/test_competitor_path.py` gains 7: an index with no recorded provenance
+is refused; a cost index is refused for the competitor-price role with the
+instrument-pipeline reason; an accounted-for selling-price index is accepted
+**and named** in the notes; an allowlist is reported when off and binding
+when on; requiring an allowlist with nobody on it approves nobody; provenance
+can be waived only deliberately; and both halves of the rename fail closed
+with a way forward - the mapping one raised through `load_mapping`, which is
+where a person actually meets it.
+
+`tests/test_compliance.py`'s end-to-end gate test now swaps a provenance
+block in and out rather than a boolean.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 756 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.43 GB, minimum system
+free memory 2.08 GB, zero floor excursions, 1353s. tsc 0; vitest 22/22; vite
+build 0; Playwright 233 passed 3 skipped (exit 0), no snapshot changes.
+
+The first run of the suite failed on batch 17: `tests/test_sensitivity.py`
+still read `.public_source` off the mapping. Fixed and the suite re-run green
+before committing, rather than committing the phase and noting the failure.
+
+## Phase 81 — Pricing-law wording (2026-10-28, Run 6 branch)
+
+Short phase, one idea: the guardrails are guardrails. The methodology
+described the review flag and the data rule accurately and left a reader free
+to infer that passing them means something legally. It does not.
+
+### Guardrails, not safe harbors
+
+The pricing-law section now opens by saying so: nothing in it makes a price
+lawful, passing every check the engine applies is not a defense, and a clean
+run is not evidence of anything in a dispute. What the checks do is narrow
+the ways a run can go wrong by accident.
+
+Two sentences were added at the other end for the same reason. The written
+justification a flagged action requires at approval is "a record that someone
+considered the question, not a finding that the answer was yes". And a new
+paragraph says what the engine **cannot** do: it cannot tell whether two
+customers actually compete, whether two items are of like grade and quality,
+whether a defense applies, or whether any price is lawful - and the absence
+of a flag is not an answer either.
+
+### The context, verified before citing it
+
+The spec asked for the DOJ's September 2026 proposed consent decree with
+Pinnacle as context. That is after my training cutoff, so rather than write
+it from the spec I checked it: it is real, and the detail that matters is one
+the spec did not state.
+
+Filed **4 September 2026** in the RealPage matter (M.D.N.C.), where the
+United States and state co-plaintiffs sued six landlords in January 2025 over
+rents set with each other's competitively sensitive information. Pinnacle
+admits no fault and the decree is subject to public comment and court
+approval. It asks Pinnacle to refrain from using an anticompetitive algorithm
+that generates pricing recommendations, refrain from sharing competitively
+sensitive information with competitors, and accept a court-appointed monitor
+if it uses an uncertified third-party pricing algorithm.
+
+**It does not outlaw pricing software.** It draws the line at algorithms fed
+with rivals' data, and contemplates certified third-party algorithms. That
+distinction is the reason the citation belongs here at all: it is the line
+Phase 80's provenance rule is built around - own transactions plus public
+series whose source is recorded. The section says staying on that side is a
+design choice, not a certification, and that the engine cannot certify
+itself.
+
+The press release is linked with its retrieval date, as docs/data-sources.md
+requires of any external source.
+
+### Elsewhere
+
+The README's one-line description of the flag said it answers "which
+recommended prices put likely-competing customers far apart". Two words were
+doing too much work: *likely* overstated what an attribute screen knows, and
+the line implied a finding. It now reads "possibly-competing", adds what a
+reviewer would need to judge it, and says in the same breath that it is a
+prompt to look, not a finding, and not a safe harbor.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (202 files); mypy src api 0 (93 files,
+strict). Full pytest green: 756 tests in 66 files, 22 batches each in its own
+process, every batch returncode 0, worst batch peak 3.38 GB, minimum system
+free memory 2.21 GB, zero floor excursions, 1303s. Playwright 233 passed
+3 skipped (exit 0), no snapshot changes - the change is documentation and one
+README line, and the methodology page renders from the markdown file.
+
+Network: one search and one fetch of justice.gov to verify the citation
+before writing it. Recorded in the entry above with the retrieval date; no
+test depends on the network.
+
+## Phase 82 — Authenticated production mode (2026-10-28, Run 6 branch)
+
+Finding 19. The API's identity was a header the client filled in. A comment
+said so and the response text said so, but a comment is not a control: with
+`X-User` the caller chose who it was, which means separation of duties, role
+checks and the audit trail were all decided by the party they constrain.
+
+### Two modes, and the difference is who decides
+
+`MARGIN_API_MODE` (new) is `local` by default, keeping exactly the Phase 39
+behaviour for one person on one machine. The mode name now says what the
+comment used to.
+
+`production` takes every identity decision away from the client:
+
+- **`X-User` is rejected, not ignored** - 400 with
+  `client_identity_rejected`. A header that used to be identity must not
+  quietly become a hint a caller believes worked.
+- Identity is a bearer token the server issued, against local accounts with
+  **PBKDF2-HMAC-SHA256** passwords (stdlib, 600k iterations, per-hash salt,
+  iteration count stored so the factor can be raised) or an OIDC provider
+  through a registered verifier.
+- Every decision reads an **immutable user id**, never a display name. A
+  separation-of-duties rule written against display names is a rule about
+  strings, and the person it constrains can edit it.
+- Unknown user and wrong password give the same answer, with the same work.
+  An account with no password hash cannot be logged into at all, which is
+  the safe reading of a half-configured deployment.
+
+### The seam, not a half-written identity system
+
+`api.auth.set_oidc_verifier(fn)` is the whole OIDC integration: a callable
+returning `(user_id, display_name, roles)`. No JWKS fetching, no signature
+validation - that belongs to a library a security team chose, and writing a
+partial one here would be worse than none. A provider failure surfaces as
+401, never 500, and never with the provider's own message.
+
+### Refusing to start
+
+Production mode fails at startup when nobody could log in (no accounts, or
+no password hash and no verifier), and when
+`MARGIN_API_STORAGE_ENCRYPTED=1` is unset. The last is a **declaration**,
+not a check: DuckDB has no at-rest encryption, uploads and review history
+and the audit log are protected by the volume or not at all, and the process
+cannot see the volume from inside. Making the operator declare it turns an
+assumption into somebody's decision.
+
+### Uploads belong to whoever sent them
+
+The upload id is a content hash. That is convenient and was never a secret -
+two people uploading the same export get the same id, and an id can be
+derived from a file someone already has - so **knowing the id was access**.
+Ownership is now recorded per upload and checked on read and delete; an
+unowned folder stays readable in local mode and is refused in production.
+
+`MARGIN_API_UPLOADS_RETENTION_DAYS` (default 7) deletes uploads nobody came
+back for, and `DELETE /api/load/upload/{id}` removes one now. Files and
+folders are created owner-only where the platform supports it; on Windows it
+does not, and docs/deploy-api.md says the volume is the operator's job
+rather than implying the engine handled it.
+
+### An audit log that keeps the record and not the secrets
+
+JSON lines: timestamp, immutable user id, action, status, resource. Logins,
+failed logins, uploads, deletions and exports. Fields are copied in **by
+name** rather than filtered out, so a new field elsewhere in the API cannot
+start appearing here by accident, and `record()` raises on a key that looks
+like a secret rather than trusting the caller.
+
+### Tests added
+
+`tests/test_production_mode.py`, 32 tests. Each one is something that used
+to work and must now fail.
+
+Spoofed identity: the header is rejected on `/auth/me` and on a lifecycle
+call; no token means no identity; a made-up token and a wrong scheme are
+401s.
+
+Passwords: unknown user and wrong password are indistinguishable; an account
+with no hash cannot be logged into; a hash does not contain the password and
+two hashes of one password differ; four shapes of malformed stored hash fail
+rather than pass.
+
+Separation of duties, server-side: the analyst who submitted an action holds
+the approver role too and is still refused with `self_approval`, while a
+different approver succeeds, and an approver without the analyst role cannot
+submit. These run through the real HTTP lifecycle with tokens, so the check
+is demonstrably not in the browser.
+
+Uploads: another user's upload cannot be read or deleted, the owner's can,
+and retention deletes the old folder while leaving the new one.
+
+The audit log: it records who and what; a failed login is recorded without
+what was tried; and a test writes a password, a token and a distinctive
+value through the whole flow and fails if any reaches the file.
+
+Startup refusals: no accounts, no way to authenticate, undeclared storage
+encryption, an unknown mode, an unknown role.
+
+The OIDC seam: a registered verifier takes over token resolution, and a
+provider that raises becomes a 401 whose message does not quote it.
+
+Local mode: unchanged, still takes the header, still says in its own
+response that this is not authentication, and answers a login attempt with
+409 and an explanation rather than a confusing 401.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (205 files); mypy src api 0 (95 files,
+strict). Full pytest green: 788 tests in 67 files, 23 batches each in its own
+process, every batch returncode 0, worst batch peak 3.37 GB, 1314s. tsc 0;
+vitest 22/22; Playwright 233 passed 3 skipped (exit 0), no snapshot changes -
+the API surface changed, not the static demo.
+
+Memory: one batch (b3_9, 3.37 GB peak) touched the floor once, for 1.0
+second, bottoming at 1.81 GB - above the 1.2 GB hard-kill line, below the
+2.0 GB soft floor, and shorter than the 3-second sustained rule. The
+tightened watchdog is why this sentence can state the duration instead of
+rounding the dip away.
+
+## Phase 83 — Spill-to-Parquet scale path (2026-10-28, Run 6 branch)
+
+Finding 23. The widest frame in the engine - the 85-column financial ledger -
+stayed resident through dispersion, segmentation, guidance, the panel,
+sensitivity and opportunity, none of which reads it. The phase asked for a
+spill path with per-stage projections, stage classification, per-stage peak
+memory, benchmarks at several row counts and cardinalities, and parity to the
+cent. All of that exists. The benchmark then said something the finding did
+not expect, and that result is the most useful thing in this phase.
+
+### What was built
+
+- `scale.spill_ledger` (config) / `--spill` (CLI), off by default. The ledger
+  is written to Parquet once, after cost-to-serve and the accounting stages
+  that consume it whole (events, subledger, roll-forward), and dropped from
+  memory for the analytic middle. The one in-window consumer - the per-unit
+  cost-to-serve aggregation - reads a five-column projection; a projection
+  that names a missing column fails loudly rather than producing nulls.
+- Tail consumers (leakage, tie-out, action generation, the ledger export, the
+  DuckDB store, cleaning decisions, the report's sale aggregates) each read
+  the frame back, use it, and let it drop - at most one full-width ledger
+  alive at a time. `PipelineResult.ledger` is rehydrated at the very end, so
+  nothing outside run_full changes.
+- Stage classification is written down in `ledger/spill.py` and the
+  methodology: the order-sensitive allocations (largest-remainder cents, ties
+  on source_line_key) run upstream of the spill point, month-partitioned
+  since Run 5; nothing downstream re-sorts the ledger, so the spill cannot
+  move a tie-break.
+- `StagePeaks` (memlog): peak RSS per stage, sampled on a thread at 0.1s with
+  a boundary reading folded in so a fast stage records its memory instead of
+  a zero. Lands in every run manifest as `stage_peak_rss_gb`; absent psutil
+  it is an empty record, which is a statement, not zeros.
+- Parity: `tests/test_spill.py` (10 tests) proves byte-identical exports and
+  cent-identical leakage/guidance/opportunity frames between the two paths on
+  the committed sample, row order of the spilled frame preserved, projections
+  exact, the placeholder schema-true. The scenario matrix runs every third
+  fast-tier world a third time with the spill on and byte-compares.
+
+### What the benchmark said
+
+Three worlds, each run in its own process so allocator arenas cannot flatter
+the next; peaks are child-process-tree RSS at 0.1s:
+
+| World | Lines | In-memory peak | Spill peak | Peak stage (both) |
+|---|---|---|---|---|
+| 150 x 250 | 70,514 | 1.52 GB | 1.58 GB | DuckDB store / exports |
+| 300 x 500 | 227,388 | 2.79 GB | 3.05 GB | exports / DuckDB store |
+| 120 x 1,250 | 226,587 | 2.79 GB | 3.07 GB | exports / DuckDB store |
+
+**The spill does not lower peak memory at these scales; it raises it
+slightly.** The first version was worse still (rehydrating at leakage held
+the full ledger beside its own write-ready export copy: 3.04 GB), and the
+read-use-drop tail redesign recovered only part of that, because the peak was
+never in the middle the spill empties. It is the export step: a write-ready
+copy of the ledger (re-sorted, categoricals cast to strings) has to exist for
+the file to be byte-identical, beside the still-resident observations and
+flagged frames the ledger spill does not touch. The middle stages did get
+lighter - sensitivity's peak fell below the tail's with the spill on - but
+the tail sets the number.
+
+The spill therefore ships OFF by default, documented as infrastructure with
+its parity proven, not as a saving it has not earned. The two levers the
+measurement identified, recorded for the owner:
+
+1. **Streaming the ledger export.** Blocked by byte-identity between eager
+   and streaming Parquet writers; "byte-identical exports" is a published
+   claim, so relaxing it is an owner decision, not mine.
+2. **Spilling the observations/flagged frames** the same way - they are
+   resident through the whole tail in both modes.
+
+The committed validation.json still carries the Run 5 wording that spilling
+the ledger "is the next scale step"; this measurement narrows that to the two
+levers above, and the row updates when the validation workflow regenerates
+it. The 10M-line target stays a KNOWN GAP, as the spec requires, now with a
+better map of where the memory actually is.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (207 files); mypy src api 0 (96 files,
+strict). Full pytest green: 798 tests in 68 files, 23 batches each in its own
+process, every batch returncode 0, worst batch peak 3.44 GB, minimum system
+free memory 2.29 GB, zero floor excursions, 1313s. Playwright 233 passed
+3 skipped (exit 0); no web change in this phase beyond none - the spill is
+engine-internal and the bundle is untouched.
+
+## Phase 84 — Version traceability (2026-10-28, Run 6 branch)
+
+Short phase. Phase 69 gave every action proposal three fingerprints - input
+(source file hashes), config (the rules hash), model (the elasticity evidence
+the volume responses came from) - so a stale proposal could be told apart
+from a fresh one. The run itself did not carry them: the bundle knew its
+engine version and the manifest's config/mapping hashes, the UI showed none
+of it, and /api/version answered with version numbers only.
+
+Now every surface names its run.
+
+- `FullRunResult.fingerprints` carries the trio, and the bundle's manifest
+  section gains `input_fingerprint`, `config_fingerprint`,
+  `model_fingerprint` and `engine_version` beside the hashes it already had.
+- **UI**: the Data & methodology page opens its audit block with "Which run
+  these numbers come from": engine version, rules hash, mapping hash, the
+  input fingerprint with every source file and its hash beneath it, and the
+  fitted-model fingerprint - with the lede saying why: a proposal generated
+  under a different configuration or model is distinguishable from one
+  generated under this one.
+- **API**: /api/version returns the same five identifiers, read from the
+  bundle's own app payload rather than re-derived, and the OpenAPI contract
+  documents them.
+
+### Tests added
+
+`tests/test_api.py`: /api/version carries all five identifiers and each
+equals the bundle's own (parity, not presence). `web/e2e/pages.spec.ts`: the
+methodology page shows the bundle's identifiers, truncated for reading, and
+the first input files with their hashes.
+
+### A defect the new visibility caught at once
+
+The first full-suite run for this phase failed the cross-process determinism
+test: app.json, bundle.json and methodology.json differed across thread
+counts - precisely the files that had just gained the fingerprints. The model
+fingerprint (Phase 69) hashed the UNROUNDED elasticities, whose last digits
+move with BLAS thread count, so the same fitted model on the same data could
+carry two fingerprints. On actions alone that instability was invisible; the
+moment Phase 84 surfaced the hash into the bundle, the Phase 78 test caught
+it.
+
+Fixed by hashing the elasticities at 6 significant digits - the same rounding
+the bundle applies to every solver output - because last-digit jitter is not
+a different model, and a fingerprint that says it is would trigger stale-
+action re-reviews for nothing. Proposals persisted under the old derivation
+will read as config-changed once against a fresh run; the stale-action
+revalidation path is built for exactly that and shows the difference.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (207 files); mypy src api 0 (96 files,
+strict). Full pytest: the first run failed on the fingerprint instability
+above (batch 22); after the fix the full suite re-ran green before the
+commit - 798 tests in 68 files, 23 batches each in its own process, every
+batch returncode 0, worst batch peak 3.48 GB, minimum system free memory
+2.03 GB, zero floor excursions, 1402s. tsc 0; vite build 0; Playwright 235
+passed 3 skipped after re-baselining the four methodology snapshots that
+gained the traceability block.
+
+## Phase 85 — Acceptance matrix, remaining edge cases, and the Run 6 report (2026-10-28, Run 6 branch)
+
+### 85.1 The acceptance matrix, as a registry that breaks
+
+The reviewer closed with 22 test families a remediation has to cover. The
+tests existed, written phase by phase; what did not exist was the map from
+family to tests in a form that fails when someone renames or deletes one.
+
+`tests/test_acceptance_matrix.py` is that map. Each family names the modules
+and, for the load-bearing ones, the specific tests that discharge it, and a
+test resolves every reference against the code: a module that stops importing
+or a named test that disappears fails the matrix rather than quietly thinning
+it. Five more families cover the 85.2 edge cases, so the registry holds 27.
+
+Writing it caught five references that pointed at tests which had been
+renamed since the review (`test_normal_sale_every_stage_exact` is
+`test_normal_sale`, and four more) - the exact drift the registry exists to
+make loud.
+
+### 85.2 The edge cases, and the assumptions they replaced
+
+Each was previously handled by an assumption nobody had written down.
+
+**Spreadsheet formulas with no cached result.** openpyxl's `data_only` returns
+the value Excel last computed; a workbook written by a tool that never
+computed them yields `None` for every formula cell - indistinguishable from a
+blank. Reading those as blanks turns `=B2*C2` into a missing amount and the
+engine then does honest arithmetic on dishonest input. It now fails with the
+cell reference and the fix. The second pass that looks for formulas runs only
+when the first pass saw nulls, so the common case (blanks everywhere in real
+exports) costs nothing.
+
+**Hidden rows are kept and counted.** A hidden row is still data, and a
+filtered export can hide the very lines under review, so dropping them would
+be a decision nobody made. Counting them needed care: openpyxl's read-only
+worksheets - which the loader uses, because holding a 10M-line workbook in the
+cell model is not an option - do not expose row dimensions, so the `hidden="1"`
+flag is read straight from the sheet XML in the zip, streamed in chunks.
+
+**Date serials are named as serials.** 45678 is 2025-01-15 in Excel's day
+count. The actionable error used to say only that the values did not match the
+declared format, which is true and useless: the fix is in the workbook. The
+hint fires only for values inside the plausible business range, so a misread
+format is not explained as a serial problem.
+
+**Mapping changes between runs.** The config fingerprint hashed the rules file
+alone. A mapping change redefines what the numbers mean - a different cost
+basis, a different sign convention - so a proposal generated under the old
+mapping must not look current under the new one. It now hashes both.
+
+**An action spanning multiple units** is blocked: a pair still trading in more
+than one normalized unit with no equivalence between them has no single
+unambiguous price. The mode used to be taken silently. **An action spanning
+several ship-tos** says so in its affected set ("one customer-item pair
+covering 3 ship-to accounts"), because at analysis level bill-to or parent one
+guidance customer is several shipping accounts and the ERP file keyed by
+ship-to has to know.
+
+**Parent and child contracts.** A national agreement is signed once, at the
+parent account, while invoice lines carry ship-to ids and often no contract
+number of their own. Protection was the line's own `contract_id` and nothing
+else, so **every child line under a parent-level contract was treated as
+freely priceable** - eligible for price-increase actions on exactly the
+customers a contract forbids repricing. A line with no contract of its own now
+inherits from a contract naming its customer, bill-to or parent where family
+and dates match, marked `contract_inherited` so the provenance stays visible.
+A line's own contract always wins.
+
+**FX analytical vs book translation.** The engine converts each line at its
+invoice period's rate; a GL translated at closing or average rates values the
+same transactions differently. The tie-out now states that as a standing
+reconciling item before any variance is read, so a reviewer does not hunt for
+an amount that is not missing.
+
+### A defect found by writing the test
+
+The hidden-row regex was written through a shell heredoc, which turned `\b`
+into a literal backspace byte (`\x08`) inside the pattern. It compiled, ran,
+matched nothing, and would have shipped as "hidden rows are counted" while
+counting none. The test caught it immediately; a repo-wide sweep for control
+characters in Python sources came back clean (0 files).
+
+The first end-to-end hidden-row test was also wrong in my favour: it compared
+the ledger height to the source CSV row count, which differ legitimately
+because classification drops verified duplicates. Rewritten as an A/B between
+two runs of the same workbook differing only in which rows are hidden - same
+ledger height, same net total, and only the filtered run carries the note.
+
+### 85.3 The report
+
+`docs/run6-report.md`: every finding 1-24 with what changed, the tests, the
+measured before/after numbers, what is still open and six decisions for the
+owner. Current-state figures are read from the committed artifacts
+(`bundle.json`, `validation.json`); before/after figures are quoted from the
+phase entries above, with the build-log line checked for each one. Where a
+figure has moved since the phase that recorded it - later phases changed the
+demo - both appear.
+
+Writing it caught one more unverified figure of my own: the report said
+Phase 76's cross-fitting cost "+0.58 s at 210k lines", a number this log does
+not contain. The measured figures are the stage A/B median 2.25 s -> 3.06 s
+(+23%) and, inside the end-to-end run, 3.07 s -> 3.54 s (+0.47 s). Corrected
+before the commit.
+
+README gains an "Independent review" section and the report link; the
+methodology gains the Phase 85 behaviours and the translation-policy note. The
+metric dictionary needed no change - it is generated from
+`src/margin_engine/metrics.py` with a test asserting they match, and Phase 85
+added no metric. The validation table likewise: generated from
+`docs/validation.json`, which has not been regenerated since Phase 71, with a
+test asserting the documents match it.
+
+### Checks
+
+ruff check 0; ruff format --check 0 (210 files); mypy src api 0 (96 files,
+strict). Full pytest green: **844 tests in 70 files**, 24 batches each in its
+own process, every batch returncode 0, worst batch peak 3.41 GB, 1473s. tsc 0;
+vitest 22/22; vite build 0; Playwright 235 passed 3 skipped (exit 0) with no
+snapshot changes.
+
+The `n_ship_tos` schema addition needed six call sites updated (five test
+fixtures that enumerate every action column, and the manual-propose route);
+an earlier suite run failed on two of them before they were found. Real
+deployments need no migration: the action store already fills missing schema
+columns with null, and `fill_null(1)` reads that as one ship-to.
+
+Only change in the regenerated demo bundle: `manifest.config_fingerprint`
+4284a56ca8413cb1 -> 017bb804a65712bb, because the fingerprint now hashes the
+mapping as well as the rules. That single visible difference is what "outputs
+keep mapping/config version" means.
+
+Memory: one batch (3.41 GB peak) touched the 2.0 GB floor once for 0.2 s,
+bottoming at 1.91 GB - above the 1.2 GB hard-kill line and far shorter than
+the 3-second sustained rule. Reported with its duration because the Phase 78
+watchdog change made that possible.
+
+### Verified like CI, from a fresh clone
+
+`run6` cloned to a temp folder at `60f8a59` and run as CI would, so nothing
+could depend on a file that exists only on this machine:
+
+| Step | Result |
+|---|---|
+| `uv sync --frozen --all-groups` | resolved from the lock, no drift |
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 (210 files) |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| Full pytest, 24 batches | every batch returncode 0, worst peak 3.48 GB, 1462s |
+| `margin-engine export-web --demo` | bundle + schema written |
+| `npm ci` | clean install from the lockfile |
+| `npx tsc --noEmit` | 0 |
+| `npm run build` | 0 |
+| `CI=true SKIP_SNAPSHOTS=1 npx playwright test` | 235 passed, 3 skipped |
+
+The clone's only `git status` entry after the run was
+`web/public/data/schema.json`, and it is **byte-identical** to the committed
+file (0 CRLF in both) - a Windows autocrlf flag, not output drift. Verified
+rather than assumed, because "the clone came back clean" is the kind of claim
+this run exists to check.
+
+The clone is still on disk at `C:\Projects\me-verify` (1.3 GB): removing it
+needed a recursive delete that this session's permissions refused, across
+three attempts. Left for the owner to delete; recorded here rather than
+claiming a cleanup that did not happen.

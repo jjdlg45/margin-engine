@@ -126,24 +126,49 @@ def band_observations(
         & pl.col("price_index").is_finite()
         & pl.col("segment_leaf").is_not_null()
     )
+    regime = (
+        pl.concat_str(
+            [
+                pl.col("item_id").cast(pl.String),
+                pl.lit("|"),
+                pl.col("list_effective_date").cast(pl.String).fill_null("none"),
+            ]
+        )
+        if "list_effective_date" in obs.columns
+        else pl.col("item_id").cast(pl.String)
+    )
+    obs = obs.with_columns(regime.alias("_list_regime"))
     if rules.price_guidance.observation_unit == "line":
-        return obs.select("segment_leaf", "customer_id", "item_id", "price_index")
+        return obs.select(
+            "segment_leaf", "customer_id", "item_id", "price_index", "_list_regime"
+        ).with_columns(pl.lit(None, dtype=pl.String).alias("_month"))
     if fiscal is None:
         fiscal = build_calendar(rules.fiscal)
     return (
         fiscal.attach(obs, "invoice_date", period="_month")
         .group_by("segment_leaf", "customer_id", "item_id", "_month")
-        .agg(pl.col("price_index").median().alias("price_index"))
+        .agg(
+            pl.col("price_index").median().alias("price_index"),
+            pl.col("_list_regime").drop_nulls().last().alias("_list_regime"),
+        )
     )
 
 
 def segment_bands(
     flagged: pl.DataFrame, rules: Rules, fiscal: FiscalCalendar | None = None
 ) -> pl.DataFrame:
+    """Per-segment bands with the INDEPENDENCE counts behind them (Run 6,
+    Phase 67): observations are pair-month medians (pair-weighted, stated),
+    and the distinct customers, pairs, months and list regimes each band
+    rests on are reported beside the percentiles."""
     p_lo, p_mid, p_hi = rules.price_guidance.band_percentiles
     obs = band_observations(flagged, rules, fiscal)
     return obs.group_by("segment_leaf").agg(
         pl.len().alias("n_observations"),
+        pl.col("customer_id").n_unique().alias("n_band_customers"),
+        pl.struct("customer_id", "item_id").n_unique().alias("n_band_pairs"),
+        pl.col("_month").n_unique().alias("n_band_months"),
+        pl.col("_list_regime").n_unique().alias("n_band_list_regimes"),
         pl.col("price_index").quantile(p_lo).alias("band_p25"),
         pl.col("price_index").quantile(p_mid).alias("band_p50"),
         pl.col("price_index").quantile(p_hi).alias("band_p75"),
@@ -170,7 +195,32 @@ def build_guidance(
     )
     notes: list[str] = []
 
-    bands = segment_bands(flagged, rules, fiscal)
+    # Equivalence guard (Run 6, Phase 67): an item trading in SEVERAL
+    # normalized units has no single comparable price - without an equivalence
+    # conversion its lines never enter a band and its pairs report
+    # insufficient data with the reason, instead of comparing cases to eaches.
+    mixed_uom_items: set[str] = set()
+    if "uom_norm" in flagged.columns:
+        mixed = (
+            flagged.filter(pl.col("price_index").is_not_null())
+            .group_by("item_id")
+            .agg(pl.col("uom_norm").drop_nulls().n_unique().alias("_n_uom"))
+            .filter(pl.col("_n_uom") > 1)
+        )
+        mixed_uom_items = {str(i) for i in mixed["item_id"].to_list()}
+        if mixed_uom_items:
+            notes.append(
+                f"{len(mixed_uom_items)} item(s) trade in several normalized units "
+                "with no equivalence conversion: excluded from reference bands; "
+                "their pairs report insufficient data with the reason shown"
+            )
+    flagged_for_bands = (
+        flagged.filter(~pl.col("item_id").cast(pl.String).is_in(sorted(mixed_uom_items)))
+        if mixed_uom_items
+        else flagged
+    )
+
+    bands = segment_bands(flagged_for_bands, rules, fiscal)
 
     # Pair position: median index over the pair's history; unit economics from
     # the most recent sale line with known cost and list.
@@ -204,6 +254,24 @@ def build_guidance(
                 if "item_role" in base.columns
                 else pl.lit(None, dtype=pl.String)
             ).alias("item_role"),
+            # Disclosures (Run 6, Phase 67): the unit basis every comparison
+            # uses, the channel (for contribution-floor scoping), and the date
+            # of the sale the CURRENT unit cost came from - guidance prices
+            # against current cost; historical margins use dated history.
+            (
+                pl.col("uom_norm").cast(pl.String).drop_nulls().last()
+                if "uom_norm" in base.columns
+                else pl.lit(None, dtype=pl.String)
+            ).alias("uom_basis"),
+            (
+                pl.col("channel").cast(pl.String).drop_nulls().last()
+                if "channel" in base.columns
+                else pl.lit(None, dtype=pl.String)
+            ).alias("channel"),
+            pl.col("invoice_date")
+            .filter(pl.col("product_cost_cents").is_not_null())
+            .last()
+            .alias("cost_as_of"),
         )
         .with_columns(pl.col("unit_cost_f").round(0).cast(pl.Int64).alias("unit_cost_cents"))
         .drop("unit_cost_f")
@@ -234,8 +302,16 @@ def build_guidance(
     # on sale lines), both in basis points. Both reduce pocket revenue, so both
     # belong in the invoice floor (spec 5.5 / Phase 5).
     if rebate_programs is not None:
-        rp = rebate_programs.with_columns(
-            (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rebate_bp")
+        # A customer can hold several simultaneous programs (Run 6, Phase 61):
+        # every program's rate reduces pocket, so d carries their SUM — and the
+        # aggregation guarantees one row per customer, so the pair frame can
+        # never be duplicated by a multi-program join.
+        rp = (
+            rebate_programs.with_columns(
+                (pl.col("rate_pct") * 100).round(0).cast(pl.Int64).alias("rebate_bp")
+            )
+            .group_by("customer_id")
+            .agg(pl.col("rebate_bp").sum())
         )
         pair = pair.join(
             rp.select("customer_id", "rebate_bp"), on="customer_id", how="left"
@@ -268,8 +344,17 @@ def build_guidance(
     # Per-unit cost-to-serve K for the contribution floor (24.3). Estimated
     # from config activity rates upstream; labeled estimated.
     if cts_per_unit is not None:
+        k_cols = [
+            c
+            for c in (
+                "cts_per_unit_cents",
+                "k_variable_per_unit_cents",
+                "k_order_per_unit_cents",
+            )
+            if c in cts_per_unit.columns
+        ]
         pair = pair.join(
-            cts_per_unit.select("customer_id", "item_id", "cts_per_unit_cents"),
+            cts_per_unit.select("customer_id", "item_id", *k_cols),
             on=["customer_id", "item_id"],
             how="left",
         )
@@ -292,14 +377,26 @@ def build_guidance(
     if contribution_bp is not None:
         # Contribution floor on C + K; produced only where K is known, so a
         # missing cost-to-serve estimate never silently weakens the floor to
-        # the gross-margin one without the basis column saying so.
+        # the gross-margin one without the basis column saying so. Scope
+        # (Run 6, Phase 67): the policy can apply to configured item roles and
+        # channels only; out-of-scope pairs keep the gross-margin floor.
+        in_scope: pl.Expr = pl.lit(value=True)
+        if pg.contribution_floor_item_roles:
+            in_scope = in_scope & pl.col("item_role").cast(pl.String).is_in(
+                sorted(pg.contribution_floor_item_roles)
+            ).fill_null(value=False)
+        if pg.contribution_floor_channels:
+            in_scope = in_scope & pl.col("channel").cast(pl.String).is_in(
+                sorted(pg.contribution_floor_channels)
+            ).fill_null(value=False)
         ck = pl.col("unit_cost_cents") + pl.col("cts_per_unit_cents")
+        applies = pl.col("cts_per_unit_cents").is_not_null() & in_scope
         pair = pair.with_columns(
-            pl.when(pl.col("cts_per_unit_cents").is_not_null())
+            pl.when(applies)
             .then(pocket_floor_cents(ck, contribution_bp, rounding))
             .otherwise(None)
             .alias("pocket_contribution_floor_cents"),
-            pl.when(pl.col("cts_per_unit_cents").is_not_null())
+            pl.when(applies)
             .then(
                 invoice_floor_cents(
                     ck,
@@ -325,29 +422,46 @@ def build_guidance(
     # Binding floor: the larger invoice floor; the basis column names it.
     # invoice_floor_cents carries the binding floor so every downstream
     # comparison and opportunity calculation respects both policies.
-    pair = pair.with_columns(
-        pl.max_horizontal("invoice_floor_gross_cents", "invoice_contribution_floor_cents").alias(
-            "invoice_floor_cents"
-        ),
-        pl.when(
-            pl.col("invoice_contribution_floor_cents").is_not_null()
-            & (
-                pl.col("invoice_contribution_floor_cents")
-                > pl.col("invoice_floor_gross_cents").fill_null(0)
+    pair = (
+        pair.with_columns(
+            pl.max_horizontal(
+                "invoice_floor_gross_cents", "invoice_contribution_floor_cents"
+            ).alias("invoice_floor_cents"),
+            pl.when(
+                pl.col("invoice_contribution_floor_cents").is_not_null()
+                & (
+                    pl.col("invoice_contribution_floor_cents")
+                    > pl.col("invoice_floor_gross_cents").fill_null(0)
+                )
             )
+            .then(pl.lit("contribution_margin"))
+            .when(pl.col("invoice_floor_gross_cents").is_not_null())
+            .then(pl.lit("pocket_gross_margin"))
+            .otherwise(pl.lit(None, dtype=pl.String))
+            .alias("binding_floor_basis"),
         )
-        .then(pl.lit("contribution_margin"))
-        .when(pl.col("invoice_floor_gross_cents").is_not_null())
-        .then(pl.lit("pocket_gross_margin"))
-        .otherwise(pl.lit(None, dtype=pl.String))
-        .alias("binding_floor_basis"),
-    ).with_columns(
-        # Floor index (dimensionless): binding invoice floor / effective list.
-        # Only with valid, non-stale list provenance (24.4).
-        pl.when(pl.col("list_provenance") == LIST_PROVENANCE_EFFECTIVE)
-        .then(pl.col("invoice_floor_cents") / pl.col("eff_list_cents"))
-        .otherwise(None)
-        .alias("floor_index")
+        .with_columns(
+            # When the contribution floor binds, show the K assumption that makes
+            # it bind (Run 6, Phase 67) - K is an estimate from configured
+            # activity rates, and a floor built on it must say so.
+            pl.when(pl.col("binding_floor_basis") == "contribution_margin")
+            .then(
+                pl.format(
+                    "binds through K = {} cents/unit, estimated from configured activity rates",
+                    pl.col("cts_per_unit_cents"),
+                )
+            )
+            .otherwise(pl.lit(None, dtype=pl.String))
+            .alias("k_assumption"),
+        )
+        .with_columns(
+            # Floor index (dimensionless): binding invoice floor / effective list.
+            # Only with valid, non-stale list provenance (24.4).
+            pl.when(pl.col("list_provenance") == LIST_PROVENANCE_EFFECTIVE)
+            .then(pl.col("invoice_floor_cents") / pl.col("eff_list_cents"))
+            .otherwise(None)
+            .alias("floor_index")
+        )
     )
 
     g = pair.join(bands, on="segment_leaf", how="left")
@@ -374,10 +488,19 @@ def build_guidance(
     else:
         g = g.with_columns(pl.lit(None, dtype=pl.String).alias("corridor_policy"))
 
+    is_mixed_uom = (
+        pl.col("item_id").cast(pl.String).is_in(sorted(mixed_uom_items))
+        if mixed_uom_items
+        else pl.lit(value=False)
+    )
     insufficient = (
         pl.col("n_observations").is_null()
         | (pl.col("n_observations") < pg.min_band_observations)
+        # Independence (Run 6, Phase 67): a band built from fewer distinct
+        # customers than the minimum is one book of business, not a market.
+        | (pl.col("n_band_customers").fill_null(0) < pg.min_band_customers)
         | pl.col("current_index").is_null()
+        | is_mixed_uom
     )
     # Floor comparisons need cost and valid list; without them only band
     # statuses apply (the dollar floors are still reported).
@@ -407,9 +530,12 @@ def build_guidance(
     )
 
     # Provisional target/start: P50/P75 of the band, never below the floor.
-    # No target is produced where data is insufficient or the corridor is
-    # infeasible — infeasibility is flagged, not papered over.
-    produce = ~insufficient & ~no_headroom
+    # No target is produced where data is insufficient, the corridor is
+    # infeasible, or the pair's list is STALE (Run 6, Phase 67) — a target in
+    # index space against a list no longer in force would be a number nobody
+    # can act on. Unavailability always names its reason.
+    is_stale = pl.col("list_provenance") == LIST_PROVENANCE_STALE
+    produce = ~insufficient & ~no_headroom & ~is_stale
     g = g.with_columns(
         pl.when(produce & has_floor)
         .then(pl.max_horizontal("band_p50", "floor_index"))
@@ -425,5 +551,26 @@ def build_guidance(
         .alias("start_index"),
         pl.lit(PROVISIONAL_LABEL).alias("target_label"),
         pl.col("contract_id").is_not_null().alias("contract_protected"),
+        pl.when(is_mixed_uom)
+        .then(pl.lit("mixed_units_no_equivalence"))
+        .when(insufficient)
+        .then(pl.lit("thin_segment_or_data"))
+        .when(no_headroom)
+        .then(pl.lit("floor_above_corridor"))
+        .when(is_stale)
+        .then(pl.lit("stale_list"))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("target_unavailable_reason"),
+        # Authorized below-floor roles (Run 6, Phase 67): the ONLY path to a
+        # policy override is this explicit configuration; the status stays
+        # visible, and fix actions generate blocked with the authorization.
+        (
+            pl.col("item_role")
+            .cast(pl.String)
+            .is_in(sorted(pg.authorized_below_floor_roles))
+            .fill_null(value=False)
+            if pg.authorized_below_floor_roles
+            else pl.lit(value=False)
+        ).alias("below_floor_authorized"),
     )
     return GuidanceResult(bands=bands, guidance=g, notes=notes)

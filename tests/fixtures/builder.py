@@ -36,6 +36,8 @@ LINE_COLUMNS = [
     "CONTRACT_NO",
     "KIT_ID",
     "CURR",
+    "TAX_AMT",
+    "RTN_DISP",
 ]
 
 LINE_DEFAULTS: dict[str, str] = {
@@ -53,6 +55,8 @@ LINE_DEFAULTS: dict[str, str] = {
     "CONTRACT_NO": "",
     "KIT_ID": "",
     "CURR": "USD",
+    "TAX_AMT": "",
+    "RTN_DISP": "",
     "DISC_AMT": "0.00",
     "LIST_PRC": "",
     "UNIT_CST": "",
@@ -79,6 +83,7 @@ class FixtureWorld:
     fx_rates: list[dict[str, str]] = field(default_factory=list)
     vendor_rebate_programs: list[dict[str, str]] = field(default_factory=list)
     landed_cost_components: list[dict[str, str]] = field(default_factory=list)
+    receipts: list[dict[str, str]] = field(default_factory=list)
 
     def add_line(self, **kw: Any) -> None:
         row = dict(LINE_DEFAULTS)
@@ -138,4 +143,5 @@ class FixtureWorld:
         dump("fx_rates.csv", self.fx_rates)
         dump("vendor_rebate_programs.csv", self.vendor_rebate_programs)
         dump("landed_cost_components.csv", self.landed_cost_components)
+        dump("receipts.csv", self.receipts)
         return self.tmp

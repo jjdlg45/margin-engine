@@ -51,6 +51,17 @@ def _action_frame(**over: Any) -> pl.DataFrame:
         "floor_price_cents": 800,
         "pass_through_level": None,
         "incremental_cost_cents": None,
+        "n_ship_tos": 1,
+        "scope_key": None,
+        "baseline_period": None,
+        "intervention": None,
+        "affected_set": None,
+        "scenario_id": None,
+        "overlap_group": None,
+        "input_fingerprint": None,
+        "config_fingerprint": None,
+        "model_fingerprint": None,
+        "expires_on": None,
         "priority": "medium",
         "owner": "unassigned",
         "due_date": IMPL,
@@ -153,7 +164,7 @@ def test_realization_and_did_fixture() -> None:
     assert row["realization_pct"] == pytest.approx(0.5)
     assert row["treated_volume_ratio"] == pytest.approx(1.3 * 0.8, rel=1e-6)
     assert row["control_volume_ratio"] == pytest.approx(1.3, rel=1e-6)
-    assert row["did_volume_ratio"] == pytest.approx(0.8, rel=1e-6)
+    assert row["control_adjusted_volume_ratio"] == pytest.approx(0.8, rel=1e-6)
     assert row["volume_error_log_points"] == pytest.approx(math.log(0.8), rel=1e-5)
     assert row["n_control_pairs"] == 6
     # Margin outcome present on both sides.

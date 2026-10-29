@@ -110,7 +110,39 @@ test("detail: history labeled demo data, compliance note, evidence links, outcom
   expect(measured).toBeTruthy();
   await page.goto(`/#/actions/${measured!.action_id}`);
   await expect(page.getByTestId("outcome")).toBeVisible();
-  await expect(page.getByText("difference-in-differences")).toBeVisible();
+  // The outcome names what it compared against and does NOT claim to be a
+  // difference-in-differences estimate (Run 6, Phase 75): it is a
+  // control-adjusted volume change, and the wording has to stay that way.
+  await expect(page.getByText("untreated same-segment pairs").first()).toBeVisible();
+  await expect(page.getByText("difference-in-differences")).toHaveCount(0);
+});
+
+test("results view: the pooled estimate states its estimand and its pre-trend check", async ({
+  page,
+}) => {
+  await page.goto("/#/actions");
+  await page.getByRole("tab", { name: "Results" }).click();
+  const study = bundle.actions.event_study;
+  expect(study).toBeTruthy();
+  if (study!.status === "estimated") {
+    await expect(page.getByText(study!.estimand, { exact: false })).toBeVisible();
+    await expect(page.getByText(study!.pretrend_detail, { exact: false })).toBeVisible();
+    // A detected pre-trend must not be presented as an effect of the price.
+    if (study!.pretrend_status === "pretrend_detected") {
+      await expect(
+        page.getByText("not an effect of the price change", { exact: false }).first(),
+      ).toBeVisible();
+    }
+  } else {
+    await expect(
+      page.getByText("Not enough implemented actions for a pooled estimate"),
+    ).toBeVisible();
+  }
+  // Results are split rather than pooled into one median.
+  const dims = new Set((bundle.actions.results_breakdown ?? []).map((g) => g.dimension));
+  for (const d of dims) {
+    await expect(page.getByRole("cell", { name: d, exact: true }).first()).toBeVisible();
+  }
 });
 
 test("results view: calibration table and outcomes match the bundle", async ({ page }) => {
@@ -253,5 +285,41 @@ test("process view: step tracker and the process explainer", async ({ page }) =>
     } else {
       await expect(tracker.locator('[aria-current="step"]')).toHaveCount(1);
     }
+  }
+});
+
+
+test("a flagged action shows the facts behind the review flag, and no verdict", async ({
+  page,
+}) => {
+  const flagged = bundle.actions_table.find((a) => a.compliance_flags);
+  test.skip(!flagged, "no flagged action in the demo bundle");
+  await page.goto(`/#/actions/${flagged!.action_id}`);
+  await expect(page.getByTestId("compliance-note")).toBeVisible();
+
+  const pairs = (bundle.compliance?.pairs ?? []).filter(
+    (p) =>
+      p.item_id === flagged!.item_id &&
+      (p.customer_id_a === flagged!.customer_id || p.customer_id_b === flagged!.customer_id),
+  );
+  expect(pairs.length).toBeGreaterThan(0);
+  const facts = page.getByTestId("review-facts");
+  await expect(facts).toBeVisible();
+  // A price difference is the start of the question: the defenses live in
+  // the facts beside it, so they have to be on the page.
+  await expect(facts).toContainText("Cost to serve");
+  await expect(facts).toContainText("supporting evidence, not a conclusion");
+  await expect(facts).toContainText("Volume");
+  await expect(facts).toContainText("Facts available");
+  await expect(facts).toContainText(pairs[0].pair_basis);
+  // Absent evidence is absent, not clear.
+  if (!pairs[0].reviewer_decision) {
+    await expect(facts).toContainText("none recorded");
+  }
+
+  // The page never reaches a verdict about the law.
+  const text = (await page.locator("body").innerText()).toLowerCase();
+  for (const word of ["violation", "compliant", "unlawful", "illegal"]) {
+    expect(text, `the action page used the word "${word}"`).not.toContain(word);
   }
 });

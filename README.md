@@ -34,9 +34,9 @@ This engine is built around three rules:
 | Order and customer economics | What does each order and customer contribute after returns and cost-to-serve? |
 | Cost and tariff pass-through scenarios | What happens to margin at 0–100% pass-through? |
 | Action center: findings become proposed actions, reviewed maker-checker, exported to the ERP, then measured | Which findings became decisions — and did they actually work? |
-| Robinson-Patman review flags with cost-to-serve evidence | Which recommended prices put likely-competing customers far apart on the same item? |
+| Robinson-Patman review flags with the buyer facts beside them | Which recommended prices put possibly-competing customers far apart on the same item, and what would a reviewer need to judge it? (A prompt to look, not a finding - and not a safe harbor.) |
 
-**Optional modules** switch on when their input data exists and say so when it doesn't: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO / LIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups. Analytic periods follow a configurable **fiscal calendar**: calendar months (default), 4-4-5 / 4-5-4 / 5-4-4 retail week calendars, or a custom period table — one declaration drives the sensitivity panel, peer-group quarters, baseline windows and the books tie-out, while data-declared periods (rebate settlements, FX months) always stay as the source states them.
+**Optional modules** switch on when their input data exists and say so when it doesn't: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO / LIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups. Analytic periods follow a configurable **fiscal calendar**: calendar months (default), 4-4-5 / 4-5-4 / 5-4-4 retail week calendars, or a custom period table — one declaration drives the sensitivity panel, peer-group quarters, baseline windows and the monthly GL variance check, while data-declared periods (rebate settlements, FX months) always stay as the source states them.
 
 ## Quickstart
 
@@ -173,9 +173,16 @@ closes the loop from finding to decision to measured outcome:
   event log whose current status is derived by replay — never edited in place.
   Roles are analyst (proposes, edits, exports, implements), approver (approves
   or rejects — never an action they proposed themselves) and viewer. Approving
-  a compliance-flagged action requires a written justification. Identity in
-  local mode is a configured user name, documented everywhere as *not*
-  authentication.
+  a compliance-flagged action requires a written justification.
+- **Two identity modes.** `local` (the default) takes a configured user name
+  from a header: convenient for one person on one machine, and *not*
+  authentication — anyone who can reach the port can be anyone. `production`
+  rejects client-supplied identity outright, issues bearer tokens against
+  accounts with PBKDF2-hashed passwords or an OIDC provider, decides every
+  authorisation on an **immutable user id** rather than a display name, keeps
+  an audit log that holds the record and none of the secrets, and refuses to
+  start unless the operator has declared the state directory encrypted.
+  Details in [`docs/deploy-api.md`](docs/deploy-api.md).
 - **ERP price export.** `margin-engine export-prices` writes approved price
   actions as an ERP-importable price file (header names, date format, decimal
   separator and price unit configurable per deployment), deterministic and
@@ -185,13 +192,19 @@ closes the loop from finding to decision to measured outcome:
 - **Results tracking.** `margin-engine track` measures implemented actions
   after a configurable window: price realization (did the invoiced price
   actually move, or erode back?), volume against the prediction stored on the
-  action at generation time — as a difference-in-differences against untreated
-  same-segment pairs, so market trends never read as price effects — and
-  margin before vs after. Every gate fails closed with its reason; calibration
-  by evidence bucket appears only once enough actions are measured. On
-  synthetic worlds with planted price interventions the tracker's pooled
-  recovery error is 0.039 log points (see the validation table), and on a
-  sparse world it measures nothing and says why.
+  action at generation time, and margin before vs after. The per-action volume
+  figure is a **control-adjusted volume change** — the treated pair's ratio
+  divided by the trend in clean untreated pairs in the same segment — and is
+  deliberately not called a difference-in-differences estimate. A pair that
+  stops buying counts as a change of zero rather than being dropped, on both
+  sides of the comparison. Alongside it, a **pooled event study** compares
+  treated pairs with never-treated and not-yet-treated ones over event time,
+  states its estimand, and reports the pre-trend check with the size of
+  pre-trend the data could have detected. Every gate fails closed with its
+  reason; calibration by evidence bucket appears only once enough actions are
+  measured. On synthetic worlds with planted price interventions the tracker's
+  pooled recovery error is 0.039 log points (see the validation table), and on
+  a sparse world it measures nothing and says why.
 
 The hosted demo runs the Action center as a **sandbox**: it starts from a
 simulated, lifecycle-valid review history (labeled as such), and every
@@ -257,56 +270,88 @@ Options set globally under `input:` can be overridden per file (`lines_input:` f
 
 No code changes are needed for a new source system. Three more tools exist for real deployments:
 
-- **Books tie-out.** Map an optional `gl_totals` table (month, net sales, COGS, optionally returns) and the report compares engine monthly totals to the books with absolute and % differences against a configurable tolerance. Failing months are flagged, never hidden, and the measure definitions (returns recognized when they occur; engine COGS covers known-cost lines, with the coverage share printed) are stated next to the comparison.
+- **Monthly GL variance check.** Map an optional `gl_totals` table (month, net sales, COGS, optionally returns) and the report compares engine period totals to the books: net sales and COGS separately, with signed and absolute variances, guarded variance percentages, the tolerance used, the fiscal-period and account mappings, unresolved reconciling items, and a line-to-GL trace sample. Variances outside tolerance are flagged, never hidden; without a GL file the check reports not testable instead of implying a pass. It is a variance control on top of the always-on, exact source-total reconciliation.
 - **Validation without planted truth.** Real data has no ground truth, so every run includes checks that remain possible: a temporal backtest (fit on months 1..T−k, held-out volume-change prediction error vs a zero-elasticity baseline), placebo tests (instruments permuted in time must lose their reduced form and first stage; fake price-change dates must show no volume response), and rolling-window stability for both elasticities and segments. All informational — on the real case study below they correctly argue *against* causal claims.
 - **Anonymizer.** `margin-engine anonymize` replaces customer, item and supplier IDs and names with salted keyed hashes (HMAC-SHA256; referential integrity preserved, so the same mapping runs on the copy) and can scale every money column by a secret salt-derived factor. The salt comes from a local file or environment variable and never appears in any output or manifest.
 
 ## Case study: Online Retail II (real data)
 
-The engine runs end to end on a real public dataset: the UCI **Online Retail II** export of a UK online wholesaler — 1,067,371 invoice lines, 2009–2011, GBP, with real cancellations, 14.7% of revenue from anonymous customers, non-product fee codes and true duplicate rows, and **no cost, no list price, no instruments**. Every reconciliation check passes exactly (GBP kept per line, converted to USD at monthly ECB reference rates); cancellations classify as returns via a one-line mapping prefix rule; cost-dependent metrics report `cost_unavailable` instead of numbers; elasticity caps at `descriptive_elasticity`, and the no-planted-truth checks show why that gating is right (the backtest loses to a zero-elasticity baseline out of sample; fake-date placebos "detect" effects that cannot be real). Full write-up: [`docs/case-study-online-retail.md`](docs/case-study-online-retail.md); reproduce with [`scripts/download_online_retail.py`](scripts/download_online_retail.py).
+The engine runs end to end on a real public dataset: the UCI **Online Retail II** export of **real UK online-retail transactions (giftware); many customers are wholesalers** — 1,067,371 invoice lines, 2009–2011, GBP, with real cancellations, 14.7% of revenue from anonymous customers, non-product fee codes and true duplicate rows, and **no cost, no list price, no instruments**. Every reconciliation check passes exactly (GBP kept per line, converted to USD at monthly ECB reference rates); cancellations classify as returns via a one-line mapping prefix rule; cost-dependent metrics report `cost_unavailable` instead of numbers; elasticity caps at `descriptive_elasticity`, and the no-planted-truth checks show why that gating is right (the backtest loses to a zero-elasticity baseline out of sample; fake-date placebos "detect" effects that cannot be real). **What this case study tests is ingestion and descriptive analytics**: the dataset has no cost, no list price and no instruments, so it exercises mapping, classification, reconciliation, dispersion and segmentation, and it cannot test margin, floors or causal price response - which is why the engine reports those as unavailable rather than producing them. Full write-up: [`docs/case-study-online-retail.md`](docs/case-study-online-retail.md); reproduce with [`scripts/download_online_retail.py`](scripts/download_online_retail.py).
 
 ## Validation results
 
-Planted truth vs. recovered, on synthetic data. These figures are produced by `scripts/measure_validation.py`, which runs the actual measurements and writes `docs/validation.json`; the demo site reads the same file. No number is hand-typed.
+Planted truth vs. recovered, on synthetic data. These figures are produced by `scripts/measure_validation.py`, which runs the actual measurements and writes `docs/validation.json`; the demo site reads the same file. No number here is hand-typed: the table is generated from that file by `scripts/sync_validation_table.py`, and `tests/test_validation_table.py` fails if the two ever disagree.
 
-| Check | Target | Measured |
-|---|---|---|
-| Accounting fixtures (hand-calculable cases) | Exact to the cent | All pass |
-| Ledger reconciliation to source totals | Exact | Property suite passes on varied inputs |
-| Rebate / freight recovery | Actuals exact; allocations within ±5% | Pass |
-| Planted outlier detection | ≥ 90% recall, ≤ 5% false flags | 98.7% recall, 1.02% false flags |
-| Commercial segments vs. planted (out-of-sample ARI) | ≥ 0.70 | 1.000 |
-| Segment bootstrap stability (median ARI) | ≥ 0.80 | 1.000 |
-| Elasticity recovery, planted-segment grain (5 seeds) | Median ≤ 0.10, P90 ≤ 0.15 | Median 0.019, P90 0.051, worst 0.110 |
-| Elasticity recovery, end-to-end on engine segments (5 seeds) | Median ≤ 0.10, P90 ≤ 0.15 | Median 0.019, P90 0.072, worst 0.110 |
-| 95% CI coverage (50 simulations, 300 estimates) | 90–98% | 92.0% |
-| Naive estimator bias | Toward zero on every seed | 5/5 seeds, every segment |
-| `weak_instrument` preset | Never causal-supported | Holds; weak-IV-robust (Anderson-Rubin) sets reported |
-| `invalid_instrument` preset | Overidentification rejects ≥ 80% of seeds | Rejected and downgraded on 5/5 seeds |
-| `price_constant` / `sparse` presets | Never above descriptive | Holds for every segment |
-| Key-value-item candidates | ≥ 80% of planted KVIs found | 96.7% |
-| Win-curve price coefficient, precision-gated segments | Within ±15% of planted | Worst 4.0% |
-| 95% CI coverage under persistent (AR(1)) demand, shipped clustering | 90–98% | 93.3% (month × customer; the month-only and supplier × month alternatives cover 83.3% / 82.3% — reported, which is why they are not the default) |
-| Determinism | Byte-identical outputs across runs | Byte-identical |
-| Performance (core pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 37.0s |
-| Scenario matrix, full tier | Every invariant on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300/300 worlds pass |
-| Scale (10M lines under 15 min and 8 GB) | **KNOWN GAP** | Unverifiable on the 13.8 GB build machine (≈5 GB free): after the Run 5 scale refactor the largest run that fits is 241k lines in 13.0s at 2.64 GB peak (was 32.1s / 2.92 GB before the refactor; marginal memory ≈9.0 KB/line, was ≈10.0). Memory stays linear in lines across measured rungs, but that is an extrapolation — at ≈9 KB/line a full-featured 10M-line world would not fit 8 GB anywhere; the remaining lever (spilling the ledger to parquet between stages) is logged as the next scale step |
-| Hybrid world: real BLS PPI series drive the cost instrument | Informational | Median abs elasticity error 0.037 over 6 segments; 4 causal-supported |
-| Results tracker: planted +8% price interventions recovered (difference-in-differences) | Pooled error ≤ 0.10 log points; ≥ 50% of interventions measured | 21/30 measured; pooled recovery error 0.039 log points (a single pair's 90-day window carries ~0.26 log points of Poisson noise — reported, and why calibration aggregates instead of judging single actions) |
-| Results tracker on a sparse world | Fail-closed: ≤ 25% of interventions get a number | 0/30 measured; every refusal carries its reason |
+<!-- validation-table:start -->
 
-Reported but not gated, because the planted number is not the estimand once the model is misspecified: `realistic_noise` (median 0.051, P90 0.126, worst 0.210), `persistent_demand` (0.021), `heterogeneous_elasticity` (0.024 — the segment estimate recovers the within-segment average), `nonconstant_elasticity` (0.320 — a constant-elasticity model on curved demand reports a local average), and `competitor_comovement` (0.236, with **zero** segments reaching causal support: the Anderson-Rubin and robustness criteria catch what overidentification cannot). An honest indication that clean synthetic results overstate real-world accuracy.
+Measured 2026-10-26T20:23:17+00:00 by `scripts/measure_validation.py` in 62 minutes. This table is generated from `docs/validation.json`; a test fails if the two disagree. Method and scope for every row - what it establishes and what it does not - are in [`docs/validation.md`](docs/validation.md).
+
+| Check | Target | Measured | Worlds or clusters |
+|---|---|---|---|
+| Accounting fixtures | Exact to the cent | All hand-calculated fixture tests pass | hand-calculated cases, not worlds |
+| Ledger reconciliation | Exact to source totals after rounding | Property suite passes (hypothesis-varied inputs) | hypothesis-generated inputs, many per run |
+| Rebate / freight recovery | Actual amounts exact; allocated within ±5% of planted | Recovery suite passes (exact + ±5% allocated) | fixtures plus one planted world |
+| Planted outlier detection | ≥ 90% recall, ≤ 5% false-flag rate | Recall 98.7%, false-flag rate 1.02% | 1 |
+| Commercial segments vs planted (out-of-sample ARI) | At least 0.70 on the well-identified preset | ARI 1.000 (seed 3, default scale) | 1 |
+| Segment stability (bootstrap median ARI) | ≥ 0.80 | Median ARI 1.000 over 8 resamples | 1 |
+| Elasticity recovery, planted grain, 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.019, P90 0.077, worst 0.095 | 5 |
+| Elasticity recovery, end-to-end (engine segments), 5 seeds | Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported) | Median 0.022, P90 0.077, worst 0.095 | 5 |
+| Naive estimator bias | Biased in the planted direction (toward zero) on every seed | Toward zero on 5/5 seeds, every segment | 5 |
+| Causal support reachable | Reached on the well-identified preset with all criteria enforced | Reached; competitor-price path controlled_by_market_index; market index market_control_adequate | 1 |
+| Competitor-price path gate | Informational: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) | 30 segment-seeds |
+| Anticipation (lead) test false-rejection rate | Informational: on the well-identified preset no anticipation channel is planted, so every rejection is a false positive | 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes | 30 segment-seeds |
+| Robust first-stage statistic and robust-set shape | Informational: the Montiel Olea-Pflueger effective F against the published 23.109 bar, and the shape of the weak-instrument-robust set | Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86 | 30 segment-seeds |
+| 95% CI coverage, 50 simulations | Covers truth 90-98% of the time | 284/300 = 94.7% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=month (alternative, informational) | Informational - reported to justify the clustering default | 253/300 = 84.3% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=month_customer (shipped default) | Covers truth 90-98% of the time | 278/300 = 92.7% | 50 simulations, 300 intervals |
+| 95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational) | Informational - reported to justify the clustering default | 244/300 = 81.3% | 50 simulations, 300 intervals |
+| weak-instrument preset | Never reaches causal support; weak-IV-robust interval reported | No segment reached causal support; Anderson-Rubin set reported | 5 |
+| invalid-instrument preset | Overidentification rejects on ≥ 80% of seeds; status downgraded | Rejected on 4/5 seeds; downgraded on 5/5 | 5 |
+| price-constant preset | Insufficient data or descriptive only - never higher | Held for every segment | 1 |
+| sparse preset | Insufficient data or descriptive only - never higher | Held for every segment | 1 |
+| Misspecified world: persistent_demand (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.031; statuses {causal_elasticity_supported: 8, descriptive_elasticity: 1, iv_estimated_elasticity: 9} | 1 |
+| Misspecified world: heterogeneous_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.025; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} | 1 |
+| Misspecified world: nonconstant_elasticity (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.303; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8} | 1 |
+| Misspecified world: competitor_comovement (informational) | Informational - reported, not gated (the planted beta is not the estimand under misspecification) | median abs error vs planted 0.236; statuses {descriptive_elasticity: 18} | 1 |
+| KVI candidates | ≥ 80% of planted KVIs in top-ranked candidates | Recall 96.7% (30 planted) | 1 |
+| Win-curve price coefficient | Within ±15% relative of planted, per estimated segment | Worst estimated segment 4.0% (2 estimated, precision-gated) | 1 |
+| Engine determinism | Byte-identical bundle across runs on the same input | Byte-identical | one world, repeated runs |
+| Performance (full Run-1 pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 119.0s on AMD64 (Windows) | one world, one machine |
+| Competitor-price path gate (informational) | Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) | 30 segment-seeds |
+| Scenario matrix (full tier) | every invariant holds on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300 worlds, 300 passed all invariants, 0 failed (0 crashes), 1784s | 300 |
+| Hybrid world: real PPI cost paths (informational) | informational: recovery when real cost movements drive the instrument | seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s | 1 |
+| Scale (10M-line pipeline) | 10M+ lines under 15 minutes and under 8 GB peak memory | largest run that fits this machine: 241,162 lines in 13.0s, peak 2.64 GB on AMD64 (Windows), 13.8 GB RAM, 5.2 GB available at start; slowest stages: exports 3.3s, sensitivity 3.2s, ingest classify waterfall reconcile 3.1s, segmentation 1.9s. KNOWN GAP: the 10M-line target could not be verified on this hardware (next rung 450x700 projected ~5.3 GB peak, over the 4.2 GB budget on this machine); the pipeline's memory use is linear in lines across the measured rungs, but that is an extrapolation, not a measurement. | one ladder, one machine |
+| Results tracker: planted-intervention recovery | pooled recovery \|median DiD effect - median planted effect\| <= 0.1 log points and >= 50% of interventions measured (well-identified world, seed 5, 30 planted +8% interventions; a single pair's 90-day window carries ~0.2-0.3 log points of Poisson noise, reported as information) | 21/30 measured; pooled recovery error 0.0394 log points; per-pair median abs error 0.2562, P90 0.6419 | 1 |
+| Results tracker: fail-closed on a sparse world | <= 25% of interventions get a number; the rest report insufficient evidence with reasons (sparse preset, same interventions) | 0/30 measured (0%); refusal reasons: {'not enough sales around the implementati': 30} | 1 |
+
+<!-- validation-table:end -->
+
+Rows marked informational are reported, not gated: once the model is misspecified the planted number is no longer the estimand the engine is estimating, so recovering it is not the right test. They are kept in view because clean synthetic results overstate real-world accuracy, and the misspecified worlds are where that shows.
 
 ## Method in brief
 
-A mapping YAML declares column names and business meaning; ingestion fails actionably on anything undeclared. Classified transactions produce two views (clean sales observations and a complete financial ledger) and a staged waterfall with exact allocations. Prices normalize to an index against the effective-dated list price; robust z-scores flag data-quality anomalies and commercial outliers separately. Commercial segments come from a decision tree on the price index using context features only (guarded against leakage) and are checked for stability by bootstrap. Price guidance is historical reference bands against an exact economic margin floor, rounded up so it always clears minimum margin. Own-price elasticity is estimated per segment by fixed-effects instrumental-variables regression with two instruments (supplier cost index, category tariff rate), and first-stage, overidentification, robustness, and weak-IV-robust diagnostics feed a four-level evidence status. Opportunity is sized at three levels that are never added together. Findings become proposed actions with guardrails, reviewed maker-checker, exported to the ERP and measured after implementation. Full detail: [`docs/methodology.md`](docs/methodology.md).
+A mapping YAML declares column names and business meaning; ingestion fails actionably on anything undeclared. Classified transactions produce two views (clean sales observations and a complete financial ledger) and a staged waterfall with exact allocations. Prices normalize to an index against the effective-dated list price; robust z-scores flag data-quality anomalies and commercial outliers separately. Commercial segments come from a decision tree on the price index using context features only. Every feature declares its lineage and the guard refuses any that embeds the realized price, so a feature cannot pass on an innocent name; the ABC class is cut on a window that ends before the line's own period, order-size bands on quantity rather than value, and the target encoding out of fold. Segments are checked for stability by bootstrap and scored on later months the tree never saw. Price guidance is historical reference bands against an exact economic margin floor, rounded up so it always clears minimum margin. Own-price elasticity is estimated per segment by fixed-effects instrumental-variables regression with two instruments (supplier cost index, category tariff rate), and first-stage, overidentification, robustness, and weak-IV-robust diagnostics feed a four-level evidence status. Opportunity is sized at three levels that are never added together. Findings become proposed actions with guardrails, reviewed maker-checker, exported to the ERP and measured after implementation. Full detail: [`docs/methodology.md`](docs/methodology.md).
+
+## Independent review
+
+An independent methodology review raised 24 findings about the gap between
+what the labels promised and what the methods delivered. Most of the
+remediation is subtraction: numbers that used to appear now refuse to.
+Three results make the engine look worse on its own demo and are correct —
+both win curves fell to `insufficient_precision` once standard errors stopped
+treating 676 quotes from 24 customers as independent; one commercial segment
+disappeared when features embedding the price being explained were removed
+(bootstrap stability rose 0.737 → 0.884); and the spill-to-Parquet scale path
+was measured as not lowering peak memory, so it ships off by default saying
+so. Finding by finding, with before/after numbers and what is still open:
+[`docs/run6-report.md`](docs/run6-report.md).
 
 ## Honest labels and limitations
 
 - **Historical reference bands are not optimal prices.** Targets stay `provisional_historical` unless elasticity evidence supports optimization.
 - **Descriptive elasticities are not causal.** The naive estimate is reported to document bias, never used for decisions.
 - **Instruments rest on assumptions.** The overidentification test only detects an invalid instrument when the two instruments disagree; exclusion restrictions are documented per instrument in `config/rules.yaml`.
-- **Industry-wide cost shocks also move competitor prices.** A customer facing an industry-wide increase has nowhere cheaper to go, so measured responses are flatter than the response to a unilateral move: estimates likely **understate** own-price sensitivity, and overidentification cannot detect it because both instruments shift competitor prices in the same direction. An optional market-price-index control (`market_price_index` reference table) mitigates but cannot eliminate this.
+- **Industry-wide cost shocks also move competitor prices.** A customer facing an industry-wide increase has nowhere cheaper to go, so measured responses are flatter than the response to a unilateral move: estimates **understate** own-price sensitivity, and overidentification cannot detect it because both instruments shift competitor prices in the same direction. Since Run 6 this is a **gate**, not a caveat: `causal_elasticity_supported` requires either an adequate public market price index (current, complete, varying within each period, at a grain matching the channel, and demonstrably related to prices) or an instrument whose competitor-price path is documented as absent with a written argument. Otherwise the status caps at an instrumented estimate, the estimand is reported as a market-wide cost-shock response with its bias direction, and the two-sided expected-change range is withheld. No configuration switch disables this. The gate still cannot discharge a violation the two instruments share through some other channel - that limitation is stated in the methodology and the status tooltip.
 - **Volume responses are never extrapolated** beyond the price variation the instruments actually induced: proposed moves outside each segment's identifying price range are labeled `outside_price_support` and sized at unchanged volume.
 - **Allocated and estimated amounts are labeled** as such, never presented as actuals. Unallocatable amounts stay visible as residuals with a plain-English explanation.
 - **Item availability is proxied** by market-wide activity, since stockouts aren't observable in invoice data. The proxy is labeled.
@@ -322,7 +367,7 @@ A mapping YAML declares column names and business meaning; ingestion fails actio
 | `tests/` | Accounting fixtures, property tests, input-format tests, recovery and coverage studies |
 | `web/` | React + TypeScript demo site with Playwright and accessibility tests |
 | `scripts/` | Validation measurement script |
-| `docs/` | `methodology.md`, `validation.json`, design plan, and UI review screenshots |
+| `docs/` | `methodology.md`, `metric-dictionary.md`, `validation.json` with its scope in `validation.md`, `run6-report.md` (the independent-review remediation), design plan, and UI review screenshots |
 | `data/sample/` | Small committed demo dataset |
 
 ## Author

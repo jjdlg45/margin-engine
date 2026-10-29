@@ -59,12 +59,27 @@ def run(
         help="Directory for the fingerprint-keyed parse cache: re-running on "
         "unchanged input skips re-parsing the export (Phase 35)",
     ),
+    spill: bool = typer.Option(
+        False,
+        "--spill",
+        help="Spill the ledger to Parquet for the analytic stages (Phase 83): "
+        "lower peak memory on large worlds, byte-identical outputs by test. "
+        "Also available as scale.spill_ledger in the rules file",
+    ),
 ) -> None:
     """Run the full pipeline: ingest -> waterfall -> analytics -> report."""
     from margin_engine.report.full_run import run_full
 
     try:
-        result = run_full(data, mapping, rules, out, validate=validate, cache_dir=cache_dir)
+        result = run_full(
+            data,
+            mapping,
+            rules,
+            out,
+            validate=validate,
+            cache_dir=cache_dir,
+            spill=spill or None,
+        )
     except MappingError as exc:
         _fail("mapping", exc)
     except MoneyParseError as exc:
@@ -167,6 +182,16 @@ def export_prices(
     result = export_price_file(store, loaded, out, who=who)
     typer.echo(f"Wrote {out} and {out.name}.summary.json beside it")
     typer.echo(f"Actions moved to exported: {result.n_transitioned}")
+    _rec_raw = result.summary.get("n_recovered_exports") or 0
+    n_rec = int(_rec_raw) if isinstance(_rec_raw, int | float | str) else 0
+    if n_rec:
+        typer.echo(
+            f"Recovered {n_rec} action(s) from an export that was interrupted "
+            f"before its statuses were written"
+        )
+    held = list(result.summary.get("held_out_stale") or [])  # type: ignore[call-overload]
+    for h in held:
+        typer.echo(f"  held out (stale): {h['action_id']}: {h['reason']}")
 
 
 @app.command()
@@ -185,7 +210,7 @@ def track(
 ) -> None:
     """Measure implemented actions against the ledger (Phase 41): price
     realization, volume vs prediction with an untreated same-segment comparison
-    group (difference-in-differences), margin before vs after. Newly measured
+    group (a control-adjusted volume change), margin before vs after. Newly measured
     actions move implemented -> measured; gates fail closed with reasons."""
     import tempfile
 

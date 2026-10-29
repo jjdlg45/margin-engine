@@ -17,7 +17,82 @@ import { StepTracker } from "../components/StepTracker";
 import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
 import { useLabels } from "../lib/labels";
-import { queryClient, useActionDetail, useCurrentUser } from "../lib/queries";
+import {
+  queryClient,
+  useActionDetail,
+  useComplianceReview,
+  useCurrentUser,
+} from "../lib/queries";
+
+/** The facts beside a Robinson-Patman review flag.
+ *
+ * The flag on its own is a price difference, and a price difference is the
+ * start of the question. The defenses that matter - cost justification,
+ * meeting competition, functional differences between the two buyers - live
+ * in these numbers, so the reviewer sees them here rather than having to
+ * open an export. Cost to serve is supporting evidence, never a conclusion,
+ * and the page never says whether anything is lawful.
+ */
+function ReviewFacts({ action }: { action: ActionRow }) {
+  const { data } = useComplianceReview();
+  const pairs = (data ?? []).filter(
+    (p) =>
+      p.item_id === action.item_id &&
+      (p.customer_id_a === action.customer_id || p.customer_id_b === action.customer_id),
+  );
+  if (pairs.length === 0) return null;
+  return (
+    <div className="mt-3 max-w-2xl text-sm" data-testid="review-facts">
+      {pairs.map((p) => {
+        const mine = p.customer_id_a === action.customer_id;
+        const other = mine ? p.customer_id_b : p.customer_id_a;
+        const myNet = mine ? p.recommended_net_a_cents : p.recommended_net_b_cents;
+        const theirNet = mine ? p.recommended_net_b_cents : p.recommended_net_a_cents;
+        const myCts = mine ? p.cts_per_unit_a_cents : p.cts_per_unit_b_cents;
+        const theirCts = mine ? p.cts_per_unit_b_cents : p.cts_per_unit_a_cents;
+        const myQty = mine ? p.quantity_a : p.quantity_b;
+        const theirQty = mine ? p.quantity_b : p.quantity_a;
+        const myChannel = mine ? p.channel_a : p.channel_b;
+        const theirChannel = mine ? p.channel_b : p.channel_a;
+        return (
+          <div key={`${p.customer_id_a}-${p.customer_id_b}-${p.item_id}`} className="mt-2">
+            <p className="m-0">
+              Compared with {other} ({p.pair_basis}):{" "}
+              {p.price_difference_pct !== null ? pct(p.price_difference_pct / 100) : "—"} apart on
+              the invoice price,{" "}
+              {p.net_difference_pct !== null ? pct(p.net_difference_pct / 100) : "—"} after
+              discounts and rebates.
+            </p>
+            <ul className="m-0 mt-1 list-disc pl-5 text-caption">
+              <li>
+                Recommended after deductions: {myNet !== null ? dollars(myNet) : "—"} here,{" "}
+                {theirNet !== null ? dollars(theirNet) : "—"} there
+              </li>
+              <li>
+                Volume: {myQty !== null ? num(myQty) : "—"} against{" "}
+                {theirQty !== null ? num(theirQty) : "—"}; channel {myChannel ?? "not stated"}{" "}
+                against {theirChannel ?? "not stated"}
+              </li>
+              <li>
+                Cost to serve: {myCts !== null ? dollars(myCts) : "—"} against{" "}
+                {theirCts !== null ? dollars(theirCts) : "—"}
+                {p.cts_method ? ` (${p.cts_method})` : ""} - supporting evidence, not a conclusion
+              </li>
+              <li>Facts available: {p.data_coverage}</li>
+              <li>
+                Reviewer decision:{" "}
+                {p.reviewer_decision ?? "none recorded"}
+                {p.meeting_competition_record
+                  ? `; meeting-competition record: ${p.meeting_competition_record}`
+                  : "; no meeting-competition record"}
+              </li>
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const btnClass =
   "rounded-badge border hairline bg-card px-2 py-1 text-sm text-ink/[0.87] hover:text-ink disabled:opacity-50";
@@ -215,11 +290,11 @@ function OutcomeCard({ detail }: { detail: ActionDetail }) {
       <div className="panel px-5 py-4">
         <h3 className="m-0 text-section">Volume vs prediction</h3>
         <p className="m-0 mt-1 text-title font-semibold text-petrol">
-          {num(o.did_volume_ratio, 3)} measured
+          {num(o.control_adjusted_volume_ratio, 3)} measured
         </p>
         <p className="m-0 text-caption secondary">
           Predicted {num(o.predicted_volume_ratio, 3)}; the measured ratio compares this pair with{" "}
-          {o.n_control_pairs} untreated same-segment pairs (difference-in-differences), so the
+          {o.n_control_pairs} untreated same-segment pairs, so the
           general trend never reads as a price effect.
         </p>
       </div>
@@ -335,9 +410,15 @@ export function ActionDetailPage() {
                 </div>
               </dl>
               {d.action.compliance_flags && (
-                <p className="mb-0 mt-3 max-w-2xl text-caption text-amber" data-testid="compliance-note">
-                  {labels("rp_review_flag").label}: {labels("rp_review_flag").description}
-                </p>
+                <>
+                  <p
+                    className="mb-0 mt-3 max-w-2xl text-caption text-amber"
+                    data-testid="compliance-note"
+                  >
+                    {labels("rp_review_flag").label}: {labels("rp_review_flag").description}
+                  </p>
+                  <ReviewFacts action={d.action} />
+                </>
               )}
               {d.action.blocked && (
                 <p className="mb-0 mt-3 max-w-2xl text-caption text-amber">

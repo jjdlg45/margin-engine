@@ -70,6 +70,26 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # re-deriving anything (null for every other type).
     "pass_through_level": pl.Float64,
     "incremental_cost_cents": pl.Int64,
+    # Scope and overlap metadata (Run 6, Phase 68): one active proposed price
+    # per scope_key (customer x item x UOM x effective date), and overlapping
+    # scopes share an overlap_group whose joint impact lives in the portfolio
+    # table - never in a naive sum.
+    "scope_key": pl.String,
+    # Run 6, Phase 85: ship-tos covered by one action (1 unless the analysis
+    # level aggregates above ship-to), and units traded by the pair.
+    "n_ship_tos": pl.Int64,
+    "baseline_period": pl.String,
+    "intervention": pl.String,
+    "affected_set": pl.String,
+    "scenario_id": pl.String,
+    "overlap_group": pl.String,
+    # Staleness metadata (Run 6, Phase 69): the fingerprints of the inputs,
+    # config and models this proposal rests on, plus its expiry. Approval and
+    # export revalidate the key values against the engine's current outputs.
+    "input_fingerprint": pl.String,
+    "config_fingerprint": pl.String,
+    "model_fingerprint": pl.String,
+    "expires_on": pl.Date,
     "priority": pl.String,
     "owner": pl.String,
     "due_date": pl.Date,
@@ -141,12 +161,17 @@ def _priority_expr(rules: Rules) -> pl.Expr:
 
 
 def _finalize(
-    rows: pl.DataFrame, rules: Rules, anchor: dt.date, created: dt.datetime
+    rows: pl.DataFrame,
+    rules: Rules,
+    anchor: dt.date,
+    created: dt.datetime,
+    fingerprints: dict[str, str] | None = None,
 ) -> pl.DataFrame:
-    """Fill priority, owner, due date and created_at; cap per type by impact;
-    stable output order."""
+    """Fill priority, owner, due date, created_at, staleness fingerprints and
+    expiry; cap per type by impact; stable output order."""
     ac = rules.actions
     due_days = {"high": ac.due_days_high, "medium": ac.due_days_medium, "low": ac.due_days_low}
+    fp = fingerprints or {}
     out = rows.with_columns(_priority_expr(rules).alias("priority"))
     out = out.with_columns(
         pl.lit(ac.default_owner).alias("owner"),
@@ -155,6 +180,76 @@ def _finalize(
             + pl.duration(days=pl.col("priority").replace_strict(due_days, return_dtype=pl.Int64))
         ).alias("due_date"),
         pl.lit(created).alias("created_at"),
+    )
+    price_types = ["price_change", "below_floor_fix"]
+    out = out.with_columns(
+        # Scope key (Phase 68): the uniqueness unit for an active proposed
+        # price is customer x item x UOM x effective date.
+        pl.when(pl.col("action_type").is_in(price_types))
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit("price|"),
+                    pl.col("customer_id").fill_null("none"),
+                    pl.lit("|"),
+                    pl.col("item_id").fill_null("none"),
+                    pl.lit("|"),
+                    pl.col("uom").fill_null("unit"),
+                    pl.lit("|"),
+                    pl.col("due_date").cast(pl.String).fill_null("none"),
+                ]
+            )
+        )
+        .otherwise(
+            pl.concat_str(
+                [
+                    pl.col("action_type"),
+                    pl.lit("|"),
+                    pl.coalesce(pl.col("scope"), pl.col("customer_id"), pl.lit("all")),
+                ]
+            )
+        )
+        .alias("scope_key"),
+        pl.lit(f"last_{rules.opportunity.baseline_window_months} months").alias("baseline_period"),
+        pl.col("action_type")
+        .replace_strict(
+            {
+                "price_change": "set the pair's price to the proposed price",
+                "below_floor_fix": "raise the pair's price to the binding floor",
+                "cost_pass_through": "raise prices at the chosen pass-through level",
+                "service_policy": "change the customer's service policy",
+                "rebate_discount_review": "review the customer's rebate and discount terms",
+            },
+            default="manual action",
+        )
+        .alias("intervention"),
+        pl.when(pl.col("action_type").is_in(price_types) & (pl.col("n_ship_tos").fill_null(1) > 1))
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit("one customer-item pair covering "),
+                    pl.col("n_ship_tos").cast(pl.String),
+                    pl.lit(" ship-to accounts"),
+                ]
+            )
+        )
+        .when(pl.col("action_type").is_in(price_types))
+        .then(pl.lit("one customer-item pair"))
+        .when(pl.col("action_type") == "cost_pass_through")
+        .then(pl.concat_str([pl.lit("every unprotected pair in "), pl.col("scope")]))
+        .otherwise(pl.concat_str([pl.lit("customer "), pl.col("customer_id").fill_null("-")]))
+        .alias("affected_set"),
+        pl.when(pl.col("action_type") == "cost_pass_through")
+        .then(pl.concat_str([pl.lit("scn|"), pl.col("scope")]))
+        .otherwise(pl.lit(None, dtype=pl.String))
+        .alias("scenario_id"),
+        pl.lit(None, dtype=pl.String).alias("overlap_group"),
+        # Staleness metadata (Phase 69): what this proposal rests on, and when
+        # it expires if nobody acts on it.
+        pl.lit(fp.get("input"), dtype=pl.String).alias("input_fingerprint"),
+        pl.lit(fp.get("config"), dtype=pl.String).alias("config_fingerprint"),
+        pl.lit(fp.get("model"), dtype=pl.String).alias("model_fingerprint"),
+        pl.lit(anchor + dt.timedelta(days=ac.revalidation.expiry_days)).alias("expires_on"),
     )
     out = (
         out.sort(
@@ -182,7 +277,26 @@ def _pair_base(
         pair_uom = (
             ledger.filter(pl.col("transaction_type") == "sale")
             .group_by("customer_id", "item_id")
-            .agg(pl.col("uom_norm").drop_nulls().cast(pl.String).mode().sort().first().alias("uom"))
+            .agg(
+                pl.col("uom_norm").drop_nulls().cast(pl.String).mode().sort().first().alias("uom"),
+                # Run 6, Phase 85: a pair still trading in more than one
+                # NORMALIZED unit has no equivalence map, so one proposed
+                # price would be ambiguous - which unit does it price? Until
+                # Phase 85 the mode was taken silently, which is a choice
+                # nobody made. Counted here; the action is blocked below.
+                pl.col("uom_norm").drop_nulls().cast(pl.String).n_unique().alias("_n_uoms"),
+                # How many ship-tos the action covers (Run 6, Phase 85). At
+                # analysis_level bill_to or parent, one guidance "customer" is
+                # several shipping accounts, so one proposed price lands on
+                # all of them - which the ERP file keyed by ship-to has to
+                # know and the approver has to see. One is the common case
+                # and says nothing new; more than one is the fact.
+                (
+                    pl.col("ship_to_customer_id").drop_nulls().n_unique()
+                    if "ship_to_customer_id" in ledger.columns
+                    else pl.lit(1, dtype=pl.UInt32)
+                ).alias("_n_ship_tos"),
+            )
         )
     else:
         pair_uom = None
@@ -193,6 +307,7 @@ def _pair_base(
         "current_invoice_price_cents",
         "proposed_invoice_price_cents",
         "gross_price_opportunity_cents",
+        "expected_pocket_gross_profit_change_cents",
         "expected_contribution_change_cents",
         "volume_treatment",
         "evidence_status",
@@ -315,13 +430,54 @@ def _below_floor_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("_floor_price_cents").alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        (
+            pl.col("_n_ship_tos").cast(pl.Int64)
+            if "_n_ship_tos" in rows.columns
+            else pl.lit(1, dtype=pl.Int64)
+        ).alias("n_ship_tos"),
         pl.col("_compliance").alias("compliance_flags"),
-        pl.col("contract_protected").fill_null(value=False).alias("blocked"),
-        pl.when(pl.col("contract_protected").fill_null(value=False))
+        (
+            pl.col("contract_protected").fill_null(value=False)
+            | (
+                pl.col("below_floor_authorized").fill_null(value=False)
+                if "below_floor_authorized" in rows.columns
+                else pl.lit(value=False)
+            )
+            | (
+                (pl.col("_n_uoms").fill_null(1) > 1)
+                if "_n_uoms" in rows.columns
+                else pl.lit(value=False)
+            )
+        ).alias("blocked"),
+        pl.when(
+            (pl.col("_n_uoms").fill_null(1) > 1)
+            if "_n_uoms" in rows.columns
+            else pl.lit(value=False)
+        )
+        .then(
+            pl.lit(
+                "the pair trades in more than one unit of measure with no "
+                "equivalence between them, so a single proposed price would be "
+                "ambiguous; map the UOM conversions or split the scope per unit"
+            )
+        )
+        .when(pl.col("contract_protected").fill_null(value=False))
         .then(
             pl.lit(
                 "contract-protected line: price actions are blocked until the "
                 "price protection lapses"
+            )
+        )
+        .when(
+            pl.col("below_floor_authorized").fill_null(value=False)
+            if "below_floor_authorized" in rows.columns
+            else pl.lit(value=False)
+        )
+        .then(
+            pl.lit(
+                "below-floor price explicitly authorized by policy for this item "
+                "role (loss leader / strategic exception); no fix is proposed "
+                "without that authorization being withdrawn"
             )
         )
         .otherwise(None)
@@ -339,15 +495,34 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
     if rows.height == 0:
         return pl.DataFrame()
     expected = pl.col("volume_treatment") == "expected_change"
+    # Two expected-change bases, never conflated (Run 6, Phase 65): the
+    # CONTRIBUTION change (subtracts per-unit cost-to-serve K) when K is
+    # supported, the pocket GROSS PROFIT change otherwise - each named.
+    contrib_col = (
+        pl.col("expected_contribution_change_cents")
+        if "expected_contribution_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    gp_col = (
+        pl.col("expected_pocket_gross_profit_change_cents")
+        if "expected_pocket_gross_profit_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    has_contrib = contrib_col.is_not_null()
+    has_gp = gp_col.is_not_null()
     rows = rows.with_columns(
-        pl.when(expected)
-        .then(pl.col("expected_contribution_change_cents"))
+        pl.when(expected & has_contrib)
+        .then(contrib_col)
+        .when(expected & has_gp)
+        .then(gp_col)
         .otherwise(pl.col("gross_price_opportunity_cents"))
         .round(0)
         .cast(pl.Int64)
         .alias("expected_impact_cents"),
-        pl.when(expected)
+        pl.when(expected & has_contrib)
         .then(pl.lit("expected_contribution_change"))
+        .when(expected & has_gp)
+        .then(pl.lit("expected_pocket_gross_profit_change"))
         .otherwise(pl.lit("gross_price_opportunity_fixed_volume"))
         .alias("impact_basis"),
         pl.col("current_invoice_price_cents").round(0).cast(pl.Int64).alias("_cur"),
@@ -378,12 +553,23 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
             [
                 pl.lit("Current price sits below the segment reference target "),
                 pl.lit("(policy target, never below the floor). "),
-                pl.when(expected)
+                pl.when(expected & has_contrib)
                 .then(
                     pl.lit(
                         "The volume response is causal-supported and inside the "
                         "identified price range, so the impact is the expected "
-                        "contribution change."
+                        "contribution change (unit economics net of estimated "
+                        "cost-to-serve)."
+                    )
+                )
+                .when(expected & has_gp)
+                .then(
+                    pl.lit(
+                        "The volume response is causal-supported and inside the "
+                        "identified price range; no cost-to-serve estimate is "
+                        "supported for this pair, so the impact is the expected "
+                        "pocket gross profit change (named, never conflated with "
+                        "a contribution figure)."
                     )
                 )
                 .otherwise(
@@ -420,6 +606,11 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("_floor_price_cents").alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        (
+            pl.col("_n_ship_tos").cast(pl.Int64)
+            if "_n_ship_tos" in rows.columns
+            else pl.lit(1, dtype=pl.Int64)
+        ).alias("n_ship_tos"),
         pl.col("_compliance").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -476,6 +667,7 @@ def _service_policy_actions(service_flags: pl.DataFrame | None, anchor: dt.date)
         pl.lit(None, dtype=pl.Int64).alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        pl.lit(1, dtype=pl.Int64).alias("n_ship_tos"),
         pl.lit("").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -550,6 +742,7 @@ def _rebate_review_actions(
         pl.lit(None, dtype=pl.Int64).alias("floor_price_cents"),
         pl.lit(None, dtype=pl.Float64).alias("pass_through_level"),
         pl.lit(None, dtype=pl.Int64).alias("incremental_cost_cents"),
+        pl.lit(1, dtype=pl.Int64).alias("n_ship_tos"),
         pl.lit("").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
@@ -646,6 +839,9 @@ def _pass_through_actions(
                 "floor_price_cents": None,
                 "pass_through_level": level,
                 "incremental_cost_cents": incr,
+                # A scenario action is scoped to a category, not a pair, so
+                # the ship-to question does not arise for it.
+                "n_ship_tos": 1,
                 "compliance_flags": "",
                 "blocked": False,
                 "blocked_reason": None,
@@ -670,7 +866,11 @@ def generate_actions(
     sensitivity: pl.DataFrame,
     panel: pl.DataFrame | None,
     rules: Rules,
+    fingerprints: dict[str, str] | None = None,
 ) -> ActionGenerationResult:
+    """`fingerprints` (Run 6, Phase 69) carries the input / config / model
+    identities this generation run rests on; every proposal stores them so
+    approval and export can tell whether the world moved underneath it."""
     notes: list[str] = []
     if not rules.actions.enabled:
         return ActionGenerationResult(
@@ -695,20 +895,67 @@ def generate_actions(
         return ActionGenerationResult(
             actions=pl.DataFrame(schema=ACTIONS_SCHEMA), events=empty_events(), notes=notes
         )
+    finalize_built = (
+        "priority",
+        "owner",
+        "due_date",
+        "created_at",
+        "input_fingerprint",
+        "config_fingerprint",
+        "model_fingerprint",
+        "expires_on",
+        # Scope and overlap metadata (Phase 68) is built in _finalize / the
+        # overlap pass, not by the per-type generators.
+        "scope_key",
+        "baseline_period",
+        "intervention",
+        "affected_set",
+        "scenario_id",
+        "overlap_group",
+    )
     combined = pl.concat(
-        [
-            f.select(
-                [
-                    c
-                    for c in ACTIONS_SCHEMA
-                    if c not in ("priority", "owner", "due_date", "created_at")
-                ]
-            )
-            for f in frames
-        ],
+        [f.select([c for c in ACTIONS_SCHEMA if c not in finalize_built]) for f in frames],
         how="vertical_relaxed",
     )
-    actions = _finalize(combined, rules, anchor, created)
+    actions = _finalize(combined, rules, anchor, created, fingerprints)
+
+    # Cross-scope overlap (Phase 68): a pass-through scenario and a pair price
+    # action on the same items must never both count. Both sides get a shared
+    # overlap_group; the portfolio table carries their joint estimate.
+    pt = actions.filter(pl.col("action_type") == "cost_pass_through")
+    if pt.height and panel is not None and panel.height:
+        for r in pt.select("scope").unique().sort("scope").iter_rows(named=True):
+            scope = str(r["scope"])
+            kind, _, value = scope.partition(":")
+            col = {"category": "item_category", "supplier": "supplier_id"}.get(kind)
+            if col is None or col not in panel.columns:
+                continue
+            items_in_scope = sorted(
+                {
+                    str(i)
+                    for i in panel.filter(pl.col(col).cast(pl.String) == value)["item_id"].to_list()
+                }
+            )
+            if not items_in_scope:
+                continue
+            group = f"overlap|{scope}"
+            hits = (pl.col("scope") == scope) | (
+                pl.col("action_type").is_in(["price_change", "below_floor_fix"])
+                & pl.col("item_id").cast(pl.String).is_in(items_in_scope)
+            )
+            actions = actions.with_columns(
+                pl.when(hits & pl.col("overlap_group").is_null())
+                .then(pl.lit(group))
+                .otherwise(pl.col("overlap_group"))
+                .alias("overlap_group")
+            )
+        n_overlap = actions.filter(pl.col("overlap_group").is_not_null()).height
+        if n_overlap:
+            notes.append(
+                f"{n_overlap} action(s) share scopes with a pass-through scenario: "
+                "their joint impact lives in the portfolio table under a common "
+                "baseline and is never a naive sum"
+            )
 
     # Guardrail: no unblocked action may propose a price below the binding
     # floor. The guidance target respects the floor by construction, so a hit

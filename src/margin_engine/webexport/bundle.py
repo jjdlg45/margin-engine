@@ -35,6 +35,15 @@ class SummaryKpis(BaseModel):
     reconciliation_pass: bool
     missing_cost_revenue_share: float
     list_price_coverage_share: float
+    # Run 6, Phase 64 (honest headline): the visible residuals that EXPLAIN
+    # dollars the engine would not force onto lines, shown next to the
+    # reconciliation status instead of implying everything allocated cleanly.
+    n_visible_residuals: int = Field(
+        default=0, description="Nonzero reconciliation residuals kept visible"
+    )
+    visible_residual_cents: int = Field(
+        default=0, description="Sum of absolute visible residual amounts"
+    )
 
 
 class ReconciliationCheck(BaseModel):
@@ -139,6 +148,60 @@ class SegmentIndexStats(BaseModel):
     p75: float
 
 
+class CompliancePair(BaseModel):
+    """One Robinson-Patman review flag, with the facts beside it (Phase 79).
+
+    A review prompt, never a finding: `pair_basis` says whether a reviewer
+    confirmed that these two customers compete or whether the attribute
+    screen merely suggested it.
+    """
+
+    item_id: str
+    customer_id_a: str
+    customer_id_b: str
+    pair_basis: str
+    recommended_price_a_cents: int | None
+    recommended_price_b_cents: int | None
+    recommended_net_a_cents: int | None
+    recommended_net_b_cents: int | None
+    price_difference_pct: float | None
+    net_difference_pct: float | None
+    quantity_a: float | None
+    quantity_b: float | None
+    channel_a: str | None
+    channel_b: str | None
+    deduction_bp_a: int | None
+    deduction_bp_b: int | None
+    cts_per_unit_a_cents: int | None
+    cts_per_unit_b_cents: int | None
+    cts_difference_cents: int | None
+    cts_method: str | None
+    data_coverage: str
+    meeting_competition_record: str | None
+    reviewer_decision: str | None
+
+
+class ComplianceSection(BaseModel):
+    screen_attributes: list[str]
+    n_screened: int
+    n_unscreened: int
+    pairs: list[CompliancePair]
+    notes: list[str]
+
+
+class SegmentHoldout(BaseModel):
+    """Run 6, Phase 76: how the segmentation does on periods it never saw."""
+
+    n_fit_periods: int
+    n_eval_periods: int
+    n_eval_pairs: int
+    mae: float | None
+    mae_baseline: float | None
+    mae_without_same_period_features: float | None
+    same_period_features: list[str]
+    note: str
+
+
 class SegmentsSection(BaseModel):
     rules: list[SegmentRule]
     margin_driver_rules: list[SegmentRule]
@@ -146,6 +209,8 @@ class SegmentsSection(BaseModel):
     bootstrap_median_ari: float | None
     recommendation_change_share: float | None
     index_distribution: list[SegmentIndexStats]
+    holdout: SegmentHoldout | None = None
+    notes: list[str] = []
 
 
 class GuidancePair(BaseModel):
@@ -173,6 +238,16 @@ class GuidancePair(BaseModel):
     explanation: str
 
 
+class CausalGate(BaseModel):
+    """One causal criterion's outcome (Run 6, Phase 70). Machine-readable so
+    the UI renders a checklist instead of parsing prose."""
+
+    order: int
+    gate: str
+    result: str  # pass | fail | not_evaluated
+    detail: str
+
+
 class SensitivitySegment(BaseModel):
     segment: int
     n_obs: int
@@ -198,9 +273,110 @@ class SensitivitySegment(BaseModel):
     ar_bounded: bool | None = None
     support_log_lo: float | None = None
     support_log_hi: float | None = None
+    # Run 6, Phase 74: where inside those bounds the movement is dense enough
+    # to inform a response, and how the observed spread compares.
+    support_n: int | None = None
+    support_regions: str | None = None
+    support_n_regions: int | None = None
+    support_window: float | None = None
+    support_min_observations: int | None = None
+    observed_log_lo: float | None = None
+    observed_log_hi: float | None = None
+    support_detail: str | None = None
     ppml_positive: float | None = None
     carried_forward_share: float | None = None
+    imputed_price_share: float | None = None
+    # Total-quantity estimand (Run 6, Phase 72), reported beside the
+    # conditional estimate and never above it: its ladder has no causal tier.
+    iv_ppml: float | None = None
+    iv_ppml_status: str | None = None
+    iv_ppml_reasons: str | None = None
+    iv_ppml_first_stage_f: float | None = None
+    iv_ppml_n_rows: int | None = None
+    price_source_mix: str | None = None
+    # Two standard errors, because they cover different things: the analytic
+    # one is cluster-robust but treats the estimated control function as known,
+    # and the resampled one refits the first stage per replicate but cannot
+    # resample the period level the instrument is assigned at. `inference`
+    # spells out what each omits; neither is presented as the whole answer.
+    iv_ppml_se_analytic: float | None = None
+    iv_ppml_se_bootstrap: float | None = None
+    iv_ppml_range_low: float | None = None
+    iv_ppml_range_high: float | None = None
+    iv_ppml_inference: str | None = None
+    # Half-panel jackknife bias diagnostic: reported, never adopted.
+    iv_ppml_spj: float | None = None
+    iv_ppml_spj_bias: float | None = None
+    iv_ppml_spj_detail: str | None = None
+    # Rows and units that never reached the fit, by reason.
+    iv_ppml_sample_losses: str | None = None
+    iv_ppml_rows_dropped: int | None = None
+    iv_ppml_units_dropped: int | None = None
+    # Largest move under an alternative zero-row price or availability
+    # assumption, and the account of what was varied. Past the configured gap
+    # the estimand is demoted, so this is the reason behind a status.
+    iv_ppml_zero_row_gap: float | None = None
+    iv_ppml_zero_row_detail: str | None = None
     market_control_used: bool = False
+    # Run 6, Phase 70: the named estimand, the market control's adequacy
+    # statistics, the competitor-price path resolution and the per-gate
+    # record. All optional so an older bundle stays loadable.
+    estimand: str | None = None
+    estimand_bias_direction: str | None = None
+    market_control_status: str | None = None
+    market_control_coverage: float | None = None
+    market_control_lag_periods: int | None = None
+    market_control_within_cell_values: float | None = None
+    market_control_price_r2: float | None = None
+    market_control_instrument_r2: float | None = None
+    market_control_detail: str | None = None
+    competitor_path_resolution: str | None = None
+    competitor_path_detail: str | None = None
+    first_stage_f_uncontrolled: float | None = None
+    n_identified_instruments: int | None = None
+    robustness_n_specifications: int | None = None
+    robustness_excluded_weak: str | None = None
+    # Run 6, Phase 71: the robust first-stage statistic and the shape of the
+    # weak-instrument-robust set (a HULL, not a confidence interval).
+    effective_first_stage_f: float | None = None
+    effective_k: float | None = None
+    n_absorbed_parameters: int | None = None
+    n_clusters: int | None = None
+    effective_f_detail: str | None = None
+    # Run 6, Phase 73: the cluster structure inference rests on, and the
+    # remedy used when the assignment level leaves too few clusters.
+    cluster_level_used: str | None = None
+    n_clusters_by_dimension: str | None = None
+    effective_clusters: float | None = None
+    n_clusters_with_instrument_variation: int | None = None
+    max_cluster_variation_share: float | None = None
+    cluster_variation_detail: str | None = None
+    small_cluster_method_used: str | None = None
+    small_cluster_detail: str | None = None
+    primary_interval_basis: str | None = None
+    analytic_ci_low: float | None = None
+    analytic_ci_high: float | None = None
+    wild_ci_low: float | None = None
+    wild_ci_high: float | None = None
+    wild_bootstrap_reps_used: int | None = None
+    ar_shape: str | None = None
+    ar_hull_lo: float | None = None
+    ar_hull_hi: float | None = None
+    ar_measure: float | None = None
+    ar_n_components: int | None = None
+    ar_display_reliable: bool | None = None
+    ar_detail: str | None = None
+    lead_test_status: str | None = None
+    lead_test_p: float | None = None
+    lead_test_horizon: int | None = None
+    lead_test_bound: float | None = None
+    lead_test_detail: str | None = None
+    # Shuffled-instrument placebo, annotated when the validation suite has run.
+    placebo_status: str = "placebo_not_run"
+    placebo_share_significant: float | None = None
+    placebo_actual_p: float | None = None
+    placebo_detail: str | None = None
+    causal_gates: list[CausalGate] = Field(default_factory=list)
     status: str
     status_reasons: str
     naive_vs_iv_note: str
@@ -214,8 +390,17 @@ class OpportunityRecord(BaseModel):
     segment: int | None
     gross_price_opportunity_cents: int
     gross_price_opportunity_conservative_cents: int | None = None
+    # Two expected-change bases (Run 6, Phase 65), never conflated: the pocket
+    # gross profit change (P(1-d) - F - C economics) and the contribution
+    # change (also subtracts estimated per-unit cost-to-serve K; null when no
+    # K is supported for the pair).
+    expected_pocket_gross_profit_change_cents: int | None = None
     expected_contribution_change_cents: int | None
     volume_treatment: str
+    # How post-invoice deductions were treated for this record (Run 6, Phase
+    # 66): exact flat rate, recomputed tiered formula, or a labeled
+    # fixed-rate approximation.
+    deduction_treatment: str = "flat_rate_exact"
     cost_unavailable: bool = False
     evidence_status: str | None
     pct_below_target: float | None = Field(
@@ -239,8 +424,12 @@ class OpportunitySection(BaseModel):
     leakage_by_customer: list[CustomerLeakage]
     gross_total_cents: int
     gross_conservative_total_cents: int | None = None
+    # Pocket gross profit basis total (Run 6, Phase 65), beside the
+    # contribution-basis total - two metrics, never conflated or summed.
+    expected_gp_total_cents: int = 0
     expected_total_cents: int
     expected_total_note: str
+    optimizer_objective: str = "pocket_gross_profit"
     n_cost_unavailable: int = 0
     n_outside_price_support: int = 0
     top_opportunities: list[OpportunityRecord]
@@ -308,6 +497,34 @@ class WinCurve(BaseModel):
     negotiation_gap: float | None
     status: str
     reasons: str
+    # Run 6, Phase 77: what was modeled, how it was clustered, and whether its
+    # probabilities held up on quotes it had not seen.
+    n_won: int = 0
+    n_lost: int = 0
+    cluster_level: str = "none"
+    n_clusters: int | None = None
+    controls: str = ""
+    holdout_n: int = 0
+    calibration_slope: float | None = None
+    calibration_intercept: float | None = None
+    brier: float | None = None
+    auc: float | None = None
+    calibration_status: str = "not testable"
+
+
+class QuoteExclusion(BaseModel):
+    reason: str
+    n: int
+
+
+class QuoteIntake(BaseModel):
+    """Run 6, Phase 77: every quote row, and where it went."""
+
+    n_rows: int
+    unit: str
+    n_modeled: int
+    excluded: list[QuoteExclusion]
+    notes: list[str]
 
 
 class CrossPriceEstimate(BaseModel):
@@ -319,6 +536,14 @@ class CrossPriceEstimate(BaseModel):
     cross_se: float | None
     status: str
     reasons: str
+    # Both first-stage statistics travel with the estimate: the marginal F says
+    # the instruments move each price, the conditional one says they move one
+    # price independently of the other. Only the second gates the status.
+    marginal_first_stage_f: float | None = None
+    conditional_effective_f: float | None = None
+    n_clusters: int | None = None
+    n_absorbed_parameters: int | None = None
+    first_stage_detail: str = ""
 
 
 class InventorySection(BaseModel):
@@ -332,6 +557,7 @@ class InventorySection(BaseModel):
 class OptionalModules(BaseModel):
     win_curves: list[WinCurve] | None
     win_curves_absent_reason: str | None
+    quote_intake: QuoteIntake | None = None
     cross_price: list[CrossPriceEstimate] | None
     cross_price_absent_reason: str | None
     inventory: InventorySection | None
@@ -348,6 +574,13 @@ class ValidationResult(BaseModel):
 class ManifestInfo(BaseModel):
     rules_sha256: str
     mapping_sha256: str
+    # Run 6, Phase 84: the same trio every action proposal carries, so a
+    # figure on any page can be matched to the run that produced it and a
+    # proposal can be told apart from one generated under a different model.
+    input_fingerprint: str = ""
+    config_fingerprint: str = ""
+    model_fingerprint: str = ""
+    engine_version: str = ""
     input_files: list[dict[str, str]]
     software_versions: dict[str, str]
     cleaning_decisions: dict[str, int]
@@ -388,7 +621,13 @@ class ActionOutcome(BaseModel):
     treated_volume_ratio: float | None
     control_volume_ratio: float | None
     n_control_pairs: int
-    did_volume_ratio: float | None
+    control_adjusted_volume_ratio: float | None
+    # Run 6, Phase 75: a pair that stopped buying is a result, not a gap.
+    stopped_buying: bool | None = None
+    n_control_pairs_excluded: int | None = None
+    control_exclusions: str | None = None
+    wave: str | None = None
+    implementation_compliance: str | None = None
     volume_error_log_points: float | None
     pocket_margin_before: float | None
     pocket_margin_after: float | None
@@ -454,6 +693,52 @@ class CalibrationRow(BaseModel):
     median_abs_volume_error_log_points: float | None
     median_realization_pct: float | None
     status: str
+    # Run 6, Phase 75: pairs that stopped buying are IN the count and the
+    # medians above; their volume error is undefined, so they are named.
+    n_stopped_buying: int | None = None
+
+
+class ResultsBreakdownRow(BaseModel):
+    """Measured results split by wave, segment, action type, evidence and how
+    faithfully the price actually moved (Run 6, Phase 75). One pooled median
+    hides where a number came from."""
+
+    dimension: str
+    value: str
+    n_measured: int
+    n_stopped_buying: int
+    median_control_adjusted_volume_ratio: float | None
+    median_realization_pct: float | None
+
+
+class EventStudyCoefficient(BaseModel):
+    event_time: int
+    coefficient_pct: float
+    se_pct: float | None
+    ci_low_pct: float | None
+    ci_high_pct: float | None
+    n_treated_pairs: int
+    period: str
+
+
+class EventStudySection(BaseModel):
+    """The pooled estimate, separate from the per-action control-adjusted
+    changes because it rests on assumptions they do not (Run 6, Phase 75)."""
+
+    status: str
+    reason: str
+    estimand: str
+    att_pct: float | None = None
+    att_se: float | None = None
+    att_ci_low: float | None = None
+    att_ci_high: float | None = None
+    coefficients: list[EventStudyCoefficient] = Field(default_factory=list)
+    pretrend_status: str
+    pretrend_detail: str
+    n_treated_pairs: int
+    n_control_pairs: int
+    n_cohorts: int
+    n_rows: int
 
 
 class ActionsSummary(BaseModel):
@@ -472,6 +757,19 @@ class ActionsSummary(BaseModel):
     )
 
 
+class OverlapGroup(BaseModel):
+    """Overlapping action scopes (Run 6, Phase 68): the naive sum is shown
+    only to make double counting visible; the portfolio estimate is the joint
+    figure under one baseline and is NEVER added to the single-action lists."""
+
+    overlap_group: str
+    n_actions: int
+    action_ids: list[str]
+    naive_sum_cents: int
+    portfolio_estimate_cents: int
+    note: str
+
+
 class ActionsSection(BaseModel):
     read_only: bool = Field(
         description="True in the static demo: the review workflow needs the API"
@@ -479,7 +777,11 @@ class ActionsSection(BaseModel):
     demo_history: bool = Field(description="True when the event history is simulated demo data")
     summary: ActionsSummary
     calibration: list[CalibrationRow]
+    # Run 6, Phase 75: the breakdowns and the pooled estimate.
+    results_breakdown: list[ResultsBreakdownRow] = Field(default_factory=list)
+    event_study: EventStudySection | None = None
     facets: dict[str, list[str]]
+    overlap_groups: list[OverlapGroup] = Field(default_factory=list)
     notes: list[str]
 
 
@@ -512,3 +814,4 @@ class WebBundle(BaseModel):
     manifest: ManifestInfo
     actions: ActionsSection
     actions_table: list[ActionRow]
+    compliance: ComplianceSection | None = None

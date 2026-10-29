@@ -18,7 +18,7 @@ import polars as pl
 from margin_engine import __version__
 from margin_engine.config import Rules
 from margin_engine.fiscal import build_calendar
-from margin_engine.labels import LABELS, plain_rule, render_text
+from margin_engine.labels import LABELS, label, plain_rule, render_text
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
@@ -30,11 +30,16 @@ from margin_engine.webexport.bundle import (
     ActionsSection,
     ActionsSummary,
     CalibrationRow,
+    CausalGate,
+    CompliancePair,
+    ComplianceSection,
     CrossPriceEstimate,
     CustomerEconomics,
     CustomerLeakage,
     DispersionSection,
     EconomicsSection,
+    EventStudyCoefficient,
+    EventStudySection,
     GroupWaterfall,
     GuidancePair,
     InventorySection,
@@ -45,11 +50,14 @@ from margin_engine.webexport.bundle import (
     OpportunitySection,
     OptionalModules,
     OrderEconomicsSummary,
+    OverlapGroup,
     PeerGroupStat,
     ReconciliationCheck,
     Residual,
+    ResultsBreakdownRow,
     ScenarioGrid,
     ScenarioGridPoint,
+    SegmentHoldout,
     SegmentIndexStats,
     SegmentRule,
     SegmentsSection,
@@ -88,6 +96,27 @@ def _r(x: Any) -> float | None:
     if f != f or f in (float("inf"), float("-inf")):
         return None
     return float(f"{f:.10g}")
+
+
+def _rs(x: Any) -> float | None:
+    """6-significant-digit float for numbers an iterative solver produced.
+
+    Run 6, Phase 78. A Poisson or 2SLS fit is a search, and where it stops
+    depends on BLAS thread count, library build and accumulation order. The
+    engine's own exports are integer cents or values rounded on the way out,
+    but a browser bundle carrying a raw coefficient inherits that jitter, and
+    "byte-identical" then holds only as far as the machine it was measured on.
+    Six digits is three or more beyond anything the UI displays and far wider
+    than the drift, so the bundle is stable without losing anything a reader
+    could use. Elasticities, standard errors, test statistics, intervals and
+    calibration figures all go through here.
+    """
+    if x is None:
+        return None
+    f = float(x)
+    if f != f or f in (float("inf"), float("-inf")):
+        return None
+    return float(f"{f:.6g}")
 
 
 def _i(x: Any) -> int:
@@ -272,6 +301,10 @@ def build_bundle(
             sale.filter(pl.col("gross_list_value_cents").is_not_null()).height / max(sale.height, 1)
         )
         or 0.0,
+        n_visible_residuals=sum(1 for v in res.pipeline.reconciliation.residuals.values() if v),
+        visible_residual_cents=sum(
+            abs(v) for v in res.pipeline.reconciliation.residuals.values() if v
+        ),
     )
 
     # --- reconciliation and residuals ---------------------------------------
@@ -445,6 +478,21 @@ def build_bundle(
         bootstrap_median_ari=_r(res.segments.bootstrap_median_ari),
         recommendation_change_share=_r(res.segments.recommendation_change_share),
         index_distribution=idx_dist,
+        holdout=(
+            SegmentHoldout(
+                n_fit_periods=h.n_fit_periods,
+                n_eval_periods=h.n_eval_periods,
+                n_eval_pairs=h.n_eval_pairs,
+                mae=_rs(h.mae),
+                mae_baseline=_rs(h.mae_baseline),
+                mae_without_same_period_features=_rs(h.mae_without_same_period_features),
+                same_period_features=[label(f) for f in h.same_period_features],
+                note=h.note,
+            )
+            if (h := res.segments.holdout) is not None
+            else None
+        ),
+        notes=list(res.segments.notes),
     )
 
     # --- guidance (all pairs, with explanations and annual revenue) ----------
@@ -492,6 +540,11 @@ def build_bundle(
     ]
 
     # --- sensitivity ----------------------------------------------------------
+    # Causal gates grouped by segment, in a stable order (Run 6, Phase 70).
+    gates_by_segment: dict[int, list[dict[str, Any]]] = {}
+    if res.sensitivity_gates is not None and res.sensitivity_gates.height:
+        for g in res.sensitivity_gates.sort("segment", "gate_order").to_dicts():
+            gates_by_segment.setdefault(int(g["segment"]), []).append(g)
     sens_rows = []
     for r in res.sensitivity.sort("segment").to_dicts():
         naive, iv = r.get("naive_fe_ols"), r.get("iv")
@@ -509,27 +562,124 @@ def build_bundle(
                 n_obs=_i(r["n_obs"]),
                 n_pairs=_i(r["n_pairs"]),
                 n_positive=_i(r["n_positive"]),
-                price_cv_within=_r(r["price_cv_within"]) or 0.0,
-                naive_fe_ols=_r(naive),
-                naive_se=_r(r.get("naive_se")),
-                ppml=_r(r.get("ppml")),
-                iv=_r(iv),
-                iv_se=_r(r.get("iv_se")),
-                iv_ci_low=_r(r.get("iv_ci_low")),
-                iv_ci_high=_r(r.get("iv_ci_high")),
-                first_stage_f=_r(r.get("first_stage_f")),
-                overid_j=_r(r.get("overid_j")),
-                overid_p=_r(r.get("overid_p")),
-                ar_ci_low=_r(r.get("ar_ci_low")),
-                ar_ci_high=_r(r.get("ar_ci_high")),
-                robustness_spread=_r(r.get("robustness_spread")),
-                identifying_coverage=_r(r.get("identifying_coverage")),
+                price_cv_within=_rs(r["price_cv_within"]) or 0.0,
+                naive_fe_ols=_rs(naive),
+                naive_se=_rs(r.get("naive_se")),
+                ppml=_rs(r.get("ppml")),
+                iv=_rs(iv),
+                iv_se=_rs(r.get("iv_se")),
+                iv_ci_low=_rs(r.get("iv_ci_low")),
+                iv_ci_high=_rs(r.get("iv_ci_high")),
+                first_stage_f=_rs(r.get("first_stage_f")),
+                overid_j=_rs(r.get("overid_j")),
+                overid_p=_rs(r.get("overid_p")),
+                ar_ci_low=_rs(r.get("ar_ci_low")),
+                ar_ci_high=_rs(r.get("ar_ci_high")),
+                robustness_spread=_rs(r.get("robustness_spread")),
+                identifying_coverage=_rs(r.get("identifying_coverage")),
                 ar_bounded=r.get("ar_bounded"),
-                support_log_lo=_r(r.get("support_log_lo")),
-                support_log_hi=_r(r.get("support_log_hi")),
-                ppml_positive=_r(r.get("ppml_positive")),
-                carried_forward_share=_r(r.get("carried_forward_share")),
+                support_log_lo=_rs(r.get("support_log_lo")),
+                support_log_hi=_rs(r.get("support_log_hi")),
+                support_n=r.get("support_n"),
+                support_regions=r.get("support_regions") or None,
+                support_n_regions=r.get("support_n_regions"),
+                support_window=_rs(r.get("support_window")),
+                support_min_observations=r.get("support_min_observations"),
+                observed_log_lo=_rs(r.get("observed_log_lo")),
+                observed_log_hi=_rs(r.get("observed_log_hi")),
+                support_detail=r.get("support_detail") or None,
+                ppml_positive=_rs(r.get("ppml_positive")),
+                carried_forward_share=_rs(r.get("carried_forward_share")),
+                imputed_price_share=_rs(r.get("imputed_price_share")),
+                iv_ppml=_rs(r.get("iv_ppml")),
+                iv_ppml_status=r.get("iv_ppml_status") or None,
+                iv_ppml_reasons=r.get("iv_ppml_reasons") or None,
+                iv_ppml_first_stage_f=_rs(r.get("iv_ppml_first_stage_f")),
+                iv_ppml_n_rows=(
+                    _i(r["iv_ppml_n_rows"]) if r.get("iv_ppml_n_rows") is not None else None
+                ),
+                price_source_mix=r.get("price_source_mix") or None,
+                iv_ppml_se_analytic=_rs(r.get("iv_ppml_se_analytic")),
+                iv_ppml_se_bootstrap=_rs(r.get("iv_ppml_se_bootstrap")),
+                iv_ppml_range_low=_rs(r.get("iv_ppml_range_low")),
+                iv_ppml_range_high=_rs(r.get("iv_ppml_range_high")),
+                iv_ppml_inference=r.get("iv_ppml_inference") or None,
+                iv_ppml_spj=_rs(r.get("iv_ppml_spj")),
+                iv_ppml_spj_bias=_rs(r.get("iv_ppml_spj_bias")),
+                iv_ppml_spj_detail=r.get("iv_ppml_spj_detail") or None,
+                iv_ppml_sample_losses=r.get("iv_ppml_sample_losses") or None,
+                iv_ppml_rows_dropped=(
+                    _i(r["iv_ppml_rows_dropped"])
+                    if r.get("iv_ppml_rows_dropped") is not None
+                    else None
+                ),
+                iv_ppml_units_dropped=(
+                    _i(r["iv_ppml_units_dropped"])
+                    if r.get("iv_ppml_units_dropped") is not None
+                    else None
+                ),
+                iv_ppml_zero_row_gap=_rs(r.get("iv_ppml_zero_row_gap")),
+                iv_ppml_zero_row_detail=r.get("iv_ppml_zero_row_detail") or None,
                 market_control_used=bool(r.get("market_control_used") or False),
+                estimand=r.get("estimand"),
+                estimand_bias_direction=r.get("estimand_bias_direction"),
+                market_control_status=r.get("market_control_status"),
+                market_control_coverage=_rs(r.get("market_control_coverage")),
+                market_control_lag_periods=r.get("market_control_lag_periods"),
+                market_control_within_cell_values=_rs(r.get("market_control_within_cell_values")),
+                market_control_price_r2=_rs(r.get("market_control_price_r2")),
+                market_control_instrument_r2=_rs(r.get("market_control_instrument_r2")),
+                market_control_detail=r.get("market_control_detail") or None,
+                competitor_path_resolution=r.get("competitor_path_resolution"),
+                competitor_path_detail=r.get("competitor_path_detail") or None,
+                first_stage_f_uncontrolled=_rs(r.get("first_stage_f_uncontrolled")),
+                n_identified_instruments=r.get("n_identified_instruments"),
+                robustness_n_specifications=r.get("robustness_n_specifications"),
+                robustness_excluded_weak=r.get("robustness_excluded_weak") or None,
+                effective_first_stage_f=_rs(r.get("effective_first_stage_f")),
+                effective_k=_rs(r.get("effective_k")),
+                n_absorbed_parameters=r.get("n_absorbed_parameters"),
+                n_clusters=r.get("n_clusters"),
+                effective_f_detail=r.get("effective_f_detail") or None,
+                cluster_level_used=r.get("cluster_level_used") or None,
+                n_clusters_by_dimension=r.get("n_clusters_by_dimension") or None,
+                effective_clusters=_rs(r.get("effective_clusters")),
+                n_clusters_with_instrument_variation=r.get("n_clusters_with_instrument_variation"),
+                max_cluster_variation_share=_rs(r.get("max_cluster_variation_share")),
+                cluster_variation_detail=r.get("cluster_variation_detail") or None,
+                small_cluster_method_used=r.get("small_cluster_method_used") or None,
+                small_cluster_detail=r.get("small_cluster_detail") or None,
+                primary_interval_basis=r.get("primary_interval_basis") or None,
+                analytic_ci_low=_rs(r.get("analytic_ci_low")),
+                analytic_ci_high=_rs(r.get("analytic_ci_high")),
+                wild_ci_low=_rs(r.get("wild_ci_low")),
+                wild_ci_high=_rs(r.get("wild_ci_high")),
+                wild_bootstrap_reps_used=r.get("wild_bootstrap_reps_used"),
+                ar_shape=r.get("ar_shape"),
+                ar_hull_lo=_rs(r.get("ar_hull_lo")),
+                ar_hull_hi=_rs(r.get("ar_hull_hi")),
+                ar_measure=_rs(r.get("ar_measure")),
+                ar_n_components=r.get("ar_n_components"),
+                ar_display_reliable=r.get("ar_display_reliable"),
+                ar_detail=r.get("ar_detail") or None,
+                lead_test_status=r.get("lead_test_status"),
+                lead_test_p=_rs(r.get("lead_test_p")),
+                lead_test_horizon=r.get("lead_test_horizon"),
+                lead_test_bound=_rs(r.get("lead_test_bound")),
+                lead_test_detail=r.get("lead_test_detail") or None,
+                placebo_status=str(r.get("placebo_status") or "placebo_not_run"),
+                placebo_share_significant=_rs(r.get("placebo_share_significant")),
+                placebo_actual_p=_rs(r.get("placebo_actual_p")),
+                placebo_detail=r.get("placebo_detail") or None,
+                causal_gates=[
+                    CausalGate(
+                        order=int(g["gate_order"]),
+                        gate=str(g["gate"]),
+                        result=str(g["result"]),
+                        detail=str(g["detail"]),
+                    )
+                    for g in gates_by_segment.get(int(r["segment"]), [])
+                ],
                 status=str(r["status"]),
                 status_reasons=str(r.get("status_reasons") or ""),
                 naive_vs_iv_note=note,
@@ -557,8 +707,12 @@ def build_bundle(
             gross_price_opportunity_conservative_cents=r.get(
                 "gross_price_opportunity_conservative_cents"
             ),
+            expected_pocket_gross_profit_change_cents=r.get(
+                "expected_pocket_gross_profit_change_cents"
+            ),
             expected_contribution_change_cents=r.get("expected_contribution_change_cents"),
             volume_treatment=str(r.get("volume_treatment")),
+            deduction_treatment=str(r.get("deduction_treatment") or "flat_rate_exact"),
             cost_unavailable=bool(r.get("cost_unavailable") or False),
             evidence_status=r.get("evidence_status"),
             pct_below_target=_r(
@@ -605,16 +759,25 @@ def build_bundle(
         )
         if res.opportunities.height
         else 0,
+        expected_gp_total_cents=_i(
+            res.opportunities["expected_pocket_gross_profit_change_cents"].fill_null(0).sum()
+        )
+        if res.opportunities.height
+        and "expected_pocket_gross_profit_change_cents" in res.opportunities.columns
+        else 0,
         expected_total_cents=_i(
             res.opportunities["expected_contribution_change_cents"].fill_null(0).sum()
         )
         if res.opportunities.height
         else 0,
         expected_total_note=(
-            "Expected contribution change is summed only over records whose "
-            "elasticity is causal-supported; everything else contributes zero here "
-            "and is shown fixed-volume."
+            "Two expected-change bases, never conflated: the pocket gross profit "
+            "change uses unit economics net of deductions and product cost; the "
+            "contribution change also subtracts estimated per-unit cost-to-serve. "
+            "Each sums only records whose elasticity is causal-supported; "
+            "everything else contributes zero here and is shown fixed-volume."
         ),
+        optimizer_objective=rules.opportunity.optimizer_objective,
         top_opportunities=top_opps,
         n_records=res.opportunities.height,
     )
@@ -697,6 +860,10 @@ def build_bundle(
     manifest = ManifestInfo(
         rules_sha256=str(m.get("rules_sha256", "")),
         mapping_sha256=str(m.get("mapping_sha256", "")),
+        input_fingerprint=str(res.fingerprints.get("input", "")),
+        config_fingerprint=str(res.fingerprints.get("config", "")),
+        model_fingerprint=str(res.fingerprints.get("model", "")),
+        engine_version=__version__,
         input_files=[
             {
                 "name": str(Path(str(f.get("path", f.get("name", "")))))
@@ -765,7 +932,12 @@ def build_bundle(
                 treated_volume_ratio=o["treated_volume_ratio"],
                 control_volume_ratio=o["control_volume_ratio"],
                 n_control_pairs=int(o["n_control_pairs"] or 0),
-                did_volume_ratio=o["did_volume_ratio"],
+                control_adjusted_volume_ratio=o["control_adjusted_volume_ratio"],
+                stopped_buying=o["stopped_buying"],
+                n_control_pairs_excluded=o["n_control_pairs_excluded"],
+                control_exclusions=o["control_exclusions"] or None,
+                wave=o["wave"],
+                implementation_compliance=o["implementation_compliance"],
                 volume_error_log_points=o["volume_error_log_points"],
                 pocket_margin_before=o["pocket_margin_before"],
                 pocket_margin_after=o["pocket_margin_after"],
@@ -827,9 +999,49 @@ def build_bundle(
                 median_abs_volume_error_log_points=c["median_abs_volume_error_log_points"],
                 median_realization_pct=c["median_realization_pct"],
                 status=str(c["status"]),
+                n_stopped_buying=c.get("n_stopped_buying"),
             )
             for c in tracked.calibration.iter_rows(named=True)
         ]
+        breakdown_rows = [
+            ResultsBreakdownRow(
+                dimension=str(g["dimension"]),
+                value=str(g["value"]),
+                n_measured=int(g["n_measured"]),
+                n_stopped_buying=int(g["n_stopped_buying"] or 0),
+                median_control_adjusted_volume_ratio=g["median_control_adjusted_volume_ratio"],
+                median_realization_pct=g["median_realization_pct"],
+            )
+            for g in tracked.by_group.iter_rows(named=True)
+        ]
+        study = tracked.event_study
+        event_study_section = EventStudySection(
+            status=study.status,
+            reason=study.reason,
+            estimand=study.estimand,
+            att_pct=_rs(study.att_pct),
+            att_se=_rs(study.att_se),
+            att_ci_low=_rs(study.att_ci_low),
+            att_ci_high=_rs(study.att_ci_high),
+            coefficients=[
+                EventStudyCoefficient(
+                    event_time=int(c["event_time"]),
+                    coefficient_pct=_rs(c["coefficient_pct"]) or 0.0,
+                    se_pct=_rs(c["se_pct"]),
+                    ci_low_pct=_rs(c["ci_low_pct"]),
+                    ci_high_pct=_rs(c["ci_high_pct"]),
+                    n_treated_pairs=int(c["n_treated_pairs"] or 0),
+                    period=str(c["period"]),
+                )
+                for c in study.coefficients.iter_rows(named=True)
+            ],
+            pretrend_status=study.pretrend_status,
+            pretrend_detail=study.pretrend_detail,
+            n_treated_pairs=study.n_treated_pairs,
+            n_control_pairs=study.n_control_pairs,
+            n_cohorts=study.n_cohorts,
+            n_rows=study.n_rows,
+        )
         measured_rows = [
             a.outcome for a in actions_table if a.outcome and a.outcome.outcome_status == "measured"
         ]
@@ -866,6 +1078,8 @@ def build_bundle(
                 ),
             ),
             calibration=calibration_rows,
+            results_breakdown=breakdown_rows,
+            event_study=event_study_section,
             facets={
                 "types": sorted({a.action_type for a in actions_table}),
                 "statuses": sorted({a.status for a in actions_table}),
@@ -875,6 +1089,19 @@ def build_bundle(
                     {a.evidence_status or "insufficient_data" for a in actions_table}
                 ),
             },
+            overlap_groups=[
+                OverlapGroup(
+                    overlap_group=str(g["overlap_group"]),
+                    n_actions=int(g["n_actions"]),
+                    action_ids=str(g["action_ids"]).split(";"),
+                    naive_sum_cents=int(g["naive_sum_cents"]),
+                    portfolio_estimate_cents=int(g["portfolio_estimate_cents"]),
+                    note=str(g["note"]),
+                )
+                for g in (
+                    res.action_portfolio.to_dicts() if res.action_portfolio is not None else []
+                )
+            ],
             notes=list(tracked.notes),
         )
     else:
@@ -936,6 +1163,7 @@ def build_bundle(
         manifest=manifest,
         actions=actions_section,
         actions_table=actions_table,
+        compliance=_compliance_section(res, rules),
     )
 
 
@@ -1029,19 +1257,43 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
             WinCurveModel(
                 segment=int(r["segment"]),
                 n_quotes=_i(r["n_quotes"]),
-                win_rate=_r(r["win_rate"]) or 0.0,
-                price_coef=_r(r.get("price_coef")),
-                price_coef_se=_r(r.get("price_coef_se")),
-                ci_low=_r(r.get("ci_low")),
-                ci_high=_r(r.get("ci_high")),
-                negotiation_gap=_r(r.get("negotiation_gap")),
+                win_rate=_rs(r["win_rate"]) or 0.0,
+                price_coef=_rs(r.get("price_coef")),
+                price_coef_se=_rs(r.get("price_coef_se")),
+                ci_low=_rs(r.get("ci_low")),
+                ci_high=_rs(r.get("ci_high")),
+                negotiation_gap=_rs(r.get("negotiation_gap")),
                 status=str(r["status"]),
                 reasons=str(r.get("reasons") or ""),
+                n_won=_i(r.get("n_won") or 0),
+                n_lost=_i(r.get("n_lost") or 0),
+                cluster_level=str(r.get("cluster_level") or "none"),
+                n_clusters=_i(r["n_clusters"]) if r.get("n_clusters") is not None else None,
+                controls=str(r.get("controls") or ""),
+                holdout_n=_i(r.get("holdout_n") or 0),
+                calibration_slope=_rs(r.get("calibration_slope")),
+                calibration_intercept=_rs(r.get("calibration_intercept")),
+                brier=_rs(r.get("brier")),
+                auc=_rs(r.get("auc")),
+                calibration_status=str(r.get("calibration_status") or "not testable"),
             )
             for r in res.win_curves.sort("segment").to_dicts()
         ]
     else:
         win_reason = "No quotes table (or no price list) in the mapped data."
+    intake = None
+    if res.quote_intake is not None:
+        raw = res.quote_intake
+        intake = QuoteIntakeModel(
+            n_rows=raw.n_rows,
+            unit=raw.unit,
+            n_modeled=raw.n_modeled,
+            excluded=[
+                QuoteExclusion(reason=describe_exclusion(k), n=n)
+                for k, n in sorted(raw.excluded.items())
+            ],
+            notes=list(raw.notes),
+        )
     cross = None
     cross_reason = None
     if res.cross_estimates is not None:
@@ -1051,10 +1303,19 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
                 item_a=str(r["item_a"]),
                 item_b=str(r["item_b"]),
                 n_obs=_i(r["n_obs"]),
-                cross_elasticity=_r(r.get("cross_elasticity")),
-                cross_se=_r(r.get("cross_se")),
+                cross_elasticity=_rs(r.get("cross_elasticity")),
+                cross_se=_rs(r.get("cross_se")),
                 status=str(r["status"]),
                 reasons=str(r.get("reasons") or ""),
+                marginal_first_stage_f=_rs(r.get("min_first_stage_f")),
+                conditional_effective_f=_rs(r.get("min_conditional_effective_f")),
+                n_clusters=_i(r["n_clusters"]) if r.get("n_clusters") is not None else None,
+                n_absorbed_parameters=(
+                    _i(r["n_absorbed_parameters"])
+                    if r.get("n_absorbed_parameters") is not None
+                    else None
+                ),
+                first_stage_detail=str(r.get("first_stage_detail") or ""),
             )
             for r in res.cross_estimates.sort(["group_id", "item_a", "item_b"]).to_dicts()
         ]
@@ -1082,6 +1343,7 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
     return OptionalModules(
         win_curves=win,
         win_curves_absent_reason=win_reason,
+        quote_intake=intake,
         cross_price=cross,
         cross_price_absent_reason=cross_reason,
         inventory=inventory,
@@ -1089,7 +1351,66 @@ def _optional_modules(res: FullRunResult) -> OptionalModules:
     )
 
 
+def _compliance_section(res: FullRunResult, rules: Rules) -> ComplianceSection | None:
+    """The Robinson-Patman review flags, with the facts a reviewer needs."""
+    detail = res.compliance_detail
+    screen = res.compliance_screen
+    if detail is None:
+        return None
+    cols = set(detail.columns)
+
+    def g(row: dict[str, Any], name: str) -> Any:
+        return row.get(name) if name in cols else None
+
+    pairs = [
+        CompliancePair(
+            item_id=str(r["item_id"]),
+            customer_id_a=str(r["customer_id_a"]),
+            customer_id_b=str(r["customer_id_b"]),
+            pair_basis=str(r["pair_basis"]),
+            recommended_price_a_cents=g(r, "recommended_price_a_cents"),
+            recommended_price_b_cents=g(r, "recommended_price_b_cents"),
+            recommended_net_a_cents=g(r, "recommended_net_a_cents"),
+            recommended_net_b_cents=g(r, "recommended_net_b_cents"),
+            price_difference_pct=_r(g(r, "price_difference_pct")),
+            net_difference_pct=_r(g(r, "net_difference_pct")),
+            quantity_a=_r(g(r, "quantity_a")),
+            quantity_b=_r(g(r, "quantity_b")),
+            channel_a=g(r, "channel_a"),
+            channel_b=g(r, "channel_b"),
+            deduction_bp_a=g(r, "deduction_bp_a"),
+            deduction_bp_b=g(r, "deduction_bp_b"),
+            cts_per_unit_a_cents=g(r, "cts_per_unit_a_cents"),
+            cts_per_unit_b_cents=g(r, "cts_per_unit_b_cents"),
+            cts_difference_cents=g(r, "cts_difference_cents"),
+            cts_method=g(r, "cts_method"),
+            data_coverage=str(g(r, "data_coverage") or "none"),
+            meeting_competition_record=g(r, "meeting_competition_record"),
+            reviewer_decision=g(r, "reviewer_decision"),
+        )
+        for r in detail.sort("item_id", "customer_id_a", "customer_id_b").to_dicts()
+    ]
+    n_unscreened = 0
+    if screen is not None and "screen_status" in screen.columns:
+        n_unscreened = screen.filter(pl.col("screen_status") != "screened").height
+        n_screened = screen.height - n_unscreened
+    else:
+        n_screened = 0
+    return ComplianceSection(
+        screen_attributes=[
+            label(a) for a in rules.compliance.robinson_patman.competitor_attributes
+        ],
+        n_screened=n_screened,
+        n_unscreened=n_unscreened,
+        pairs=pairs,
+        notes=[n for n in res.pipeline.notes if "Robinson-Patman" in n],
+    )
+
+
 # Imported late to keep the model namespace tidy at the top of the module.
+from margin_engine.extended.quotes import describe_exclusion  # noqa: E402
+from margin_engine.webexport.bundle import QuoteExclusion  # noqa: E402
+from margin_engine.webexport.bundle import QuoteIntake as QuoteIntakeModel  # noqa: E402
 from margin_engine.webexport.bundle import WinCurve as WinCurveModel  # noqa: E402
 
 
@@ -1123,6 +1444,13 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         "app": {
             "bundle_version": d["bundle_version"],
             "engine_version": d["engine_version"],
+            # Traceability (Phase 84): /api/version and the UI footer read
+            # these without fetching the whole methodology payload.
+            "rules_sha256": d["manifest"]["rules_sha256"],
+            "mapping_sha256": d["manifest"]["mapping_sha256"],
+            "model_fingerprint": d["manifest"]["model_fingerprint"],
+            "config_fingerprint": d["manifest"]["config_fingerprint"],
+            "input_fingerprint": d["manifest"]["input_fingerprint"],
             "data_label": d["data_label"],
             "honest_labels": d["honest_labels"],
             "labels": d["labels"],
@@ -1177,8 +1505,10 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
             "leakage_total_cents": opp["leakage_total_cents"],
             "gross_total_cents": opp["gross_total_cents"],
             "gross_conservative_total_cents": opp["gross_conservative_total_cents"],
+            "expected_gp_total_cents": opp["expected_gp_total_cents"],
             "expected_total_cents": opp["expected_total_cents"],
             "expected_total_note": opp["expected_total_note"],
+            "optimizer_objective": opp["optimizer_objective"],
             "n_records": opp["n_records"],
             "n_cost_unavailable": opp["n_cost_unavailable"],
             "n_outside_price_support": opp["n_outside_price_support"],
@@ -1222,7 +1552,12 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
         },
         "tables/opportunities": {"items": opp["top_opportunities"]},
         "tables/customers": {"items": econ["customers"]},
-        "actions": d["actions"],
+        "actions": {
+            **d["actions"],
+            # The review flags travel with the action pages: a reviewer
+            # looking at a flagged action needs the facts beside it.
+            "compliance": d.get("compliance"),
+        },
         "tables/actions": {"items": d["actions_table"]},
     }
     return pages

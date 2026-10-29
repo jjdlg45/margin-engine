@@ -1,7 +1,7 @@
 {
- "generated_utc": "2026-10-24T21:36:35+00:00",
+ "generated_utc": "2026-10-26T20:23:17+00:00",
  "script": "scripts/measure_validation.py",
- "runtime_s": 4018.4,
+ "runtime_s": 3715.1,
  "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
  "results": [
   {
@@ -43,13 +43,13 @@
   {
    "check": "Elasticity recovery, planted grain, 5 seeds",
    "target": "Median abs error \u2264 0.10; P90 \u2264 0.15 (worst reported)",
-   "achieved": "Median 0.019, P90 0.051, worst 0.110",
+   "achieved": "Median 0.019, P90 0.077, worst 0.095",
    "passed": true
   },
   {
    "check": "Elasticity recovery, end-to-end (engine segments), 5 seeds",
    "target": "Median abs error \u2264 0.10; P90 \u2264 0.15 (worst reported)",
-   "achieved": "Median 0.019, P90 0.072, worst 0.110",
+   "achieved": "Median 0.022, P90 0.077, worst 0.095",
    "passed": true
   },
   {
@@ -61,31 +61,49 @@
   {
    "check": "Causal support reachable",
    "target": "Reached on the well-identified preset with all criteria enforced",
-   "achieved": "Reached",
+   "achieved": "Reached; competitor-price path controlled_by_market_index; market index market_control_adequate",
+   "passed": true
+  },
+  {
+   "check": "Competitor-price path gate",
+   "target": "Informational: how the Phase 70 gate lands on the well-identified preset",
+   "achieved": "13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation)",
+   "passed": true
+  },
+  {
+   "check": "Anticipation (lead) test false-rejection rate",
+   "target": "Informational: on the well-identified preset no anticipation channel is planted, so every rejection is a false positive",
+   "achieved": "0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes",
+   "passed": true
+  },
+  {
+   "check": "Robust first-stage statistic and robust-set shape",
+   "target": "Informational: the Montiel Olea-Pflueger effective F against the published 23.109 bar, and the shape of the weak-instrument-robust set",
+   "achieved": "Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86",
    "passed": true
   },
   {
    "check": "95% CI coverage, 50 simulations",
    "target": "Covers truth 90-98% of the time",
-   "achieved": "278/300 = 92.7%",
+   "achieved": "284/300 = 94.7%",
    "passed": true
   },
   {
    "check": "95% CI coverage under persistent demand, cluster=month (alternative, informational)",
    "target": "Informational - reported to justify the clustering default",
-   "achieved": "250/300 = 83.3%",
+   "achieved": "253/300 = 84.3%",
    "passed": true
   },
   {
    "check": "95% CI coverage under persistent demand, cluster=month_customer (shipped default)",
    "target": "Covers truth 90-98% of the time",
-   "achieved": "280/300 = 93.3%",
+   "achieved": "278/300 = 92.7%",
    "passed": true
   },
   {
    "check": "95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational)",
    "target": "Informational - reported to justify the clustering default",
-   "achieved": "247/300 = 82.3%",
+   "achieved": "244/300 = 81.3%",
    "passed": true
   },
   {
@@ -97,7 +115,7 @@
   {
    "check": "invalid-instrument preset",
    "target": "Overidentification rejects on \u2265 80% of seeds; status downgraded",
-   "achieved": "Rejected on 5/5 seeds; downgraded on 5/5",
+   "achieved": "Rejected on 4/5 seeds; downgraded on 5/5",
    "passed": true
   },
   {
@@ -115,25 +133,25 @@
   {
    "check": "Misspecified world: persistent_demand (informational)",
    "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
-   "achieved": "median abs error vs planted 0.021; statuses {causal_elasticity_supported: 8, iv_estimated_elasticity: 10}",
+   "achieved": "median abs error vs planted 0.031; statuses {causal_elasticity_supported: 8, descriptive_elasticity: 1, iv_estimated_elasticity: 9}",
    "passed": true
   },
   {
    "check": "Misspecified world: heterogeneous_elasticity (informational)",
    "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
-   "achieved": "median abs error vs planted 0.024; statuses {causal_elasticity_supported: 8, iv_estimated_elasticity: 10}",
+   "achieved": "median abs error vs planted 0.025; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8}",
    "passed": true
   },
   {
    "check": "Misspecified world: nonconstant_elasticity (informational)",
    "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
-   "achieved": "median abs error vs planted 0.320; statuses {causal_elasticity_supported: 9, iv_estimated_elasticity: 9}",
+   "achieved": "median abs error vs planted 0.303; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8}",
    "passed": true
   },
   {
    "check": "Misspecified world: competitor_comovement (informational)",
    "target": "Informational - reported, not gated (the planted beta is not the estimand under misspecification)",
-   "achieved": "median abs error vs planted 0.236; statuses {iv_estimated_elasticity: 18}",
+   "achieved": "median abs error vs planted 0.236; statuses {descriptive_elasticity: 18}",
    "passed": true
   },
   {
@@ -157,7 +175,13 @@
   {
    "check": "Performance (full Run-1 pipeline)",
    "target": "500k+ lines under 2 minutes",
-   "achieved": "811,253 lines in 37.0s on AMD64 (Windows)",
+   "achieved": "811,253 lines in 119.0s on AMD64 (Windows)",
+   "passed": true
+  },
+  {
+   "check": "Competitor-price path gate (informational)",
+   "target": "Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset",
+   "achieved": "13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation)",
    "passed": true
   },
   {

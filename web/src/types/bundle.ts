@@ -4,25 +4,61 @@ export type Bucket = string;
 export type MedianAbsVolumeErrorLogPoints = number | null;
 export type MedianRealizationPct = number | null;
 export type NMeasured = number;
+export type NStoppedBuying = number | null;
 export type Status = string;
 export type Calibration = CalibrationRow[];
 /**
  * True when the event history is simulated demo data
  */
 export type DemoHistory = boolean;
+export type AttCiHigh = number | null;
+export type AttCiLow = number | null;
+export type AttPct = number | null;
+export type AttSe = number | null;
+export type CiHighPct = number | null;
+export type CiLowPct = number | null;
+export type CoefficientPct = number;
+export type EventTime = number;
+export type NTreatedPairs = number;
+export type Period = string;
+export type SePct = number | null;
+export type Coefficients = EventStudyCoefficient[];
+export type Estimand = string;
+export type NCohorts = number;
+export type NControlPairs = number;
+export type NRows = number;
+export type NTreatedPairs1 = number;
+export type PretrendDetail = string;
+export type PretrendStatus = string;
+export type Reason = string;
+export type Status1 = string;
 export type Notes = string[];
+export type ActionIds = string[];
+export type NActions = number;
+export type NaiveSumCents = number;
+export type Note = string;
+export type OverlapGroup1 = string;
+export type PortfolioEstimateCents = number;
+export type OverlapGroups = OverlapGroup[];
 /**
  * True in the static demo: the review workflow needs the API
  */
 export type ReadOnly = boolean;
+export type Dimension = string;
+export type MedianControlAdjustedVolumeRatio = number | null;
+export type MedianRealizationPct1 = number | null;
+export type NMeasured1 = number;
+export type NStoppedBuying1 = number;
+export type Value = string;
+export type ResultsBreakdown = ResultsBreakdownRow[];
 /**
  * Across measured outcomes; null below the minimum count
  */
-export type MedianRealizationPct1 = number | null;
-export type NActions = number;
+export type MedianRealizationPct2 = number | null;
+export type NActions1 = number;
 export type NBlocked = number;
 export type NComplianceFlagged = number;
-export type NMeasured1 = number;
+export type NMeasured2 = number;
 export type ActionId = string;
 export type ActionType = string;
 export type Blocked = boolean;
@@ -37,7 +73,7 @@ export type DueDate = string | null;
  */
 export type At = string;
 export type FromStatus = string | null;
-export type Note = string;
+export type Note1 = string;
 export type Seq = number;
 export type ToStatus = string;
 export type Who = string;
@@ -55,10 +91,13 @@ export type ItemId = string | null;
 export type ItemName = string | null;
 export type ContributionAfterCents = number | null;
 export type ContributionBeforeCents = number | null;
+export type ControlAdjustedVolumeRatio = number | null;
+export type ControlExclusions = string | null;
 export type ControlVolumeRatio = number | null;
-export type DidVolumeRatio = number | null;
+export type ImplementationCompliance = string | null;
 export type ImplementedOn = string;
-export type NControlPairs = number;
+export type NControlPairs1 = number;
+export type NControlPairsExcluded = number | null;
 export type OutcomeReason = string;
 export type OutcomeStatus = string;
 export type PocketMarginAfter = number | null;
@@ -70,8 +109,10 @@ export type ProposedPriceCents = number | null;
 export type QtyAfter = number | null;
 export type QtyBefore = number | null;
 export type RealizationPct = number | null;
+export type StoppedBuying = boolean | null;
 export type TreatedVolumeRatio = number | null;
 export type VolumeErrorLogPoints = number | null;
+export type Wave = string | null;
 export type WindowDays = number;
 /**
  * True when the status still needs someone to act and the due date lies before the data's as-of date
@@ -88,12 +129,40 @@ export type ProposedPriceCents1 = number | null;
 export type Rationale = string;
 export type Scope = string;
 export type Segment = number | null;
-export type Status1 = string;
+export type Status2 = string;
 export type Title = string;
 export type Uom = string | null;
 export type VolumeTreatment = string | null;
 export type ActionsTable = ActionRow[];
 export type BundleVersion = string;
+export type NScreened = number;
+export type NUnscreened = number;
+export type Notes1 = string[];
+export type ChannelA = string | null;
+export type ChannelB = string | null;
+export type CtsDifferenceCents = number | null;
+export type CtsMethod = string | null;
+export type CtsPerUnitACents = number | null;
+export type CtsPerUnitBCents = number | null;
+export type CustomerIdA = string;
+export type CustomerIdB = string;
+export type DataCoverage = string;
+export type DeductionBpA = number | null;
+export type DeductionBpB = number | null;
+export type ItemId1 = string;
+export type MeetingCompetitionRecord = string | null;
+export type NetDifferencePct = number | null;
+export type PairBasis = string;
+export type PriceDifferencePct = number | null;
+export type QuantityA = number | null;
+export type QuantityB = number | null;
+export type RecommendedNetACents = number | null;
+export type RecommendedNetBCents = number | null;
+export type RecommendedPriceACents = number | null;
+export type RecommendedPriceBCents = number | null;
+export type ReviewerDecision = string | null;
+export type Pairs = CompliancePair[];
+export type ScreenAttributes = string[];
 export type DataLabel = string;
 export type FlagNote = string;
 export type NCommercialOutlierFlags = number;
@@ -142,12 +211,12 @@ export type FloorIndex = number | null;
 export type InvoiceContributionFloorCents = number | null;
 export type InvoiceFloorCents = number | null;
 export type InvoiceFloorGrossCents = number | null;
-export type ItemId1 = string;
+export type ItemId2 = string;
 export type ItemName1 = string | null;
 export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
 export type Segment1 = number | null;
-export type Status2 = string;
+export type Status3 = string;
 export type TargetIndex = number | null;
 export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
@@ -167,6 +236,10 @@ export type NCustomers = number;
 export type NItems = number;
 export type NLedgerLines = number;
 export type NSalesObservations = number;
+/**
+ * Nonzero reconciliation residuals kept visible
+ */
+export type NVisibleResiduals = number;
 /**
  * Gross sales plus returns - matches economics
  */
@@ -189,6 +262,10 @@ export type ReconciliationPass = boolean;
  */
 export type ReturnsCents = number;
 /**
+ * Sum of absolute visible residual amounts
+ */
+export type VisibleResidualCents = number;
+/**
  * Time window every KPI covers, e.g. '24 months'
  */
 export type WindowLabel = string;
@@ -202,13 +279,18 @@ export type Category = string;
 export type Message = string;
 export type NOccurrences = number;
 export type LibraryWarnings = LibraryWarning[];
+export type ConfigFingerprint = string;
+export type EngineVersion1 = string;
 export type InputFiles = {
   [k: string]: string;
 }[];
+export type InputFingerprint = string;
 export type MappingSha256 = string;
+export type ModelFingerprint = string;
 export type NoteOnVolatileFields = string;
-export type Notes1 = string[];
+export type Notes2 = string[];
 export type RulesSha256 = string;
+export type ExpectedGpTotalCents = number;
 export type ExpectedTotalCents = number;
 export type ExpectedTotalNote = string;
 export type GrossConservativeTotalCents = number | null;
@@ -223,15 +305,18 @@ export type NCostUnavailable = number;
 export type NOutsidePriceSupport = number;
 export type NRecords = number;
 export type NeverSummedNote = string;
+export type OptimizerObjective = string;
 export type CostUnavailable = boolean;
 export type CustomerId4 = string;
 export type CustomerName3 = string | null;
+export type DeductionTreatment = string;
 export type EvidenceStatus1 = string | null;
 export type ExpectedContributionChangeCents = number | null;
+export type ExpectedPocketGrossProfitChangeCents = number | null;
 export type Explanation1 = string;
 export type GrossPriceOpportunityCents = number;
 export type GrossPriceOpportunityConservativeCents = number | null;
-export type ItemId2 = string;
+export type ItemId3 = string;
 export type ItemName2 = string | null;
 /**
  * (target - current) / target, from the pair's guidance
@@ -249,14 +334,19 @@ export type TopOpportunities = OpportunityRecord[];
  */
 export type WindowLabel1 = string;
 export type CrossPrice = CrossPriceEstimate[] | null;
+export type ConditionalEffectiveF = number | null;
 export type CrossElasticity = number | null;
 export type CrossSe = number | null;
+export type FirstStageDetail = string;
 export type GroupId = string;
 export type ItemA = string;
 export type ItemB = string;
+export type MarginalFirstStageF = number | null;
+export type NAbsorbedParameters = number | null;
+export type NClusters = number | null;
 export type NObs = number;
 export type Reasons = string;
-export type Status3 = string;
+export type Status4 = string;
 export type CrossPriceAbsentReason = string | null;
 export type CogsTotalCents = number;
 export type Method = string;
@@ -264,16 +354,34 @@ export type NFlagged = number;
 export type NSalesCosted = number;
 export type TimingStatement = string;
 export type InventoryAbsentReason = string | null;
+export type N = number;
+export type Reason1 = string;
+export type Excluded = QuoteExclusion[];
+export type NModeled = number;
+export type NRows1 = number;
+export type Notes3 = string[];
+export type Unit = string;
 export type WinCurves = WinCurve[] | null;
+export type Auc = number | null;
+export type Brier = number | null;
+export type CalibrationIntercept = number | null;
+export type CalibrationSlope = number | null;
+export type CalibrationStatus = string;
 export type CiHigh = number | null;
 export type CiLow = number | null;
+export type ClusterLevel = string;
+export type Controls = string;
+export type HoldoutN = number;
+export type NClusters1 = number | null;
+export type NLost = number;
 export type NQuotes = number;
+export type NWon = number;
 export type NegotiationGap = number | null;
 export type PriceCoef = number | null;
 export type PriceCoefSe = number | null;
 export type Reasons1 = string;
 export type Segment3 = number;
-export type Status4 = string;
+export type Status5 = string;
 export type WinRate = number;
 export type WinCurvesAbsentReason = string | null;
 export type ActualCents = number;
@@ -310,6 +418,14 @@ export type ScopeLabel = string | null;
 export type ScopeValue = string;
 export type ScenarioGrids = ScenarioGrid[];
 export type BootstrapMedianAri = number | null;
+export type Mae = number | null;
+export type MaeBaseline = number | null;
+export type MaeWithoutSamePeriodFeatures = number | null;
+export type NEvalPairs = number;
+export type NEvalPeriods = number;
+export type NFitPeriods = number;
+export type Note2 = string;
+export type SamePeriodFeatures = string[];
 export type NPairs1 = number;
 export type P25 = number;
 export type P50 = number;
@@ -350,40 +466,124 @@ export type Plain = string;
  */
 export type TechnicalNote = string;
 export type MarginDriverRules = SegmentRule[];
+export type Notes4 = string[];
 export type RecommendationChangeShare = number | null;
 export type Rules = SegmentRule[];
+export type AnalyticCiHigh = number | null;
+export type AnalyticCiLow = number | null;
 export type ArBounded = boolean | null;
 export type ArCiHigh = number | null;
 export type ArCiLow = number | null;
+export type ArDetail = string | null;
+export type ArDisplayReliable = boolean | null;
+export type ArHullHi = number | null;
+export type ArHullLo = number | null;
+export type ArMeasure = number | null;
+export type ArNComponents = number | null;
+export type ArShape = string | null;
 export type CarriedForwardShare = number | null;
+export type Detail = string;
+export type Gate = string;
+export type Order = number;
+export type Result = string;
+export type CausalGates = CausalGate[];
+export type ClusterLevelUsed = string | null;
+export type ClusterVariationDetail = string | null;
+export type CompetitorPathDetail = string | null;
+export type CompetitorPathResolution = string | null;
+export type EffectiveClusters = number | null;
+export type EffectiveFDetail = string | null;
+export type EffectiveFirstStageF = number | null;
+export type EffectiveK = number | null;
+export type Estimand1 = string | null;
+export type EstimandBiasDirection = string | null;
 export type FirstStageF = number | null;
+export type FirstStageFUncontrolled = number | null;
 export type IdentifyingCoverage = number | null;
+export type ImputedPriceShare = number | null;
 export type Iv = number | null;
 export type IvCiHigh = number | null;
 export type IvCiLow = number | null;
+export type IvPpml = number | null;
+export type IvPpmlFirstStageF = number | null;
+export type IvPpmlInference = string | null;
+export type IvPpmlNRows = number | null;
+export type IvPpmlRangeHigh = number | null;
+export type IvPpmlRangeLow = number | null;
+export type IvPpmlReasons = string | null;
+export type IvPpmlRowsDropped = number | null;
+export type IvPpmlSampleLosses = string | null;
+export type IvPpmlSeAnalytic = number | null;
+export type IvPpmlSeBootstrap = number | null;
+export type IvPpmlSpj = number | null;
+export type IvPpmlSpjBias = number | null;
+export type IvPpmlSpjDetail = string | null;
+export type IvPpmlStatus = string | null;
+export type IvPpmlUnitsDropped = number | null;
+export type IvPpmlZeroRowDetail = string | null;
+export type IvPpmlZeroRowGap = number | null;
 export type IvSe = number | null;
+export type LeadTestBound = number | null;
+export type LeadTestDetail = string | null;
+export type LeadTestHorizon = number | null;
+export type LeadTestP = number | null;
+export type LeadTestStatus = string | null;
+export type MarketControlCoverage = number | null;
+export type MarketControlDetail = string | null;
+export type MarketControlInstrumentR2 = number | null;
+export type MarketControlLagPeriods = number | null;
+export type MarketControlPriceR2 = number | null;
+export type MarketControlStatus = string | null;
 export type MarketControlUsed = boolean;
+export type MarketControlWithinCellValues = number | null;
+export type MaxClusterVariationShare = number | null;
+export type NAbsorbedParameters1 = number | null;
+export type NClusters2 = number | null;
+export type NClustersByDimension = string | null;
+export type NClustersWithInstrumentVariation = number | null;
+export type NIdentifiedInstruments = number | null;
 export type NObs1 = number;
 export type NPairs2 = number;
 export type NPositive = number;
 export type NaiveFeOls = number | null;
 export type NaiveSe = number | null;
 export type NaiveVsIvNote = string;
+export type ObservedLogHi = number | null;
+export type ObservedLogLo = number | null;
 export type OveridJ = number | null;
 export type OveridP = number | null;
+export type PlaceboActualP = number | null;
+export type PlaceboDetail = string | null;
+export type PlaceboShareSignificant = number | null;
+export type PlaceboStatus = string;
 export type Ppml = number | null;
 export type PpmlPositive = number | null;
 export type PriceCvWithin = number;
+export type PriceSourceMix = string | null;
+export type PrimaryIntervalBasis = string | null;
+export type RobustnessExcludedWeak = string | null;
+export type RobustnessNSpecifications = number | null;
 export type RobustnessSpread = number | null;
 export type Segment5 = number;
-export type Status5 = string;
+export type SmallClusterDetail = string | null;
+export type SmallClusterMethodUsed = string | null;
+export type Status6 = string;
 export type StatusReasons = string;
+export type SupportDetail = string | null;
 export type SupportLogHi = number | null;
 export type SupportLogLo = number | null;
+export type SupportMinObservations = number | null;
+export type SupportN = number | null;
+export type SupportNRegions = number | null;
+export type SupportRegions = string | null;
+export type SupportWindow = number | null;
+export type WildBootstrapRepsUsed = number | null;
+export type WildCiHigh = number | null;
+export type WildCiLow = number | null;
 export type Sensitivity = SensitivitySegment[];
 export type AmountCents2 = number;
 export type CustomerId5 = string;
-export type Period = string;
+export type Period1 = string;
 export type RebateProgramId = string;
 export type UnallocatedSettlements = UnallocatedSettlement[];
 export type Achieved = string;
@@ -413,6 +613,7 @@ export interface WebBundle {
   actions: ActionsSection;
   actions_table: ActionsTable;
   bundle_version: BundleVersion;
+  compliance?: ComplianceSection | null;
   data_label: DataLabel;
   dispersion: DispersionSection;
   economics: EconomicsSection;
@@ -440,9 +641,12 @@ export interface WebBundle {
 export interface ActionsSection {
   calibration: Calibration;
   demo_history: DemoHistory;
+  event_study?: EventStudySection | null;
   facets: Facets;
   notes: Notes;
+  overlap_groups?: OverlapGroups;
   read_only: ReadOnly;
+  results_breakdown?: ResultsBreakdown;
   summary: ActionsSummary;
 }
 /**
@@ -454,20 +658,76 @@ export interface CalibrationRow {
   median_abs_volume_error_log_points: MedianAbsVolumeErrorLogPoints;
   median_realization_pct: MedianRealizationPct;
   n_measured: NMeasured;
+  n_stopped_buying?: NStoppedBuying;
   status: Status;
+}
+/**
+ * The pooled estimate, separate from the per-action control-adjusted
+ * changes because it rests on assumptions they do not (Run 6, Phase 75).
+ */
+export interface EventStudySection {
+  att_ci_high?: AttCiHigh;
+  att_ci_low?: AttCiLow;
+  att_pct?: AttPct;
+  att_se?: AttSe;
+  coefficients?: Coefficients;
+  estimand: Estimand;
+  n_cohorts: NCohorts;
+  n_control_pairs: NControlPairs;
+  n_rows: NRows;
+  n_treated_pairs: NTreatedPairs1;
+  pretrend_detail: PretrendDetail;
+  pretrend_status: PretrendStatus;
+  reason: Reason;
+  status: Status1;
+}
+export interface EventStudyCoefficient {
+  ci_high_pct: CiHighPct;
+  ci_low_pct: CiLowPct;
+  coefficient_pct: CoefficientPct;
+  event_time: EventTime;
+  n_treated_pairs: NTreatedPairs;
+  period: Period;
+  se_pct: SePct;
 }
 export interface Facets {
   [k: string]: string[];
+}
+/**
+ * Overlapping action scopes (Run 6, Phase 68): the naive sum is shown
+ * only to make double counting visible; the portfolio estimate is the joint
+ * figure under one baseline and is NEVER added to the single-action lists.
+ */
+export interface OverlapGroup {
+  action_ids: ActionIds;
+  n_actions: NActions;
+  naive_sum_cents: NaiveSumCents;
+  note: Note;
+  overlap_group: OverlapGroup1;
+  portfolio_estimate_cents: PortfolioEstimateCents;
+}
+/**
+ * Measured results split by wave, segment, action type, evidence and how
+ * faithfully the price actually moved (Run 6, Phase 75). One pooled median
+ * hides where a number came from.
+ */
+export interface ResultsBreakdownRow {
+  dimension: Dimension;
+  median_control_adjusted_volume_ratio: MedianControlAdjustedVolumeRatio;
+  median_realization_pct: MedianRealizationPct1;
+  n_measured: NMeasured1;
+  n_stopped_buying: NStoppedBuying1;
+  value: Value;
 }
 export interface ActionsSummary {
   by_status: ByStatus;
   impact_by_basis_cents: ImpactByBasisCents;
   impact_by_evidence_cents: ImpactByEvidenceCents;
-  median_realization_pct?: MedianRealizationPct1;
-  n_actions: NActions;
+  median_realization_pct?: MedianRealizationPct2;
+  n_actions: NActions1;
   n_blocked: NBlocked;
   n_compliance_flagged: NComplianceFlagged;
-  n_measured: NMeasured1;
+  n_measured: NMeasured2;
 }
 export interface ByStatus {
   [k: string]: number;
@@ -515,7 +775,7 @@ export interface ActionRow {
   rationale: Rationale;
   scope: Scope;
   segment: Segment;
-  status: Status1;
+  status: Status2;
   title: Title;
   uom: Uom;
   volume_treatment: VolumeTreatment;
@@ -527,7 +787,7 @@ export interface ActionRow {
 export interface ActionEventRow {
   at: At;
   from_status: FromStatus;
-  note: Note;
+  note: Note1;
   seq: Seq;
   to_status: ToStatus;
   who: Who;
@@ -539,10 +799,13 @@ export interface ActionEventRow {
 export interface ActionOutcome {
   contribution_after_cents: ContributionAfterCents;
   contribution_before_cents: ContributionBeforeCents;
+  control_adjusted_volume_ratio: ControlAdjustedVolumeRatio;
+  control_exclusions?: ControlExclusions;
   control_volume_ratio: ControlVolumeRatio;
-  did_volume_ratio: DidVolumeRatio;
+  implementation_compliance?: ImplementationCompliance;
   implemented_on: ImplementedOn;
-  n_control_pairs: NControlPairs;
+  n_control_pairs: NControlPairs1;
+  n_control_pairs_excluded?: NControlPairsExcluded;
   outcome_reason: OutcomeReason;
   outcome_status: OutcomeStatus;
   pocket_margin_after: PocketMarginAfter;
@@ -554,9 +817,50 @@ export interface ActionOutcome {
   qty_after: QtyAfter;
   qty_before: QtyBefore;
   realization_pct: RealizationPct;
+  stopped_buying?: StoppedBuying;
   treated_volume_ratio: TreatedVolumeRatio;
   volume_error_log_points: VolumeErrorLogPoints;
+  wave?: Wave;
   window_days: WindowDays;
+}
+export interface ComplianceSection {
+  n_screened: NScreened;
+  n_unscreened: NUnscreened;
+  notes: Notes1;
+  pairs: Pairs;
+  screen_attributes: ScreenAttributes;
+}
+/**
+ * One Robinson-Patman review flag, with the facts beside it (Phase 79).
+ *
+ * A review prompt, never a finding: `pair_basis` says whether a reviewer
+ * confirmed that these two customers compete or whether the attribute
+ * screen merely suggested it.
+ */
+export interface CompliancePair {
+  channel_a: ChannelA;
+  channel_b: ChannelB;
+  cts_difference_cents: CtsDifferenceCents;
+  cts_method: CtsMethod;
+  cts_per_unit_a_cents: CtsPerUnitACents;
+  cts_per_unit_b_cents: CtsPerUnitBCents;
+  customer_id_a: CustomerIdA;
+  customer_id_b: CustomerIdB;
+  data_coverage: DataCoverage;
+  deduction_bp_a: DeductionBpA;
+  deduction_bp_b: DeductionBpB;
+  item_id: ItemId1;
+  meeting_competition_record: MeetingCompetitionRecord;
+  net_difference_pct: NetDifferencePct;
+  pair_basis: PairBasis;
+  price_difference_pct: PriceDifferencePct;
+  quantity_a: QuantityA;
+  quantity_b: QuantityB;
+  recommended_net_a_cents: RecommendedNetACents;
+  recommended_net_b_cents: RecommendedNetBCents;
+  recommended_price_a_cents: RecommendedPriceACents;
+  recommended_price_b_cents: RecommendedPriceBCents;
+  reviewer_decision: ReviewerDecision;
 }
 export interface DispersionSection {
   abc_revenue_counts: AbcRevenueCounts;
@@ -620,12 +924,12 @@ export interface GuidancePair {
   invoice_contribution_floor_cents?: InvoiceContributionFloorCents;
   invoice_floor_cents: InvoiceFloorCents;
   invoice_floor_gross_cents?: InvoiceFloorGrossCents;
-  item_id: ItemId1;
+  item_id: ItemId2;
   item_name?: ItemName1;
   list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
   segment: Segment1;
-  status: Status2;
+  status: Status3;
   target_index: TargetIndex;
   target_label: TargetLabel;
 }
@@ -639,12 +943,14 @@ export interface SummaryKpis {
   n_items: NItems;
   n_ledger_lines: NLedgerLines;
   n_sales_observations: NSalesObservations;
+  n_visible_residuals?: NVisibleResiduals;
   net_revenue_cents: NetRevenueCents1;
   pocket_gross_profit_cents: PocketGrossProfitCents;
   pocket_margin_pct?: PocketMarginPct;
   pocket_revenue_cents: PocketRevenueCents;
   reconciliation_pass: ReconciliationPass;
   returns_cents: ReturnsCents;
+  visible_residual_cents?: VisibleResidualCents;
   window_label: WindowLabel;
 }
 /**
@@ -669,10 +975,14 @@ export interface LibraryWarning {
 }
 export interface ManifestInfo {
   cleaning_decisions: CleaningDecisions;
+  config_fingerprint?: ConfigFingerprint;
+  engine_version?: EngineVersion1;
   input_files: InputFiles;
+  input_fingerprint?: InputFingerprint;
   mapping_sha256: MappingSha256;
+  model_fingerprint?: ModelFingerprint;
   note_on_volatile_fields: NoteOnVolatileFields;
-  notes: Notes1;
+  notes: Notes2;
   rules_sha256: RulesSha256;
   software_versions: SoftwareVersions;
 }
@@ -683,6 +993,7 @@ export interface SoftwareVersions {
   [k: string]: string;
 }
 export interface OpportunitySection {
+  expected_gp_total_cents?: ExpectedGpTotalCents;
   expected_total_cents: ExpectedTotalCents;
   expected_total_note: ExpectedTotalNote;
   gross_conservative_total_cents?: GrossConservativeTotalCents;
@@ -693,6 +1004,7 @@ export interface OpportunitySection {
   n_outside_price_support?: NOutsidePriceSupport;
   n_records: NRecords;
   never_summed_note: NeverSummedNote;
+  optimizer_objective?: OptimizerObjective;
   top_opportunities: TopOpportunities;
   window_label: WindowLabel1;
 }
@@ -706,12 +1018,14 @@ export interface OpportunityRecord {
   cost_unavailable?: CostUnavailable;
   customer_id: CustomerId4;
   customer_name?: CustomerName3;
+  deduction_treatment?: DeductionTreatment;
   evidence_status: EvidenceStatus1;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
+  expected_pocket_gross_profit_change_cents?: ExpectedPocketGrossProfitChangeCents;
   explanation: Explanation1;
   gross_price_opportunity_cents: GrossPriceOpportunityCents;
   gross_price_opportunity_conservative_cents?: GrossPriceOpportunityConservativeCents;
-  item_id: ItemId2;
+  item_id: ItemId3;
   item_name?: ItemName2;
   pct_below_target?: PctBelowTarget;
   segment: Segment2;
@@ -723,18 +1037,24 @@ export interface OptionalModules {
   cross_price_absent_reason: CrossPriceAbsentReason;
   inventory: InventorySection | null;
   inventory_absent_reason: InventoryAbsentReason;
+  quote_intake?: QuoteIntake | null;
   win_curves: WinCurves;
   win_curves_absent_reason: WinCurvesAbsentReason;
 }
 export interface CrossPriceEstimate {
+  conditional_effective_f?: ConditionalEffectiveF;
   cross_elasticity: CrossElasticity;
   cross_se: CrossSe;
+  first_stage_detail?: FirstStageDetail;
   group_id: GroupId;
   item_a: ItemA;
   item_b: ItemB;
+  marginal_first_stage_f?: MarginalFirstStageF;
+  n_absorbed_parameters?: NAbsorbedParameters;
+  n_clusters?: NClusters;
   n_obs: NObs;
   reasons: Reasons;
-  status: Status3;
+  status: Status4;
 }
 export interface InventorySection {
   cogs_total_cents: CogsTotalCents;
@@ -743,16 +1063,41 @@ export interface InventorySection {
   n_sales_costed: NSalesCosted;
   timing_statement: TimingStatement;
 }
+/**
+ * Run 6, Phase 77: every quote row, and where it went.
+ */
+export interface QuoteIntake {
+  excluded: Excluded;
+  n_modeled: NModeled;
+  n_rows: NRows1;
+  notes: Notes3;
+  unit: Unit;
+}
+export interface QuoteExclusion {
+  n: N;
+  reason: Reason1;
+}
 export interface WinCurve {
+  auc?: Auc;
+  brier?: Brier;
+  calibration_intercept?: CalibrationIntercept;
+  calibration_slope?: CalibrationSlope;
+  calibration_status?: CalibrationStatus;
   ci_high: CiHigh;
   ci_low: CiLow;
+  cluster_level?: ClusterLevel;
+  controls?: Controls;
+  holdout_n?: HoldoutN;
+  n_clusters?: NClusters1;
+  n_lost?: NLost;
   n_quotes: NQuotes;
+  n_won?: NWon;
   negotiation_gap: NegotiationGap;
   price_coef: PriceCoef;
   price_coef_se: PriceCoefSe;
   reasons: Reasons1;
   segment: Segment3;
-  status: Status4;
+  status: Status5;
   win_rate: WinRate;
 }
 export interface ReconciliationCheck {
@@ -792,11 +1137,26 @@ export interface ScenarioGridPoint {
 }
 export interface SegmentsSection {
   bootstrap_median_ari: BootstrapMedianAri;
+  holdout?: SegmentHoldout | null;
   index_distribution: IndexDistribution;
   margin_driver_note: MarginDriverNote;
   margin_driver_rules: MarginDriverRules;
+  notes?: Notes4;
   recommendation_change_share: RecommendationChangeShare;
   rules: Rules;
+}
+/**
+ * Run 6, Phase 76: how the segmentation does on periods it never saw.
+ */
+export interface SegmentHoldout {
+  mae: Mae;
+  mae_baseline: MaeBaseline;
+  mae_without_same_period_features: MaeWithoutSamePeriodFeatures;
+  n_eval_pairs: NEvalPairs;
+  n_eval_periods: NEvalPeriods;
+  n_fit_periods: NFitPeriods;
+  note: Note2;
+  same_period_features: SamePeriodFeatures;
 }
 export interface SegmentIndexStats {
   n_pairs: NPairs1;
@@ -819,39 +1179,128 @@ export interface SegmentRule {
   technical_note: TechnicalNote;
 }
 export interface SensitivitySegment {
+  analytic_ci_high?: AnalyticCiHigh;
+  analytic_ci_low?: AnalyticCiLow;
   ar_bounded?: ArBounded;
   ar_ci_high: ArCiHigh;
   ar_ci_low: ArCiLow;
+  ar_detail?: ArDetail;
+  ar_display_reliable?: ArDisplayReliable;
+  ar_hull_hi?: ArHullHi;
+  ar_hull_lo?: ArHullLo;
+  ar_measure?: ArMeasure;
+  ar_n_components?: ArNComponents;
+  ar_shape?: ArShape;
   carried_forward_share?: CarriedForwardShare;
+  causal_gates?: CausalGates;
+  cluster_level_used?: ClusterLevelUsed;
+  cluster_variation_detail?: ClusterVariationDetail;
+  competitor_path_detail?: CompetitorPathDetail;
+  competitor_path_resolution?: CompetitorPathResolution;
+  effective_clusters?: EffectiveClusters;
+  effective_f_detail?: EffectiveFDetail;
+  effective_first_stage_f?: EffectiveFirstStageF;
+  effective_k?: EffectiveK;
+  estimand?: Estimand1;
+  estimand_bias_direction?: EstimandBiasDirection;
   first_stage_f: FirstStageF;
+  first_stage_f_uncontrolled?: FirstStageFUncontrolled;
   identifying_coverage: IdentifyingCoverage;
+  imputed_price_share?: ImputedPriceShare;
   iv: Iv;
   iv_ci_high: IvCiHigh;
   iv_ci_low: IvCiLow;
+  iv_ppml?: IvPpml;
+  iv_ppml_first_stage_f?: IvPpmlFirstStageF;
+  iv_ppml_inference?: IvPpmlInference;
+  iv_ppml_n_rows?: IvPpmlNRows;
+  iv_ppml_range_high?: IvPpmlRangeHigh;
+  iv_ppml_range_low?: IvPpmlRangeLow;
+  iv_ppml_reasons?: IvPpmlReasons;
+  iv_ppml_rows_dropped?: IvPpmlRowsDropped;
+  iv_ppml_sample_losses?: IvPpmlSampleLosses;
+  iv_ppml_se_analytic?: IvPpmlSeAnalytic;
+  iv_ppml_se_bootstrap?: IvPpmlSeBootstrap;
+  iv_ppml_spj?: IvPpmlSpj;
+  iv_ppml_spj_bias?: IvPpmlSpjBias;
+  iv_ppml_spj_detail?: IvPpmlSpjDetail;
+  iv_ppml_status?: IvPpmlStatus;
+  iv_ppml_units_dropped?: IvPpmlUnitsDropped;
+  iv_ppml_zero_row_detail?: IvPpmlZeroRowDetail;
+  iv_ppml_zero_row_gap?: IvPpmlZeroRowGap;
   iv_se: IvSe;
+  lead_test_bound?: LeadTestBound;
+  lead_test_detail?: LeadTestDetail;
+  lead_test_horizon?: LeadTestHorizon;
+  lead_test_p?: LeadTestP;
+  lead_test_status?: LeadTestStatus;
+  market_control_coverage?: MarketControlCoverage;
+  market_control_detail?: MarketControlDetail;
+  market_control_instrument_r2?: MarketControlInstrumentR2;
+  market_control_lag_periods?: MarketControlLagPeriods;
+  market_control_price_r2?: MarketControlPriceR2;
+  market_control_status?: MarketControlStatus;
   market_control_used?: MarketControlUsed;
+  market_control_within_cell_values?: MarketControlWithinCellValues;
+  max_cluster_variation_share?: MaxClusterVariationShare;
+  n_absorbed_parameters?: NAbsorbedParameters1;
+  n_clusters?: NClusters2;
+  n_clusters_by_dimension?: NClustersByDimension;
+  n_clusters_with_instrument_variation?: NClustersWithInstrumentVariation;
+  n_identified_instruments?: NIdentifiedInstruments;
   n_obs: NObs1;
   n_pairs: NPairs2;
   n_positive: NPositive;
   naive_fe_ols: NaiveFeOls;
   naive_se: NaiveSe;
   naive_vs_iv_note: NaiveVsIvNote;
+  observed_log_hi?: ObservedLogHi;
+  observed_log_lo?: ObservedLogLo;
   overid_j: OveridJ;
   overid_p: OveridP;
+  placebo_actual_p?: PlaceboActualP;
+  placebo_detail?: PlaceboDetail;
+  placebo_share_significant?: PlaceboShareSignificant;
+  placebo_status?: PlaceboStatus;
   ppml: Ppml;
   ppml_positive?: PpmlPositive;
   price_cv_within: PriceCvWithin;
+  price_source_mix?: PriceSourceMix;
+  primary_interval_basis?: PrimaryIntervalBasis;
+  robustness_excluded_weak?: RobustnessExcludedWeak;
+  robustness_n_specifications?: RobustnessNSpecifications;
   robustness_spread: RobustnessSpread;
   segment: Segment5;
-  status: Status5;
+  small_cluster_detail?: SmallClusterDetail;
+  small_cluster_method_used?: SmallClusterMethodUsed;
+  status: Status6;
   status_reasons: StatusReasons;
+  support_detail?: SupportDetail;
   support_log_hi?: SupportLogHi;
   support_log_lo?: SupportLogLo;
+  support_min_observations?: SupportMinObservations;
+  support_n?: SupportN;
+  support_n_regions?: SupportNRegions;
+  support_regions?: SupportRegions;
+  support_window?: SupportWindow;
+  wild_bootstrap_reps_used?: WildBootstrapRepsUsed;
+  wild_ci_high?: WildCiHigh;
+  wild_ci_low?: WildCiLow;
+}
+/**
+ * One causal criterion's outcome (Run 6, Phase 70). Machine-readable so
+ * the UI renders a checklist instead of parsing prose.
+ */
+export interface CausalGate {
+  detail: Detail;
+  gate: Gate;
+  order: Order;
+  result: Result;
 }
 export interface UnallocatedSettlement {
   amount_cents: AmountCents2;
   customer_id: CustomerId5;
-  period: Period;
+  period: Period1;
   rebate_program_id: RebateProgramId;
 }
 export interface ValidationResult {

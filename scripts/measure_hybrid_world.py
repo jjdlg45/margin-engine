@@ -73,6 +73,7 @@ def main() -> None:
     from tests.test_sensitivity import build_world_panel, rules_full
 
     from margin_engine.sensitivity.estimate import run_sensitivity
+    from margin_engine.sensitivity.market_control import SOURCE_MAPPED
 
     months = 24
     paths, notes = ppi_paths(months, args.live)
@@ -90,7 +91,12 @@ def main() -> None:
             use_engine_segments=False,
             size={"external_cost_paths": paths},
         )
-        sens = run_sensitivity(panel, rules_full())
+        sens = run_sensitivity(
+            panel,
+            rules_full(),
+            market_control_source=SOURCE_MAPPED,
+            market_control_grain="item_category:month",
+        )
     errors = []
     statuses: dict[str, int] = {}
     for r in sens.to_dicts():
@@ -113,7 +119,8 @@ def main() -> None:
         payload = json.loads(out_path.read_text(encoding="utf-8"))
         row = {
             "check": CHECK_NAME,
-            "target": "informational: recovery when real cost movements drive the instrument",
+            "target": "informational, hybrid-synthetic evidence: real producer price series drive the "
+            "simulated cost paths, while quantities and the elasticity stay planted",
             "achieved": achieved,
             "passed": True,
             "informational": True,

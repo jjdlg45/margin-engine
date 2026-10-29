@@ -87,15 +87,57 @@ def test_gross_price_opportunity_hand_calc() -> None:
     assert row["gross_price_opportunity_cents"] == 10_000
 
 
-def test_expected_contribution_change_causal_hand_calc() -> None:
+def test_expected_gp_change_causal_hand_calc() -> None:
     # P0=9000c (0.90 x 10000), P1=9500c, C=6000c, beta=-2, Q0=20.
     # Q1 = 20 x (9500/9000)^-2 = 20 x 0.897507 = 17.95014
     # delta = (9500-6000) x 17.95014 - (9000-6000) x 20 = 62825.5 - 60000 = 2826
+    # Without a supported K, the CONTRIBUTION figure is unavailable (Phase 65)
+    # - never borrowed from the gross profit basis.
     panel = _panel([{"qty": 20.0}])
     opp = price_opportunities(_guidance([{}]), panel, _sensitivity(), Rules())
     row = opp.to_dicts()[0]
     assert row["volume_treatment"] == "expected_change"
-    assert row["expected_contribution_change_cents"] == pytest.approx(2826, abs=2)
+    assert row["expected_pocket_gross_profit_change_cents"] == pytest.approx(2826, abs=2)
+    assert row["expected_contribution_change_cents"] is None
+    assert row["k_status"] == "unavailable"
+
+
+def test_expected_contribution_change_subtracts_k_hand_calc() -> None:
+    """Phase 65: with K=200c/unit, unit economics drop by K on BOTH sides.
+    cc0 = 3000-200 = 2800; cc1 = 3500-200 = 3300; Q1 = 17.950138.
+    delta = 3300 x 17.950138 - 2800 x 20 = 59235.5 - 56000 = 3235.
+    Shedding volume also sheds cost-to-serve, so the contribution change
+    EXCEEDS the gross profit change by K x (Q0 - Q1)."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(
+        _guidance([{"cts_per_unit_cents": 200}]), panel, _sensitivity(), Rules()
+    )
+    row = opp.to_dicts()[0]
+    assert row["k_status"] == "estimated"
+    assert row["expected_pocket_gross_profit_change_cents"] == pytest.approx(2826, abs=2)
+    assert row["expected_contribution_change_cents"] == pytest.approx(3235, abs=2)
+    assert (
+        row["expected_contribution_change_cents"] > row["expected_pocket_gross_profit_change_cents"]
+    )
+
+
+def test_rankings_differ_by_objective() -> None:
+    """Phase 65: a high-service pair (large K) ranks below a low-service pair
+    on the gross profit basis but above it on the contribution basis - the
+    price increase sheds its expensive volume."""
+    panel = _panel([{"qty": 20.0}, {"item_id": "I2", "qty": 20.0, "price_cf": 9000.0}])
+    g = _guidance(
+        [
+            {"cts_per_unit_cents": 800},  # I1: high service cost, gap 0.05
+            {"item_id": "I2", "target_index": 0.952, "cts_per_unit_cents": 0},
+        ]
+    )
+    opp = price_opportunities(g, panel, _sensitivity(), Rules())
+    rows = {r["item_id"]: r for r in opp.to_dicts()}
+    gp = {k: v["expected_pocket_gross_profit_change_cents"] for k, v in rows.items()}
+    contrib = {k: v["expected_contribution_change_cents"] for k, v in rows.items()}
+    assert gp["I2"] > gp["I1"]  # gross profit basis ranks the bigger gap first
+    assert contrib["I1"] > contrib["I2"]  # contribution basis flips the order
 
 
 def test_iv_status_gives_range_only() -> None:
@@ -106,8 +148,11 @@ def test_iv_status_gives_range_only() -> None:
     row = opp.to_dicts()[0]
     assert row["volume_treatment"] == "sensitivity_range_only"
     assert row["expected_contribution_change_cents"] is None
-    assert row["contribution_change_low_cents"] is not None
-    assert row["contribution_change_low_cents"] <= row["contribution_change_high_cents"]
+    assert row["expected_pocket_gross_profit_change_cents"] is None
+    assert row["gp_change_low_cents"] is not None
+    assert row["gp_change_low_cents"] <= row["gp_change_high_cents"]
+    # Without a supported K, no contribution range is invented either.
+    assert row["contribution_change_low_cents"] is None
 
 
 def test_descriptive_status_fixed_volume_only() -> None:
@@ -118,7 +163,9 @@ def test_descriptive_status_fixed_volume_only() -> None:
     row = opp.to_dicts()[0]
     assert row["volume_treatment"] == "fixed_volume_only"
     assert row["expected_contribution_change_cents"] is None
+    assert row["expected_pocket_gross_profit_change_cents"] is None
     assert row["contribution_change_low_cents"] is None
+    assert row["gp_change_low_cents"] is None
     assert row["gross_price_opportunity_cents"] == 10_000  # level 2 still present
 
 
@@ -161,6 +208,61 @@ def test_optimize_monopoly_markup_clipped() -> None:
     row = out.to_dicts()[0]
     assert row["target_basis"] == "optimized_monopoly_markup_clipped"
     assert row["optimal_price_cents"] == 9_700
+
+
+def test_only_cleared_volume_treatments_may_be_optimized() -> None:
+    """The optimizer's support guard is an allow-list (Run 6, Phase 72), so a
+    volume treatment nobody has reasoned about cannot silently qualify a price
+    for optimization.
+
+    Tested by behaviour, not by reading the source: a guard written as
+    `!= outside_price_support` would pass the unknown value below and an
+    allow-list refuses it, and the test keeps holding if the expression is
+    rewritten."""
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{}]), panel, _sensitivity(beta=-2.0), Rules())
+    opp = opp.with_columns(pl.lit(-2.0).alias("elasticity"))
+    cleared = optimize_targets(opp, _guidance([{}]), Rules()).to_dicts()[0]
+    assert cleared["optimal_price_cents"] is not None, (
+        "the cleared treatment must still optimize, or this test proves nothing"
+    )
+    unknown = optimize_targets(
+        opp.with_columns(pl.lit("some_future_treatment").alias("volume_treatment")),
+        _guidance([{}]),
+        Rules(),
+    ).to_dicts()[0]
+    assert unknown["optimal_price_cents"] is None
+    assert unknown["target_basis"] == "provisional_historical"
+
+
+def test_the_conditional_elasticity_is_never_the_only_volume_response() -> None:
+    """A forecast built on the conditional elasticity holds buying incidence
+    fixed (Run 6, Phase 72). Every record says so, and where a total-quantity
+    estimate exists the same arithmetic is reported under it as the
+    alternative - beside the headline, never added to it."""
+    panel = _panel([{"qty": 20.0}])
+    sens = _sensitivity().with_columns(
+        pl.lit(-3.0).alias("iv_ppml"),
+        pl.lit("iv_estimated_total_quantity").alias("iv_ppml_status"),
+    )
+    row = price_opportunities(_guidance([{}]), panel, sens, Rules()).to_dicts()[0]
+    assert row["total_quantity_elasticity"] == -3.0
+    assert row["total_quantity_status"] == "iv_estimated_total_quantity"
+    assert "whether they keep buying at all" in row["volume_estimand_note"]
+    # A more elastic total response means a worse outcome than the headline,
+    # and the two are alternatives: neither is the other plus something.
+    assert (
+        row["gp_change_total_quantity_basis_cents"]
+        < row["expected_pocket_gross_profit_change_cents"]
+    )
+
+
+def test_without_a_total_quantity_estimate_the_gap_is_called_untested() -> None:
+    panel = _panel([{"qty": 20.0}])
+    row = price_opportunities(_guidance([{}]), panel, _sensitivity(), Rules()).to_dicts()[0]
+    assert row["total_quantity_elasticity"] is None
+    assert row["gp_change_total_quantity_basis_cents"] is None
+    assert "untested rather than ruled out" in row["volume_estimand_note"]
 
 
 def test_optimize_only_when_causal() -> None:
@@ -241,7 +343,7 @@ def test_pocket_aware_gross_and_contribution_hand_calc() -> None:
     opp = price_opportunities(_guidance([{"deduction_bp": 1_000}]), panel, _sensitivity(), Rules())
     row = opp.to_dicts()[0]
     assert row["gross_price_opportunity_cents"] == 9_000
-    assert row["expected_contribution_change_cents"] == pytest.approx(3_773, abs=2)
+    assert row["expected_pocket_gross_profit_change_cents"] == pytest.approx(3_773, abs=2)
     assert row["pocket_retention"] == pytest.approx(0.90)
 
 
@@ -256,7 +358,7 @@ def test_fixed_deduction_cancels_in_gap_not_in_level() -> None:
     )
     row = opp.to_dicts()[0]
     assert row["gross_price_opportunity_cents"] == 10_000  # F cancels in the gap
-    assert row["expected_contribution_change_cents"] == pytest.approx(3_031, abs=2)
+    assert row["expected_pocket_gross_profit_change_cents"] == pytest.approx(3_031, abs=2)
 
 
 def test_missing_cost_never_zero() -> None:
@@ -340,6 +442,91 @@ def test_optimize_skips_missing_cost() -> None:
     row = out.to_dicts()[0]
     assert row["target_basis"] == "provisional_historical"
     assert row["optimal_price_cents"] is None
+
+
+def _contribution_rules(order_cost_response: str = "fixed_order_frequency") -> Rules:
+    return Rules.model_validate(
+        {
+            "opportunity": {
+                "optimizer_objective": "contribution",
+                "order_cost_response": order_cost_response,
+            }
+        }
+    )
+
+
+def test_optimizer_names_its_objective() -> None:
+    panel = _panel([{"qty": 20.0}])
+    opp = price_opportunities(_guidance([{}]), panel, _sensitivity(beta=-2.0), Rules())
+    opp = opp.with_columns(pl.lit(-2.0).alias("elasticity"))
+    out = optimize_targets(opp, _guidance([{}]), Rules())
+    assert out["objective"][0] == "pocket_gross_profit"
+    out2 = optimize_targets(opp, _guidance([{}]), _contribution_rules())
+    assert out2["objective"][0] == "contribution"
+
+
+def test_contribution_objective_numeric_matches_closed_form() -> None:
+    """Phase 65: with a purely marginal K the numeric optimum equals the
+    closed form P* = (C + F + K)/(1 - d) x beta/(1 + beta). beta=-3, C=6000,
+    K=300, d=0 -> P* = 6300 x 1.5 = 9450 (interior: corridor top 11640)."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance(
+        [
+            {
+                "eff_list_cents": 12_000,
+                "cts_per_unit_cents": 300,
+                "k_variable_per_unit_cents": 300,
+            }
+        ]
+    )
+    rules = _contribution_rules()
+    opp = price_opportunities(g, panel, _sensitivity(beta=-3.0), rules)
+    opp = opp.with_columns(pl.lit(-3.0).alias("elasticity"))
+    out = optimize_targets(opp, g, rules)
+    row = out.to_dicts()[0]
+    assert row["target_basis"] == "optimized_numeric_contribution_clipped"
+    assert row["objective"] == "contribution"
+    assert abs(row["optimal_price_cents"] - 9_450) <= 1
+
+
+def test_order_cost_response_changes_the_optimum() -> None:
+    """Phase 65 / Finding 8: per-order cost is marginal under fixed order
+    size (order count scales with volume) but volume-constant under a fixed
+    ordering cadence - the optimum moves accordingly. K total 300 with only
+    100 variable: fixed_order_frequency optimizes against 100 (P* = 6100 x
+    1.5 = 9150); fixed_order_size against 300 (P* = 9450)."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance(
+        [
+            {
+                "eff_list_cents": 12_000,
+                "cts_per_unit_cents": 300,
+                "k_variable_per_unit_cents": 100,
+            }
+        ]
+    )
+    opp = price_opportunities(g, panel, _sensitivity(beta=-3.0), Rules())
+    opp = opp.with_columns(pl.lit(-3.0).alias("elasticity"))
+    freq = optimize_targets(opp, g, _contribution_rules("fixed_order_frequency")).to_dicts()[0]
+    size = optimize_targets(opp, g, _contribution_rules("fixed_order_size")).to_dicts()[0]
+    assert abs(freq["optimal_price_cents"] - 9_150) <= 1
+    assert abs(size["optimal_price_cents"] - 9_450) <= 1
+    assert size["optimal_price_cents"] > freq["optimal_price_cents"]
+
+
+def test_contribution_objective_without_k_keeps_provisional() -> None:
+    """No supported K -> no contribution optimization; the provisional target
+    is kept, never a number borrowed from the gross profit objective."""
+    panel = _panel([{"qty": 20.0}])
+    g = _guidance([{}])  # no cost-to-serve estimate
+    rules = _contribution_rules()
+    opp = price_opportunities(g, panel, _sensitivity(beta=-3.0), rules)
+    opp = opp.with_columns(pl.lit(-3.0).alias("elasticity"))
+    out = optimize_targets(opp, g, rules)
+    row = out.to_dicts()[0]
+    assert row["target_basis"] == "provisional_historical"
+    assert row["optimal_price_cents"] is None
+    assert row["objective"] == "contribution"
 
 
 def test_observed_leakage_reconciles_to_ledger() -> None:

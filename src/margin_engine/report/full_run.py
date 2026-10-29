@@ -7,6 +7,7 @@ HTML report, run manifest, DuckDB store. Stage timings recorded.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 import warnings
@@ -17,23 +18,35 @@ from typing import Any
 import polars as pl
 
 from margin_engine.actions.generate import generate_actions
+from margin_engine.actions.portfolio import build_portfolio_groups
 from margin_engine.compliance import run_robinson_patman
 from margin_engine.config import load_rules
 from margin_engine.dispersion.analytics import run_dispersion
 from margin_engine.extended.cost_to_serve import run_cost_to_serve
-from margin_engine.extended.hierarchy import apply_analysis_level
+from margin_engine.extended.hierarchy import apply_analysis_level, inherit_parent_contracts
+from margin_engine.extended.quotes import QuoteIntake
 from margin_engine.fiscal import FiscalCalendar, build_calendar
 from margin_engine.guidance.bands import PROVISIONAL_LABEL, build_guidance
 from margin_engine.labels import describe, plain_rule
 from margin_engine.labels import label as label_of
+from margin_engine.ledger.events import build_events, vendor_rebate_rollforward
 from margin_engine.ledger.pipeline import PipelineResult, run_pipeline, store_duckdb
+from margin_engine.ledger.rebate_subledger import build_rebate_subledger
+from margin_engine.ledger.spill import SpilledLedger, spill_ledger
+from margin_engine.manifest.run_manifest import (
+    _sha256 as file_sha256,
+)
 from margin_engine.manifest.run_manifest import (
     build_manifest,
     cleaning_decisions_from,
     write_manifest,
 )
-from margin_engine.memlog import rss_log
+from margin_engine.manifest.run_manifest import (
+    fingerprint_inputs as manifest_inputs,
+)
+from margin_engine.memlog import StagePeaks, rss_log
 from margin_engine.money import cents_col_to_dollars
+from margin_engine.opportunity.deductions import build_tiered_context, deduction_coverage
 from margin_engine.opportunity.sizing import observed_leakage, price_opportunities
 from margin_engine.panel.build import build_panel
 from margin_engine.report.render import render_report
@@ -44,7 +57,8 @@ from margin_engine.segment.trees import (
     fit_margin_driver_tree,
     prepare_segmentation_frame,
 )
-from margin_engine.sensitivity.estimate import run_sensitivity
+from margin_engine.sensitivity.estimate import annotate_placebo, run_sensitivity_full
+from margin_engine.sensitivity.market_control import select_market_index
 
 
 @dataclass
@@ -67,6 +81,20 @@ class FullRunResult:
     customer_economics: pl.DataFrame | None = None
     service_flags: pl.DataFrame | None = None
     win_curves: pl.DataFrame | None = None
+    quote_intake: QuoteIntake | None = None
+    # Robinson-Patman review (Run 6, Phase 79): the flagged pairs with
+    # their supporting facts, and who could and could not be screened.
+    compliance_detail: pl.DataFrame | None = None
+    # Where the ledger parquet sits when scale.spill_ledger ran (Phase 83).
+    # pipeline.ledger is rehydrated and authoritative; this is for consumers
+    # that would rather scan than hold.
+    ledger_spill_path: Path | None = None
+    # The trio every proposal already carries (Phase 69), now carried by the
+    # run itself so the bundle and the API can name what they were built from
+    # (Phase 84): input = source file hashes, config = the rules hash,
+    # model = the elasticity evidence the volume responses came from.
+    fingerprints: dict[str, str] = field(default_factory=dict)
+    compliance_screen: pl.DataFrame | None = None
     cross_estimates: pl.DataFrame | None = None
     inventory_cogs: pl.DataFrame | None = None
     inventory_identity: pl.DataFrame | None = None
@@ -77,6 +105,10 @@ class FullRunResult:
     fiscal: FiscalCalendar | None = None  # the calendar in force (Phase 36)
     actions: pl.DataFrame | None = None  # generated action proposals (Phase 38)
     action_events: pl.DataFrame | None = None  # their birth event log (Phase 38)
+    # Overlap-group portfolio estimates (Run 6, Phase 68).
+    action_portfolio: pl.DataFrame | None = None
+    # Long-form causal-gate record per segment (Run 6, Phase 70).
+    sensitivity_gates: pl.DataFrame | None = None
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -166,9 +198,12 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "margin_driver_rules": ["leaf_id"],
     "guidance": ["customer_id", "item_id"],
     "compliance_robinson_patman": ["item_id", "customer_id_a", "customer_id_b"],
+    "compliance_screen": ["customer_id"],
     "actions": ["action_type", "action_id"],
     "action_events": ["action_id", "seq"],
+    "action_portfolio_groups": ["overlap_group"],
     "sensitivity": ["segment"],
+    "sensitivity_gates": ["segment", "gate_order"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
     "customer_economics": ["customer_id"],
@@ -178,6 +213,15 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "win_curves": ["segment"],
     "cross_price_estimates": ["group_id", "item_a", "item_b"],
     "unallocated_settlements": ["customer_id", "period", "rebate_program_id"],
+    "economic_events": ["event_type", "event_subtype", "source_ref"],
+    "economic_event_totals": ["event_type"],
+    "vendor_rebate_rollforward": ["supplier_id", "period"],
+    "rebate_subledger": ["customer_id", "rebate_program_id", "period", "entry_type", "source_ref"],
+    "rebate_subledger_balances": ["customer_id", "rebate_program_id", "period"],
+    "cost_pools": ["cost_pool_id", "detail"],
+    "deduction_coverage": ["customer_id"],
+    "gl_trace_sample": ["month", "source_line_key"],
+    "books_tieout": ["month", "measure"],
 }
 
 
@@ -212,6 +256,7 @@ def run_full(
     validate: bool | None = None,
     lines: pl.DataFrame | None = None,
     cache_dir: Path | None = None,
+    spill: bool | None = None,
 ) -> FullRunResult:
     """Run the pipeline. `validate=None` follows the config switch
     (sensitivity.real_data_validation); an explicit bool overrides it — the CLI
@@ -220,6 +265,9 @@ def run_full(
     rules = load_rules(rules_path)
     timings: dict[str, float] = {}
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Peak RSS per stage, sampled on a thread (Run 6, Phase 83): boundary
+    # readings miss a stage that balloons and frees before its end.
+    peaks = StagePeaks().start()
 
     # Capture library warnings (e.g. pyfixest singleton fixed effects) for the
     # manifest and report instead of printing them to the console. Entered and
@@ -232,6 +280,7 @@ def run_full(
     res = run_pipeline(data_dir, mapping_path, rules, lines=lines, cache_dir=cache_dir)
     timings["ingest_classify_waterfall_reconcile"] = time.perf_counter() - t
     rss_log("pipeline_done")
+    peaks.mark("pipeline_done")
 
     # Fiscal calendar (Phase 36): one calendar drives every ANALYTIC period —
     # panel periods, peer-group quarters, the guidance observation unit,
@@ -248,11 +297,89 @@ def run_full(
         )
 
     t = time.perf_counter()
-    cts = run_cost_to_serve(res.ledger, rules, fiscal)
+    # Cost pools covered by ACTUAL expense sources in this run (Run 6, Phase
+    # 63): the pool overlap check switches the per-delivery estimate off when
+    # a freight log exists and refuses any other double-counted pool.
+    actual_pools: set[str] = set()
+    if res.reference.get("freight_log") is not None:
+        actual_pools.add("outbound_freight")
+    if res.reference.get("return_freight_log") is not None:
+        actual_pools.add("return_freight")
+    if (
+        "claims_cost_alloc_cents" in res.ledger.columns
+        and int(res.ledger["claims_cost_alloc_cents"].fill_null(0).abs().sum()) > 0
+    ):
+        actual_pools.add("claims")
+    cts = run_cost_to_serve(res.ledger, rules, fiscal, frozenset(actual_pools))
     res.ledger = cts.lines
     res.notes.extend(cts.notes)
     timings["cost_to_serve"] = time.perf_counter() - t
     rss_log("cost_to_serve")
+    peaks.mark("cost_to_serve")
+
+    # Economic event taxonomy (Run 6, Phase 61): every adjustment classified by
+    # its economics, with counterparty, direction, periods, basis, status and
+    # reversal links; plus the vendor rebate roll-forward (ASC 705-20).
+    t = time.perf_counter()
+    events_res = build_events(
+        res.ledger,
+        rules=rules,
+        rebate_settlements=res.reference.get("rebate_settlements"),
+        order_charges=res.reference.get("order_charges"),
+        vendor_rebate_programs=res.reference.get("vendor_rebate_programs"),
+        tiered_summary=res.tiered_summary,
+        charge_declarations=res.mapping.charge_declarations,
+    )
+    res.notes.extend(events_res.notes)
+    rollforward_res = vendor_rebate_rollforward(
+        res.ledger,
+        res.reference.get("inventory_receipts"),
+        res.reference.get("items"),
+        res.reference.get("vendor_rebate_programs"),
+    )
+    res.notes.extend(rollforward_res.notes)
+    # Rebate lifecycle subledger (Run 6, Phase 62): estimate -> revisions ->
+    # settlement -> reversal/true-up, with the balance invariant validated
+    # (a violation raises; it is an accounting bug, never a warning).
+    subledger_res = build_rebate_subledger(
+        res.ledger,
+        res.reference.get("rebate_programs"),
+        res.reference.get("rebate_settlements"),
+        res.tiered_monthly,
+        res.tiered_summary,
+    )
+    res.notes.extend(subledger_res.notes)
+    timings["economic_events"] = time.perf_counter() - t
+    rss_log("economic_events")
+    peaks.mark("economic_events")
+
+    # Spill window (Run 6, Phase 83): the accounting stages above consumed the
+    # full ledger while it was naturally in memory. Nothing between here and
+    # observed_leakage reads it except one five-column aggregation, so with
+    # scale.spill_ledger on it spends the heavy middle of the run on disk.
+    spilled: SpilledLedger | None = None
+    if rules.scale.spill_ledger if spill is None else spill:
+        spilled = spill_ledger(res.ledger, out_dir / "work" / "ledger_spill.parquet")
+        res.ledger = spilled.empty_frame()
+        res.notes.append(
+            f"ledger spilled to Parquet for the analytic stages "
+            f"({spilled.height:,} lines, {len(spilled.columns)} columns); "
+            "tail consumers read it back one at a time - outputs are "
+            "byte-identical to the in-memory path by test"
+        )
+    ledger_height = spilled.height if spilled is not None else res.ledger.height
+
+    def full_ledger() -> pl.DataFrame:
+        """The whole frame, for one consumer at a time.
+
+        In-memory mode hands back the resident frame. Spill mode reads the
+        parquet fresh, and the caller lets the copy drop when it is done -
+        which is the entire point: the first measurement of this phase showed
+        that rehydrating once and keeping it resident put the peak ABOVE the
+        in-memory path, because the peak lives at exports, where the ledger
+        sat beside its own write-ready copy.
+        """
+        return spilled.read() if spilled is not None else res.ledger
 
     t = time.perf_counter()
     analysis_obs, h_notes = apply_analysis_level(
@@ -261,8 +388,16 @@ def run_full(
     res.notes.extend(h_notes)
     flagged, peer_stats, _abc = run_dispersion(analysis_obs, res.reference["items"], rules, fiscal)
     del analysis_obs  # superseded by `flagged`; keep one fewer wide copy alive (Phase 35)
+    # Parent/child contracts (Run 6, Phase 85): protection recorded at the
+    # account or parent level reaches the child lines before segmentation,
+    # guidance and the action guardrails read contract_id.
+    flagged, _c_notes = inherit_parent_contracts(
+        flagged, res.reference.get("contracts"), res.reference["customers"]
+    )
+    res.notes.extend(_c_notes)
     timings["dispersion_outliers_abc"] = time.perf_counter() - t
     rss_log("dispersion")
+    peaks.mark("dispersion")
 
     t = time.perf_counter()
     df = prepare_segmentation_frame(flagged, res.reference["customers"], res.reference["items"])
@@ -271,12 +406,33 @@ def run_full(
     margin_tree = fit_margin_driver_tree(df, rules, seed=0)
     timings["segmentation"] = time.perf_counter() - t
     rss_log("segmentation")
+    peaks.mark("segmentation")
 
     t = time.perf_counter()
     # Per-unit cost-to-serve K (estimated, from config activity rates) for the
     # optional contribution floor (24.3): pair totals over covered sale lines.
+    # K definition (Run 6, Phase 65 / Finding 8): the pair's per-unit
+    # cost-to-serve over the covered baseline, decomposed so the optimizer can
+    # treat order-level costs by the declared order-cost response. Variable
+    # component: per-line and per-unit handling rates over observed lines and
+    # units; order component: the remainder (per-order and per-delivery
+    # allocations). Both derive from the POOL-RESOLVED effective rates, so a
+    # rate switched off by the overlap check never re-enters through K.
+    eff_rates = cts.rates or {}
+    _k_cols = [
+        "transaction_type",
+        "quantity_norm",
+        "activity_cts_cents",
+        "customer_id",
+        "item_id",
+    ]
+    k_source = (
+        spilled.read(_k_cols)
+        if spilled is not None and "activity_cts_cents" in spilled.columns
+        else res.ledger
+    )
     cts_per_unit = (
-        res.ledger.filter(
+        k_source.filter(
             (pl.col("transaction_type") == "sale")
             & (pl.col("quantity_norm") > 0)
             & pl.col("activity_cts_cents").is_not_null()
@@ -285,20 +441,51 @@ def run_full(
         .agg(
             pl.col("activity_cts_cents").sum().alias("_cts"),
             pl.col("quantity_norm").sum().alias("_qty"),
+            pl.len().alias("_n_lines"),
         )
         .filter(pl.col("_qty") > 0)
         .with_columns(
-            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents")
+            (pl.col("_cts") / pl.col("_qty")).round(0).cast(pl.Int64).alias("cts_per_unit_cents"),
+            (
+                (
+                    pl.col("_n_lines") * eff_rates.get("per_line", 0)
+                    + pl.col("_qty") * eff_rates.get("special_handling", 0)
+                )
+                / pl.col("_qty")
+            )
+            .round(0)
+            .cast(pl.Int64)
+            .alias("k_variable_per_unit_cents"),
         )
-        .select("customer_id", "item_id", "cts_per_unit_cents")
-        if "activity_cts_cents" in res.ledger.columns
+        .with_columns(
+            (pl.col("cts_per_unit_cents") - pl.col("k_variable_per_unit_cents"))
+            .clip(lower_bound=0)
+            .alias("k_order_per_unit_cents")
+        )
+        .select(
+            "customer_id",
+            "item_id",
+            "cts_per_unit_cents",
+            "k_variable_per_unit_cents",
+            "k_order_per_unit_cents",
+            # Carried so the Robinson-Patman review can say whether the cost
+            # difference beside a flag is an actual or an estimate (79).
+            pl.lit("estimated from configured activity rates").alias("cts_method"),
+        )
+        if "activity_cts_cents" in k_source.columns
         else None
     )
+    del k_source
     guidance_res = build_guidance(df, rules, res.reference["rebate_programs"], cts_per_unit, fiscal)
     # Pricing compliance (Phase 37): Robinson-Patman review flag on competitor
     # pairs, with cost-to-serve differences as supporting documentation.
     compliance_res = run_robinson_patman(
-        guidance_res.guidance, res.reference["customers"], cts_per_unit, rules
+        guidance_res.guidance,
+        res.reference["customers"],
+        cts_per_unit,
+        rules,
+        competitor_map=res.reference.get("customer_competitors"),
+        evidence=res.reference.get("rp_evidence"),
     )
     res.notes.extend(compliance_res.notes)
     guidance_res.guidance = guidance_res.guidance.join(
@@ -306,24 +493,19 @@ def run_full(
     ).with_columns(pl.col("rp_review_flag").fill_null(value=False))
     timings["guidance"] = time.perf_counter() - t
     rss_log("guidance")
+    peaks.mark("guidance")
 
     t = time.perf_counter()
-    # Public-data-only rule (Phase 37): the market/competitor price index is
-    # accepted as an elasticity control only when the mapping declares its
-    # source PUBLIC. Algorithmic use of competitors' non-public prices raises
-    # antitrust concerns; the engine refuses the control rather than assume.
-    market_idx = res.reference.get("market_price_index")
-    if market_idx is not None and rules.compliance.market_index_public_source_required:
-        mpi_spec = res.mapping.reference_tables.get("market_price_index")
-        if mpi_spec is None or mpi_spec.public_source is not True:
-            market_idx = None
-            res.notes.append(
-                "market price index NOT used as an elasticity control: the "
-                "mapping does not declare public_source: true for it. Only "
-                "public sources are accepted (sharing competitors' non-public "
-                "prices through a pricing algorithm raises antitrust concerns; "
-                "see docs/methodology.md, Pricing-law considerations)"
-            )
+    # Recorded-provenance rule (Phase 80) + competitor-path control selection
+    # (Run 6, Phase 70), in one shared function so tests and the validation
+    # scripts exercise the same decision production does.
+    mpi_spec = res.mapping.reference_tables.get("market_price_index")
+    market_idx, mkt_source, mkt_notes = select_market_index(
+        res.reference.get("market_price_index"),
+        provenance=mpi_spec.provenance if mpi_spec is not None else None,
+        rules=rules,
+    )
+    res.notes.extend(mkt_notes)
     # Instrument builder (27.6): the supplier cost instrument can come from a
     # mapped index table, be BUILT from receipt history, or map an external
     # public series - config decides, the engine never guesses.
@@ -348,10 +530,26 @@ def run_full(
 
         series_ref = res.reference.get("external_cost_series")
         items_ref = res.reference.get("items")
+        series_spec = res.mapping.reference_tables.get("external_cost_series")
+        series_prov = series_spec.provenance if series_spec is not None else None
+        # The mirror of the market-control rule (Run 6, Phase 80): this role
+        # needs a COST series. A competitor selling-price index used as an
+        # instrument would be worse than useless - it is the very channel the
+        # exclusion restriction has to rule out, and feeding competitors'
+        # prices into a pricing model is the antitrust concern itself.
+        wrong_kind = series_prov is not None and series_prov.series_kind != "cost_index"
         if series_ref is None or items_ref is None:
             res.notes.append(
                 "instrument_source=external but no external_cost_series/items table: "
                 "supplier cost instrument unavailable (statuses cap accordingly)"
+            )
+            supplier_idx = None
+        elif wrong_kind:
+            res.notes.append(
+                "external cost instrument NOT used: the mapped series declares "
+                f"series_kind {series_prov.series_kind if series_prov else 'unknown'}, "
+                "and this role needs a cost index. A selling-price series is the "
+                "channel the exclusion restriction must rule out, not an instrument"
             )
             supplier_idx = None
         else:
@@ -367,20 +565,98 @@ def run_full(
         rules,
         market_price_index=market_idx,
         fiscal=fiscal,
+        # Zero-row price sources (Run 6, Phase 72). Both are optional reference
+        # tables; absent them the ladder falls back to carrying prices forward,
+        # which is what it did before.
+        quotes=res.reference.get("quotes"),
+        price_list=res.reference.get("price_list"),
     )
     timings["panel"] = time.perf_counter() - t
     rss_log("panel")
+    peaks.mark("panel")
 
     t = time.perf_counter()
-    sens = run_sensitivity(panel, rules)
+    # The index joins at category x month; the gate compares that grain to
+    # each instrument's declared variation (Run 6, Phase 70).
+    #
+    # Segments are fitted CONCURRENTLY when configured to be (Run 6, Phase 72).
+    # The estimates that come back are byte-identical whatever order the pool
+    # finishes in, but the library warnings raised during the fits are not:
+    # Python's warning machinery is global, and a library that opens its own
+    # `catch_warnings` block in one thread replaces the recorder every other
+    # thread is writing to. Measured on the committed sample: one worker
+    # records the same five warnings every run, three workers record between
+    # one and three, varying between runs of the same process.
+    #
+    # So the warnings from this stage are absorbed and NOT reported
+    # individually - reporting a list whose contents depend on thread
+    # interleaving would break the byte-identical guarantee and tell the
+    # reader something untrue about the run. What those warnings carried is
+    # reported as structured per-segment diagnostics instead: singleton and
+    # separated groups are counted in each segment's sample-loss record, and
+    # convergence trouble shows up in the status reasons. A deterministic note
+    # below says this is what happened, so nothing is silently dropped.
+    _concurrent_fits = rules.sensitivity.max_parallel_segments > 1
+    if _concurrent_fits:
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            sens_res = run_sensitivity_full(
+                panel,
+                rules,
+                market_control_source=mkt_source,
+                market_control_grain="item_category:month",
+            )
+    else:
+        sens_res = run_sensitivity_full(
+            panel,
+            rules,
+            market_control_source=mkt_source,
+            market_control_grain="item_category:month",
+        )
+    sens, sens_gates = sens_res.estimates, sens_res.gates
     timings["sensitivity"] = time.perf_counter() - t
     rss_log("sensitivity")
+    peaks.mark("sensitivity")
 
     t = time.perf_counter()
-    leak = observed_leakage(res.ledger, rules, fiscal)
-    opps = price_opportunities(guidance_res.guidance, panel, sens, rules)
+    _led = full_ledger()
+    leak = observed_leakage(_led, rules, fiscal)
+    del _led
+    # Deductions with explicit denominators (Run 6, Phase 66): tiered programs
+    # are RECOMPUTED at candidate revenue, never flattened into d; a tiered
+    # customer without a tier table gets the fixed-rate approximation label.
+    tiered_cust_ids: set[str] = set()
+    _programs_ref = res.reference.get("rebate_programs")
+    if _programs_ref is not None:
+        tiered_cust_ids = {
+            str(c)
+            for c in _programs_ref.filter(pl.col("program_kind") == "tiered")[
+                "customer_id"
+            ].to_list()
+        }
+    tiered_ctx = build_tiered_context(
+        res.reference.get("rebate_programs"),
+        res.reference.get("rebate_program_tiers"),
+        res.tiered_summary,
+    )
+    if tiered_cust_ids and tiered_ctx is None:
+        res.notes.append(
+            f"{len(tiered_cust_ids)} tiered-program customer(s) have no usable tier "
+            "table: their opportunity figures use the flat deduction rate, labeled "
+            "a fixed-rate approximation"
+        )
+    opps = price_opportunities(
+        guidance_res.guidance,
+        panel,
+        sens,
+        rules,
+        tiered_ctx=tiered_ctx,
+        tiered_customers=tiered_cust_ids,
+    )
+    ded_coverage = deduction_coverage(guidance_res.guidance, tiered_cust_ids)
     timings["opportunity"] = time.perf_counter() - t
     rss_log("opportunity")
+    peaks.mark("opportunity")
 
     # Validation without planted truth (27.4): temporal backtest, placebos,
     # rolling-window stability. Informational; never gates a status.
@@ -394,6 +670,12 @@ def run_full(
         res.notes.extend(real_val.notes)
         timings["real_data_validation"] = time.perf_counter() - t
         rss_log("real_data_validation")
+        peaks.mark("real_data_validation")
+        # The shuffled-instrument placebo speaks to whether this design's
+        # inference is correctly sized, which is read beside the elasticity it
+        # qualifies rather than only in the validation appendix (Run 6, Phase
+        # 71). It runs after estimation, so it is annotated on, never a gate.
+        sens = annotate_placebo(sens, real_val.placebo)
     else:
         res.notes.append(
             "real-data validation OFF: disabled in config"
@@ -426,8 +708,13 @@ def run_full(
         res.notes.append("inventory costing OFF: no inventory_receipts table in the mapping/data")
 
     win_curves: pl.DataFrame | None = None
+    intake_payload: QuoteIntake | None = None
     if res.reference["quotes"] is not None and res.reference["price_list"] is not None:
-        from margin_engine.extended.quotes import fit_win_curves, quote_price_index
+        from margin_engine.extended.quotes import (
+            describe_exclusion,
+            fit_win_curves,
+            quote_price_index,
+        )
 
         seg_of_pair = (
             df.filter(pl.col("segment_leaf").is_not_null())
@@ -435,29 +722,40 @@ def run_full(
             .unique(subset=["customer_id", "item_id"])
         )
         qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-        win_curves = fit_win_curves(
-            qi,
-            seg_of_pair,
-            min_quotes=rules.sensitivity.min_quotes_per_segment,
-            max_rel_se=rules.sensitivity.win_curve_max_rel_se,
+        win_curves, quote_intake = fit_win_curves(qi, seg_of_pair, rules)
+        res.notes.append(
+            f"win/loss modeling ran on the quotes table: {quote_intake.n_modeled} of "
+            f"{quote_intake.n_rows} rows modeled, one observation per "
+            f"{quote_intake.unit}"
         )
-        res.notes.append("win/loss modeling ran on the quotes table")
+        for reason, n in sorted(quote_intake.excluded.items()):
+            res.notes.append(f"quotes excluded, {describe_exclusion(reason)}: {n}")
+        res.notes.extend(quote_intake.notes)
+        intake_payload = quote_intake
     else:
         res.notes.append("win/loss modeling OFF: no quotes table (or no price list) available")
 
-    # Books tie-out (27.3): runs only when a gl_totals table is mapped.
+    # Monthly GL variance check (27.3; reframed as a control in Run 6 Phase
+    # 64): runs only when a gl_totals table is mapped; its absence is a stated
+    # status, never an implied pass.
     tieout_res = None
     gl_totals = res.reference.get("gl_totals")
     if gl_totals is not None:
-        tieout_res = run_tieout(res.ledger, gl_totals, rules, fiscal)
+        _led = full_ledger()
+        tieout_res = run_tieout(_led, gl_totals, rules, fiscal)
+        del _led
         res.notes.extend(tieout_res.notes)
         res.notes.append(
-            f"books tie-out ran: {tieout_res.n_failing} month-measure(s) outside tolerance"
+            f"monthly GL variance check ran: {tieout_res.n_failing} month-measure(s) "
+            f"outside tolerance"
             if tieout_res.n_failing
-            else "books tie-out ran: every month within tolerance"
+            else "monthly GL variance check ran: every compared month-measure within tolerance"
         )
     else:
-        res.notes.append("books tie-out OFF: no gl_totals table in the mapping/data")
+        res.notes.append(
+            "monthly GL variance check not testable: no GL totals table in the "
+            "mapping/data (source-total reconciliation remains exact and always on)"
+        )
 
     cross_estimates: pl.DataFrame | None = None
     if res.reference["substitution_groups"] is not None:
@@ -469,14 +767,45 @@ def run_full(
         res.notes.append("cross-price estimation OFF: no substitution_groups table available")
     timings["optional_modules"] = time.perf_counter() - t
     rss_log("optional_modules")
+    peaks.mark("optional_modules")
     # The segmentation frame is consumed; only its leaf assignments, guidance,
     # the panel and `flagged` live on (Phase 35: one fewer wide line-level frame).
     del df
 
     # ---- actions (Phase 38): findings become proposed actions ---------------
     t = time.perf_counter()
+    # Staleness fingerprints (Run 6, Phase 69): what this generation run rests
+    # on. Input = the source files' content hashes; config = the rules hash;
+    # model = the elasticity evidence the volume response came from, so a
+    # proposal can be told apart from one generated under a different model.
+    _fp_inputs = ";".join(f"{f['file']}:{f['sha256'][:12]}" for f in manifest_inputs(data_dir))
+    fingerprints = {
+        "input": hashlib.sha256(_fp_inputs.encode()).hexdigest()[:16],
+        # Rules AND mapping (Run 6, Phase 85): a mapping change redefines
+        # what the numbers mean - a different cost basis, a different sign
+        # convention - and a proposal generated under the old mapping must
+        # not look current under the new one. Found while covering the
+        # "mapping changes between runs" edge case: the trio had no mapping
+        # component at all.
+        "config": hashlib.sha256(
+            (file_sha256(rules_path) + file_sha256(mapping_path)).encode()
+        ).hexdigest()[:16],
+        # The elasticities are rounded to 6 significant digits before hashing,
+        # the same rounding the bundle applies to every solver output
+        # (Phase 78): an iterative fit's last digits move with BLAS thread
+        # count and library build, and a fingerprint that moves with them
+        # would call the same model two models. Found by the cross-process
+        # determinism test when Phase 84 surfaced this hash into the bundle.
+        "model": hashlib.sha256(
+            "|".join(
+                f"{r['segment']}:{r['status']}:"
+                + (f"{r['iv']:.6g}" if r["iv"] is not None else "na")
+                for r in sens.sort("segment").select("segment", "status", "iv").to_dicts()
+            ).encode()
+        ).hexdigest()[:16],
+    }
     actions_res = generate_actions(
-        ledger=res.ledger,
+        ledger=full_ledger(),
         guidance=guidance_res.guidance,
         opportunities=opps,
         leakage=leak,
@@ -484,8 +813,15 @@ def run_full(
         sensitivity=sens,
         panel=panel,
         rules=rules,
+        fingerprints=fingerprints,
     )
     res.notes.extend(actions_res.notes)
+    # Portfolio scenarios for overlapping scopes (Run 6, Phase 68): one row
+    # per overlap group with the naive sum and the joint estimate under a
+    # common baseline - never summed into any headline.
+    action_portfolio = build_portfolio_groups(
+        actions_res.actions, panel, guidance_res.guidance, sens, rules
+    )
     timings["actions"] = time.perf_counter() - t
 
     # ---- outputs -----------------------------------------------------------
@@ -499,9 +835,12 @@ def run_full(
         "margin_driver_rules": pl.DataFrame(margin_tree.rules),
         "guidance": guidance_res.guidance,
         "compliance_robinson_patman": compliance_res.detail,
+        "compliance_screen": compliance_res.screen,
         "actions": actions_res.actions,
         "action_events": actions_res.events,
+        "action_portfolio_groups": action_portfolio,
         "sensitivity": sens,
+        "sensitivity_gates": sens_gates,
         "opportunities": opps,
         "leakage": leak,
         "order_economics": cts.order_economics,
@@ -511,8 +850,24 @@ def run_full(
         **({"cross_price_estimates": cross_estimates} if cross_estimates is not None else {}),
         "customer_economics": cts.customer_economics,
         "service_policy_flags": cts.service_flags,
+        "economic_events": events_res.events,
+        "economic_event_totals": events_res.totals,
+        "rebate_subledger": subledger_res.entries,
+        "rebate_subledger_balances": subledger_res.balances,
+        **({"cost_pools": cts.pools} if cts.pools is not None else {}),
+        "deduction_coverage": ded_coverage,
+        **(
+            {"vendor_rebate_rollforward": rollforward_res.table}
+            if rollforward_res.table is not None
+            else {}
+        ),
         "reconciliation": res.reconciliation.to_frame(),
         **({"books_tieout": tieout_res.table} if tieout_res is not None else {}),
+        **(
+            {"gl_trace_sample": tieout_res.trace_sample}
+            if tieout_res is not None and tieout_res.trace_sample is not None
+            else {}
+        ),
         **(
             {
                 "real_validation_backtest": real_val.backtest,
@@ -547,6 +902,8 @@ def run_full(
     formats = list(rules.reporting.output_formats)
     prewritten: dict[str, Path] = {}
     for name, frame in exports.items():
+        if name == "financial_ledger" and spilled is not None:
+            frame = full_ledger()
         out = _round_solver_outputs(
             name, _natural_sort(name, frame.with_columns(pl.col(pl.Categorical).cast(pl.String)))
         )
@@ -576,21 +933,46 @@ def run_full(
                     lf.with_columns(pl.col(pl.Date).cast(pl.String)).sink_csv(
                         out_dir / f"{name}.csv"
                     )
-        del out
+        del out, frame
     rss_log("export_files_written")
+    peaks.mark("export_files_written")
+    if spilled is not None and "financial_ledger" not in prewritten:
+        # Only when parquet is not among the output formats: the store then
+        # has no file to load from and needs the frame. It stays resident
+        # from here on, which this configuration pays for and the default
+        # (parquet on) does not.
+        res.ledger = spilled.read()
     store_duckdb(res, out_dir / "engine.duckdb", prewritten=prewritten)
     rss_log("duckdb_stored")
+    peaks.mark("duckdb_stored")
     timings["exports"] = time.perf_counter() - t
 
     # ---- manifest -----------------------------------------------------------
     _w_catcher.__exit__(None, None, None)
     lib_warnings = _aggregate_warnings(list(_caught or []))
+    if _concurrent_fits:
+        # Said out loud rather than left as an absence. See the comment at the
+        # sensitivity stage for why these cannot be listed individually.
+        lib_warnings.append(
+            {
+                "category": "EngineNote",
+                "message": (
+                    "Library warnings raised while price-sensitivity segments were fitted "
+                    "side by side are not listed here: which ones survive depends on the "
+                    "order the threads happen to run in, and a list that changes between "
+                    "identical runs would be misleading. What they report is in each "
+                    "segment's own diagnostics - rows and groups the fit could not use, "
+                    "and the reasons behind its evidence status."
+                ),
+                "n_occurrences": 1,
+            }
+        )
     manifest = build_manifest(
         data_dir=data_dir,
         mapping_path=mapping_path,
         rules_path=rules_path,
         cleaning_decisions=cleaning_decisions_from(
-            res.ledger, res.removed_duplicates, res.blank_rows_dropped
+            full_ledger(), res.removed_duplicates, res.blank_rows_dropped
         ),
         parameters={
             "n_segments": seg.leaf_assignments["segment_leaf"].n_unique(),
@@ -599,13 +981,16 @@ def run_full(
             "library_warnings": lib_warnings,
         },
         stage_timings_s=timings,
+        stage_peak_rss_gb=peaks.stop(),
     )
     write_manifest(manifest, out_dir)
 
     # ---- report --------------------------------------------------------------
     # Display casing for data values (Phase 46): acronyms from the mapping.
     _acronyms = frozenset(res.mapping.display.acronyms)
-    sale = res.ledger.filter(pl.col("transaction_type") == "sale")
+    _led = full_ledger()
+    sale = _led.filter(pl.col("transaction_type") == "sale")
+    del _led
     net_rev = int(sale["net_amount_cents"].sum())
     missing_cost_rev = int(sale.filter(pl.col("flag_missing_cost"))["net_amount_cents"].sum())
     gross_list = int(sale["gross_list_value_cents"].fill_null(0).sum())
@@ -695,7 +1080,7 @@ def run_full(
     context: dict[str, Any] = {
         "manifest": manifest,
         "coverage": {
-            "n_lines": f"{res.ledger.height:,}",
+            "n_lines": f"{ledger_height:,}",
             "n_observations": f"{res.observations.height:,}",
             "net_revenue": _fmt_dollars(net_rev),
             "missing_cost_revenue_share": f"{missing_cost_rev / max(net_rev, 1):.2%}",
@@ -843,6 +1228,11 @@ def run_full(
                 if opps.height
                 else 0
             ),
+            "expected_gp_total": _fmt_dollars(
+                int(opps["expected_pocket_gross_profit_change_cents"].fill_null(0).sum())
+                if opps.height and "expected_pocket_gross_profit_change_cents" in opps.columns
+                else 0
+            ),
             "n_records": opps.height,
             "treatment_counts": ", ".join(
                 f"{label_of(str(k))}: {v}" for k, v in sorted(treatment_counts.items())
@@ -856,12 +1246,35 @@ def run_full(
                         **r,
                         "engine": _fmt_dollars(r["engine_cents"]),
                         "gl": _fmt_dollars(r["gl_cents"]),
-                        "diff": _fmt_dollars(r["diff_cents"]),
+                        "variance": _fmt_dollars(r["variance_cents"]),
+                        "variance_abs": _fmt_dollars(r["variance_abs_cents"]),
                     }
                     for r in tieout_res.table.to_dicts()
                 ],
                 "n_failing": tieout_res.n_failing,
                 "cost_coverage": f"{tieout_res.cost_coverage_share:.1%}",
+                "status": label_of(tieout_res.status),
+                "fiscal_mapping": tieout_res.fiscal_mapping,
+                "account_mapping": tieout_res.account_mapping,
+                "unresolved_items": tieout_res.unresolved_items,
+                "tolerance": (
+                    f"{rules.reporting.tieout_tolerance_pct}% or "
+                    f"{_fmt_dollars(rules.reporting.tieout_tolerance_cents)}"
+                ),
+                "trace": (
+                    [
+                        {
+                            **t,
+                            "net": _fmt_dollars(t["net_amount_cents"]),
+                            "cost": _fmt_dollars(t["product_cost_cents"]),
+                            "period_engine": _fmt_dollars(t["period_engine_net_sales_cents"]),
+                            "period_gl": _fmt_dollars(t["period_gl_net_sales_cents"]),
+                        }
+                        for t in tieout_res.trace_sample.to_dicts()
+                    ]
+                    if tieout_res.trace_sample is not None
+                    else []
+                ),
             }
             if tieout_res is not None
             else None
@@ -890,14 +1303,21 @@ def run_full(
         ),
     }
     rss_log("report_context_built")
+    peaks.mark("report_context")
     render_report(context, out_dir / "report.html")
     rss_log("report_rendered")
+    if spilled is not None and res.ledger.height == 0:
+        # PipelineResult.ledger is the contract the web bundle, the CLI and
+        # the tracker read. It comes back whole here, when the stage frames
+        # are gone and nothing else full-width is alive.
+        res.ledger = spilled.read()
     return FullRunResult(
         pipeline=res,
         flagged=flagged,
         segments=seg,
         guidance=guidance_res.guidance,
         sensitivity=sens,
+        sensitivity_gates=sens_gates,
         opportunities=opps,
         leakage=leak,
         timings=timings,
@@ -909,6 +1329,10 @@ def run_full(
         customer_economics=cts.customer_economics,
         service_flags=cts.service_flags,
         win_curves=win_curves,
+        quote_intake=intake_payload,
+        ledger_spill_path=spilled.path if spilled is not None else None,
+        compliance_detail=compliance_res.detail,
+        compliance_screen=compliance_res.screen,
         cross_estimates=cross_estimates,
         inventory_cogs=inventory_cogs,
         inventory_identity=inventory_identity,
@@ -919,4 +1343,6 @@ def run_full(
         fiscal=fiscal,
         actions=actions_res.actions,
         action_events=actions_res.events,
+        action_portfolio=action_portfolio,
+        fingerprints=fingerprints,
     )

@@ -23,6 +23,7 @@ from margin_engine.ledger.pipeline import PipelineResult, run_pipeline
 
 REPO = Path(__file__).resolve().parents[1]
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
+RULES = load_rules(REPO / "config" / "rules.yaml")
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +51,7 @@ def test_win_curve_every_estimated_segment_within_15pct(
     quotes = res.reference["quotes"]
     assert quotes is not None and quotes.height > 3_000
     qi = quote_price_index(quotes, res.reference["price_list"])
-    curves = fit_win_curves(qi, seg_map)
+    curves, _intake = fit_win_curves(qi, seg_map, RULES)
     truth = json.loads((out / "ground_truth" / "truth_summary.json").read_text())["quotes"][
         "win_curve"
     ]
@@ -88,7 +89,7 @@ def test_win_curve_precision_gate_fails_closed(
 
     _, res, seg_map = world
     qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-    curves = fit_win_curves(qi, seg_map)
+    curves, _intake = fit_win_curves(qi, seg_map, RULES)
     low = curves.filter(pl.col("status") == STATUS_LOW_PRECISION)
     assert low.height >= 1
     for r in low.to_dicts():
@@ -103,7 +104,7 @@ def test_win_curve_precision_gate_fails_closed(
 def test_negotiation_gap_recovered(world: tuple[Path, PipelineResult, pl.DataFrame]) -> None:
     out, res, seg_map = world
     qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-    curves = fit_win_curves(qi, seg_map)
+    curves, _intake = fit_win_curves(qi, seg_map, RULES)
     truth_gap = json.loads((out / "ground_truth" / "truth_summary.json").read_text())["quotes"][
         "negotiation_gap_mean"
     ]
@@ -115,7 +116,7 @@ def test_negotiation_gap_recovered(world: tuple[Path, PipelineResult, pl.DataFra
 def test_uncertainty_and_status_reported(world: tuple[Path, PipelineResult, pl.DataFrame]) -> None:
     _, res, seg_map = world
     qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-    curves = fit_win_curves(qi, seg_map)
+    curves, _intake = fit_win_curves(qi, seg_map, RULES)
     for r in curves.to_dicts():
         if r["status"] == STATUS_ESTIMATED:
             assert r["price_coef_se"] is not None and r["price_coef_se"] > 0
@@ -130,13 +131,13 @@ def test_insufficient_quotes_fail_closed() -> None:
             "customer_id": ["C1"] * 10,
             "item_id": ["I1"] * 10,
             "quote_index": [0.9] * 10,
-            "won": [True, False] * 5,
+            "outcome": ["W", "L"] * 5,
             "close_price_cents": [None] * 10,
             "quoted_price_cents": [9_000] * 10,
         }
     )
     seg = pl.DataFrame({"customer_id": ["C1"], "item_id": ["I1"], "segment_leaf": [1]})
-    curves = fit_win_curves(qi, seg)
+    curves, _intake = fit_win_curves(qi, seg, RULES)
     assert (curves["status"] == "insufficient_data").all()
 
 
@@ -173,4 +174,42 @@ def test_win_aware_uses_single_volume_response() -> None:
             win_price_coef=-6.0,
             list_cents=10_000,
             floor_cents=6_500,
+        )
+
+
+def test_win_aware_pocket_objective_differs_from_gross() -> None:
+    """Phase 65: the quote optimum translates the index into money and applies
+    the pair's post-invoice economics. A deduction rate lowers pocket margin
+    per dollar, so the pocket-aware optimum differs from the legacy gross one;
+    under the contribution objective K shifts it again."""
+    base = {
+        "cost_cents": 6_000,
+        "p0_cents": 9_000,
+        "list_cents": 10_000,
+        "floor_cents": 6_500,
+        "win_intercept": 5.4,
+        "win_price_coef": -6.0,
+    }
+    p_gross, _ = optimal_price_win_aware(**base)
+    p_pocket, _ = optimal_price_win_aware(**base, deduction_bp=1_500)
+    p_contrib, _ = optimal_price_win_aware(
+        **base, deduction_bp=1_500, k_per_unit_cents=600, objective="contribution"
+    )
+    # A 15% deduction raises the effective marginal cost of an invoice dollar,
+    # pushing the optimum UP relative to the gross objective; adding K pushes
+    # it further.
+    assert p_pocket > p_gross
+    assert p_contrib > p_pocket
+
+
+def test_win_aware_contribution_without_k_is_refused() -> None:
+    with pytest.raises(ValueError, match="cost-to-serve"):
+        optimal_price_win_aware(
+            cost_cents=6_000,
+            p0_cents=9_000,
+            win_intercept=5.4,
+            win_price_coef=-6.0,
+            list_cents=10_000,
+            floor_cents=6_500,
+            objective="contribution",
         )

@@ -88,6 +88,79 @@ Reconciliation checks (row conservation, net-amount conservation, allocation
 conservation for charges / settlements / freight incl. the return freight log,
 stage identities) are exact to the cent and raise on failure.
 
+### Charges, taxes and cost pools (Run 6)
+
+Every billed charge code can declare its semantics in the mapping (economic
+owner, direction, pool, amount basis, and that order-level charges are never
+embedded in net amounts): pass-through charges stay revenue with an honest
+label, while charges declared as taxes, deposits or third-party collections
+NEVER enter product revenue — their total stays a visible liability and the
+billed-charges reconciliation still ties to the source table exactly. A
+line-level tax column declares whether it is embedded in net (carved out of
+product revenue) or billed separately (never added); the tax-free
+net_product amount is what every realized-price comparison uses, and the
+collected tax is a labeled liability column. The realized unit price is net
+product / quantity: allocated billed charges never enter the price index
+(tested), and neither does an embedded tax.
+
+Cost pools are counted once. Every activity rate belongs to a named pool
+(order service, line service, outbound freight, special handling) and every
+actual expense source covers its own pool. When an actual freight-expense log
+exists, the per-delivery activity rate — which proxies outbound freight — is
+switched OFF with a stated note, so delivery cost is never estimated on top
+of the actual; any other rate assigned to an actually-covered pool fails the
+run. The cost-pool audit table (cost_pools export) shows which pool is
+covered by an actual source, which by an estimate, and which rate was
+switched off.
+
+Returns carry a disposition (resaleable, damaged, obsolete, not received,
+exchange — normalized by the mapping) that controls whether the return
+recovers product cost: resaleable and exchange returns put the product back;
+damaged, obsolete and not-received returns recover nothing, so the loss
+stays in cost of goods sold. Without a disposition column, cost recovery is
+assumed and stated — the historical behavior, never a silent change.
+
+### Economic event taxonomy (Run 6)
+
+Every adjustment is also classified by its ECONOMICS, independently of raw ERP
+labels (the mapping normalizes source codes to canonical reasons; the taxonomy
+classifies the canonical data): customer price concession, customer refund or
+return, customer service payment, non-price customer claim, supplier rebate or
+allowance, supplier quality claim, vendor payment for a distinct service,
+vendor selling-cost reimbursement, freight pass-through, tax or deposit or
+third-party collection, and other adjustment (stated, never silently
+absorbed). Each event carries counterparty, direction, source document and
+reference, original invoice link, program, earn and settlement periods,
+eligible basis, estimate-vs-actual status and a reversal/true-up link. The
+events table is an analytical classification: the ledger keeps every source
+dollar and reconciliation is untouched by it.
+
+Duplicate representations: a credit memo that appears both embedded as a
+negative line on its original invoice and as a standalone credit document is
+flagged on both rows, counted ONCE in event totals (the embedded posting
+wins), and the excluded amount is reported. The ledger keeps both rows'
+dollars because source totals must still reconcile - the engine surfaces the
+double posting loudly instead of silently dropping a source row.
+
+Vendor consideration follows ASC 705-20: it reduces acquisition cost by
+default. A program the data declares as payment for a distinct good or
+service, or as reimbursement of identifiable selling costs, is an exception:
+it never nets into product cost and is reported as its own economic event.
+A vendor rebate roll-forward separates rebates EARNED on receipts from
+rebates RECOGNIZED against the cost of goods sold; the balance belongs to
+inventory still on hand and never hits current-period line cost. Without an
+inventory-receipts table the roll-forward is reported as not testable.
+
+Multiple simultaneous rebate programs: a customer may hold several programs
+with overlapping eligibility. Each program accrues on its own tier table over
+the same cumulative basis and the line carries the SUM - no dollar is counted
+twice and no ledger row is duplicated. Settlements match per customer, year
+and program; a year where only some programs settled uses actuals for those
+and accruals for the rest (partially settled). A settlement naming a program
+the customer does not hold stays a visible residual. A customer-year whose
+eligible basis is negative (returns exceed purchases) accrues nothing - the
+fail-closed outcome is reported, never a negative rebate invented.
+
 ## 4. Dispersion and outliers
 
 Prices normalize to an index (realized unit price / effective-dated list;
@@ -110,8 +183,7 @@ peer median — entry-error magnitude) and `commercial_pricing_outlier`
 
 Commercial segments are a decision tree on the normalized price index using
 context features only (industry, size band, region, channel, contract type,
-item family, item role, order-size band, revenue ABC). A leakage guard rejects
-any feature whose name contains price/discount/cost/rebate/margin terms.
+item family, item role, order-size band, ABC class).
 
 Method details, each load-bearing:
 
@@ -131,6 +203,61 @@ Method details, each load-bearing:
 Stability is measured by partition agreement (adjusted Rand index) across
 bootstrap refits, never by comparing raw leaf ids, and the share of
 provisional targets that would change across resamples is reported.
+
+### What a segmentation feature is allowed to know (Run 6)
+
+A tree fit on the price index will use anything that correlates with the
+price index, including a restatement of it. Three features were doing exactly
+that, and each needed a different fix.
+
+**The ABC class.** Revenue is price times quantity. An ABC class cut on the
+same months the tree is explaining therefore carries those months' prices,
+and the tree can "explain" the index with a coarse copy of it. The class the
+tree sees is now cut on a window that **ends the period before each line**
+(`abc_feature_lag_periods`, default 6), on a configurable basis
+(`abc_feature_basis`: revenue, units or order frequency). An item with no
+history in that window is `unrated`, which is a level of its own - it is not
+a C. The ABC table in the dispersion output is unchanged: for *reporting* a
+period, the contemporaneous class is the right answer.
+
+**The order-size band.** Order net value is also price times quantity. The
+bands are now cut on order quantity in normalized units, which carries the
+same business meaning - how big an order is - with no price in it.
+
+**The target encoding.** It was fit on the rows it then encoded, so a
+category with few rows was handed the mean of the very targets the split was
+about to be scored against, and a split on noise looked clean. Encoding is
+now **cross-fitted**: while the tree is grown, each row is encoded from the
+other folds only (`target_encoding_folds`, default 5). The full-sample maps
+are kept for assignment and prediction, where there is no fold to hold out.
+
+**The guard reads lineage, not names.** The old guard rejected a feature
+whose name contained price, discount, cost, rebate or margin. `revenue_abc`
+contains none of those words and was built from outcome-period revenue, so it
+passed. Every commercial feature now declares its lineage
+(`segmentation.feature_lineage`): source columns, formula, reference window,
+whether it uses outcome-period data, and whether it embeds the realized
+price. The guard refuses a feature that declares it embeds the realized
+price, refuses one that declares nothing at all, and keeps the name check as
+a second line. Features that are same-period but price-free - the order-size
+band - are **reported rather than refused**, and the time-based check below
+puts a number on what they are worth.
+
+### Tested on periods the segmentation never saw (Run 6)
+
+A bootstrap resamples the same months, so it measures how firmly a structure
+is attached to this data, not whether it will still describe the market next
+quarter. Alongside it the engine fits the tree on the earliest
+`holdout_fit_period_share` of months (default 0.75) and scores the segment
+medians against the pairs in the later months, as mean absolute error on the
+price index, against the baseline of a single median for everybody. The
+evaluation runs twice - with the full feature set and again without the
+features whose lineage declares they are measured in the same period as the
+target - so the contribution of those features is a measured number.
+
+The holdout beating the baseline is evidence the structure generalizes in
+time. It failing to is reported in the same words on the Segments page, not
+suppressed.
 
 The margin-driver tree (pocket margin %, context + discount / rebate / cost
 bands, depth 4) is a separate, explanatory output and is never used to justify
@@ -171,6 +298,30 @@ comparison was made. A price index computed against the item-median fallback
 is never compared to a floor index: the two live in different reference
 spaces.
 
+Guardrails (Run 6, Phase 67). Bands are PAIR-WEIGHTED (one median per
+customer x item x month — the stated weighting) and report the independence
+behind them: distinct customers, pairs, months and list regimes per band. A
+band needs the configured minimum of independent observations AND distinct
+customers — one customer's history is not a market reference. Targets and
+starts are UNAVAILABLE, with the reason named, when the segment is thin, the
+floor sits above the corridor, or the pair's list is stale (a target in index
+space against a list no longer in force is a number nobody can act on; the
+dollar floors are kept either way). An item trading in several normalized
+units without an equivalence conversion never enters a band and its pairs say
+why. The contribution floor stays OPT-IN (off by default) and can be scoped
+to configured item roles and channels; when it binds, the K assumption that
+makes it bind is disclosed next to it (order-type scoping would need an
+order-level floor, which does not exist at pair grain — a stated limitation).
+Explicitly authorized below-floor roles (loss leaders, strategic key-value
+items, end-of-life clearances) keep their visible below-floor status, and fix
+actions generate BLOCKED with the authorization shown — configuration is the
+only override path. Optimized prices snap to the configured ERP price
+increment, with the floor rounded up to the increment first so a snap can
+never breach it. Guidance disclosures per pair: list provenance, contract
+eligibility, the unit basis of every comparison, and the as-of date of the
+CURRENT unit cost guidance prices against (historical margins use dated
+historical costs; the two are labeled, never mixed).
+
 Statuses: in_band, below_reference, below_floor, above_reference,
 insufficient_pricing_headroom (floor above band P75 — flagged, never papered
 over with a fake target), market_reference_below_floor (the segment's P50
@@ -205,6 +356,156 @@ outliers are excluded from estimation only when the pair has enough history
 a genuine shock-driven price move is indistinguishable from a one-off, and
 excluding those points provably biases sparse-segment elasticities.
 
+### Estimator specification
+
+Each estimator is specified in full so its estimand is never conflated with
+another's (Run 6, 60.3). Shared setup: the panel is customer x item x month
+within one commercial segment; contract pairs and unreliable one-off outliers
+are excluded as described above; no weights are applied (each panel row counts
+once); rows dropped by each estimator are counted and reported.
+
+**Naive FE-OLS.**
+Dependent variable: log quantity. Sample: positive-quantity rows only (zeros
+drop with the log). Endogenous regressor: log price, NOT instrumented — price
+and demand shocks are simultaneously determined, which is the point of
+reporting it. Fixed effects: pair and month (item-role x month when roles are
+known). Clustering: the configured level (see "Clustering, and what counts
+as an independent observation" below; default two-way month x customer).
+Named estimand: the ASSOCIATION of price and conditional quantity among buying
+pairs — documents endogeneity bias, never used for decisions.
+
+**FE-Poisson (PPML).**
+Dependent variable: quantity in levels, including true zeros. Sample: all
+active-assortment rows; zero rows carry a price from the declared ladder
+below (a lost quote where one exists, otherwise the pair's last observed
+price, each row labeled with its source; a positive-rows-only variant is
+estimated and the gap joins the robustness criterion). Regressor: log price,
+not instrumented.
+Fixed effects: pair and month; separated observations (groups whose outcome
+is all zero) are dropped by the estimator and counted. Named estimand: the
+descriptive semi-elasticity of TOTAL expected quantity — extensive and
+intensive margin together — among active-assortment pairs, still subject to
+price endogeneity.
+
+**FE-2SLS.**
+Dependent variable: log quantity. Sample: positive-quantity rows only —
+dropping zeros means the estimand is CONDITIONAL quantity among pairs that
+kept buying, not total volume; this is stated wherever the estimate is used.
+Endogenous regressor: log price. Instrument matrix: supplier cost index and
+category tariff rate (two instruments, overidentified). Fixed effects: pair
+and month (item-role x month when roles are known), applied by within
+transformation to outcome, price and instruments; the optional market-price
+control is partialled out of all of them (Frisch-Waugh). Clustering: the
+configured level for F, the Anderson-Rubin set and the leave-one-cluster-out
+jackknife interval; where that level leaves too few independent clusters the
+interval is resampled or withdrawn, per the section below. Dropped observations: zeros, rows with missing price or
+instruments, and singleton groups absorbed by the fixed effects — each
+counted. Named estimand: the own-price elasticity of conditional quantity
+among buying pairs, identified from instrument-induced price variation.
+
+**IV-PPML control function (Phase 72).**
+Dependent variable: quantity in levels, including true zeros. Sample: all
+active-assortment rows in the segment, contract pairs excluded; zero rows
+carry a price from the declared ladder and the share that is imputed is
+reported, since those rows carry the whole extensive-margin signal. Treatment
+of zeros: kept, which is the entire point — the Poisson needs no log, so a
+customer who stopped buying stays in the sample as an outcome of zero rather
+than disappearing from it. Endogenous regressor: log price. Instrument
+matrix: supplier cost index and category tariff rate, within-transformed over
+pair and period, with the market-price control partialled out by Frisch-Waugh
+when one is in evidence. First stage: fitted on observed-price rows ONLY, for
+the reason set out below, and its residual is evaluated on every row and
+enters the Poisson equation as a control function. Fixed effects: pair and
+period (item-role x month when roles are known). Weights: none. Clustering:
+the first-stage strength keeps the configured spec (two-way by default); the
+Poisson's analytic variance clusters one-way on the first configured level.
+The small-cluster remedy below applies to the conditional estimator's
+interval, not to this one, whose own uncertainty is reported two ways
+already.
+Inference: that analytic cluster-robust standard error, which omits
+first-stage sampling noise, plus an optional pair cluster bootstrap that
+refits the whole procedure per replicate and does carry it — both published
+with what each leaves out. Bias: a half-panel jackknife is computed and
+reported, never substituted. Dropped and separated observations: counted in
+rows and in units, by reason, including pairs that never buy, which a Poisson
+with pair fixed effects cannot use. Named estimand: the own-price elasticity
+of TOTAL expected quantity, including whether the customer buys at all.
+Ceiling: `iv_estimated_total_quantity`. This ladder has no causal tier, and
+the opportunity optimizer never prices from it.
+
+### Estimand and the competitor-price path (Run 6)
+
+The estimand is the **unilateral own-price response holding observed
+competitor-price conditions constant** — the quantity a pricing decision
+needs. Both shipped instruments are industry-wide cost shocks, so they move
+competitor prices too; without those conditions held constant, the IV
+identifies a response to a market-wide cost shock, which UNDERSTATES
+unilateral price sensitivity (a customer facing an industry-wide increase has
+nowhere cheaper to go). Three estimands are therefore reported and labeled:
+unilateral own-price response (the gate passed), market-wide cost-shock
+response (IV ran, the path is uncontrolled — with the bias direction stated),
+and descriptive association (no instrument behind it).
+
+`causal_elasticity_supported` now additionally requires the competitor-price
+path to be ADDRESSED: either an adequate public market price index, or every
+instrument's competitor-price path documented as absent with a written
+argument. Otherwise the status caps at `iv_estimated_elasticity` with the
+reason, and downstream the two-sided expected-change range is withheld —
+an interval for a market-wide estimand is not a confidence interval for the
+unilateral move being priced, and its bias direction flatters price increases.
+There is deliberately no configuration switch that disables this gate.
+
+Control adequacy is structural and relevance-based, never a threshold on
+collinearity. A faithful market-price control MUST correlate with
+industry-wide cost instruments — that correlation is the confound it exists to
+absorb — so rejecting a control for being correlated with them would reward a
+column of noise and punish an informative series. The checks, each reported
+with its statistic: freshness (trailing lag in periods, evaluated first on
+the covered periods); coverage (share of the segment's estimation rows);
+absorption (distinct control values per time fixed-effect cell — a national
+monthly series is removed exactly by month effects, a structural fact tested
+structurally); grain (the control must be at least as fine as the CHANNEL's
+grain, which config declares and argues: customers compare sellers of the
+same item class, so a category-level index is the right grain even for a
+supplier-level instrument); relevance (the share of within-pair price
+movement the index explains, with the right sign — a series unrelated to
+prices is not evidence of a competitor-price condition); and restatement
+(only near-exact collinearity is refused, because controlling for a restated
+instrument removes identification rather than a confound).
+
+The first stage is reported both before and after controlling, because
+controlling costs identification. Measured on the demo world: holding the
+category market price constant removes nearly all of the CATEGORY tariff
+instrument's variation (its own first stage falls to F below 6) while the
+SUPPLIER-specific cost shock keeps F in the high hundreds. That is the
+economics, not an artifact: a category tariff *is* a category market-price
+mover, whereas a supplier-specific cost shock moves this distributor's cost
+without moving the category market price — which is exactly what identifies a
+unilateral move. Two consequences, both made explicit rather than hidden:
+the overidentification test runs only over instruments that still identify
+price (fewer than two leaves the model just-identified and the test reported
+as not evaluated, which the spec's own criterion contemplates), and the
+robustness spread is computed only over IDENTIFIED alternative
+specifications, with the excluded ones named together with their first-stage
+F. A specification whose own first stage is weak is not evidence that the
+headline is unstable — it is an unidentified specification. When NO
+alternative is identified the spread is reported as unknown and the top
+status is refused, rather than collapsing to a reassuring zero.
+
+Every criterion is recorded machine-readably (`causal_status_reasons`: order,
+gate, pass / not met / not evaluated, and a plain-English detail), exported
+long-form as `sensitivity_gates`, and shown in the UI as a checklist whose
+outcome is carried by a glyph and words, never colour alone. A check the data
+could not support is reported as NOT EVALUATED and never counted as a pass.
+
+The gate does not discharge shared-exclusion risk in general: once a control
+is present, a violation that both instruments share through some other
+channel still passes every criterion with a non-rejected overidentification
+test. That limitation is stated here and in the status tooltip, which is why
+`causal_elasticity_supported` means "the prespecified diagnostics and
+documented assumptions passed for this estimand and scope" — not that the
+instruments are valid, nor that the result transfers elsewhere.
+
 Diagnostics: cluster-robust first-stage F; identifying-variation coverage;
 Sargan-style overidentification J with two instruments; robustness spread
 across IV-with-each-instrument-alone and the joint estimate; Anderson-Rubin
@@ -213,19 +514,118 @@ interval is a full leave-one-cluster-out jackknife (first stage re-estimated
 per left-out cluster) with t(G-1) critical values — calibrated at small
 cluster counts where plug-in sandwiches under-cover — verified by
 50-simulation coverage studies; the AR set is reported alongside and takes
-over under weak identification. Clustering level is configurable: by month,
-by supplier x month, or two-way month x customer (Cameron-Gelbach-Miller
-combination of per-dimension jackknives, V = V_month + V_customer -
-V_intersection), the robust choice when customer demand shocks persist over
-time. The shipped default is chosen by the persistent-demand coverage study
-recorded in validation.json.
+over under weak identification.
 
-Each segment also records its identifying price support: the 5th-95th
-percentile range of instrument-predicted within log-price movement
-[dimensionless, log price units]. Downstream volume-response math refuses
-proposed price moves outside that range (`outside_price_support`):
-extrapolating a demand curve beyond the variation the instruments ever
-induced would be a claim the data cannot back.
+### Clustering, and what counts as an independent observation
+
+Cost shocks arrive by supplier and tariff shocks by product category. Those
+are the units the instruments are *assigned* to, so those are the units whose
+errors move together, and the number of them - not the number of invoice lines
+- is what the interval's accuracy depends on.
+
+Six levels are configurable. Four of them are assignment levels: `supplier`,
+`supplier_month`, `category` and `category_month`. Two are outcome-correlation
+levels kept from the earlier runs: `month`, and two-way `month_customer`
+(a Cameron-Gelbach-Miller combination of per-dimension jackknives,
+V = V_month + V_customer - V_intersection), the robust choice when customer
+demand shocks persist over time.
+
+The period-crossed forms are the finer ones, and they are only adequate when a
+unit's shocks are serially *independent*: clustering at supplier x month
+treats one supplier's January and its February as separate draws. Neither
+simulated nor real input-cost series behave that way - the generator draws
+both instruments as AR(1) processes - so the period-crossed forms understate
+the correlation they are supposed to absorb.
+
+Clustering at the assignment unit itself fixes that and costs cluster count: a
+distributor with twelve suppliers has twelve independent groups however many
+lines it has. Each segment therefore reports the raw count, how many clusters
+carry any instrument movement at all, the largest single cluster's share of
+that movement, and an **effective cluster count** - the inverse Herfindahl of
+the per-cluster shares. Twelve suppliers of which one does most of the moving
+is not twelve independent clusters, and the effective count is the figure the
+adequacy criterion reads.
+
+Below `min_assignment_clusters` effective clusters, the group-robust t
+interval is too narrow to report as a 95% interval, and policy decides:
+
+- `wild_bootstrap` replaces it with a **wild cluster bootstrap-t** interval.
+  Both equations are resampled under the same cluster weight (the wild
+  restricted efficient form), so the correlation between the first-stage and
+  structural errors survives into the bootstrap world; resampling the
+  structural equation alone would assume price exogenous inside the procedure
+  defending an IV estimate. The interval is the **symmetric** percentile-t:
+  the 95th percentile of the absolute studentized statistic replaces 1.96.
+  The equal-tailed form was measured first and was consistently worse than the
+  interval it was meant to repair, because an asymmetric bootstrap
+  distribution shifts the interval off centre faster than it widens it.
+- `fail_closed` withdraws the interval instead. The point estimate stays on the
+  record, with its analytic figures under their own names, but no 95% interval
+  is published and the status cannot rise above descriptive.
+
+Below `min_bootstrap_clusters` raw clusters, or whenever the configured level
+is two-way (an intersection of two overlapping partitions, which has no single
+partition to resample), the bootstrap is not available and the engine fails
+closed regardless of policy. The floor is 8 because that is the lowest count at
+which the symmetric bootstrap was measured to improve on the interval it
+replaces rather than add noise, not because of any closed-form rule.
+
+The Anderson-Rubin grid inversion uses a small-cluster critical value for the
+same reason: a cluster-robust Wald statistic is chi-square in the number of
+*clusters*, not rows, so the bar is K x F(K, G-K), which converges back to
+chi-square as clusters grow (6.05 against 5.99 at 288 clusters, 8.21 at 12).
+
+The shipped default is chosen by the cluster-structure coverage study recorded
+in validation.json, which runs every level over both the persistent-demand
+world and a `few_clusters` world built for this question - five suppliers,
+four categories, twelve months and strongly serially correlated shocks. Each
+row reports how often the option produced no interval at all beside how often
+it covered, because an option that covers well by refusing to answer is not
+the better option.
+
+### The identification-support rule
+
+Each segment records where its instruments actually moved price, and the
+opportunity module refuses to model a volume response for a proposed move that
+lands anywhere else. The rule is named for what it is: not a claim about which
+prices are achievable, but a statement that beyond a certain distance the
+engine is extrapolating a relationship it never observed.
+
+**What the support is measured on.** The instrument-predicted log-price
+movement, after the pair and period fixed effects and the market control have
+been taken out of both sides. It is therefore movement around each pair's own
+price path over time, not the spread of price levels across pairs. A segment
+whose customers pay very different prices but whose prices never move has
+almost no support, and the rule says so.
+
+**Outer bounds.** The configured quantiles of that movement, 5th to 95th by
+default.
+
+**Density inside the bounds.** Support is not assumed uniform between them. A
+proposed move is supported only where at least `min_support_observations` of
+the predicted movements sit within `price_support_window` log units of it, and
+the maximal runs of moves passing that test are reported as regions. Skewed
+support produces one off-centre region. Support that clusters in two places
+with nothing between them produces two, and a move landing in the gap is
+refused even though it sits between the outer bounds - which is the point:
+movements of -6% and +4% say nothing about what a 0% change would do.
+
+**What is reported.** The outer bounds, the number of estimation rows behind
+them, the regions, the configured window and minimum count, and the same
+quantiles of the *observed* price movement so a reader can see how much of the
+price variation the instruments account for. Each opportunity record carries
+its distance to the nearest supported region - zero inside - so a refusal can
+be read as marginal or as nowhere near.
+
+**Backwards compatibility.** A sensitivity frame written before the regions
+existed carries only the outer bounds, and is held to those. A segment with no
+support record at all - no instruments, or an older frame - is not refused by
+a rule it was never measured against; its evidence status is what limits it.
+
+At `iv_estimated_elasticity` the resulting range is a **sensitivity analysis**:
+what the impact would be across a span of plausible price responses. It is not
+a confidence interval around the dollar impact, and the report never calls it
+one.
 
 Carried-forward-price robustness: zero-quantity rows carry the pair's last
 observed price, which is an assumption, so PPML runs twice — on the full
@@ -267,6 +667,346 @@ detects an invalid instrument only when the two instruments disagree.
 Exclusion restrictions remain economic assumptions that no statistical test
 fully proves.
 
+### Two estimands: buying customers, and total quantity (Run 6)
+
+The engine estimates two different quantities and never lets one pass for the
+other.
+
+**Conditional quantity (the headline).** FE-2SLS on log quantity over
+positive-quantity rows: among customers who bought, how does the quantity they
+bought respond to price? This is the estimate the statuses in the table above
+describe, and the only one the engine prices from.
+
+**Total quantity.** An IV-Poisson control function over the whole panel,
+including months with no purchase: how does *expected* quantity respond,
+counting whether the customer buys at all? This is the quantity an opportunity
+forecast actually needs, and the conditional estimate cannot supply it - a
+customer who stops buying contributes nothing to a positive-rows regression.
+
+The control function works by including the first-stage residual as a regressor
+in the Poisson equation, which is what makes the price coefficient an
+instrumented one. Its coefficient is reported but never published with an
+interval: the generated-regressor correction vanishes only under the null that
+it is zero, so the statistic is informative about that null and nothing else.
+
+```text
+first stage   p~ = Z~ gamma + v        (two-way within, market control partialled out)
+second stage  E[q] = exp(a_pair + c_period + beta log p + rho v)
+```
+
+**The first stage is fitted on observed prices only.** A zero row's price is
+imputed from the pair's last purchase, so it carries a stale cost shock: with
+AR(1) instruments at 0.70 and a mean staleness near two months, measured
+pass-through on zero rows is 0.31 against 0.72 on purchase rows. Fitting the
+coefficient on every row pulled it from 0.72 to 0.62, and because a zero row
+contributes nothing to the quantity side of the Poisson score, only the first
+stage shrank - which inflates the instrumented price coefficient by one over
+that factor, always away from zero. Measured on planted worlds, that was a
+median absolute error of 0.31 where the conditional estimator achieves 0.02. The
+first stage asks how the instruments move the price a customer actually faced,
+and an imputed price is not an observation of that.
+
+**The total-quantity ladder has no causal tier.** Its statuses are
+`insufficient_data_total_quantity`, `descriptive_total_quantity` and
+`iv_estimated_total_quantity`, and the last is the ceiling by construction, for
+three stated reasons:
+
+1. *Accuracy.* On worlds that plant a real price-driven extensive margin it
+   recovers the planted total elasticity to a median absolute error of 0.15
+   (90th percentile 0.27), against the 0.02 median and 0.09 at the 90th
+   percentile that the conditional estimator achieves on its own estimand. It is
+   genuinely measuring the extensive margin - it is about twice as close to the
+   planted total elasticity as to the planted conditional one, and on the
+   smaller test world 6.5 times closer - but not to the accuracy the engine's
+   gated target demands.
+2. *No overidentification test.* The linear overidentification test is computed
+   on positive-quantity rows and tests the conditional model. No equivalent
+   exists for this estimand in the engine today, so presenting the linear test
+   beside it would borrow credibility from a test that does not apply.
+3. *No out-of-sample check.* The temporal backtest fits on a training window and
+   predicts positive-quantity rows, so it validates the conditional estimate.
+   This one has no backtest at all.
+
+A segment whose zero rows are mostly imputed is demoted to descriptive, because
+the zero rows carry the entire extensive-margin signal and an imputed price is
+not an observation of the price that produced them. The threshold is
+`iv_ppml_max_imputed_share` (default 50%), and the share and the mix of price
+sources behind it are reported beside every estimate.
+
+The trade this estimator makes is stronger than 2SLS's: the first-stage error
+must enter the exponential index linearly and separably from the price, where
+2SLS needs only a linear projection. Nothing in the data tests that assumption.
+
+**Inference: two standard errors, and what each one omits.** The estimate ships
+with both, because neither is the whole answer and presenting one alone would
+overstate what is known.
+
+1. *Analytic, cluster-robust.* The Poisson fit's own clustered standard error,
+   at the configured cluster level. It is free, and it treats the control
+   function as a known regressor when in fact it was estimated, so it omits
+   first-stage sampling noise. It is a lower bound.
+2. *Pair cluster bootstrap.* Pairs are resampled with replacement and the whole
+   procedure - first stage included - is refitted on each draw, so this one does
+   carry the generated-regressor noise. Each drawn copy of a pair gets a fresh
+   fixed effect, because a pair drawn twice is two units, not one doubled group.
+   It does **not** carry dependence common to pairs within a period at the level
+   the instrument is assigned, since resampling that level would duplicate
+   periods and break the time fixed effects. Where the two disagree, the wider
+   one is the safer read.
+
+A bootstrap replicate costs about one point estimate, so the shipped pipeline
+runs at zero replicates and reports the analytic figure with its caveat
+attached; `sensitivity.iv_ppml_bootstrap_reps` turns the resampled interval on,
+and the validation study runs it. At IV-estimated status the resampled range is
+a sensitivity range, not a confidence interval for business impact.
+
+**Split-panel jackknife: computed, reported, not adopted.** Kwon, Larch, Yoon &
+Yotov (2026, CESifo WP 12641) show that IV-PPML with high-dimensional fixed
+effects inherits an incidental-parameter bias of order 1/T, and that a
+split-panel jackknife removes its leading term. This panel is 24 months with
+pair fixed effects, which is the regime that bias lives in, so the correction is
+computed on every estimate rather than assumed away: fit the two time halves,
+and the corrected point is twice the full-panel estimate minus the mean of the
+halves.
+
+It is reported as a diagnostic and never substituted for the point estimate. The
+correction doubles one estimate and subtracts the mean of two noisier ones, so
+it roughly triples the variance of what it is applied to, and the measurement on
+planted extensive-margin worlds is that it does not buy accuracy back: the
+comparison of corrected against uncorrected recovery is a row in
+`docs/validation.json`, and the correction is adopted only if that row ever says
+it helps. A large correction on a given segment is read as doubt about that
+estimate, not as a better number, and the figure is shown so a reader can see
+which it is.
+
+Both of these are pure diagnostics - neither moves a status - and each costs
+whole extra Poisson fits per segment, so both are off in the shipped pipeline
+configuration and on in the validation study. That is a measured decision, not
+a preference: the Run 1 performance target is stated for the shipped
+configuration, and a diagnostic that nothing downstream reads does not get to
+spend the budget a gated target is measured against. The gate that does move a
+status - the zero-row robustness check below - stays on.
+
+**Alternative zero-row assumptions, and demotion when they matter.** Zero rows
+are the reason this estimand exists, and two things the engine believes about
+them are inferences rather than observations: the price the customer would have
+faced, and whether the item was available at all. Neither can be checked
+directly, so each is tested by removing the rows that lean on it hardest and
+refitting:
+
+* drop the no-purchase months priced by imputation, keeping purchases and any
+  month with a real quoted price - if the estimate moves, the imputation was
+  carrying it;
+* drop the no-purchase months whose availability rests on a single other
+  customer having bought the item that month, the weakest form the proxy takes
+  - if the estimate moves, the proxy was carrying it.
+
+The larger of the two gaps is reported beside the estimate, and past
+`iv_ppml_max_zero_row_gap` (default 0.30) the estimand is demoted to
+descriptive. An estimate that depends on which guess was made about the
+no-purchase months is not an instrumented measurement of anything.
+
+**What each zero row rests on** is labeled rather than assumed. Every panel row
+carries `assortment_basis` (`observed` for a purchase, `inferred` where the pair
+is only assumed to still carry the item because it bought within the lookback),
+`availability_basis` (`observed` for a purchase, otherwise `proxied`, since the
+engine cannot see stock), `price_status` (`observed`, `quoted`,
+`list_x_pair_discount` or `carried_forward`) and `zero_reason_basis`, which is
+`unknown` for every no-purchase month: no ERP export records why a customer did
+not buy, and inventing a reason would be the kind of guess the engine refuses
+elsewhere.
+
+**Rows and units the fit could not use.** Every estimate carries an accounting
+of what never reached it, by reason - priced on a contract, no price, no
+instrument value, absorbed by a singleton fixed effect, or separated because a
+pair never buys - counted in both rows and units, each reason measured on what
+survived the previous one so the parts add to the whole. Rows and units are both
+reported because they tell different stories: a thousand dropped no-purchase
+rows cost no volume and can still remove the whole extensive-margin signal,
+while one dropped key-value pair can be a tenth of the segment's quantity.
+
+Separation deserves the emphasis it gets here. A pair that never buys in the
+window carries no information for a Poisson with pair fixed effects - its fixed
+effect runs to minus infinity and the estimator drops it. Those are precisely
+the customers who stopped buying, the case this estimand exists to capture, so
+the count is published rather than left inside the estimator. The accounting is
+computed from the panel directly, not read back from the fitting library, so it
+survives a library upgrade and exists even when the fit itself fails.
+
+**The planted truth it is scored against.** Observed quantity is incidence times
+conditional quantity, so expected quantity factors and the two margins respond to
+price independently:
+
+```text
+d log E[Q] / d log P = beta x kappa(mu)  +  beta_ext x (1 - incidence)
+                       [intensive]          [extensive]
+```
+
+`kappa` corrects for both quantity processes flooring quantity at one; it is one
+to machine precision at the default scale and falls away below a mean of about
+two. The extensive term carries `(1 - incidence)` because incidence cannot fall
+where it is already near one: a long-tail pair buying in 14% of months carries
+most of the extensive response, a key-value item bought almost every month
+carries almost none. Segment aggregation is weighted by expected quantity,
+because that is what a Poisson fit converges to - its score equations are, to
+first order, a weighted least squares with those weights. An unweighted average
+differs by 0.03 to 0.06 per segment here, which would consume half the error
+budget on a definitional choice. The `extensive_margin` preset plants
+`beta_ext = -1.5`; the derivation was checked against direct Poisson fits in a
+differenced design, pooled mean difference +0.037 (t = 1.30) over 18
+segment-seeds.
+
+### Weak-instrument diagnostics (Run 6)
+
+Three diagnostics replaced statistics that were reported more confidently than
+they could be read.
+
+**Robust effective first-stage F.** The earlier statistic was a cluster-robust
+Wald statistic divided by the number of instruments. That is a reasonable
+heuristic, but it is not the quantity the published threshold belongs to, and
+it does not account for the parameters absorbed by the fixed-effect
+transformation. The statistic now reported is
+
+```text
+F_eff = pi' Z'Z pi / trace(V_pi Z'Z)        [dimensionless]
+```
+
+where `pi` is the within-transformed first-stage coefficient vector, `Z'Z` the
+instrument cross-product, and `V_pi` the clustered first-stage variance
+carrying the caller's degrees-of-freedom correction. Each estimate reports
+`F_eff`, the effective number of instruments
+`trace(V Z'Z)^2 / trace((V Z'Z)^2)` (how many instrument directions actually
+carry information, which can be below the nominal count), the number of
+absorbed fixed-effect parameters, and the number of independent clusters, so a
+reader can see how thin the segment was. The threshold for
+`causal_elasticity_supported` is the Montiel Olea-Pflueger 10% relative-bias
+critical value of 23.109; `iv_estimated_elasticity` keeps the rule-of-thumb
+minimum of 10.
+
+When the clustered variance is materially indefinite - which a
+Cameron-Gelbach-Miller two-way combination can produce, since it subtracts one
+sandwich from another - no strength statistic is computed at all. A positive
+trace over an indefinite variance yields a large and meaningless `F_eff`.
+Indefiniteness is judged relative to the matrix's own scale: an eigenvalue at
+the arithmetic rounding floor of a positive-semidefinite sandwich is noise, not
+a broken variance, and refusing it would withhold a usable statistic.
+
+**The weak-instrument-robust set is reported as a shape, not an interval.**
+Inverting the Anderson-Rubin test over a grid produces an acceptance *set*,
+which need not be a single interval. Compressing it to its lowest and highest
+accepted points describes a disconnected set as though it were connected, and
+an open-ended one as though it were bounded. Each estimate therefore reports
+which of five shapes it is - empty, a single point, one connected range, two or
+more separate ranges, or a set that reaches the edge of the searched range -
+together with the convex hull, the total measure of the accepted ranges (the
+gaps excluded), the number of components, and the rejected ranges between them.
+Two shapes are evidence *against* the model rather than precision in favour of
+it: an empty set means the instruments reject every candidate value searched,
+and a single-point set means they reject almost all of them. Both are reported
+as such and neither earns the causal status. A single point is given the
+measure of one grid step rather than zero width, because zero reads as "nothing
+is accepted" when the truth is "almost nothing is accepted". When the set
+touches a search bound the grid is widened once and re-inverted; if it still
+touches, the set is labeled open-ended. Where grid points had to be skipped
+because the variance there was not usable, the displayed set is marked as
+possibly narrower than the data support.
+
+**Anticipation (lead) test.** The overidentification test compares the two
+instruments against each other, so it cannot see a violation they share. One
+such shared violation is anticipation: if buyers see a cost or tariff movement
+coming and shift purchases before it lands, future instrument values predict
+current volume, and the exclusion restriction fails in a way no
+overidentification test detects. The test regresses within-transformed log
+volume on the sum of the next `lead_test_horizon` periods' instrument values
+(a single aggregate restriction, which has materially more power here than one
+coefficient per lead period) and reports one of three outcomes:
+
+| Outcome | Meaning |
+|---|---|
+| Rejected | Future instrument movements predict current volume by a margin the engine treats as material. This blocks the causal status. |
+| Detected but immaterial | Future movements do predict current volume, but every effect the interval admits is below the material threshold. Reported, and does not block. |
+| Passed | No effect detected, and the interval is tight enough to rule out a material one. |
+| Inconclusive | No effect detected, but the interval still admits a material one. Reported with the smallest effect the test could have detected, and recorded in the gate list as not evaluated rather than as a pass - the same treatment an overidentification test gets when there is only one instrument. |
+
+**Materiality governs both branches.** An earlier version compared only the
+non-rejection against the material threshold and rejected on significance
+alone. On a panel of tens of thousands of rows this test resolves effects two
+orders of magnitude below what the engine itself calls material, so that
+asymmetry let a coefficient of -0.004 with an interval of [-0.008, -0.000]
+print "anticipation detected, an exclusion violation the overidentification
+test cannot see" beside an interval that ruled the channel out, and move a
+segment's status on it. The threshold is now applied on both sides. Its units
+are log-volume per unit of the aggregate lead regressor, where one unit is one
+standard deviation of a single lead; for scale, the entire contemporaneous
+price channel is about 0.08 in those units on the demo world, so the previous
+default of 0.50 was roughly six times the whole effect the instruments
+identify and made the inconclusive verdict unreachable. The default is 0.05.
+
+**Degrees of freedom, not row count.** The test is skipped unless the
+regression has residual degrees of freedom to spare
+(`lead_test_min_residual_dof`, default 30). A row-count floor alone let
+saturated designs through: pair and period fixed effects can absorb more
+parameters than there are rows, at which point the residuals collapse to the
+arithmetic rounding floor and any coefficient becomes an enormous test
+statistic. Measured on thin segments, that produced rejection rates of 8 to 30
+per cent with no anticipation present at all. The same defect had a second
+source in the clustered variance estimator, which switched its small-sample
+correction off exactly when the design was saturated, and whose guard against
+a non-positive Cameron-Gelbach-Miller variance was reachable only with a
+single regressor; both are fixed, and an inestimable variance is now reported
+as infinite so every gate reading it fails closed.
+
+**What the sample is.** The test needs an unbroken run of purchase months
+around each observation, so it runs on frequent repeat buyers rather than on
+the whole estimation sample - roughly half the positive rows at the demo
+scale, and far less in a long-tail segment. It also runs on positive-quantity
+rows only, so anticipation expressed as holding off from buying altogether is
+invisible to it. Every verdict states the rows used, the rows available and
+the degrees of freedom left, so a pass is read for what it covers.
+
+The third outcome is the point of the design. A non-rejection from a test with
+no power is not evidence of exogeneity, so it is not reported as one. The
+detectable bound is compared against `lead_test_meaningful_effect`
+(default 0.50 in log-volume units). Inference uses an F distribution on the
+cluster count rather than chi-square, which is strictly more conservative at
+the roughly two dozen clusters these panels have. The test addresses timing
+only: a contemporaneous violation shared by both instruments stays invisible to
+it, exactly as it does to the overidentification test.
+
+Two construction details matter. Leads are taken by calendar month, not by row
+position: the panel is sparse, so a positional shift would reach past a gap and
+treat a value three months ahead as next month's. And the aggregate regressor
+divides each lead by its own standard deviation before summing, because the two
+instruments are different series with different variances and a raw sum would
+weight whichever happened to be larger.
+
+**Shuffled-instrument placebo.** The placebo replaces the instruments with
+copies shuffled within period and re-estimates. Under the null that the
+inference is correctly sized, each draw rejects with probability 0.05, so the
+number of rejections across draws is Binomial(`placebo_draws`, 0.05) and is
+read as a binomial tail probability rather than as a raw share. It has the same
+three outcomes as the anticipation test, for the same reason: at ten draws, two
+rejections has probability 0.09 under a correctly sized test, so reading it as
+over-rejection would report sampling noise as a finding. A non-rejection
+reports the smallest share the draw count could have flagged - at ten draws
+that is 30%, so ten draws cannot clear a design, only fail to condemn it. The
+verdict qualifies the *inference*, not the instruments' validity: relevance is
+the first-stage statistic's question, and the real reduced-form p-value appears
+beside it only as context. It is informational and never a gate, because it
+requires the validation run, and a gate reading "not evaluated" in the default
+path would withdraw every causal status.
+
+**Cross-price first stage.** With two endogenous prices in one equation, a
+marginal first-stage F answers "do the instruments move this price?" when the
+question that matters is "do they move this price independently of the other
+one?". Two industry-wide cost instruments can move both prices strongly and
+still fail to separate them. Cross-price estimates therefore report the
+Sanderson-Windmeijer conditional statistic: the target price is residualized
+against the other endogenous price (using the instruments to form that
+relationship) and the effective F above is computed on what is left. Both
+statistics are reported so the gap between them is visible, and the conditional
+one decides the status.
+
 ## 8. Opportunity and scenarios
 
 Three levels, never summed. Units: prices and gaps are cents per normalized
@@ -279,11 +1019,47 @@ the pair's percentage post-invoice deductions d.
    raises the rebates and concessions that scale with it, so the pocket gain
    is (1 - d) of the invoice gap. A conservative variant raises below-P25
    pairs to P25 only, reported alongside (never added to the main level).
-3. Expected contribution change: c(P1) Q(P1) - c(P0) Q(P0) with pocket-aware
-   unit contribution c(P) = P (1 - d) - F - C [cents/unit] — only where the
-   elasticity status is causal AND the proposed move lies inside the
-   segment's identifying price support; at `iv_estimated_elasticity` a
-   labeled sensitivity range is shown; below that, fixed-volume numbers only.
+3. Expected change with a volume response, reported on TWO bases that are
+   never conflated or summed (Run 6, Phase 65): the expected POCKET GROSS
+   PROFIT change uses unit economics c(P) = P (1 - d) - F - C [cents/unit];
+   the expected CONTRIBUTION change also subtracts the pair's estimated
+   per-unit cost-to-serve K (c(P) = P (1 - d) - F - C - K, labeled estimated
+   because K comes from configured activity rates) and is UNAVAILABLE for a
+   pair without a supported K — never borrowed from the gross profit basis.
+   Both are c(P1) Q(P1) - c(P0) Q(P0), produced only where the elasticity
+   status is causal AND the proposed move lies inside the segment's
+   identifying price support; at `iv_estimated_elasticity` a labeled
+   sensitivity range is shown; below that, fixed-volume numbers only.
+   Because a price increase sheds volume and its service cost with it, the
+   contribution change EXCEEDS the gross profit change by K x (Q0 - Q1) —
+   high-service pairs can rank differently under the two bases, which is the
+   point of keeping both.
+
+**Deductions with explicit denominators** (Run 6, Phase 66 / Finding 8):
+every post-invoice adjustment has a declared FORM and BASE. Flat program rates
+and realized freight-concession rates are both percentages of the SAME base —
+net invoiced value — and apply independently, so they sum into d exactly;
+rates on different bases are never summed. Fixed per-unit deductions F are
+cents per unit. TIERED programs are retrospective formulas — the rebate is
+rate(cumulative basis) x cumulative basis — so every opportunity figure for a
+tiered customer is RECOMPUTED at the candidate revenue (crossing a tier
+re-rates the whole basis, exactly as a settlement would); a tiered customer
+whose tier table is missing keeps the flat (1 - d) figure labeled a
+fixed-rate approximation, never silently. Each record carries its deduction
+treatment, and the per-customer coverage table (deduction_coverage export)
+reports how much of d is observed history, contract-derived rates, or a
+recomputed tiered formula. Fixtures prove the reported impact equals a
+baseline-vs-scenario ledger recomputed through the full pipeline, to the
+cent, for flat, fixed, tiered and mixed arrangements.
+
+**Per-unit cost-to-serve K** (Run 6, Phase 65 / Finding 8): the pair's
+activity cost over the covered baseline divided by its units, decomposed into
+a VARIABLE component (per-line and per-unit handling rates over observed
+lines and units) and an ORDER component (per-order and per-delivery
+allocations). Both derive from the pool-resolved effective rates, so a rate
+switched off by the cost-pool overlap check never re-enters through K, and
+the floor's K and the optimizer's K are the same number — the derivation is
+stated here precisely so neither can be circular with the other.
 
 Pairs without a known unit cost are excluded from cost-dependent levels and
 labeled `cost_unavailable` — missing cost is never treated as zero.
@@ -291,12 +1067,22 @@ Eligibility excludes contract-protected pairs and insufficient-data guidance.
 Every record carries baseline window, action, constraints, quantity basis,
 price assumptions, evidence status and a calculation trace.
 
-Target optimization maximizes pocket contribution (P (1 - d) - F - C) Q(P);
-the log-log interior optimum is P* = (C + F) / (1 - d) x beta / (1 + beta)
-[cents/unit, invoice basis], applied only at causal support inside the
-identifying price range, clipped to the floor and corridor; inelastic
-segments get the corridor top, labeled. All other targets remain provisional
-historical.
+Target optimization maximizes the CONFIGURED objective (Run 6, Phase 65) and
+every output names it. Under `pocket_gross_profit` the objective is
+(P (1 - d) - F - C) Q(P), with the log-log interior optimum
+P* = (C + F) / (1 - d) x beta / (1 + beta) [cents/unit, invoice basis]. Under
+`contribution` the objective also subtracts K, and the MARGINAL K follows the
+declared order-cost response: with a fixed ordering cadence
+(`fixed_order_frequency`, the default) order quantities scale with volume, so
+the per-order component's TOTAL is volume-constant and drops out of marginal
+economics; with `fixed_order_size` order counts scale with volume and the
+whole K is marginal. The contribution optimum is found NUMERICALLY (coarse
+grid plus cent-resolution refine — exact for this smooth, unimodal objective
+and still correct if unit economics gain further quantity dependence); a pair
+without a supported K keeps the provisional target. Either way the optimum is
+applied only at causal support inside the identifying price range, clipped to
+the floor and corridor; inelastic segments get the corridor top, labeled. All
+other targets remain provisional historical.
 
 Cost/tariff scenarios state scope (item / supplier / category), magnitude and
 effective date; pass-through strategies 0% / 50% / 100% and segment-weighted
@@ -317,7 +1103,60 @@ Statuses are fail-closed:
   (default 0.10), so the data does not support the accuracy an estimated curve
   claims. Coefficient, SE and CI stay reported; the status keeps the curve out
   of accuracy gating and win-aware optimization.
-- `estimated_win_curve` — fitted within the precision gate.
+- `estimated_win_curve` — fitted within the precision gate and calibrated on
+  held-out quotes (or with too few held-out quotes to test, which the output
+  says rather than assumes).
+
+### What counts as evidence (Run 6, Phase 77)
+
+Three things had to be fixed before any of the above means anything
+(Finding 21).
+
+**Only a decided quote is evidence about price.** The Run 2 implementation
+read `outcome == "W"` as a win and *everything else* as a loss. An open quote
+- no decision yet - therefore counted as the customer saying no, and a quote
+withdrawn because the customer's project was cancelled counted as a price
+rejection. Outcome codes are now classified against configured lists
+(`sensitivity.quote_outcome_won` and its siblings); open, withdrawn and
+expired quotes are excluded with a reason and counted, and a code in none of
+the lists is excluded as unrecognized rather than read as a loss. Modeled
+plus excluded equals the rows that came in, and the report shows the split.
+
+This is not a small correction. On a planted world where withdrawn and
+expired quotes cluster at low prices - projects that fell through, nothing to
+do with price - the old rule recovers a price coefficient biased toward zero,
+because cheap quotes appear to lose. It understates how much price matters,
+which is the direction that flatters a price increase.
+
+**One decision is one observation.** Revisions of the same opportunity are
+one negotiation. Where the mapping provides `quote_id` the unit is the
+opportunity and only the latest version is modeled, with the collapsed
+revisions counted; without one the unit is the quote line and the report says
+so. Counting revisions separately triples a deal's weight and, because
+revisions usually walk the price down, tilts the curve toward the prices that
+needed revising.
+
+**Quotes are not independent draws.** Standard errors cluster at the
+opportunity, customer or rep level - the finest the data supports - and the
+number of groups is reported beside the coefficient, because that, not the
+row count, is what the precision gate is reading. On the committed demo
+sample this is decisive: 676 quotes from 24 customers and 1,140 from 49 are
+not 676 and 1,140 independent observations, and both segments drop from
+estimated to `insufficient_precision` once the standard errors say so.
+
+**Calibration on quotes the curve has not seen.** In sample a logistic fit is
+calibrated by construction, so the check is a time split: refit on the
+earlier quotes, score the later ones, and report the calibration slope and
+intercept (from a logistic regression of the held-out outcome on the fitted
+log-odds), the Brier score and the c-statistic. A slope of 1 means the
+probabilities are the right shape; outside
+`sensitivity.win_curve_calibration_band` the status drops to
+`insufficient_precision` however tight the standard error is, because a
+precise curve of the wrong shape is worse than an imprecise one. Too few
+held-out quotes is reported as "not testable" - not as a pass.
+
+Controls for time and deal size enter where the columns exist, and the
+controls actually used are named on each row.
 
 The precision threshold is calibrated so that estimated curves recover planted
 coefficients within +/-15 percent per segment: across validation worlds, every
@@ -325,8 +1164,12 @@ segment at or under the threshold recovered within 7 percent, while segments
 above it erred by up to 28 percent. The gate is roughly a 1.5-sigma criterion
 against the +/-15 percent bound, so it is probabilistic rather than a
 guarantee — stated here rather than hidden. The negotiation gap (quote to
-close on won deals) informs the start price. Win-aware optimization maximizes
-(P - C) x P_win(P) with deal size held at baseline: ONE volume-response source
+close on won deals) informs the start price. Win-aware optimization (Run 6,
+Phase 65) translates the quote index into a monetary price and maximizes the
+POCKET objective times the win probability — (P (1 - d) - F - C) x P_win(P),
+or with per-unit cost-to-serve K also subtracted under the contribution
+objective (refused, not guessed, when no K is supported) — with deal size
+held at baseline: ONE volume-response source
 per record, enforced by the function signature. An elasticity estimated from
 realized transactions (PPML on the panel including zeros) already contains
 the extensive margin the win curve models — lost deals ARE the zeros — so
@@ -361,14 +1204,125 @@ recognize, the mapping is:
   a stated presentation difference, not a measurement one.
 - **Returns** are recognized when they occur and linked to originals. GAAP
   books a refund liability and a right-of-return asset at sale; the
-  difference is visible in the books tie-out when one is run.
+  difference is visible in the monthly GL variance check when one is run.
+
+### Monthly GL variance check (Run 6)
+
+Multi-currency runs carry a standing reconciling item, stated before any
+variance is read: the engine converts each line at its invoice period's rate
+(the analytical view - a June sale is a June sale at June's rate), while a
+general ledger translated at closing or average rates values the same
+transactions differently. That gap is translation policy, not a missing
+dollar, and the tie-out says so rather than leaving a reviewer to hunt for
+an amount that is not missing.
+
+The GL comparison is a CONTROL, not a proof. Net sales and cost of goods sold
+reconcile separately per period; every month-measure shows engine total, GL
+total, signed and absolute variance, the variance percentage (no percentage is
+shown when the GL amount is near zero - the cents tolerance judges those
+months, so a tiny denominator can never manufacture a reassuring or alarming
+percent), the tolerance used, the fiscal-period mapping and the account
+mapping. Unresolved reconciling items (periods missing from either side, the
+known-cost coverage share on COGS) are listed, and a deterministic trace
+sample follows individual lines from the source document into the monthly
+bridge. Statuses are distinct and honest: GL exact, GL within tolerance, GL
+variances outside tolerance, and not testable when no GL file is supplied -
+absence of the control is stated, never an implied pass. The engine's
+always-on source-total reconciliation (exact to the cent) is a separate,
+stronger property this check builds on; the headline reads "every source
+dollar reconciled or explained" with the visible residuals and coverage next
+to it, because allocated completeness beyond that would be a claim the data
+does not back.
 
 ## 10. Reproducibility
 
 Every run writes a manifest: config and mapping hashes, input file
-fingerprints (sha256), software versions, cleaning decisions, parameters and
-stage timings. The DuckDB store keeps both views and the audit trail keyed by
-source line key.
+fingerprints (sha256), software versions, cleaning decisions, parameters,
+stage timings and sampled peak memory per stage. The DuckDB store keeps both
+views and the audit trail keyed by source line key.
+
+### Spreadsheet and hierarchy edge cases (Run 6, Phase 85)
+
+Four assumptions that were never written down, now behaviours that are:
+
+- **Formulas with no cached result.** A workbook written by a tool that never
+  evaluated its formulas stores the formula and no value. Reading those cells
+  as blanks would turn `=B2*C2` into a missing amount, and the engine would
+  then do honest arithmetic on dishonest input. It fails with the cell
+  reference and says to save the workbook or export to CSV.
+- **Hidden rows are kept and counted.** A hidden row is still data, and a
+  filtered export can hide the very lines under review, so dropping them
+  would be a decision nobody made. Every total includes them and the run
+  reports how many were hidden.
+- **Date serials are named.** An Excel cell formatted as General holds a date
+  as a day count. The error now says the values are serials and that the fix
+  is in the workbook, rather than only that they do not match the declared
+  format.
+- **Parent and child contracts.** A national agreement is signed once, at the
+  parent account, while invoice lines carry ship-to ids and often no contract
+  number. A line with no contract of its own inherits protection from a
+  contract naming its customer, bill-to or parent, where the item family and
+  the dates match; the inherited id is marked `contract_inherited` so its
+  provenance stays visible. Before this, every child line under a
+  parent-level contract was treated as freely priceable - eligible for price
+  increases on exactly the customers a contract forbids repricing.
+
+An action is also blocked when its pair trades in more than one normalized
+unit with no equivalence between them, because one proposed price would be
+ambiguous, and an action covering several ship-tos says so in its affected
+set.
+
+### Memory at scale: the spill path (Run 6, Phase 83)
+
+The scale problem is coexistence, not any one stage: the financial ledger is
+the engine's widest frame (about 85 columns), and it used to stay resident
+through dispersion, segmentation, guidance, the panel, sensitivity and
+opportunity - stages that build large frames of their own and do not read it.
+
+With `scale.spill_ledger` on (or `--spill` on the CLI), the ledger is written
+to Parquet once, after the last stage that mutates it and the accounting
+stages that consume it whole (the event taxonomy, the rebate subledger, the
+vendor roll-forward), and dropped from memory for the analytic middle of the
+run. Inside that window exactly one consumer needs it - the per-unit
+cost-to-serve aggregation for the contribution floor - and it reads a
+five-column projection. At the reporting tail (leakage onward) the frame is
+read back once, whole, because exports, the DuckDB store and the report
+consume every column by design, and `PipelineResult.ledger` then satisfies
+the same contract it always did.
+
+**What the spill cannot move.** The allocation stages that need global order
+within settlement groups (largest-remainder cents, ties broken on
+source_line_key) run upstream of the spill point and, since Run 5,
+month-partitioned. Nothing downstream re-sorts the ledger: every consumer
+either aggregates or writes it in stored order, which is the order it was
+spilled in. Parity is a test, not an argument - the same run with the spill
+on and off produces byte-identical exports, and the contribution-floor,
+leakage, guidance and opportunity frames match to the cent.
+
+**Why it is off by default: it was measured, and it does not help yet.** On
+worlds of 70k-230k lines (three row counts, two cardinality mixes, each run
+in its own process), the spill RAISES peak memory slightly - 2.79 GB to
+3.05 GB at 227k lines - and the per-stage peaks say why. The run's peak does
+not live in the analytic middle the spill empties; it lives at the export
+step, where a write-ready copy of the ledger (re-sorted, categoricals cast
+back to strings) must exist beside its source for the file to be
+byte-identical to the in-memory path, and beside the still-resident
+observations and flagged frames, which the ledger spill does not touch. The
+middle stages did get lighter (sensitivity's peak fell below the tail's),
+but the tail sets the number.
+
+So the spill ships off, with its parity proven, as infrastructure for the two
+levers the measurement identified rather than as a saving it has not earned:
+streaming the ledger export (blocked today by byte-identity between the
+eager and streaming Parquet writers - relaxing that is an owner decision,
+because "byte-identical exports" is a published claim), and spilling the
+observations frames the same way. The 10M-line target remains a known gap,
+now with a better map of where the memory actually is.
+
+Peak memory per stage is sampled on a thread (tenth-of-a-second interval)
+rather than read at stage boundaries, because a stage that balloons and frees
+before its boundary would otherwise read as cheap. Absent psutil the manifest
+carries an empty record, which is a statement, not a row of zeros.
 
 ## 11. Pricing-law considerations
 
@@ -376,35 +1330,130 @@ Orientation for reviewers, not legal advice. Pricing decisions at scale touch
 several bodies of law, and the engine's job is to surface the facts a counsel
 or compliance reviewer would ask for — never to conclude.
 
+**These are guardrails, not safe harbors.** Nothing in this section makes a
+price lawful, and passing every check the engine applies is not a defense.
+The review flag below is a prompt to look at a pair of prices; the
+provenance rule refuses a data source the engine cannot account for. Both
+narrow the ways a run can go wrong by accident. Neither is an opinion about
+any price, and a clean run is not evidence of anything in a dispute.
+
+The distinction matters because the enforcement risk around pricing software
+is about *inputs and conduct*, not about using software. The clearest recent
+illustration is the Justice Department's proposed consent decree with
+Pinnacle Property Management, filed 4 September 2026 in the RealPage matter
+(M.D.N.C.; the United States and state co-plaintiffs sued six landlords in
+January 2025 over rents set with each other's competitively sensitive
+information). Pinnacle admits no fault, and the decree is subject to public
+comment and court approval. What it asks for is instructive: refrain from
+using an anticompetitive algorithm that generates pricing recommendations,
+refrain from sharing competitively sensitive information with competitors,
+and accept a court-appointed monitor if a third-party pricing algorithm is
+used that is not certified under the decree. **It does not outlaw pricing
+software** — it draws the line at algorithms fed with rivals' data, and
+contemplates certified third-party algorithms.
+
+That line is the one this engine is built to stay on the right side of: it
+prices from the seller's own transactions and from public series whose
+provenance is recorded, and it refuses a market index it cannot account for
+(Phase 80). Staying on that side is a design choice, not a certification.
+The engine cannot certify itself, this document is not a legal opinion, and
+a deployment that matters should be reviewed by counsel who can see the
+actual data and the actual market.
+
+[DOJ press release](https://www.justice.gov/opa/pr/justice-department-reaches-proposed-consent-decree-pinnacle-one-americas-largest-landlords),
+retrieved 28 October 2026.
+
 **Price discrimination (Robinson-Patman Act).** Selling commodities of like
 grade and quality to competing buyers at different prices can be unlawful when
 it may harm competition. Recognized defenses include cost justification (the
 price difference reflects differences in the cost of serving the two buyers)
-and meeting competition. The engine raises a *review flag* when two customers
-who are likely competitors of each other — by default, same industry and same
-region, configurable in `compliance.robinson_patman` — carry recommended
-prices for the same item more than a configured threshold apart. Beside every
-flag it shows the cost-to-serve difference between the two customers for that
-item, because that is the first number a cost-justification review needs. The
-flag marks a question, not a violation: whether the customers actually compete,
-whether the goods are of like grade and quality, and whether a defense applies
-are judgments the engine cannot make. Actions on flagged pairs require a
-written justification at approval (Phase 38 guardrail).
+and meeting competition. The engine raises a *review flag* when two
+customers who may compete with each other carry recommended prices for the
+same item more than a configured threshold apart.
+
+**Same industry and region is a candidate screen, not a definition of
+competition** (Run 6, Phase 79). Two distributors in one industry and region
+may not compete at all - one sells to shipyards, the other to hospitals - and
+two in different regions may compete head to head. The screen is what the
+data can do unaided; an optional reviewed `customer_competitors` table
+overrides it in both directions, confirming pairs the screen missed and
+clearing pairs it caught. Every flagged pair states its basis: *reviewed
+competitor* or *screened candidate*. Set
+`compliance.robinson_patman.require_reviewed_map` to flag only pairs a
+reviewer has confirmed.
+
+**A missing attribute is a data-quality status, not a quiet pass.** A customer
+with no industry on file used to drop out of the comparison without a word.
+It is now counted and listed as unscreened, because "these customers do not
+compete" and "we do not know whether they compete" are different answers.
+
+**What each flag carries.** The comparable item, its role and unit of
+measure; the dates the prices and costs come from; both the current and the
+recommended price, on an invoice basis and after the deductions that scale
+with price; the volumes; channel and contract position; the discount, rebate
+and freight-concession terms; the cost to serve per unit with the method that
+produced it (the activity-rate figures are estimates and say so); a
+data-coverage field naming which of these the source actually supplied; and
+any meeting-competition record, contemporaneous bid or reviewer decision from
+an optional `rp_evidence` table. Where no evidence is recorded the output
+says *absent*, not *clear*.
+
+Comparing invoice prices alone can mislead when one buyer takes a rebate and
+the other does not, so the net basis is shown beside it: on the committed
+sample, pairs more than 5% apart on invoice price are often within 4% once
+their terms are applied.
+
+Cost differences are supporting evidence, never a conclusion. The flag marks
+a question: whether the customers actually compete, whether the goods are of
+like grade and quality, and whether a defense applies are judgments the
+engine cannot make. No engine output calls anything a violation, and none
+calls anything compliant. Actions on flagged pairs require a written
+justification at approval (Phase 38 guardrail) — a record that someone
+considered the question, not a finding that the answer was yes.
 
 **Algorithmic pricing and information sharing (Sherman Act section 1).**
 Recent enforcement and litigation treat pricing algorithms fed with
 competitors' non-public data as potential facilitators of price coordination,
-even without an explicit agreement. For that reason the engine accepts a
-market/competitor price index as an elasticity control **only from public
-sources**: the mapping must declare `public_source: true` for the
-market_price_index table, and anything else switches the control off with a
-stated note (`compliance.market_index_public_source_required`). Public indexes
-(e.g. producer price indexes) carry no such concern.
+even without an explicit agreement. The engine therefore accounts for every
+external series it uses rather than asserting that it is acceptable.
+
+Until Run 6 the mapping declared `public_source: true` and that was the whole
+test. A boolean is an assertion; **provenance is a record** (Phase 80,
+Finding 18). Each external series now declares its provider, URL, retrieval
+timestamp, licence or terms, update cadence, coverage, aggregation level and
+**series kind**, and the engine reads three things from that block:
+
+- *Is it accounted for at all?* No provenance, no control: a series nobody
+  can place is not evidence that competitor prices were held constant
+  (`compliance.market_index_provenance_required`).
+- *Is it the right kind of series?* This is the distinction the old boolean
+  could not make. A **producer price index is a cost series** and belongs in
+  the instrument pipeline, where those cost movements are the identifying
+  variation. A **market selling-price index** is what the competitor-price
+  control needs. Each is refused by name in the other's role - a cost index
+  used as a competitor-price control would look like a control and would not
+  be one, and a selling-price series used as an instrument would be the very
+  channel the exclusion restriction has to rule out.
+- *Is the publisher one this deployment accepts?*
+  `compliance.market_index_allowed_providers` with
+  `market_index_require_allowlist` makes an approved-source list binding; off
+  by default, because most deployments have not drawn one up, and an unlisted
+  provider is then reported rather than silently accepted.
+
+Where the control is used, the run states what it is: publisher, URL,
+retrieval time, licence, cadence, coverage and level. The committed demo's
+index says plainly that it is synthetic.
 
 **What the engine never does.** It never ingests competitor transaction data,
 never recommends coordinating prices with competitors, and never silences a
-compliance flag: a flagged action can be approved, but only with a recorded
+review flag: a flagged action can be approved, but only with a recorded
 written justification.
+
+**What the engine cannot do.** It cannot tell whether two customers actually
+compete, whether two items are of like grade and quality, whether a defense
+applies, or whether any particular price is lawful. It has no view on the
+market a deployment operates in. Every flag it raises is a question for
+someone else to answer, and the absence of a flag is not an answer either.
 
 ## 12. Action center
 
@@ -433,6 +1482,59 @@ contract-protected pairs generate *blocked* actions with the reason shown and
 can never become price changes; the Robinson-Patman review flag (section 11)
 travels with the action; priority defaults by impact and evidence, with a
 non-causal evidence status demoting one level.
+
+### Stale actions, safe transitions and export recovery (Run 6)
+
+A proposal is a claim about the world at generation time, so every action
+stores the fingerprints it rests on — the source files' content hashes, the
+config hash, and a model fingerprint derived from the segment elasticity
+statuses and estimates — plus an expiry date. At approval and at export the
+engine REVALIDATES the stored key values against its current outputs: current
+price, binding floor, list provenance, contract protection, guidance
+sufficiency, compliance flags, scope duplication and expiry. Every move is
+shown field by field with both versions written to an append-only
+revalidation audit table; a move inside the configured threshold is reported
+and allowed, a move beyond it or a hard change (contract protection appears,
+guidance goes insufficient, the proposed price now sits below the floor, the
+pair vanishes, another active price takes the scope) refuses the approval and
+sends the action back for re-review. A check the available outputs cannot
+support is NAMED as not revalidated — never counted as a pass. Export applies
+the same test and HOLDS OUT stale rows with their reason rather than shipping
+them on old evidence.
+
+Concurrency: every transition can carry the caller's expected event sequence
+number. The check and the insert run inside one database transaction with the
+count re-read under it, so two simultaneous transitions cannot both land — the
+loser gets a 409 naming the sequence it expected and the one it found, and
+writes nothing.
+
+Export recovery: an export journals its intent (export id, path, the action
+ids it covers) BEFORE writing the file and marks the journal committed only
+after the status transitions land. A crash in between leaves an open journal
+row, which the next export (or an explicit recovery pass) completes for
+exactly those actions — skipping any that have since moved past approved, so
+recovery never re-exports a superseded or implemented price. Recovery is
+idempotent: running it twice changes nothing.
+
+### Scope keys, overlap and portfolio totals (Run 6)
+
+Every action carries its scope metadata: a scope key (for price actions, the
+uniqueness unit customer x item x unit x effective date), baseline period,
+intervention, affected set, scenario link and overlap group. ONE active
+proposed price may exist per scope key: approving a duplicate is refused with
+the competing action named, and the price export refuses a file that would
+carry two prices for one scope (defense in depth). Cross-scope overlaps - a
+pass-through scenario and pair price actions on the same items - share an
+overlap group, and the portfolio table carries each group's JOINT estimate
+under one baseline: price actions keep their single-action impacts (deduped
+by scope key) while the pass-through recovery is recomputed with the priced
+pairs excluded from its base. The naive sum is shown beside it only to make
+the double counting visible; neither figure is ever added to the single-action
+lists, and the three quantities (single-action impact, scenario impact,
+portfolio estimate) stay distinct in the UI, the CSV exports and the API.
+Portfolio groups are computed at engine-run time over the generated action
+set; manual proposals join the duplicate guard through their scope keys but
+not the precomputed groups (stated in the API payload).
 
 ### Review workflow (maker-checker)
 
@@ -472,43 +1574,105 @@ through the engine's own ingest and matches every price to the cent.
 ### Results tracking and its limits
 
 After an action is marked implemented, the tracker measures it over a
-configurable window (default 90 days on each side of the implementation date):
+configurable window (default 90 days on each side of the implementation date).
+Two different things are produced, and keeping them apart is most of the point
+of this section.
 
-- **Price realization** = (P_after − P_before) / (P_new − P_before) on the
+#### Per action: a control-adjusted volume change
+
+- **Price realization** = (P_after - P_before) / (P_new - P_before) on the
   pair's invoiced prices: 1.0 fully realized, 0 no move, negative eroded
   further. This is the strongest per-action signal, because it is directly
-  observable.
-- **Volume against prediction.** The treated pair's volume ratio
-  (after/before) is compared to the median ratio of untreated same-segment
-  pairs with sales in both windows — a difference-in-differences design, so a
-  market-wide trend never reads as a price effect. The prediction is the
-  `predicted_volume_ratio` stored on the action **at generation time**
-  ((P1/P0)^elasticity for causal-supported volume responses, 1.0 for
-  fixed-volume actions), so the engine is graded on what it claimed when the
-  action was proposed, not on a number chosen after the fact.
+  observable. Each action is bucketed by it - moved in full, part way, not at
+  all, or the other way - because an action whose price never moved says
+  nothing about price response and should not be pooled with one that did.
+- **Control-adjusted volume change.** The treated pair's volume ratio
+  (after/before) divided by the median ratio of clean untreated pairs in the
+  same segment. It removes the general trend and claims nothing more. It is
+  deliberately **not** called a difference-in-differences estimate: a single
+  pair's ratio against a median of untreated ratios does not carry the
+  assumptions that name implies, and calling it one invited the reader to
+  believe more than the number supports.
+- The prediction it is graded against is the `predicted_volume_ratio` stored
+  on the action **at generation time** ((P1/P0)^elasticity for
+  causal-supported volume responses, 1.0 for fixed-volume actions), so the
+  engine is graded on what it claimed when the action was proposed.
 - **Margin outcome**: pocket margin and contribution, before vs after.
 
-Every gate fails closed with its reason on the outcome row: window not yet
-elapsed, too few after-window sales (a pair that stopped buying is reported as
-exactly that), too few comparison pairs. Calibration — prediction error by
-evidence bucket (causal-supported / IV-estimated / fixed-volume) — appears
-only once a configured minimum of actions is measured; below it the table says
-"not enough implemented actions yet" instead of any number.
+**A pair that stops buying is a result, not a missing value.** An earlier
+version refused to measure an action whose pair had too few sales after the
+change, which refused exactly the pairs where a price increase did the most
+and biased every pooled figure toward the survivors. An empty after window is
+now a volume ratio of zero with a `stopped_buying` flag. The same rule applies
+to the comparison group: a control pair that bought before and not after
+contributes a zero, because restricting controls to pairs that bought in both
+windows compares every treated pair against a group that could not fall to
+zero.
 
-**Limits, stated plainly.**
+**Clean controls.** A comparison pair must be untreated for the whole window
+and untouched by anything that moves with the treatment. Three things
+disqualify one, each counted and named on the outcome row: it carries a price
+action of its own (whenever that action lands - including later in the same
+window, which is the staggered-adoption trap); it shares a campaign with the
+treated action; or its item is in the same substitution group as the treated
+item, so volume shifting out of the treated pair lands in the control and
+doubles the apparent effect.
 
-- A single pair's 90-day window carries roughly 0.2–0.3 log points of Poisson
+Results are reported split by implementation wave, segment, action type,
+evidence level and how faithfully the price moved, because a single pooled
+median hides all of it.
+
+#### Pooled: an event study with its assumptions written down
+
+The formal counterpart is one estimate across every implemented action.
+
+**The estimand:** the average proportional change in monthly quantity for
+treated customer-item pairs over the periods after their price change,
+relative to what those pairs would have bought otherwise, with the
+counterfactual taken from pairs not treated in that period. It is an average
+over the treated pairs that appear, not over a population.
+
+Actions are implemented on different dates, so the panel has cohorts, and the
+control group for a period is every **never-treated** pair plus every **not
+yet treated** pair. An already-treated pair is never used as a control for a
+later one - the comparison that makes two-way fixed-effects estimates on
+staggered adoption go wrong, sometimes in sign, as set out in Baker, Callaway,
+Cunningham, Goodman-Bacon and Sant'Anna's practitioner's guide in the *Journal
+of Economic Literature*. This is an event-study specification with that
+restriction imposed and estimated by Poisson pseudo-likelihood; it is **not**
+the Callaway-Sant'Anna group-time estimator, and the report does not call it
+one.
+
+Poisson, because the outcome includes zeros: a pair that stopped buying is the
+result that matters most here and logs cannot represent it.
+
+**Pre-trends.** The lead coefficients are reported and never summarised into a
+pass. A materially non-zero lead is reported as a failure, and the post-change
+numbers are then labeled as not an effect of the price change rather than
+shown as a headline. A lead near zero is reported with **what size of
+pre-trend the data could have detected**, because a quiet test with no power
+is not evidence of anything. Parallel trends is an assumption; nothing here
+establishes it.
+
+**Where the design can be improved, do that instead.** A phased rollout, a
+randomized one, or a matched holdout turns these comparisons into estimates.
+The tracker says so in its notes rather than leaving the reader to infer that
+an observational comparison was the best available.
+
+#### Limits, stated plainly
+
+- A single pair's 90-day window carries roughly 0.2-0.3 log points of Poisson
   noise, which usually exceeds the planted effect of a realistic price change.
-  Per-action volume verdicts are therefore weak evidence; the *pooled*
-  comparison is the meaningful read. On a synthetic world with 30 planted +8%
+  Per-action volume verdicts are therefore weak evidence; the pooled estimate
+  is the meaningful read. On a synthetic world with 30 planted +8%
   interventions the pooled recovery error is 0.039 log points while the
-  per-pair median absolute error is 0.26 — both reported in
+  per-pair median absolute error is 0.26 - both reported in
   `docs/validation.json`.
-- The difference-in-differences comparison assumes untreated same-segment
-  pairs carry the treated pair's counterfactual trend (parallel trends). A
-  shock specific to the treated customer biases the measured effect, in either
-  direction.
+- Both the per-action comparison and the pooled estimate assume untreated
+  pairs carry the treated pair's counterfactual trend. A shock specific to the
+  treated customer biases the result in either direction.
 - Only implemented actions are measured, and which proposals get implemented
-  is a human choice — measured outcomes are a selected sample, not a random
+  is a human choice - measured outcomes are a selected sample, not a random
   one, so calibration describes the actions that were taken, not all actions
-  the engine could propose.
+  the engine could propose. The pre-trend check is what catches the worst form
+  of this, where actions were taken on pairs that were already moving.

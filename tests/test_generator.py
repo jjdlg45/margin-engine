@@ -45,6 +45,43 @@ def test_same_seed_identical_output(tmp_path: Path) -> None:
     assert sa == sb
 
 
+def test_existing_worlds_are_byte_identical_across_the_extensive_margin_change(
+    tmp_path: Path,
+) -> None:
+    """Adding a price-driven extensive margin must not disturb any world that
+    does not use one (Run 6, Phase 72).
+
+    The hashes in the fixture were recorded BEFORE the change, so this compares
+    across it rather than a run against itself. The guard that makes it hold is
+    `if beta_ext == 0.0: buy_p_eff = buy_p` rather than pushing the probability
+    through the logit and back: sigmoid(logit(0.07)) is 0.07000000000000002, and
+    0.07 is exactly the sparse preset's purchase probability, so an unguarded
+    round trip would flip a purchase decision for any random draw landing in
+    that one-unit-in-the-last-place window and cascade through every later draw.
+
+    `truth_summary.json` is excluded deliberately: the new configuration keys
+    and the planted total elasticity land there by design, and
+    `test_same_seed_identical_output` already pins it within a single version.
+    """
+    recorded = json.loads(
+        (Path(__file__).parent / "fixtures" / "generator_hashes.json").read_text(encoding="utf-8")
+    )
+    assert recorded, "the pre-change hash fixture is empty"
+    for key, files in sorted(recorded.items()):
+        preset_name, seed_s = key.split(":")
+        out, _ = _gen(tmp_path / key.replace(":", "_"), Preset(preset_name), seed=int(seed_s))
+        for rel, digest in sorted(files.items()):
+            path = out / rel
+            assert path.is_file(), f"{key}: {rel} is no longer generated"
+            assert _file_hash(path) == digest, f"{key}: {rel} changed"
+        produced = {
+            p.relative_to(out).as_posix()
+            for p in out.rglob("*")
+            if p.is_file() and p.name != "truth_summary.json"
+        }
+        assert produced == set(files), f"{key}: the set of generated files changed"
+
+
 def test_different_seed_different_output(tmp_path: Path) -> None:
     a, _ = _gen(tmp_path / "a", Preset.WELL_IDENTIFIED, seed=1)
     b, _ = _gen(tmp_path / "b", Preset.WELL_IDENTIFIED, seed=2)
@@ -281,16 +318,31 @@ def test_preset_nonconstant_elasticity(tmp_path: Path) -> None:
 
 
 def test_preset_competitor_comovement(tmp_path: Path) -> None:
-    """24.9/24.10: the market index file exists ONLY on this preset and its
-    log co-moves with the planted cost/tariff shocks."""
+    """24.9/24.10 and Run 6 Phase 70: a PUBLISHED market index now exists on
+    every world (the causal gate needs competitor-price conditions held
+    constant, and a world without a published series could never demonstrate
+    that path). On THIS preset the published series is deliberately national
+    and monthly - one value per period, which the estimator's time fixed
+    effects absorb exactly - so the world where competitor prices move with
+    the instruments is also the world whose published series cannot control
+    them. Its log still co-moves with the planted cost/tariff shocks."""
     import numpy as np
 
     out, _ = _gen(tmp_path / "c", Preset.COMPETITOR_COMOVEMENT)
     mkt_path = out / "erp" / "market_price_index.csv"
     assert mkt_path.exists()
     out_base, _ = _gen(tmp_path / "b", Preset.WELL_IDENTIFIED)
-    assert not (out_base / "erp" / "market_price_index.csv").exists()
+    base_path = out_base / "erp" / "market_price_index.csv"
+    assert base_path.exists(), "every world publishes an index since Phase 70"
+    base_mkt = pl.read_csv(base_path)
+    # The well-identified world's index varies ACROSS categories within a
+    # month, so time fixed effects cannot absorb it.
+    per_period = base_mkt.group_by("PERIOD").agg(pl.col("MKT_IDX").n_unique().alias("n"))
+    assert int(per_period["n"].min()) > 1
+    # This preset's index is national: one value per period.
     mkt = pl.read_csv(mkt_path)
+    national = mkt.group_by("PERIOD").agg(pl.col("MKT_IDX").n_unique().alias("n"))
+    assert int(national["n"].max()) == 1
     panel = pl.read_parquet(out / "ground_truth" / "panel_truth.parquet")
     # Join by month index: PERIOD is YYYY-MM from the world start.
     shocks = (

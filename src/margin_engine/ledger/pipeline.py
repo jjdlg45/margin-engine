@@ -16,7 +16,12 @@ import polars as pl
 
 from margin_engine.config import Rules
 from margin_engine.ingest.fx import convert_lines, convert_reference_amounts, quarter_end_rates
-from margin_engine.ingest.loader import load_lines, load_reference_table
+from margin_engine.ingest.loader import (
+    hidden_rows_seen,
+    load_lines,
+    load_reference_table,
+    reset_hidden_rows,
+)
 from margin_engine.ingest.mapping import MappingError, SourceMapping, load_mapping
 from margin_engine.memlog import rss_log
 from margin_engine.transactions.classify import ClassifiedData, classify, sales_observations
@@ -34,6 +39,11 @@ class PipelineResult:
     unallocated_settlements: pl.DataFrame | None
     reference: dict[str, pl.DataFrame | None]
     notes: list[str]
+    # Per customer x year x program tiered summary (Run 6, Phase 61), for the
+    # economic-event taxonomy and the rebate subledger.
+    tiered_summary: pl.DataFrame | None = None
+    # Per customer x program x month tiered accrual stream (Run 6, Phase 62).
+    tiered_monthly: pl.DataFrame | None = None
     # Fully blank input rows dropped per source file (whitespace-only included).
     blank_rows_dropped: dict[str, int] = field(default_factory=dict)
 
@@ -102,6 +112,8 @@ REFERENCE_TABLES = [
     "quotes",
     "substitution_groups",
     "market_price_index",
+    "customer_competitors",
+    "rp_evidence",
     "gl_totals",
     "external_cost_series",
     "fiscal_periods",
@@ -121,6 +133,9 @@ def run_pipeline(
     `cache_dir` enables the fingerprint-keyed parse cache (Phase 35). Both off
     by default; results are identical either way."""
     mapping = load_mapping(mapping_path)
+    # Per-run record, so a second run in one process does not inherit the
+    # first run's hidden-row count.
+    reset_hidden_rows()
     blank_counts: dict[str, int] = {}
     if lines is None and cache_dir is not None:
         from margin_engine.cache import StageCache, fingerprint_file
@@ -248,6 +263,16 @@ def run_pipeline(
         )
     if skipped:
         notes.append(f"reference tables absent (features skipped): {skipped}")
+    # Hidden spreadsheet rows (Run 6, Phase 85): kept, because a hidden row
+    # is still data and a filtered export can hide the very lines under
+    # review - and reported, because a reviewer should know the workbook was
+    # filtered rather than discover it later.
+    for file, n in sorted(hidden_rows_seen().items()):
+        notes.append(
+            f"{Path(file).name}: {n} row(s) were hidden in the workbook and are "
+            "INCLUDED in every total; hiding a row is a display choice, not a "
+            "deletion, so the engine does not treat it as one"
+        )
     return PipelineResult(
         mapping=mapping,
         ledger=wf.lines,
@@ -258,6 +283,8 @@ def run_pipeline(
         reference=ref,
         notes=notes,
         blank_rows_dropped=blank_counts,
+        tiered_summary=wf.tiered_summary,
+        tiered_monthly=wf.tiered_monthly,
     )
 
 

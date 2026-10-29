@@ -79,6 +79,49 @@ test("guidance page: pair lookup shows bundle floors and explanation", async ({ 
   await expect(page.getByText(pair.explanation.slice(0, 60))).toBeVisible();
 });
 
+test("segments page: the later-period test is shown with its baseline", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/segments");
+  const h = bundle.segments.holdout;
+  expect(h).toBeTruthy();
+  await expect(page.getByRole("heading", { name: "Tested on later periods" })).toBeVisible();
+  // The segmentation is never shown winning without the thing it beat.
+  await expect(page.getByText("Average error of the segment medians")).toBeVisible();
+  await expect(page.getByText("Average error of a single median")).toBeVisible();
+  const notes = page.getByTestId("segment-notes");
+  await expect(notes).toBeVisible();
+  for (const n of bundle.segments.notes ?? []) {
+    await expect(notes).toContainText(n.slice(0, 60));
+  }
+});
+
+test("modules page: the win curves say what they modeled and what they left out", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/modules");
+  const intake = bundle.optional_modules.quote_intake;
+  expect(intake).toBeTruthy();
+  // Every quote row is accounted for: modeled plus excluded equals the total.
+  const excluded = intake!.excluded.reduce((a, e) => a + e.n, 0);
+  expect(intake!.n_modeled + excluded).toBe(intake!.n_rows);
+  await expect(
+    page.getByText("Only quotes with a decision - won or lost - are evidence", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  if (intake!.excluded.length > 0) {
+    const list = page.getByTestId("quote-exclusions");
+    await expect(list).toBeVisible();
+    for (const e of intake!.excluded) {
+      await expect(list).toContainText(e.reason);
+    }
+  }
+  // The precision gate reads independent groups, so the page shows them.
+  await expect(page.getByText("Independent groups", { exact: true })).toBeVisible();
+  await expect(page.getByText("Held-out check", { exact: true })).toBeVisible();
+});
+
 test("sensitivity page: segment rows match the bundle", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/sensitivity");
@@ -140,5 +183,24 @@ test("modules page: present modules render, absent ones state the reason", async
     await expect(page.getByText(m.inventory.method).first()).toBeVisible();
   } else if (m.inventory_absent_reason) {
     await expect(page.getByText(m.inventory_absent_reason)).toBeVisible();
+  }
+});
+
+
+test("methodology page: every figure names the run it came from", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/methodology");
+  const t = page.getByTestId("traceability");
+  await expect(t).toBeVisible();
+  const m = bundle.manifest;
+  // The displayed identifiers are the bundle's, truncated for reading - a
+  // parity check, not a presence check.
+  await expect(t).toContainText(m.rules_sha256.slice(0, 16));
+  await expect(t).toContainText(m.mapping_sha256.slice(0, 16));
+  await expect(t).toContainText(m.model_fingerprint);
+  await expect(t).toContainText(m.input_fingerprint);
+  await expect(t).toContainText(m.engine_version);
+  for (const f of m.input_files.slice(0, 3)) {
+    await expect(t).toContainText(f.sha256.slice(0, 16));
   }
 });

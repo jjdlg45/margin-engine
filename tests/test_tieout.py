@@ -1,5 +1,7 @@
-"""Run 4 (27.3): books tie-out. Engine monthly totals vs GL with absolute and
-percentage differences; failing months flagged, never hidden."""
+"""Run 4 (27.3) / Run 6 Phase 64: the monthly GL variance check. Engine period
+totals vs GL with signed/absolute variances and guarded percentages; variances
+outside tolerance are flagged, never hidden; absence of a GL is a stated
+status."""
 
 from __future__ import annotations
 
@@ -45,7 +47,7 @@ def test_tieout_exact_match_passes() -> None:
         (pl.col("month") == "2024-01") & (pl.col("measure") == "net_sales")
     ).to_dicts()[0]
     assert jan["engine_cents"] == 140_000  # sales + returns; credit memo excluded
-    assert jan["diff_cents"] == 0
+    assert jan["variance_cents"] == 0
     assert jan["within_tolerance"] is True
 
 
@@ -60,8 +62,8 @@ def test_tieout_failing_month_flagged_never_hidden() -> None:
     assert res.n_failing == 1
     jan = res.table.filter(pl.col("month") == "2024-01").to_dicts()[0]
     assert jan["within_tolerance"] is False
-    assert jan["diff_cents"] == -10_000
-    assert abs(jan["diff_pct"] + 6.6667) < 0.01
+    assert jan["variance_cents"] == -10_000
+    assert abs(jan["variance_pct"] + 6.6667) < 0.01
     # The failing month stays in the table - flagged, not dropped.
     assert res.table.filter(~pl.col("within_tolerance")).height == 1
 

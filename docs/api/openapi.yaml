@@ -522,6 +522,12 @@ components:
       properties:
         bundle_version: { type: string }
         engine_version: { type: string }
+        # Traceability (Run 6, Phase 84): the run behind every served number.
+        rules_sha256: { type: string }
+        mapping_sha256: { type: string }
+        input_fingerprint: { type: string }
+        config_fingerprint: { type: string }
+        model_fingerprint: { type: string }
         data_label: { type: string }
         honest_labels: { type: array, items: { type: string } }
         labels:

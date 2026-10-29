@@ -89,6 +89,15 @@ def _excel_to_frame(path: Path, sheet: str | int | None, opts: InputOptions) -> 
                 return str(int(v))
             return str(v)
 
+        # Hidden rows (Run 6, Phase 85). A hidden row is still data, and
+        # dropping it would be a decision nobody made - a filtered export can
+        # hide the very lines under review. They are KEPT and counted, so the
+        # report can say how many were hidden and a reviewer can decide
+        # whether that was deliberate.
+        hidden = _count_hidden_rows(path)
+        if hidden:
+            _HIDDEN_ROWS[str(path)] = hidden
+
         rows = ws.iter_rows(values_only=True)
         try:
             header = [str(h) if h is not None else "" for h in next(rows)]
@@ -96,12 +105,135 @@ def _excel_to_frame(path: Path, sheet: str | int | None, opts: InputOptions) -> 
             msg = f"{path}: sheet '{ws.title}' is empty."
             raise MappingError(msg) from None
         data: dict[str, list[str | None]] = {h: [] for h in header}
+        any_null = False
         for row in rows:
             for h, v in zip(header, row, strict=False):
+                if v is None:
+                    any_null = True
                 data[h].append(cell_str(v))
+        if any_null:
+            # Formulas without cached results (Run 6, Phase 85). data_only
+            # returns the value Excel last computed; a workbook written by a
+            # tool that never computed them (openpyxl, some exporters) yields
+            # None for every formula cell, indistinguishable here from a
+            # genuinely blank cell. Blank cells are everywhere in real
+            # exports, so the second pass runs only when the first saw nulls,
+            # and only to ask one question: were any of them formulas?
+            _raise_if_uncomputed_formulas(path, ws.title)
         return pl.DataFrame(data, schema=dict.fromkeys(header, pl.String))
     finally:
         wb.close()
+
+
+def _raise_if_uncomputed_formulas(path: Path, sheet_title: str) -> None:
+    """Fail actionably when the workbook holds formulas Excel never computed.
+
+    Reading them as blanks would turn '=B2*C2' into a missing amount and the
+    engine would then honestly report revenue that is wrong at the source -
+    honest arithmetic on dishonest input. The message says what to do.
+    """
+    from openpyxl import load_workbook
+
+    wb2 = load_workbook(path, read_only=True, data_only=False)
+    try:
+        ws2 = next((w for w in wb2.worksheets if w.title == sheet_title), wb2.worksheets[0])
+        n_formulas = 0
+        example = ""
+        for row in ws2.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, str) and v.startswith("="):
+                    n_formulas += 1
+                    if not example:
+                        example = f"{cell.coordinate}: {v[:40]}"
+        if n_formulas:
+            msg = (
+                f"{path}: sheet '{sheet_title}' holds {n_formulas} formula cell(s) "
+                f"with no computed values stored (first: {example}). The engine "
+                "reads values, never evaluates formulas - open the workbook and "
+                "save it so the results are stored, or export the sheet to CSV."
+            )
+            raise MappingError(msg)
+    finally:
+        wb2.close()
+
+
+#: Hidden spreadsheet rows seen on the last read, by file. Read by the
+#: pipeline for its notes; a dict rather than a return value because the
+#: xlsx reader sits several layers below the caller that reports.
+_HIDDEN_ROWS: dict[str, int] = {}
+
+
+def hidden_rows_seen() -> dict[str, int]:
+    """Hidden rows encountered since the last reset, by file path."""
+    return dict(_HIDDEN_ROWS)
+
+
+def reset_hidden_rows() -> None:
+    _HIDDEN_ROWS.clear()
+
+
+#: Excel's 1900 date system: 1 is 1900-01-01, and anything a business export
+#: plausibly contains sits roughly between 1990 and 2100.
+_SERIAL_RANGE = (32_000, 74_000)
+
+
+def _count_hidden_rows(path: Path) -> int:
+    """Hidden data rows across the workbook's sheets.
+
+    openpyxl's read-only worksheets - which the loader uses, because holding
+    a 10M-line workbook in the cell model is not an option - do not expose
+    row dimensions. The flag lives in the sheet XML as `hidden="1"` on the
+    row element, so it is read straight from the zip: cheap, streaming, and
+    it does not force the whole workbook back into memory to answer one
+    question. Header rows are not counted; neither is a failure to read,
+    which returns zero rather than inventing a number.
+    """
+    import re
+    import zipfile
+
+    pattern = re.compile(rb'<row[^>]*\bhidden="(?:1|true)"', re.IGNORECASE)
+    total = 0
+    try:
+        with zipfile.ZipFile(path) as zf:
+            for name in zf.namelist():
+                if not name.startswith("xl/worksheets/") or not name.endswith(".xml"):
+                    continue
+                with zf.open(name) as fh:
+                    tail = b""
+                    while chunk := fh.read(1 << 20):
+                        buf = tail + chunk
+                        total += len(pattern.findall(buf))
+                        # Keep a tail so a row tag split across chunks is
+                        # still seen exactly once.
+                        tail = buf[-200:]
+    except (OSError, zipfile.BadZipFile):
+        return 0
+    return total
+
+
+def _serial_date_hint(samples: list[object]) -> str:
+    """Name the spreadsheet-serial case when the bad values look like one.
+
+    An Excel cell formatted as General holds a date as a day count - 45678,
+    not 2025-01-15 - and openpyxl returns the number. Without this, the
+    actionable message says only that the values do not match the declared
+    format, which is true and unhelpful: the fix is in the workbook, not the
+    mapping.
+    """
+    numeric = [
+        str(v)
+        for v in samples
+        if str(v).strip().isdigit() and _SERIAL_RANGE[0] <= int(str(v).strip()) <= _SERIAL_RANGE[1]
+    ]
+    if not numeric:
+        return ""
+    return (
+        f" Values like {numeric[:3]} are spreadsheet date SERIAL numbers, not "
+        "dates: the cells are formatted as General, so the workbook stores a "
+        "day count. Format the column as a date and save, or export to CSV "
+        "with the dates written out - the engine never guesses a date system."
+    )
 
 
 def read_table(
@@ -376,6 +508,8 @@ def load_lines(
         )
     if lm.restocking_fee is not None:
         money_raw.append(("restocking_fee", lm.restocking_fee.column, "restocking_fee_cents"))
+    if lm.tax_amount is not None:
+        money_raw.append(("tax_amount", lm.tax_amount.column, "tax_cents"))
     if lm.return_freight_billed is not None:
         money_raw.append(
             (
@@ -433,10 +567,16 @@ def load_lines(
 
     key_src = lm.source_line_key.column
     if counts["_bad_dates"]:
+        bad_date_samples = (
+            _offenders(date_expr.is_null(), lm.invoice_date.column)[lm.invoice_date.column]
+            .head(5)
+            .to_list()
+        )
         keys = _offenders(date_expr.is_null(), key_src)[key_src].to_list()
         msg = (
             f"{path}: {counts['_bad_dates']} invoice_date value(s) do not match declared "
             f"format '{lm.invoice_date.format}'. Offending line keys (up to 10): {keys}"
+            + _serial_date_hint(bad_date_samples)
         )
         raise MappingError(msg)
     for i, src in enumerate(money_srcs):
@@ -541,6 +681,11 @@ def load_lines(
             # segmentation, guidance and the panel), and a mapping without
             # the column must not crash - null means "none declared".
             exprs.append(pl.lit(None, dtype=pl.String).alias(key_field))
+    if lm.return_disposition is not None:
+        disp = pl.col(lm.return_disposition.column).replace("", None)
+        if mapping.return_disposition_map:
+            disp = disp.replace(mapping.return_disposition_map)
+        exprs.append(disp.alias("return_disposition"))
 
     # --- money fields, digit-exact ---------------------------------------
     for _canon, src, cents in money_raw:
