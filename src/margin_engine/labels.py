@@ -735,6 +735,58 @@ LABELS: dict[str, dict[str, str]] = {
         "inconclusive result is reported with the smallest effect the test could have "
         "detected.",
     },
+    "price_response_shape_untested": {
+        "label": "Price-response shape untested; volume held steady",
+        "description": "The move is inside the price range this segment's cost and tariff "
+        "movements cover, but outside the narrower band the engine holds a segment to when "
+        "it could not test whether one elasticity describes the whole segment. The figure "
+        "assumes volume does not change.",
+    },
+    "provisional_shape_untested": {
+        "label": "Provisional target: price-response shape untested",
+        "description": "No optimal price is calculated for this segment. An optimizer picks "
+        "the price that maximizes a curve, and the shape of this segment's curve could not "
+        "be tested - the comparison between its cheaper-priced and dearer-priced pairs was "
+        "inconclusive - so the historical reference target stands instead.",
+    },
+    "constant_elasticity_supported": {
+        "label": "One elasticity fits the whole segment",
+        "description": "The same instrumented estimate was run on the segment's "
+        "cheaper-priced pairs and its dearer-priced pairs, and the two agree. Pricing a "
+        "move off a single elasticity assumes exactly that; where the halves disagree, "
+        "the estimate is a local average around the prices in the data and the causal "
+        "status is withheld.",
+    },
+    "price_dependent_elasticity_detected": {
+        "label": "Price sensitivity changes with the price level",
+        "description": "The cheaper-priced and dearer-priced halves of this segment give "
+        "different elasticities, so one number does not describe it. The estimate is "
+        "still reported as an instrumented local average, but it cannot carry the causal "
+        "status, because a move to a price the data barely contains would be priced off "
+        "an elasticity that does not hold there.",
+    },
+    "price_response_shape_untested_badge": {
+        "label": "Price-response shape untested",
+        "description": "The comparison between this segment's cheaper-priced and "
+        "dearer-priced pairs could not resolve whether one elasticity describes it. The "
+        "estimate stands and keeps its evidence status, but no optimal price is calculated "
+        "for the segment, and a modeled volume response is only produced for moves inside "
+        "a narrowed band around the prices the instruments actually moved.",
+    },
+    "functional_form_inconclusive": {
+        "label": "Could not test whether one elasticity fits",
+        "description": "The segment could not be split into two halves that each support "
+        "their own instrumented estimate - too few rows, too few pairs, or too little "
+        "instrument movement inside a half. Nothing is claimed either way, and the "
+        "causal status is not awarded on the strength of a test that could not speak.",
+    },
+    "functional_form_not_tested": {
+        "label": "Functional form not tested",
+        "description": "The comparison between cheaper-priced and dearer-priced pairs was "
+        "not run. Usually the segment never reached an instrumented estimate for the "
+        "comparison to be made on; it can also mean the check is switched off in config, "
+        "or that the data carries no item identifier to place a price against.",
+    },
     "unclassified_volume_treatment": {
         "label": "Volume treatment not classified",
         "description": "This action's volume treatment has no evidence bucket, so its "

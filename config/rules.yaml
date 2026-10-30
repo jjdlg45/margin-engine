@@ -218,6 +218,23 @@ sensitivity:
   # measured rather than guessed.
   price_support_window: 0.02
   min_support_observations: 30
+  # Functional form: is ONE elasticity enough for a segment at every price?
+  # The segment's instrumented estimate is re-run on its cheaper-priced pairs
+  # and its dearer-priced pairs. A difference has to clear both the maximum
+  # below AND what the comparison can resolve before it withdraws causal
+  # support; agreement between two numbers too imprecise to have shown a
+  # material difference is reported as inconclusive, not as agreement.
+  functional_form_check_enabled: true
+  functional_form_max_gap: 0.30
+  functional_form_min_pairs: 20
+  functional_form_min_rows: 200
+  # What an INCONCLUSIVE comparison costs. The status is untouched, but no
+  # optimal price is produced for the segment, and a modeled volume response
+  # is only produced inside this fraction of the segment's identifying range,
+  # around the same midpoint. Beyond it the figure assumes unchanged volume
+  # and says so. Set to 1.0 to switch the narrowing off and keep only the
+  # optimizer rule.
+  functional_form_untested_support_fraction: 0.5
   min_assignment_clusters: 15
   small_cluster_method: wild_bootstrap
   # Below this RAW count the bootstrap stops being a remedy. 8 is the lowest

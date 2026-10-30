@@ -6118,3 +6118,262 @@ The clone is still on disk at `C:\Projects\me-verify` (1.3 GB): removing it
 needed a recursive delete that this session's permissions refused, across
 three attempts. Left for the owner to delete; recorded here rather than
 claiming a cleanup that did not happen.
+
+---
+
+## fix/validation-script - the study survives its own failures, and a functional-form gate
+
+Branched from `main` at `154c2c4`. Not a Run 6 phase: a fix for a validation
+study that died after about two hours on GitHub, plus the guard the owner
+asked for against a constant-elasticity assumption nothing was checking.
+
+### 1. The call that killed the run
+
+`scripts/measure_validation.py:922` read `fit_win_curves(qi, seg_map)`. Phase
+77 gave that function a third argument (`rules`) and made it return
+`(DataFrame, QuoteIntake)` instead of a DataFrame. The call sites in
+`report/full_run.py` and `tests/test_quotes.py` were updated with it; the
+measurement script was not, and no test exercised that line. The study ran
+twenty checks over roughly two hours, raised `TypeError: fit_win_curves()
+missing 1 required positional argument: 'rules'` on the twenty-first, and
+wrote nothing at all - the twenty good measurements went with it.
+
+Two defects in one line, and the second would have waited behind the first:
+the call also unpacked the result as a DataFrame (`curves.to_dicts()`), which
+is now an `AttributeError`. Both fixed.
+
+### 2. A check that raises no longer costs the run
+
+Every check is now declared in a registry - its callable and the row names it
+produces - and run through `run_check`, which turns an exception into one
+failed row per declared name, carrying the error location, the message and the
+traceback, and lets the study carry on. The failed row replaces whatever a
+previous run measured under that name rather than carrying the old number
+forward: an error means this code produced no measurement, and the honest
+report of that is the error.
+
+14 checks, 47 declared rows.
+
+### 3. A pull-request gate that fails in minutes
+
+`--smoke` runs **every** check on tiny worlds (40 customers, 60 items, one
+seed per study). Measured here: **424.4 s**, 47 rows, **0 raised, 0 undeclared
+names**, exit 0 - and the win-curve check it would have caught now runs. It
+scores nothing: at that scale no target means anything, so the run fails only
+when a check raises or produces a row name the scope document does not know.
+New CI job `validation-smoke` in `ci.yml`, on every push and pull request.
+
+`tests/test_validation_script.py` adds the cheaper half of the same guard, in
+milliseconds: every call the script makes to an engine function is bound
+against that function's real signature. That alone would have caught the
+missing argument. It cannot see a changed RETURN shape, which is why the smoke
+run exists as well - the two together cover both halves of this bug.
+
+### 4. The second failure waiting behind the first
+
+The study would have failed at document generation even with the call fixed.
+`docs/validation-meta.yaml` must have a scope entry for every measured row,
+and **22 of the 47 rows had none**: the held-out-seed rows from Phase 78, all
+twelve cluster-structure coverage rows under their current names, the four
+total-quantity rows, and the performance smoke. Two more row names carried
+their world count in the name (`...5 seeds`, `...50 simulations`), so they
+changed whenever the study size did.
+
+Fixed rather than left for the next two-hour run to discover:
+
+* Row names no longer carry counts; the counts live in the measured text.
+* 24 scope entries added (the 22 plus the two new functional-form rows).
+* `check_meta` takes the names the scripts can produce, so a scope entry for a
+  row the committed `validation.json` predates is not an orphan. The committed
+  file is older than several checks; the alternative was a study ending with
+  nowhere to say what its newest row establishes.
+
+`tests/test_validation_script.py` now fails in seconds if a declared row has
+no scope entry.
+
+### 5. Functional form: is one elasticity enough?
+
+New criterion, gate 11 in the causal ladder. The segment's instrumented
+estimate is re-run on its cheaper-priced pairs and its dearer-priced pairs and
+the two are compared. The split is on a pair-level price position (a pair's
+average against its item's average), never on a row's own price, which would
+select on the demand shock; pair fixed effects absorb a pair-level
+characteristic, so the identifying variation inside each half is unchanged.
+
+Causal support is withdrawn only when the difference is **both** over
+`functional_form_max_gap` (0.30) **and** over what the comparison can resolve
+- `1.96 x sqrt(se_low^2 + se_high^2)` from each half's cluster-robust standard
+error. Agreement between two numbers too imprecise to have shown a material
+difference is reported as inconclusive, not as agreement. Same three-way logic
+as the anticipation test.
+
+A first version without the detectable bound was measured and discarded: it
+refused one `well_identified` segment on a 0.306 gap whose own standard errors
+admitted 0.356, a false refusal on noise. The bound removed it and kept both
+refusals on the curved world.
+
+| World | Supported | Inconclusive | Refused | Status changes | Causal before / after |
+|---|---|---|---|---|---|
+| Published demo (generated, seed 3) | 1 | 1 | 0 | **0** | 1 / 1 |
+| Committed sample | 0 | 1 | 1 | **0** | 0 / 0 |
+| `well_identified`, 3 seeds x 6 segments | 13 | 5 | 0 | **0** | 5 / 5 |
+| `nonconstant_elasticity`, 3 seeds x 6 | 13 | 3 | 2 | **0** | 6 / 6 |
+
+### 6. Owner question 1: was the flagged demo segment causal-supported?
+
+**The first answer to this was measured on the wrong world, and the question
+caught it.** `export-web --demo` GENERATES the published world
+(well-identified, seed 3, 50 customers x 120 items, 4 substitution groups). It
+does not read `data/sample`, which is a different and smaller world. The
+figures first written up here and in the README - the segment flagged at
+-2.22 against -1.51, gap 0.71 - are `data/sample`'s, and said nothing about
+the live site. Corrected in both documents.
+
+Re-measured on the world the site actually publishes:
+
+| Segment | Estimate | Status off / on | Functional form | Halves | Resolvable |
+|---|---|---|---|---|---|
+| 6 | -2.33 | causal supported / causal supported | inconclusive | -2.45 vs -2.19, gap 0.26 | 0.35 |
+| 24 | -1.28 | instrumented / instrumented | supported | -1.42 vs -1.13, gap 0.29 | 0.30 |
+
+So, to the question as asked: on the committed sample the flagged segment was
+**not** causal-supported - it was already `iv_estimated_elasticity`, and the
+0.71 refusal had no status to withdraw. On the **published demo**, the one
+causal-supported segment is segment 6, and its comparison comes out
+**inconclusive**: the halves differ by 0.26, under the 0.30 maximum, but the
+comparison could not have resolved a difference that large (bound 0.35), so
+neither a pass nor a refusal is recorded. The live site does show a causal
+label on segment 6, and still will.
+
+### 7. Owner decision: what an inconclusive comparison costs
+
+Recorded as given: causal support stands (the anticipation-test rule), and the
+segment pays for the untested shape in what the engine will do with the
+estimate.
+
+1. **No optimal price.** `optimize_targets` refuses a segment whose
+   functional-form comparison was inconclusive; the provisional historical
+   target stands, labeled `provisional_shape_untested`.
+2. **A narrower band for modeled volume.** Expected-change figures are
+   produced only inside `functional_form_untested_support_fraction` (0.5) of
+   the segment's identification-support range, around the same midpoint.
+   Beyond it, and still inside the full identifying range, the record is
+   fixed-volume under its own treatment `price_response_shape_untested`, kept
+   distinct from `outside_price_support`.
+3. **Shown beside the status.** The sensitivity page carries a
+   "Price-response shape untested" badge next to the evidence chip, with the
+   two half-estimates and the resolution figure in its tooltip.
+
+`functional_form_*` settings are in `config/rules.yaml` rather than only in
+pydantic defaults, so the policy is visible and adjustable. Setting the
+fraction to 1.0 keeps rule 1 and switches rule 2 off.
+
+**How many records change**, same world and seed with the check off and on:
+
+| World | Records | Expected-change before / after | Moved to shape untested | Segments inconclusive |
+|---|---|---|---|---|
+| Published demo (50 x 120) | 611 | 159 / 99 | 60 | 1 of 2 |
+| `well_identified` (150 x 300) | 2,343 | 1,486 / 1,486 | 151 | 1 of 3 |
+| `nonconstant_elasticity` (150 x 300) | 2,344 | 1,486 / 1,486 | 151 | 1 of 3 |
+
+On the validation worlds the causal segments' shapes were supported, so their
+expected-change records are untouched and the 151 that move each time belong
+to the instrumented-only segment, out of `sensitivity_range_only`. On the
+demo, where the causal segment is the inconclusive one, 60 of 611 records lose
+a modeled volume response.
+
+**No optimal price changed on any world, and the reason is not "no effect":**
+`optimize_targets` has no caller in `src/`. The optimizer is implemented and
+tested but is not wired into the pipeline, so every target the engine ships
+today is already the provisional one. Rule 1 binds inside that function and
+will take effect wherever it is wired in. Flagged for the owner rather than
+left to be read off a zero.
+
+### 8. Owner question 2: where does the 0.303 on the curved world come from?
+
+Mostly from the reference point, and the write-up has been corrected to say
+so. The generator plants `beta + 2c log(P/P_ref)` with `c = -1.5` and `P_ref`
+the item's INITIAL list price, so the planted `beta` is the local elasticity
+**at the list price**. Sold prices sit about 10.9% below list on average, and
+per segment the sample mean runs from 30% below list to 6% above it.
+
+Measured over the same 18 segment-estimates (seeds 5, 6, 7 at 250 x 400):
+
+| Scored against | Median | P90 | Worst |
+|---|---|---|---|
+| `beta`, the elasticity at list price | **0.303** | 0.777 | 0.938 |
+| The local elasticity at the sample's own prices | **0.039** | 0.108 | 0.181 |
+
+The 0.303 reproduces the committed validation row exactly, which is the check
+that this decomposition is of the right quantity. The distance tracks how far
+the list price is from where each segment trades, monotonically:
+
+| Segment (seed 5) | Observed range vs list (p05-p95) | Rows at or above list | Error vs `beta` |
+|---|---|---|---|
+| 0 | -43% to -16% | 0.0% | 0.938 |
+| 1 | -36% to -9% | 0.3% | 0.679 |
+| 2 | -29% to -1% | 3.5% | 0.438 |
+| 3 | -21% to +7% | 18.1% | 0.179 |
+| 4 | -14% to +12% | 43.8% | 0.124 |
+| 5 | -9% to +21% | 73.0% | 0.065 |
+
+So yes: for the segments carrying most of that 0.303, the planted "true"
+elasticity is defined at a price **outside their observed range entirely** -
+segment 0 never trades within 16% of its list price. A constant-elasticity
+model fitted to curved demand recovers the elasticity at the prices it was
+fitted to, to a median 0.039; what it cannot do is report the elasticity at a
+price the segment does not trade at. That is the limitation the
+identification-support rule already enforces before any move is sized.
+
+**What was overstated, and corrected.** The first write-up said the planted
+curvature "moves the elasticity by roughly 0.1", implying the world is nearly
+constant-elasticity. It is not: across a segment's observed price range (about
+0.28 wide in logs) the local elasticity moves by about **0.85**. The 0.1 is
+only what remains along the dimension the comparison can use - each pair's
+price position within its item, which separates the halves by about four
+percentage points. Most of that world's price variation is across items and
+over time, and the pair and period fixed effects absorb it before the
+comparison ever sees it. README and methodology now say that, and the
+`nonconstant_elasticity` validation row reports both error figures so the
+0.303 cannot be read alone.
+
+### 9. Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| `npx tsc --noEmit` | 0 |
+| `npx vitest run` | 22 passed |
+| `npm run build` | 0 |
+| `scripts/measure_validation.py --smoke` | 424.4 s, 0 raised, exit 0 |
+| Full pytest, one file per process | 72/72 files passed (0 failed) |
+| Playwright | 233 passed, 5 skipped, 0 failed |
+
+The pytest run spanned a laptop sleep and one watchdog abort. The memory
+floor stopped it after 54 files at 1.6 GB free; a resume runner finished the
+remaining 18 once headroom returned, WAITING for the floor rather than
+lowering it. `test_sensitivity.py` reports 17,766 s, which is wall clock
+across the sleep and not a runtime. The web gates were re-run after the last
+code change rather than carried over from the earlier pass.
+
+### Known gaps
+
+* `docs/validation.json` is still the Phase 71 measurement and is now several
+  checks out of date. Regenerating it needs the full study, which belongs in
+  CI; the workflow should be re-run once this lands. The two functional-form
+  rows, the 22 rows above and the curved world's second error figure appear
+  then.
+* `optimize_targets` is not called anywhere in `src/`, so the engine's targets
+  are all provisional today and rule 1 of the owner decision binds nothing
+  until it is wired in.
+* The owner's figure of 12 causal segments on the nonconstant world comes from
+  the full study; the three seeds measured here gave 6 of 18. The gate's effect
+  on the full study is unmeasured until that run.
+* The comparison is made along the only price dimension the fixed effects
+  leave - position within an item - which is the narrowest one in these
+  worlds. A split with more price separation (across time, or against a
+  dated list) would see more of the curvature; it was not attempted here.
+* The verification clone at `C:\Projects\me-verify` (1.3 GB) is still on disk
+  from Run 6 and still needs deleting by hand.

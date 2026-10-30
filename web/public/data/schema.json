@@ -3414,6 +3414,54 @@
      "default": null,
      "title": "First Stage F Uncontrolled"
     },
+    "functional_form_bound": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Functional Form Bound"
+    },
+    "functional_form_detail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Functional Form Detail"
+    },
+    "functional_form_gap": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Functional Form Gap"
+    },
+    "functional_form_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Functional Form Status"
+    },
     "identifying_coverage": {
      "anyOf": [
       {

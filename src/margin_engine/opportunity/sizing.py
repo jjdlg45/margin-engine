@@ -48,6 +48,7 @@ from margin_engine.opportunity.deductions import (
     TieredDeductionContext,
 )
 from margin_engine.sensitivity.estimate import (
+    FF_INCONCLUSIVE,
     STATUS_CAUSAL,
     STATUS_IV,
     parse_support_regions,
@@ -62,6 +63,10 @@ TREATMENT_COST_UNAVAILABLE = "cost_unavailable"
 # The segment's elasticity answers a market-wide question, so no volume
 # response is applied to a unilateral move (Run 6, Phase 70).
 TREATMENT_PATH_UNCONTROLLED = "competitor_path_uncontrolled"
+# Inside the segment's identifying range, but outside the narrowed band a
+# segment is held to when its price-response shape could not be tested.
+TREATMENT_SHAPE_UNTESTED = "price_response_shape_untested"
+TARGET_SHAPE_UNTESTED = "provisional_shape_untested"
 
 
 @dataclass
@@ -184,6 +189,12 @@ def price_opportunities(
     has_regions = "support_regions" in sensitivity.columns
     if has_regions:
         sens_cols.append(pl.col("support_regions"))
+    # Whether one elasticity was shown to describe the whole segment. An
+    # inconclusive comparison narrows the band a volume response may be
+    # modeled over, and stops the optimizer entirely.
+    has_shape = "functional_form_status" in sensitivity.columns
+    if has_shape:
+        sens_cols.append(pl.col("functional_form_status"))
     # Total-quantity elasticity (Run 6, Phase 72). The elasticity priced above
     # is the CONDITIONAL one, estimated on months a customer bought, so a
     # forecast built on it holds buying incidence fixed - it answers "they buy
@@ -212,6 +223,8 @@ def price_opportunities(
         )
     if not has_regions:
         g = g.with_columns(pl.lit(None, dtype=pl.String).alias("support_regions"))
+    if not has_shape:
+        g = g.with_columns(pl.lit(None, dtype=pl.String).alias("functional_form_status"))
     if not has_path:
         g = g.with_columns(pl.lit(None, dtype=pl.String).alias("competitor_path_resolution"))
     if "elasticity_estimand" not in g.columns:
@@ -357,6 +370,16 @@ def price_opportunities(
         for row in g.select("segment_leaf", "support_regions").unique().to_dicts()
     }
     max_regions = max((len(r) for r in regions_by_segment.values()), default=0)
+    # How much of its own identifying range a segment is held to. One, unless
+    # the price-response shape could not be tested - then the configured
+    # fraction of it, around the same midpoint.
+    shape_untested = pl.col("functional_form_status") == FF_INCONCLUSIVE
+    g = g.with_columns(
+        pl.when(shape_untested)
+        .then(pl.lit(float(rules.sensitivity.functional_form_untested_support_fraction)))
+        .otherwise(pl.lit(1.0))
+        .alias("_shape_shrink")
+    )
     if max_regions:
         # Widen the regions into fixed columns so the test stays a vectorized
         # expression: segments have at most a handful of them.
@@ -383,6 +406,21 @@ def price_opportunities(
                 for k in range(max_regions)
             ]
         ).fill_null(False)
+        # The same test against each region narrowed around its midpoint. For
+        # a segment whose shape was tested the factor is one, so this is the
+        # test above and the distinction never arises.
+        narrowed = [
+            (
+                (pl.col(f"_sup_lo_{k}") + pl.col(f"_sup_hi_{k}")) / 2
+                - (pl.col(f"_sup_hi_{k}") - pl.col(f"_sup_lo_{k}")) / 2 * pl.col("_shape_shrink"),
+                (pl.col(f"_sup_lo_{k}") + pl.col(f"_sup_hi_{k}")) / 2
+                + (pl.col(f"_sup_hi_{k}") - pl.col(f"_sup_lo_{k}")) / 2 * pl.col("_shape_shrink"),
+            )
+            for k in range(max_regions)
+        ]
+        in_narrow_regions = pl.any_horizontal(
+            *[(move >= lo) & (move <= hi) for lo, hi in narrowed]
+        ).fill_null(False)
         # How far beyond the nearest supported stretch the proposal reaches,
         # in log-price units. Zero inside; reported so a reader can see
         # whether a refusal was marginal or nowhere near.
@@ -396,6 +434,7 @@ def price_opportunities(
         )
     else:
         in_regions = pl.lit(False)
+        in_narrow_regions = pl.lit(False)
         region_gap = pl.lit(None, dtype=pl.Float64)
 
     # Three cases, in order. A segment whose regions were measured is held to
@@ -417,6 +456,27 @@ def price_opportunities(
         .then(in_bounds.fill_null(False))
         .otherwise(True)
     )
+    _mid = (pl.col("support_log_lo") + pl.col("support_log_hi")) / 2
+    _half = (pl.col("support_log_hi") - pl.col("support_log_lo")) / 2 * pl.col("_shape_shrink")
+    in_narrow_bounds = (move >= _mid - _half) & (move <= _mid + _half)
+    # Narrowed support is a subset of support by construction, so a move can
+    # be outside the narrowed band and inside the full one, never the reverse.
+    #
+    # A segment whose shape WAS tested short-circuits to the full test rather
+    # than recomputing it at a factor of one: `mid +/- half * 1.0` is the same
+    # interval in arithmetic but not always in floating point, and a move
+    # sitting exactly on a bound must not change treatment over an ulp.
+    in_narrow = (
+        pl.when(~shape_untested)
+        .then(in_support)
+        .when(measured_regions)
+        .then(in_narrow_regions)
+        .when(has_bounds)
+        .then(in_narrow_bounds.fill_null(False))
+        .otherwise(True)
+    )
+    # What a modeled volume response is actually allowed over.
+    in_priceable = in_support & in_narrow
     g = g.with_columns(
         pl.when(measured_regions)
         .then(region_gap)
@@ -440,27 +500,27 @@ def price_opportunities(
         gross,
         conservative,
         has_cost.not_().alias("cost_unavailable"),
-        pl.when(causal & has_cost & in_support)
+        pl.when(causal & has_cost & in_priceable)
         .then(delta)
         .otherwise(None)
         .alias("expected_pocket_gross_profit_change_cents"),
-        pl.when((causal | ivonly) & has_cost & in_support & path_ok)
+        pl.when((causal | ivonly) & has_cost & in_priceable & path_ok)
         .then(pl.min_horizontal(delta_lo, delta_hi))
         .otherwise(None)
         .alias("gp_change_low_cents"),
-        pl.when((causal | ivonly) & has_cost & in_support & path_ok)
+        pl.when((causal | ivonly) & has_cost & in_priceable & path_ok)
         .then(pl.max_horizontal(delta_lo, delta_hi))
         .otherwise(None)
         .alias("gp_change_high_cents"),
-        pl.when(causal & has_cost & has_k & in_support)
+        pl.when(causal & has_cost & has_k & in_priceable)
         .then(delta_contrib)
         .otherwise(None)
         .alias("expected_contribution_change_cents"),
-        pl.when((causal | ivonly) & has_cost & has_k & in_support & path_ok)
+        pl.when((causal | ivonly) & has_cost & has_k & in_priceable & path_ok)
         .then(pl.min_horizontal(delta_contrib_lo, delta_contrib_hi))
         .otherwise(None)
         .alias("contribution_change_low_cents"),
-        pl.when((causal | ivonly) & has_cost & has_k & in_support & path_ok)
+        pl.when((causal | ivonly) & has_cost & has_k & in_priceable & path_ok)
         .then(pl.max_horizontal(delta_contrib_lo, delta_contrib_hi))
         .otherwise(None)
         .alias("contribution_change_high_cents"),
@@ -470,13 +530,15 @@ def price_opportunities(
         .then(pl.lit(TREATMENT_PATH_UNCONTROLLED))
         .when((causal | ivonly) & ~in_support)
         .then(pl.lit(TREATMENT_OUTSIDE_SUPPORT))
+        .when((causal | ivonly) & ~in_narrow)
+        .then(pl.lit(TREATMENT_SHAPE_UNTESTED))
         .when(causal)
         .then(pl.lit(TREATMENT_EXPECTED))
         .when(ivonly)
         .then(pl.lit(TREATMENT_RANGE))
         .otherwise(pl.lit(TREATMENT_FIXED))
         .alias("volume_treatment"),
-        pl.when(pl.col("total_quantity_elasticity").is_not_null() & has_cost & in_support)
+        pl.when(pl.col("total_quantity_elasticity").is_not_null() & has_cost & in_priceable)
         .then(delta_total)
         .otherwise(None)
         .alias("gp_change_total_quantity_basis_cents"),
@@ -558,6 +620,7 @@ def price_opportunities(
         "volume_treatment",
         "price_support_distance",
         "price_support_reason",
+        "functional_form_status",
         "total_quantity_elasticity",
         "total_quantity_status",
         "gp_change_total_quantity_basis_cents",
@@ -774,6 +837,18 @@ def optimize_targets(
             pl.lit(0, dtype=pl.Int64).alias("fixed_deduction_cents"),
         )
     causal = pl.col("evidence_status") == STATUS_CAUSAL
+    # Owner decision: where the functional-form comparison was INCONCLUSIVE,
+    # causal support still stands but no optimal price is produced. An
+    # optimizer picks the price that maximizes a curve; if the shape of that
+    # curve was never tested, the maximum it finds is an artefact of assuming
+    # the shape. The provisional target stands instead, labeled with why.
+    shape_tested = (
+        (pl.col("functional_form_status").is_null())
+        | (pl.col("functional_form_status") != FF_INCONCLUSIVE)
+        if "functional_form_status" in j.columns
+        else pl.lit(value=True)
+    )
+    shape_untested = ~shape_tested
     # An ALLOW-LIST, not a deny-list (Run 6, Phase 72). The guard used to read
     # `!= TREATMENT_OUTSIDE_SUPPORT`, so every treatment value except that one
     # literal passed - including any value added later and not reasoned about
@@ -825,6 +900,7 @@ def optimize_targets(
         eligible = (
             causal
             & in_support
+            & shape_tested
             & pl.col("unit_cost_cents").is_not_null()
             & pl.col("_k_marginal").is_not_null()
         )
@@ -864,13 +940,17 @@ def optimize_targets(
             .then(pl.lit("optimized_numeric_contribution_clipped"))
             .when(pl.col("_eligible"))
             .then(pl.lit("corridor_top_inelastic"))
+            .when(causal & shape_untested)
+            .then(pl.lit(TARGET_SHAPE_UNTESTED))
             .otherwise(pl.lit("provisional_historical"))
             .alias("target_basis"),
             pl.lit(objective).alias("objective"),
         ).drop("_k_marginal", "_retain", "_hi", "_interior", "_eligible", "_p_num")
         return _snap_to_increment(out, rules)
 
-    interior = causal & in_support & (beta < -1.0) & pl.col("unit_cost_cents").is_not_null()
+    interior = (
+        causal & in_support & shape_tested & (beta < -1.0) & pl.col("unit_cost_cents").is_not_null()
+    )
     p_star = (c_eff * beta / (1.0 + beta)).round(0)
     clipped = pl.min_horizontal(
         pl.max_horizontal(p_star, pl.col("invoice_floor_cents")), corridor_hi
@@ -878,15 +958,17 @@ def optimize_targets(
     out = j.with_columns(
         pl.when(interior)
         .then(clipped)
-        .when(causal & in_support & pl.col("unit_cost_cents").is_not_null())
+        .when(causal & in_support & shape_tested & pl.col("unit_cost_cents").is_not_null())
         .then(corridor_hi)  # inelastic: corridor top, labeled below
         .otherwise(None)
         .cast(pl.Int64)
         .alias("optimal_price_cents"),
         pl.when(interior)
         .then(pl.lit("optimized_monopoly_markup_clipped"))
-        .when(causal & in_support & pl.col("unit_cost_cents").is_not_null())
+        .when(causal & in_support & shape_tested & pl.col("unit_cost_cents").is_not_null())
         .then(pl.lit("corridor_top_inelastic"))
+        .when(causal & shape_untested)
+        .then(pl.lit(TARGET_SHAPE_UNTESTED))
         .otherwise(pl.lit("provisional_historical"))
         .alias("target_basis"),
         pl.lit(objective).alias("objective"),

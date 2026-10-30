@@ -76,6 +76,13 @@ GATE_PASS = "pass"
 GATE_FAIL = "fail"
 GATE_NOT_EVALUATED = "not_evaluated"
 
+# Functional form: whether ONE elasticity describes this segment at every
+# price, or only near the prices the data happens to contain.
+FF_CONSTANT_SUPPORTED = "constant_elasticity_supported"
+FF_PRICE_DEPENDENT = "price_dependent_elasticity_detected"
+FF_INCONCLUSIVE = "functional_form_inconclusive"
+FF_NOT_TESTED = "functional_form_not_tested"
+
 
 @dataclass(frozen=True)
 class GateResult:
@@ -209,6 +216,20 @@ class SegmentEstimate:
     placebo_actual_p: float | None = None
     placebo_detail: str = ""
     robustness_spread: float | None = None
+    # Functional form: the same instrumented specification re-estimated on the
+    # cheaper half and the dearer half of the segment's pairs. A constant
+    # elasticity is an ASSUMPTION, and this is the segment's own data being
+    # asked whether it holds.
+    functional_form_status: str = FF_NOT_TESTED
+    functional_form_low: float | None = None
+    functional_form_high: float | None = None
+    functional_form_gap: float | None = None
+    functional_form_bound: float | None = None
+    functional_form_n_low: int | None = None
+    functional_form_n_high: int | None = None
+    functional_form_f_low: float | None = None
+    functional_form_f_high: float | None = None
+    functional_form_detail: str = ""
     # How many IDENTIFIED specifications the spread covers, and which
     # alternatives were excluded as unidentified (Run 6, Phase 70).
     robustness_n_specifications: int | None = None
@@ -836,6 +857,207 @@ def _overid_j(y: np.ndarray, p: np.ndarray, z: np.ndarray, beta_iv: float) -> tu
     return j, pval
 
 
+@dataclass(frozen=True)
+class FunctionalForm:
+    """Whether one elasticity describes the whole segment, or only the prices
+    the estimate was taken around."""
+
+    status: str
+    low: float | None = None
+    high: float | None = None
+    gap: float | None = None
+    #: The smallest difference between the halves this comparison could have
+    #: told apart from noise. A pass means nothing without it.
+    bound: float | None = None
+    n_low: int | None = None
+    n_high: int | None = None
+    f_low: float | None = None
+    f_high: float | None = None
+    detail: str = ""
+
+
+def _functional_form_check(
+    pdf: pd.DataFrame,
+    y: np.ndarray,
+    price: np.ndarray,
+    z: np.ndarray,
+    cluster_cols: Sequence[str],
+    time_fe: str,
+    rules: Rules,
+) -> FunctionalForm:
+    """Re-estimate the same instrumented specification on the cheaper half and
+    the dearer half of the segment's pairs, and compare.
+
+    A log-log model reports ONE elasticity and the engine then prices moves
+    with it. That is an assumption, not a finding: where demand is curved, the
+    number is a local average around the prices the data contains, and a move
+    away from them is priced off an elasticity that does not hold there. On a
+    planted world with curved demand the constant-elasticity estimate misses
+    the planted local elasticity by about 0.3 while every other diagnostic
+    passes, so nothing else in the ladder catches it.
+
+    `y`, `price` and `z` are the already within-transformed (and, where a
+    market control is used, partialled) arrays, aligned row for row with
+    `pdf`. Restricting them to a subset of PAIRS leaves the pair fixed effects
+    intact, because a pair's mean is computed inside the pair; the period
+    effects stay common to both halves, which is what makes the two estimates
+    comparable.
+
+    The split is on a pair-level price position - each pair's average price
+    against its item's average - and never on a row's own price. Conditioning
+    on the endogenous regressor would select on the demand shock and bias both
+    halves; a pair-level characteristic is absorbed by the pair fixed effects
+    and cannot.
+    """
+    sc = rules.sensitivity
+    if not sc.functional_form_check_enabled:
+        return FunctionalForm(FF_NOT_TESTED, detail="the functional-form check is off in config")
+    if "item_id" not in pdf.columns:
+        return FunctionalForm(
+            FF_NOT_TESTED,
+            detail=(
+                "no item identifier on the panel, so a price cannot be placed against "
+                "other prices for the same item"
+            ),
+        )
+    rel = pdf["log_price"] - pdf.groupby("item_id")["log_price"].transform("mean")
+    pair_rel = rel.groupby(pdf["pair"]).transform("mean")
+    per_pair = pair_rel.groupby(pdf["pair"]).first()
+    if per_pair.nunique() < 2:
+        return FunctionalForm(
+            FF_INCONCLUSIVE,
+            detail=(
+                "every pair sits at the same price against its item's average, so the "
+                "segment has no cheaper and dearer halves to compare"
+            ),
+        )
+    split = float(per_pair.median())
+    halves: dict[str, np.ndarray] = {
+        "low": (pair_rel <= split).to_numpy(),
+        "high": (pair_rel > split).to_numpy(),
+    }
+    out: dict[str, tuple[float, float, float, int, int, float]] = {}
+    for name, mask in halves.items():
+        n_rows = int(mask.sum())
+        sub = pdf.loc[mask]
+        n_pairs = int(sub["pair"].nunique())
+        if n_rows < sc.functional_form_min_rows or n_pairs < sc.functional_form_min_pairs:
+            return FunctionalForm(
+                FF_INCONCLUSIVE,
+                detail=(
+                    f"the {name}-price half holds {n_rows:,} rows over {n_pairs:,} pairs, "
+                    f"under the {sc.functional_form_min_rows:,} rows and "
+                    f"{sc.functional_form_min_pairs} pairs the comparison needs"
+                ),
+            )
+        spec_h = _make_cluster_spec(*(sub[c].to_numpy() for c in cluster_cols))
+        n_absorbed = n_pairs + int(sub[time_fe].nunique() if time_fe in sub.columns else 0)
+        p_h, y_h, z_h = price[mask], y[mask], z[mask]
+        f_h = _first_stage_f(p_h, z_h, spec_h, n_absorbed)
+        if f_h < sc.min_first_stage_f:
+            return FunctionalForm(
+                FF_INCONCLUSIVE,
+                f_low=f_h if name == "low" else None,
+                f_high=f_h if name == "high" else None,
+                detail=(
+                    f"the {name}-price half has a first-stage F of {f_h:.1f}, under the "
+                    f"{sc.min_first_stage_f:.0f} it would need for its own estimate to "
+                    "mean anything: the halves cannot be compared, and that is reported "
+                    "rather than read as agreement"
+                ),
+            )
+        # Clustered at the half's binding dimension - the one with fewest
+        # groups - so the standard error is not flattered by splitting the
+        # panel in two.
+        codes, n_g = min(
+            (_cluster_codes(sub[c].to_numpy()) for c in cluster_cols), key=lambda cn: cn[1]
+        )
+        k_total = 1 + n_absorbed
+        dof = (
+            (n_g / (n_g - 1)) * ((n_rows - 1) / (n_rows - k_total))
+            if n_g > 1 and n_rows > k_total
+            else 1.0
+        )
+        fit = _iv_point_and_crv1(y_h, p_h, z_h, np.linalg.pinv(z_h.T @ z_h), codes, n_g, dof)
+        if fit is None:
+            return FunctionalForm(
+                FF_INCONCLUSIVE,
+                detail=(
+                    f"the {name}-price half has no identifying variation of its own, or no "
+                    "usable standard error"
+                ),
+            )
+        beta_h, se_h = fit
+        out[name] = (beta_h, se_h, float(rel[mask].mean()), n_rows, n_pairs, f_h)
+    b_lo, se_lo, rel_lo, n_lo, pairs_lo, f_lo = out["low"]
+    b_hi, se_hi, rel_hi, n_hi, pairs_hi, f_hi = out["high"]
+    gap = abs(b_lo - b_hi)
+    # The halves are disjoint, so their estimates are treated as independent.
+    # `bound` is the smallest difference this comparison could have told from
+    # noise: without it, agreement between two imprecise numbers says nothing.
+    bound = 1.96 * float(np.hypot(se_lo, se_hi))
+    material = gap > sc.functional_form_max_gap
+    distinguishable = gap > bound
+    direction = (
+        "more price-sensitive where prices are higher"
+        if b_hi < b_lo
+        else "less price-sensitive where prices are higher"
+    )
+    detail = (
+        f"pairs priced {_pct_words(rel_lo)} their item's average give {b_lo:.2f} "
+        f"({n_lo:,} rows, {pairs_lo:,} pairs, first-stage F {f_lo:.0f}); pairs priced "
+        f"{_pct_words(rel_hi)} give {b_hi:.2f} ({n_hi:,} rows, {pairs_hi:,} pairs, "
+        f"first-stage F {f_hi:.0f}); they differ by {gap:.2f} against a "
+        f"{sc.functional_form_max_gap} maximum, and a difference under {bound:.2f} "
+        "would not have been told from noise"
+    )
+    # Three outcomes, on the same pattern as the anticipation test. A
+    # difference has to be both MATERIAL and bigger than what the comparison
+    # can resolve before it withdraws a status; and agreement between two
+    # numbers too imprecise to have shown a material difference is reported as
+    # inconclusive, not as agreement.
+    if material and distinguishable:
+        status = FF_PRICE_DEPENDENT
+        detail += (
+            f". The segment is {direction}, so one elasticity does not describe it: the "
+            "headline number is a local average around the prices in the data"
+        )
+    elif material:
+        status = FF_INCONCLUSIVE
+        detail += (
+            ". The halves differ by more than the maximum but by less than this "
+            "comparison can resolve, so nothing is concluded either way"
+        )
+    elif bound > sc.functional_form_max_gap:
+        status = FF_INCONCLUSIVE
+        detail += (
+            ". The halves agree, but the comparison could not have shown a difference as "
+            "large as the maximum, so the agreement is not evidence"
+        )
+    else:
+        status = FF_CONSTANT_SUPPORTED
+    return FunctionalForm(
+        status,
+        low=b_lo,
+        high=b_hi,
+        gap=gap,
+        bound=bound,
+        n_low=n_lo,
+        n_high=n_hi,
+        f_low=f_lo,
+        f_high=f_hi,
+        detail=detail,
+    )
+
+
+def _pct_words(log_gap: float) -> str:
+    """A log difference as plain words: "8% below" / "3% above"."""
+    pct = (float(np.expm1(log_gap))) * 100.0
+    if abs(pct) < 0.05:
+        return "level with"
+    return f"{abs(pct):.0f}% {'below' if pct < 0 else 'above'}"
+
+
 def estimate_segment(
     panel_seg: pl.DataFrame,
     rules: Rules,
@@ -945,6 +1167,9 @@ def estimate_segment(
             "qty",
             *([time_fe] if time_fe != "month_idx" else []),
             *(["log_mkt"] if has_mkt else []),
+            # Needed by the functional-form check, which places a pair's price
+            # against other prices for the SAME item.
+            *(["item_id"] if "item_id" in pos.columns else []),
         ).drop_nulls(subset=["log_qty", "log_price"])
     )
     if len(pdf) < sc.min_observations:
@@ -1408,6 +1633,20 @@ def estimate_segment(
             alt.append(float((pj @ yz) / dj))
     est.robustness_n_specifications = len(alt)
     est.robustness_excluded_weak = "; ".join(weak_alts)
+
+    # Functional form: does ONE elasticity describe this segment at every
+    # price? Run on the same residualized design the headline uses.
+    ff = _functional_form_check(pdf, yz, pz, z, cluster_cols, time_fe, rules)
+    est.functional_form_status = ff.status
+    est.functional_form_low = ff.low
+    est.functional_form_high = ff.high
+    est.functional_form_gap = ff.gap
+    est.functional_form_bound = ff.bound
+    est.functional_form_n_low = ff.n_low
+    est.functional_form_n_high = ff.n_high
+    est.functional_form_f_low = ff.f_low
+    est.functional_form_f_high = ff.f_high
+    est.functional_form_detail = ff.detail
     # With no identified alternative there is nothing to compare the headline
     # against: the spread stays UNKNOWN rather than collapsing to a
     # reassuring zero.
@@ -1677,6 +1916,22 @@ def estimate_segment(
     )
     if est.lead_test_status == LEAD_REJECTED:
         reasons.append(f"anticipation detected: {est.lead_test_detail}")
+
+    # Functional form. The top status says a price move can be priced off this
+    # elasticity; that is only true if the elasticity is the same at the price
+    # being moved to. Where the two halves disagree the estimate stands as an
+    # instrumented local average and the causal status is withheld. An
+    # inconclusive comparison is recorded as NOT EVALUATED, never as agreement.
+    gate(
+        11,
+        "constant_elasticity_supported",
+        None
+        if est.functional_form_status in (FF_NOT_TESTED, FF_INCONCLUSIVE)
+        else est.functional_form_status == FF_CONSTANT_SUPPORTED,
+        est.functional_form_detail or "the functional-form comparison was not run",
+    )
+    if est.functional_form_status == FF_PRICE_DEPENDENT:
+        reasons.append(f"elasticity depends on the price level: {est.functional_form_detail}")
 
     est.status = STATUS_CAUSAL if not reasons else STATUS_IV
     est.status_reasons = reasons

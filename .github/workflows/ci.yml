@@ -41,3 +41,32 @@ jobs:
         run: |
           npm ci
           npm audit --audit-level=high
+
+  # The validation study takes about two hours, and a stale call signature in
+  # its twenty-first check used to cost all of that to discover - and threw
+  # away the twenty measurements that had already succeeded. This runs EVERY
+  # check on worlds small enough to finish in minutes.
+  #
+  # It scores nothing. The worlds are far too small for any target to mean
+  # something, so the run fails only when a check RAISES, or produces a row
+  # name `docs/validation-meta.yaml` does not know. The numbers still come
+  # from the full study in validation.yml.
+  validation-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+      - name: Sync dependencies
+        run: uv sync --frozen --all-groups
+      - name: Every validation check, tiny worlds
+        run: uv run python scripts/measure_validation.py --smoke --out smoke.json
+      - name: Upload the smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-smoke
+          path: smoke.json
+          if-no-files-found: warn

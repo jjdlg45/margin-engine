@@ -283,6 +283,14 @@ class SensitivitySegment(BaseModel):
     observed_log_lo: float | None = None
     observed_log_hi: float | None = None
     support_detail: str | None = None
+    # Whether one elasticity was shown to describe the whole segment. Carried
+    # separately from the gate list because the page shows it beside the
+    # status: an inconclusive result does not change the status, but it does
+    # change what the engine will do with the estimate.
+    functional_form_status: str | None = None
+    functional_form_gap: float | None = None
+    functional_form_bound: float | None = None
+    functional_form_detail: str | None = None
     ppml_positive: float | None = None
     carried_forward_share: float | None = None
     imputed_price_share: float | None = None

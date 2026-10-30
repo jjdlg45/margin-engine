@@ -1007,6 +1007,151 @@ relationship) and the effective F above is computed on what is left. Both
 statistics are reported so the gap between them is visible, and the conditional
 one decides the status.
 
+### Is one elasticity enough? (functional form)
+
+A log-log model reports a single elasticity, and the optimizer then prices a
+move with it. That is an assumption, not a finding. Where demand is curved,
+the number is a local average around the prices the data happens to contain,
+and a move away from them is priced off an elasticity that does not hold
+there. Nothing else in the gate ladder notices: on a planted world with curved
+demand the first stage is strong, the overidentification test does not reject,
+the robust set is tight, and the estimate still misses the planted local
+elasticity by about 0.3.
+
+The check splits the segment's customer-item pairs into a cheaper-priced half
+and a dearer-priced half and re-estimates the same instrumented specification
+on each.
+
+* **The split is on a pair-level price position** - each pair's average price
+  against its item's average - and never on a row's own price. Conditioning on
+  the endogenous regressor would select on the demand shock and bias both
+  halves. A pair-level characteristic is absorbed by the pair fixed effects,
+  so the identifying variation inside each half is unchanged.
+* **The within transformation stays on the full sample.** Restricting to a
+  subset of pairs leaves the pair effects intact, because a pair's mean is
+  computed inside the pair; period effects stay common to the halves, which is
+  what makes the two numbers comparable.
+* **A difference has to be both material and resolvable.** Each half's
+  cluster-robust standard error gives a detectable bound, `1.96 x
+  sqrt(se_low^2 + se_high^2)`: the smallest difference the comparison could
+  have told from noise. Causal support is withdrawn only when the gap exceeds
+  both `functional_form_max_gap` (0.30 by default) and that bound. A gap over
+  the maximum that the comparison cannot resolve is reported as inconclusive,
+  and so is agreement between two numbers too imprecise to have shown a
+  material difference - the same three-way logic the anticipation test uses.
+
+**What it found on the published demo world**, which `export-web --demo`
+generates (well-identified, seed 3, 50 customers x 120 items) rather than
+reading from `data/sample`:
+
+| Segment | Estimate | Status, before and after | Functional form | Halves | Resolvable |
+|---|---|---|---|---|---|
+| 6 | -2.33 | causal supported | inconclusive | -2.45 against -2.19, gap 0.26 | 0.35 |
+| 24 | -1.28 | instrumented | supported | -1.42 against -1.13, gap 0.29 | 0.30 |
+
+No status changed, and segment 6 is worth stating plainly: it is the demo's
+one causal-supported segment, and the constant-elasticity assumption behind it
+is **untested**, not confirmed. Its halves differ by 0.26, but the comparison
+could not have resolved a difference as large as the 0.30 maximum, so the
+criterion reports `functional_form_inconclusive`. An inconclusive criterion
+does not block, on the same rule the anticipation test follows and for the
+same reason: a test without the power to speak is not evidence either way. The
+consequence is that a causal label can stand beside a criterion reading "could
+not be tested" - which the page shows rather than the status hiding.
+
+On the committed sample - a different, smaller world, used by the tests and
+the quickstart - the check does refuse one of two instrumented segments: pairs
+priced 8% below their item's average give -2.22, pairs 8% above give -1.51, a
+gap of 0.71 against a detectable bound of 0.35. That segment had not reached
+causal support either, so again no status changed.
+
+**What it cannot see, and what that does not mean.** On the planted
+curved-demand world (`nonconstant_elasticity`: local elasticity
+`beta + 2 x -1.5 x log(P/P_ref)`, with `P_ref` the item's initial list price),
+18 segment-estimates over three seeds came out 13 supported, 3 inconclusive, 2
+refused, and again **no status changed** - the two refusals had not reached
+causal support. On the matching well-identified world, where demand really is
+constant-elasticity, the same 18 estimates came out 13 supported, 5
+inconclusive, 0 refused: no false refusals, which is the other half of the
+measurement.
+
+The curvature in that world is **not** small. Across a segment's observed
+price range (5th to 95th percentile of `log(P/P_ref)`, about 0.28 wide) the
+local elasticity moves by about 0.85. What is small is the movement along the
+one dimension left after the fixed effects: the halves are split by each
+pair's price position *within its item*, which separates them by about four
+percentage points of price and so by about 0.1 of elasticity - under the
+median detectable bound of roughly 0.20. Most of the price variation in that
+world is across items and over time, and the pair and period effects absorb
+it. The check is therefore a guard against curvature visible between
+comparable customers for the same item, not a test of the constant-elasticity
+assumption in general.
+
+**What an inconclusive comparison costs (owner decision).** Causal support
+still stands when the comparison cannot speak - the anticipation-test rule,
+for the same reason. But an untested shape means the elasticity is only
+credible near the prices it was measured at, so two things change for that
+segment:
+
+1. **No optimal price.** An optimizer returns the maximum of a curve; where
+   the shape of the curve was never tested, that maximum is an artefact of
+   assuming the shape. The provisional historical target stands instead, and
+   the target names why: `provisional_shape_untested`.
+2. **A narrower band for modeled volume.** Expected-change figures are
+   produced only inside `functional_form_untested_support_fraction` (0.5 by
+   default) of the segment's identification-support range, around the same
+   midpoint. Beyond that band, and still inside the full identifying range,
+   the figure assumes unchanged volume under its own treatment,
+   `price_response_shape_untested` - kept distinct from
+   `outside_price_support`, which means something else: outside the
+   identifying range altogether.
+
+The page shows "Price-response shape untested" beside the evidence status, so
+the narrowing is visible next to the label it qualifies rather than buried in
+the diagnostics.
+
+Measured, same world and seed with the check off and on:
+
+| World | Records | Expected-change before / after | Moved to shape untested | Segments inconclusive |
+|---|---|---|---|---|
+| Published demo (50 x 120) | 611 | 159 / 99 | 60 | 1 of 2 |
+| `well_identified` (150 x 300) | 2,343 | 1,486 / 1,486 | 151 | 1 of 3 |
+| `nonconstant_elasticity` (150 x 300) | 2,344 | 1,486 / 1,486 | 151 | 1 of 3 |
+
+On the two validation worlds the causal segments' shapes were supported, so
+their expected-change records are untouched; the 151 that move each time
+belong to the instrumented-only segment, and move out of
+`sensitivity_range_only`. On the demo, where the causal segment is the
+inconclusive one, 60 of its 611 records lose a modeled volume response.
+
+No optimal price changed on any world, for a reason worth stating rather than
+leaving to be read as "no effect": `optimize_targets` has no caller in `src/`.
+The optimizer is implemented and tested but not wired into the pipeline, so
+every target the engine ships today is already the provisional one. Rule 1
+binds inside that function, and will take effect wherever it is wired in.
+
+**The validation row's 0.303 is mostly a reference point, not an error.** That
+row scores the estimate against `beta`, the local elasticity at the item's
+list price. Sold prices sit about 10.9% below list on average, and per segment
+the sample mean runs from 30% below list to 6% above it. Scored against the
+local elasticity at the prices the estimate was actually taken over, the same
+18 estimates give a median absolute error of **0.039** (P90 0.108, worst
+0.181):
+
+| Scored against | Median | P90 | Worst |
+|---|---|---|---|
+| `beta`, the elasticity at list price | 0.303 | 0.777 | 0.938 |
+| The local elasticity at the sample's own prices | 0.039 | 0.108 | 0.181 |
+
+The error against `beta` tracks how far the list price is from where the
+segment trades, monotonically: the segment with no rows at or above list
+(prices 43% to 16% below it) is off by 0.938, and the segment with 73% of rows
+at or above list is off by 0.065. So a constant-elasticity model fitted to
+curved demand recovers the elasticity at the prices it was fitted to; what it
+cannot do is report the elasticity at a price the segment does not trade at.
+That is the same limitation the identification-support rule already enforces
+before any price move is sized.
+
 ## 8. Opportunity and scenarios
 
 Three levels, never summed. Units: prices and gaps are cents per normalized

@@ -74,6 +74,22 @@ function SensitivityBody({ d }: { d: SensitivityData }) {
                       : "no interval"}
                   </span>
                   <StatusChip status={r.status} reason={r.status_reasons || undefined} />
+                  {/* Beside the status, never instead of it: an inconclusive
+                      functional-form comparison leaves the status alone but
+                      stops the optimizer and narrows the band a volume
+                      response may be modeled over. */}
+                  {r.functional_form_status === "functional_form_inconclusive" && (
+                    <span
+                      className="rounded-badge border border-dashed hairline px-2 py-0.5 text-caption secondary"
+                      data-testid="shape-untested"
+                      title={
+                        labels("price_response_shape_untested_badge").description +
+                        (r.functional_form_detail ? ` ${r.functional_form_detail}.` : "")
+                      }
+                    >
+                      {labels("price_response_shape_untested_badge").label}
+                    </span>
+                  )}
                   <Collapsible.Trigger className="ml-auto cursor-pointer rounded-badge border hairline bg-transparent px-2 py-1 text-caption secondary hover:text-ink">
                     Diagnostics
                   </Collapsible.Trigger>

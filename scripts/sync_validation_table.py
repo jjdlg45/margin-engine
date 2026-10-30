@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.measure_validation import declared_checks
+
 from margin_engine.validation_table import load, load_meta, render, render_detail, splice
 
 REPO = Path(__file__).resolve().parents[1]
@@ -18,10 +20,15 @@ REPO = Path(__file__).resolve().parents[1]
 def main() -> None:
     doc = load(REPO / "docs" / "validation.json")
     meta = load_meta(REPO / "docs" / "validation-meta.yaml")
+    # Scope entries may describe a row the measurement scripts can produce but
+    # the committed results file has not caught up with yet. That is not an
+    # orphan: the alternative is a two-hour study ending with nowhere to say
+    # what its newest row establishes.
+    declared = declared_checks()
 
     readme_path = REPO / "README.md"
     readme = readme_path.read_text(encoding="utf-8")
-    updated = splice(readme, render(doc, meta))
+    updated = splice(readme, render(doc, meta, declared))
     if updated == readme:
         print("README validation table already matches docs/validation.json")
     else:
@@ -29,7 +36,7 @@ def main() -> None:
         print("README validation table updated from docs/validation.json")
 
     detail_path = REPO / "docs" / "validation.md"
-    detail = render_detail(doc, meta)
+    detail = render_detail(doc, meta, declared)
     if detail_path.exists() and detail_path.read_text(encoding="utf-8") == detail:
         print("docs/validation.md already matches")
     else:

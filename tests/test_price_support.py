@@ -166,7 +166,13 @@ def _rules() -> Rules:
     return load_rules(REPO / "config" / "rules.yaml")
 
 
-def _sensitivity(*, regions: str | None, lo: float = -0.10, hi: float = 0.10) -> pl.DataFrame:
+def _sensitivity(
+    *,
+    regions: str | None,
+    lo: float = -0.10,
+    hi: float = 0.10,
+    shape: str = "constant_elasticity_supported",
+) -> pl.DataFrame:
     row: dict[str, Any] = {
         "segment": 1,
         "iv": -1.5,
@@ -175,6 +181,7 @@ def _sensitivity(*, regions: str | None, lo: float = -0.10, hi: float = 0.10) ->
         "iv_ci_high": -1.3,
         "support_log_lo": lo,
         "support_log_hi": hi,
+        "functional_form_status": shape,
         "competitor_path_resolution": "controlled_by_market_index",
     }
     if regions is not None:
@@ -322,3 +329,186 @@ def test_the_price_source_mix_breaks_ties_by_name() -> None:
         price_source_mix(pl.DataFrame({"price_status": []}, schema={"price_status": pl.String}))
         == ""
     )
+
+
+# ---------------------------------------------------------------------------
+# What an untested price-response shape costs (owner decision)
+# ---------------------------------------------------------------------------
+
+INCONCLUSIVE = "functional_form_inconclusive"
+
+
+def _optimized(sens: pl.DataFrame, target_index: float = 0.95) -> dict[str, Any]:
+    """The same pair, taken all the way through target optimization."""
+    from margin_engine.opportunity.sizing import optimize_targets, price_opportunities
+
+    panel = pl.DataFrame(
+        [
+            {
+                "customer_id": "C1",
+                "item_id": "I1",
+                "segment_leaf": 1,
+                "month_idx": 24300,
+                "qty": 20.0,
+                "price_cf": 9000.0,
+                "supplier_id": "S1",
+                "item_category": "CATA",
+                "contract_id": None,
+            }
+        ]
+    ).with_columns(pl.col("contract_id").cast(pl.String))
+    guidance = pl.DataFrame(
+        [
+            {
+                "customer_id": "C1",
+                "item_id": "I1",
+                "segment_leaf": 1,
+                "guidance_status": "below_reference",
+                "target_index": target_index,
+                "current_index": 0.90,
+                "eff_list_cents": 10_000,
+                "unit_cost_cents": 6_000,
+                "invoice_floor_cents": 6_316,
+                "band_p25": 0.92,
+                "band_p75": 0.97,
+                "contract_protected": False,
+                "deduction_bp": 0,
+                "fixed_deduction_cents": 0,
+            }
+        ]
+    )
+    opportunities = price_opportunities(guidance, panel, sens, Rules()).with_columns(
+        pl.lit(-1.5).alias("elasticity")
+    )
+    return optimize_targets(opportunities, guidance, Rules()).to_dicts()[0]
+
+
+def test_a_tested_shape_optimizes_as_before() -> None:
+    """The control: nothing about this changes for a segment whose halves
+    were compared and agreed."""
+    row = _optimized(_sensitivity(regions=None, lo=-0.5, hi=0.5))
+    assert row["volume_treatment"] == "expected_change"
+    assert row["optimal_price_cents"] is not None
+    assert row["target_basis"].startswith("optimized_")
+
+
+def test_an_untested_shape_gets_no_optimal_price() -> None:
+    """An optimizer picks the maximum of a curve. Where the shape of the
+    curve was never tested, the maximum is an artefact of assuming it, so the
+    provisional target stands - and says which it is."""
+    row = _optimized(_sensitivity(regions=None, lo=-0.5, hi=0.5, shape=INCONCLUSIVE))
+    assert row["optimal_price_cents"] is None
+    assert row["target_basis"] == "provisional_shape_untested"
+    # The status itself is untouched: an inconclusive test is not evidence
+    # against, and the estimate is still the causal-supported one.
+    assert row["evidence_status"] == "causal_elasticity_supported"
+
+
+def test_an_untested_shape_still_models_volume_close_in() -> None:
+    """Inside the narrowed band the volume response stands: the estimate is
+    credible near the prices it was measured at, which is the whole point of
+    narrowing rather than withdrawing."""
+    row = _sized(_sensitivity(regions=None, lo=-0.5, hi=0.5, shape=INCONCLUSIVE))
+    assert row["volume_treatment"] == "expected_change"
+    assert row["expected_pocket_gross_profit_change_cents"] is not None
+
+
+def test_an_untested_shape_holds_volume_steady_further_out() -> None:
+    """The proposal is a +5.4% move. Support runs to +6%, so the move is
+    inside it; half that range is +3%, so the move is outside the narrowed
+    band and the figure goes back to unchanged volume, labeled."""
+    tested = _sized(_sensitivity(regions=None, lo=-0.06, hi=0.06))
+    assert tested["volume_treatment"] == "expected_change"
+
+    untested = _sized(_sensitivity(regions=None, lo=-0.06, hi=0.06, shape=INCONCLUSIVE))
+    assert untested["volume_treatment"] == "price_response_shape_untested"
+    assert untested["expected_pocket_gross_profit_change_cents"] is None
+    assert untested["gp_change_low_cents"] is None
+    # Still inside the identifying range, so it is NOT the extrapolation
+    # refusal: the two reasons are kept apart.
+    assert untested["price_support_reason"] == "inside the movement the instruments induced"
+    assert untested["gross_price_opportunity_cents"] > 0
+
+
+def test_the_narrowing_applies_to_measured_regions_too() -> None:
+    """Regions, not just the outer bounds: a +5.4% move inside a region
+    running to +7% falls outside that region narrowed to half its width."""
+    sens = _sensitivity(regions="0.000:0.070", shape=INCONCLUSIVE)
+    assert _sized(sens)["volume_treatment"] == "price_response_shape_untested"
+    assert _sized(_sensitivity(regions="0.000:0.070"))["volume_treatment"] == "expected_change"
+
+
+def test_the_narrowed_fraction_is_configurable() -> None:
+    """At a fraction of one the rule is off, and an untested shape costs
+    nothing but the optimizer."""
+    from margin_engine.opportunity.sizing import price_opportunities
+
+    rules = Rules.model_validate(
+        {"sensitivity": {"functional_form_untested_support_fraction": 1.0}}
+    )
+    panel = pl.DataFrame(
+        [
+            {
+                "customer_id": "C1",
+                "item_id": "I1",
+                "segment_leaf": 1,
+                "month_idx": 24300,
+                "qty": 20.0,
+                "price_cf": 9000.0,
+                "supplier_id": "S1",
+                "item_category": "CATA",
+                "contract_id": None,
+            }
+        ]
+    ).with_columns(pl.col("contract_id").cast(pl.String))
+    guidance = pl.DataFrame(
+        [
+            {
+                "customer_id": "C1",
+                "item_id": "I1",
+                "segment_leaf": 1,
+                "guidance_status": "below_reference",
+                "target_index": 0.95,
+                "current_index": 0.90,
+                "eff_list_cents": 10_000,
+                "unit_cost_cents": 6_000,
+                "invoice_floor_cents": 6_316,
+                "band_p25": 0.92,
+                "band_p75": 0.97,
+                "contract_protected": False,
+                "deduction_bp": 0,
+                "fixed_deduction_cents": 0,
+            }
+        ]
+    )
+    sens = _sensitivity(regions=None, lo=-0.06, hi=0.06, shape=INCONCLUSIVE)
+    row = price_opportunities(guidance, panel, sens, rules).to_dicts()[0]
+    assert row["volume_treatment"] == "expected_change"
+
+
+def test_an_outright_extrapolation_keeps_its_own_reason() -> None:
+    """Outside the identifying range altogether, the refusal is the
+    extrapolation one whether or not the shape was tested - the narrower rule
+    never masks the wider one."""
+    row = _sized(_sensitivity(regions=None, lo=-0.001, hi=0.001, shape=INCONCLUSIVE))
+    assert row["volume_treatment"] == "outside_price_support"
+
+
+def test_both_new_codes_have_plain_english() -> None:
+    from margin_engine.labels import LABELS
+
+    for code in (
+        "price_response_shape_untested",
+        "provisional_shape_untested",
+        "price_response_shape_untested_badge",
+    ):
+        assert code in LABELS
+        assert "_" not in LABELS[code]["label"]
+
+
+def test_the_tracker_knows_the_new_treatment() -> None:
+    """Every volume treatment must have a calibration bucket; an unmapped one
+    used to be silently pooled with the causal-supported figures."""
+    from margin_engine.actions.tracking import _BUCKET
+
+    assert _BUCKET["price_response_shape_untested"] == "fixed_volume"
