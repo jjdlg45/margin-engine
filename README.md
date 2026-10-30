@@ -316,7 +316,7 @@ Measured 2026-10-26T20:23:17+00:00 by `scripts/measure_validation.py` in 62 minu
 | KVI candidates | ≥ 80% of planted KVIs in top-ranked candidates | Recall 96.7% (30 planted) | 1 |
 | Win-curve price coefficient | Within ±15% relative of planted, per estimated segment | Worst estimated segment 4.0% (2 estimated, precision-gated) | 1 |
 | Engine determinism | Byte-identical bundle across runs on the same input | Byte-identical | one world, repeated runs |
-| Performance (full Run-1 pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 119.0s on AMD64 (Windows) | one world, one machine |
+| Performance (full Run-1 pipeline) | 500k+ lines under 2 minutes | 811,253 lines in 119.0s on AMD64 (Windows) | one world, one machine (14 GB laptop) |
 | Competitor-price path gate (informational) | Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset | 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation) | 30 segment-seeds |
 | Scenario matrix (full tier) | every invariant holds on every world (reconciliation, fail-closed, determinism, format invariance, monotonicity, no crash) | 300 worlds, 300 passed all invariants, 0 failed (0 crashes), 1784s | 300 |
 | Hybrid world: real PPI cost paths (informational) | informational: recovery when real cost movements drive the instrument | seed 11, 3 real PPI series as supplier cost paths (series log sd [0.049, 0.033, 0.003]); median abs elasticity error 0.037 over 6 segments; statuses {'causal_elasticity_supported': 4, 'iv_estimated_elasticity': 2}; 12s | 1 |
@@ -358,6 +358,7 @@ so. Finding by finding, with before/after numbers and what is still open:
 - **Volume responses are never extrapolated** beyond the price variation the instruments actually induced: proposed moves outside each segment's identifying price range are labeled `outside_price_support` and sized at unchanged volume.
 - **Allocated and estimated amounts are labeled** as such, never presented as actuals. Unallocatable amounts stay visible as residuals with a plain-English explanation.
 - **Item availability is proxied** by market-wide activity, since stockouts aren't observable in invoice data. The proxy is labeled.
+- **A performance figure belongs to the machine that produced it.** The Run-1 timing in the table above was measured on the 14 GB development laptop; the same pipeline on a GitHub `ubuntu-24.04` runner takes about 188s, roughly 58% longer on shared hardware. Neither is a property of the code, so CI gates on the **change against `main` measured on one runner back to back** (the branch fails above +10%) and keeps an absolute backstop calibrated to that runner rather than carrying the laptop's across. `docs/validation.md` records both figures against their hardware.
 - **Synthetic validation is not real-world validation.** Tests demonstrate recovery of planted truth; they don't prove accuracy on any specific company's data.
 
 ## Repository layout

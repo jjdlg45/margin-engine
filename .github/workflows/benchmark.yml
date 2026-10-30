@@ -1,24 +1,40 @@
 name: Benchmark
 
-# The Run-1 performance target (section 8: 500k+ lines under 2 minutes) is
-# measured HERE rather than on a developer machine. The full world needs about
-# 5.4 GB, which does not fit beside a desktop on a 14 GB laptop, and the
-# absolute figure moves several seconds between machines and between runs on
-# one machine - so a single local number cannot tell a code regression from a
-# slower machine.
+# The Run-1 pipeline is timed HERE rather than on a developer machine. The
+# full world needs about 5.4 GB, which does not fit beside a desktop on a
+# 14 GB laptop.
 #
-# This job measures the pull request's code and `main` on the SAME runner, one
-# after the other, and fails on either bar: over the absolute target, or more
-# than 10% slower than main.
+# THE GATE IS THE RELATIVE COMPARISON. This job measures the pull request's
+# code and `main` on the SAME runner, one after the other, and fails the
+# branch when it is more than 10% slower than main. That is the only
+# comparison that separates a code regression from a slow machine.
+#
+# The absolute bar is a per-machine backstop, and it is calibrated to THIS
+# runner. Section 8's "500k+ lines under 2 minutes" was measured on the
+# development laptop: 811,253 lines in 119.0s (median of three, spread about
+# 4s). The same code on a GitHub ubuntu-24.04 runner takes 187.9s - about 58%
+# longer, on shared and slower hardware. Carrying the laptop's 120s bar over
+# here failed a pull request whose branch was 2.0% slower than main (191.6s
+# against 187.9s), which told nobody anything they could act on.
+#
+# 250s is that measured 187.9s baseline plus about a third again. Wide enough
+# that ordinary runner variance never fails a job, tight enough that a change
+# which actually blows the pipeline up still does. Re-derive it if the runner
+# image or the world size changes; it is a reading of one machine, not a
+# property of the code.
 
 on:
   pull_request:
   workflow_dispatch:
     inputs:
       max_regression_pct:
-        description: "Maximum allowed slowdown against main, in per cent"
+        description: "Maximum allowed slowdown against main, in per cent (the gate)"
         required: false
         default: "10"
+      max_seconds:
+        description: "Absolute backstop for this runner, in seconds"
+        required: false
+        default: "250"
 
 permissions:
   contents: read
@@ -74,6 +90,8 @@ jobs:
             --base "$GITHUB_WORKSPACE/base.json" \
             --head "$GITHUB_WORKSPACE/head.json" \
             --max-regression-pct "${{ github.event.inputs.max_regression_pct || '10' }}" \
+            --max-seconds "${{ github.event.inputs.max_seconds || '250' }}" \
+            --bar-label "the GitHub ubuntu-24.04 runner" \
             --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the measurements

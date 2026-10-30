@@ -6377,3 +6377,97 @@ code change rather than carried over from the earlier pass.
   dated list) would see more of the curvature; it was not attempted here.
 * The verification clone at `C:\Projects\me-verify` (1.3 GB) is still on disk
   from Run 6 and still needs deleting by hand.
+
+---
+
+## fix: benchmark gate is relative; absolute bar per machine
+
+The pull request's benchmark job failed for a reason that had nothing to do
+with the pull request. On one GitHub `ubuntu-24.04` runner, back to back:
+
+| | lines | seconds |
+|---|---|---|
+| main | 811,253 | 187.9 |
+| this branch | 811,253 | 191.6 |
+
+That is **+2.0%**, well inside the 10% allowed against main - and both sides
+blew through the 120s absolute bar, because 120s was calibrated on the 14 GB
+development laptop, where the same code runs 811,253 lines in 119.0s (median
+of three, spread about 4s, recorded in the Phase 71 A/B above). The runner is
+roughly 58% slower on shared hardware. A bar read off one machine and applied
+to another cannot tell anyone anything they could act on, and here it blocked
+a branch that had not regressed.
+
+### What changed
+
+**The relative comparison is the gate.** Both sides are measured on the same
+runner, minutes apart, and the branch fails above +10%. That is the only
+comparison that separates a code regression from a slow machine, and the job
+summary now labels it as the gate rather than listing it beside the absolute
+check as an equal.
+
+**The absolute bar is per machine, and CI's is calibrated to CI.**
+`compare_benchmark.py` gained `--max-seconds` and `--bar-label`; the workflow
+passes `250` and "the GitHub ubuntu-24.04 runner". 250s is the measured 187.9s
+baseline plus about a third again: wide enough that ordinary runner variance
+never fails a job, tight enough that a change which actually blows the
+pipeline up still does. It is a reading of one machine and the workflow
+comment says so, with the instruction to re-derive it if the runner image or
+the world size changes.
+
+The bar is kept rather than dropped because a relative gate alone would let
+the pipeline drift past any wall a few per cent at a time. Run locally with no
+machine named, `--max-seconds` falls back to the `target_seconds` in the
+benchmark output - the laptop figure - so a developer run still holds the
+section 8 number.
+
+### Figures now carry their hardware
+
+Neither number is a property of the code, and three places said otherwise:
+
+* README: a bullet in the limitations list, where the other "this number is
+  narrower than it looks" caveats live. It points at the generated table for
+  the laptop timing rather than retyping it - `test_validation_table.py`
+  forbids a typed timing figure beside that table, which is the drift guard
+  working, and it caught the first draft of this bullet.
+* `docs/validation-meta.yaml`, so `docs/validation.md` and the README's
+  "worlds" column name the laptop and record the runner figure under what the
+  row does not establish.
+* The performance row `measure_validation.py` writes, so the next study says
+  it too rather than reinstating a bare "under 2 minutes".
+
+### Tests
+
+`tests/test_benchmark_gate.py` (11 tests) holds both halves, including the
+exact numbers from the run that prompted this: 187.9 against 191.6 passes at
+the runner's bar, and the same pair is kept as a test against the laptop's
+120s bar so the reason the behaviour changed stays legible. Also covered: a
+real +15% regression fails, the backstop still refuses a genuine blow-up
+(260s against 262s, only +0.8% apart), a reduced-scale or short run cannot
+gate anything, and with no bar given the script falls back to the measured
+laptop target.
+
+### One defect found on the way
+
+`scripts/sync_validation_table.py` could not run as documented. The
+`from scripts.measure_validation import declared_checks` added earlier in this
+branch resolves under pytest, where the repo root is on the path, but not
+under `uv run python scripts/sync_validation_table.py`, where only `scripts/`
+is. Found by running the documented command rather than the test. Fixed by
+putting the repo root on the path first.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| `tests/test_benchmark_gate.py` | 11 passed |
+| `tests/test_validation_table.py`, `tests/test_validation_script.py` | 20 passed |
+| `python scripts/sync_validation_table.py` | runs; README and validation.md regenerated |
+| Workflow YAML | parses; inputs and the compare step verified |
+
+Scoped to the files this change touches: `scripts/`, the workflow, the
+validation documents and one new test file. Nothing under `src/` changed, so
+the full suite and the browser gates from the previous commit still stand.

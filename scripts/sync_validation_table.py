@@ -8,13 +8,24 @@ Run it after `scripts/measure_validation.py`. The companion test
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from scripts.measure_validation import declared_checks
-
-from margin_engine.validation_table import load, load_meta, render, render_detail, splice
-
 REPO = Path(__file__).resolve().parents[1]
+# Run as `python scripts/sync_validation_table.py`, only `scripts/` is on the
+# path, so the sibling import below needs the repo root put there first.
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from scripts.measure_validation import declared_checks  # noqa: E402
+
+from margin_engine.validation_table import (  # noqa: E402
+    load,
+    load_meta,
+    render,
+    render_detail,
+    splice,
+)
 
 
 def main() -> None:
