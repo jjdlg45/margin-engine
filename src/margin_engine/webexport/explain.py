@@ -92,6 +92,9 @@ def opportunity_summary(row: dict[str, Any]) -> str:
         "outside_price_support": "the move lands where cost and tariff "
         "movements never moved this segment's prices, so no volume response is "
         "modeled.",
+        "price_response_shape_untested": "the move sits outside the narrowed band "
+        "the engine holds a segment to when it could not test whether one elasticity "
+        "describes the whole segment, so no volume response is modeled.",
         "cost_unavailable": "no unit cost is known, so cost-dependent figures are not produced.",
     }.get(treatment, "no volume response is modeled.")
     if cur is not None and target is not None and target > 0:
@@ -135,6 +138,14 @@ def opportunity_explanation(row: dict[str, Any]) -> str:
             "the volume response is shown as a sensitivity analysis across a span of "
             "plausible price responses - not as a point estimate, and not as a "
             "confidence interval around the dollar impact."
+        )
+    if treatment == "price_response_shape_untested":
+        return (
+            base + " The segment's cheaper-priced and dearer-priced pairs could not be "
+            "told apart clearly enough to show that one elasticity describes it, so the "
+            "engine models a volume response only for moves close to the prices the "
+            "instruments actually moved. This move is further out than that, and the "
+            "figure assumes unchanged volume."
         )
     if treatment == "outside_price_support":
         distance = row.get("price_support_distance")

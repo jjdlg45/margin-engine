@@ -298,10 +298,10 @@ is one draw, and the row says so.
 - **Target** 500k+ lines under 2 minutes
 - **Measured** 811,253 lines in 119.0s on AMD64 (Windows)
 - **Result** met
-- **Worlds or clusters** one world, one machine
-- **Method** Wall-clock time for the full pipeline on a generated world, on the build machine.
-- **Establishes** The measured configuration runs in the stated time on the stated hardware.
-- **Does not establish** Timing on other hardware; run-to-run spread on this machine is several seconds.
+- **Worlds or clusters** one world, one machine (14 GB laptop)
+- **Method** Wall-clock time for the full pipeline on a generated world, timed on the build machine. CI times the same world on a GitHub ubuntu-24.04 runner and gates on the change against main measured there back to back, not on an absolute figure.
+- **Establishes** That this configuration runs in the stated time on the stated hardware: 811,253 lines in 119.0s on the 14 GB development laptop.
+- **Does not establish** Timing on any other hardware. The same code takes about 187.9s on a GitHub ubuntu-24.04 runner, roughly 58% longer; run-to-run spread on the laptop is about 4s.
 
 ## Competitor-price path gate (informational)
 

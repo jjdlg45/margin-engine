@@ -10,7 +10,18 @@ Full run takes on the order of two hours (the 50-simulation coverage study
 dominates). Usage:
 
     uv run python scripts/measure_validation.py            # full
-    uv run python scripts/measure_validation.py --quick    # skip coverage+perf (smoke only)
+    uv run python scripts/measure_validation.py --quick    # skip the two coverage studies
+    uv run python scripts/measure_validation.py --smoke    # every path, tiny worlds, minutes
+
+Each check runs in isolation: one that raises is recorded as a failed row
+carrying the error, and the run continues and still writes its results. A
+two-hour study that dies on its last check used to write nothing at all.
+
+`--smoke` is the pull-request gate. It runs EVERY check on worlds far too
+small to mean anything, so its numbers are never written to
+docs/validation.json and its targets are not scored - what it proves is that
+every code path still runs and every row still has a name the scope document
+knows. A signature change then fails in minutes instead of after two hours.
 """
 
 from __future__ import annotations
@@ -23,6 +34,9 @@ import sys
 import tempfile
 import textwrap
 import time
+import traceback
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -53,6 +67,61 @@ from margin_engine.sensitivity.estimate import (  # noqa: E402
 from margin_engine.sensitivity.market_control import SOURCE_MAPPED  # noqa: E402
 
 MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
+
+
+@dataclass(frozen=True)
+class Scale:
+    """How big the worlds are and how many of them.
+
+    FULL is where every committed number comes from. SMOKE exists for the
+    pull-request gate: worlds small enough that the whole script runs in
+    minutes, and far too small for any target to mean anything - which is why
+    a smoke run is scored on whether a check RAISED, never on whether it
+    passed, and never writes docs/validation.json.
+    """
+
+    #: Generator size override, or None to leave each check its own scale.
+    size: dict[str, int] | None
+    #: Cap on the number of worlds the elasticity study runs.
+    seed_cap: int | None
+    coverage_seeds: range
+    cluster_seeds: range
+    misspecified_seeds: tuple[int, ...]
+    invalid_seeds: tuple[int, ...]
+    extensive_seeds: tuple[int, ...]
+
+
+FULL = Scale(
+    size=None,
+    seed_cap=None,
+    coverage_seeds=range(100, 150),
+    cluster_seeds=range(100, 125),
+    misspecified_seeds=(5, 6, 7),
+    invalid_seeds=(3, 11, 19, 27, 35),
+    extensive_seeds=(42, 7, 13),
+)
+SMOKE = Scale(
+    size={"n_customers": 40, "n_items": 60},
+    seed_cap=1,
+    coverage_seeds=range(100, 102),
+    cluster_seeds=range(100, 102),
+    misspecified_seeds=(5,),
+    invalid_seeds=(3,),
+    extensive_seeds=(42,),
+)
+#: Set once in main(). A module global rather than a parameter threaded
+#: through a dozen check functions, which is what this file is: a script.
+SCALE = FULL
+
+
+def _world_size(**defaults: int) -> dict[str, int]:
+    """The generator size this run uses: the check's own, or the smoke scale."""
+    return dict(SCALE.size) if SCALE.size else dict(defaults)
+
+
+def _panel_size() -> dict[str, int] | None:
+    """`build_world_panel`'s `size=` argument for this run."""
+    return dict(SCALE.size) if SCALE.size else None
 
 
 def _row(
@@ -188,7 +257,9 @@ def fixture_checks() -> list[dict[str, Any]]:
 def outlier_check(tmp: Path) -> dict[str, Any]:
     print("planted outlier detection (seed 5, 100x300)...")
     out = tmp / "disp"
-    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=5, n_customers=100, n_items=300)
+    cfg = GeneratorConfig.for_preset(
+        Preset.WELL_IDENTIFIED, seed=5, **_world_size(n_customers=100, n_items=300)
+    )
     generate(cfg, out)
     res = run_pipeline(out / "erp", MAPPING, Rules())
     flagged, _, _ = run_dispersion(res.observations, res.reference["items"], Rules())
@@ -215,7 +286,7 @@ def outlier_check(tmp: Path) -> dict[str, Any]:
 def segmentation_checks(tmp: Path) -> list[dict[str, Any]]:
     print("segmentation ARI (seed 3, default scale, bootstrap 8)...")
     out = tmp / "seg"
-    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=3)
+    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=3, **_world_size())
     generate(cfg, out)
     rules = Rules.model_validate({"segmentation": {"bootstrap_resamples": 8}})
     res = run_pipeline(out / "erp", MAPPING, rules)
@@ -247,6 +318,7 @@ def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any
     rules = rules_full()
     rows = []
     studies = {}
+    limit = limit if limit is not None else SCALE.seed_cap
     seeds = DEV_SEEDS + HELD_OUT_SEEDS
     if limit is not None:
         # A smoke run keeps at least one held-out world, so the held-out row
@@ -262,6 +334,7 @@ def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any
                 Preset.WELL_IDENTIFIED,
                 seed,
                 use_engine_segments=engine_seg,
+                size=_panel_size(),
             )
             sens = run_sensitivity(
                 panel,
@@ -304,7 +377,7 @@ def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any
         held_errs = sorted(e for v in held.values() for e in v)
         rows.append(
             _row(
-                f"Elasticity recovery, {label}, {len(seeds)} worlds",
+                f"Elasticity recovery, {label}",
                 "Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported)",
                 f"Median {med:.3f}, P90 {p90:.3f}, worst {worst:.3f} over "
                 f"{len(by_world)} worlds ({len(DEV_SEEDS)} development, "
@@ -334,6 +407,11 @@ def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any
                 )
             )
     study = studies["planted grain"]
+    rows.append(
+        _functional_form_row(
+            "Functional-form gate on the well-identified preset (informational)", study
+        )
+    )
     by_seed: dict[int, list[bool]] = {}
     for r in study:
         if r["naive_fe_ols"] is not None:
@@ -453,16 +531,61 @@ def elasticity_checks(tmp: Path, limit: int | None = None) -> list[dict[str, Any
     return rows
 
 
+def _functional_form_row(name: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Informational: what the constant-elasticity gate did, and to whom.
+
+    A downgrade is counted only where this gate is the ONLY one that failed -
+    anywhere else the status would have been withheld regardless, and counting
+    those would credit the gate with work it did not do.
+    """
+    tally: dict[str, int] = {}
+    for r in rows:
+        key = str(r.get("functional_form_status") or "functional_form_not_tested")
+        tally[key] = tally.get(key, 0) + 1
+    alone = sum(
+        1
+        for r in rows
+        if str(r.get("causal_gate_fail_codes") or "") == "constant_elasticity_supported"
+    )
+    gaps = sorted(
+        float(r["functional_form_gap"]) for r in rows if r.get("functional_form_gap") is not None
+    )
+    bounds = sorted(
+        float(r["functional_form_bound"])
+        for r in rows
+        if r.get("functional_form_bound") is not None
+    )
+    words = ", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in sorted(tally.items()))
+    span = (
+        f"; gaps {gaps[0]:.2f}-{gaps[-1]:.2f} against detectable bounds "
+        f"{bounds[0]:.2f}-{bounds[-1]:.2f}"
+        if gaps and bounds
+        else ""
+    )
+    return _row(
+        name,
+        "Informational - how the constant-elasticity comparison lands, reported not gated",
+        f"{len(rows)} segment-estimates: {words}{span}; "
+        f"{alone} had the causal status withdrawn by this gate alone",
+        True,
+    )
+
+
 def coverage_check(tmp: Path) -> dict[str, Any]:
-    print("95% CI coverage, 50 simulations (seeds 100-149)... (the long one)")
+    sims = SCALE.coverage_seeds
+    print(f"95% CI coverage, {len(sims)} simulations (seeds {sims[0]}-{sims[-1]})...")
     rules = rules_full()
     covered, total = 0, 0
     # Per simulation, so the bootstrap below resamples whole simulations:
     # the intervals inside one world are not independent of each other.
     by_sim: dict[int, list[float]] = {}
-    for seed in range(100, 150):
+    for seed in sims:
         panel, truth, _ = build_world_panel(
-            tmp / "cov", Preset.WELL_IDENTIFIED, seed, use_engine_segments=False
+            tmp / "cov",
+            Preset.WELL_IDENTIFIED,
+            seed,
+            use_engine_segments=False,
+            size=_panel_size(),
         )
         sens = run_sensitivity(
             panel,
@@ -487,9 +610,9 @@ def coverage_check(tmp: Path) -> dict[str, Any]:
     # from resampling them (Run 6, Finding 12).
     ci = world_bootstrap(by_sim, np.mean, seed=4)
     return _row(
-        "95% CI coverage, 50 simulations",
+        "95% CI coverage",
         "Covers truth 90-98% of the time",
-        f"{covered}/{total} = {rate:.1%}",
+        f"{covered}/{total} = {rate:.1%} over {len(by_sim)} simulations",
         0.90 <= rate <= 0.98,
         uncertainty=(
             f"90% bootstrap interval on the coverage rate "
@@ -531,7 +654,7 @@ def cluster_structure_coverage(tmp: Path) -> list[dict[str, Any]]:
     # same number of generated worlds, and the margins being separated here
     # (95% against 84%) are far wider than the sampling noise at 25 x 6
     # segment-estimates per cell.
-    seeds = range(100, 125)
+    seeds = SCALE.cluster_seeds
     base = rules_full()
     shipped = base.sensitivity.cluster_level
     tally: dict[tuple[str, str], list[int]] = {
@@ -544,7 +667,7 @@ def cluster_structure_coverage(tmp: Path) -> list[dict[str, Any]]:
     for world in worlds:
         for seed in seeds:
             panel, truth, _ = build_world_panel(
-                tmp / "ccov", world, seed, use_engine_segments=False
+                tmp / "ccov", world, seed, use_engine_segments=False, size=_panel_size()
             )
             for lv in CLUSTER_LEVELS:
                 rules = base.model_copy(
@@ -603,25 +726,62 @@ def cluster_structure_coverage(tmp: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def local_elasticity_by_segment(world: Path, curvature: float) -> dict[int, float]:
+    """Each segment's planted elasticity AT ITS OWN PRICES.
+
+    The generator plants `beta + 2c log(P/P_ref)` with `P_ref` the item's
+    INITIAL list price, so `beta` is the elasticity at list. Where a segment
+    trades well below list, `beta` describes a price it never sells at, and
+    the distance from it is a reference point rather than an estimation
+    error. This returns the local elasticity at the mean price of each
+    segment's estimation rows, so the row can report both.
+    """
+    pt = pl.read_parquet(world / "ground_truth" / "panel_truth.parquet")
+    # List revisions only ever raise the price, so the initial list is the
+    # earliest month's value.
+    base = (
+        pt.sort("month")
+        .group_by("item_id")
+        .agg(pl.col("list_cents").first().alias("base_list_cents"))
+    )
+    rel = (
+        pt.join(base, on="item_id", how="left")
+        .filter((pl.col("qty") > 0) & ~pl.col("on_contract"))
+        .with_columns((pl.col("unit_price_cents") / pl.col("base_list_cents")).log().alias("rel"))
+        .group_by("segment_id")
+        .agg(pl.col("rel").mean().alias("mean_rel"))
+    )
+    return {int(r["segment_id"]): 2.0 * curvature * float(r["mean_rel"]) for r in rel.to_dicts()}
+
+
 def misspecified_checks(tmp: Path) -> list[dict[str, Any]]:
     """Run 4 (24.9): recovery and status outcomes on misspecified worlds.
     Informational, never gated - the point is to show what breaks and that
     statuses respond honestly."""
     rules = rules_full()
     rows = []
+    curved: list[dict[str, Any]] = []
+    curved_local: list[float] = []
     for preset in (
         Preset.PERSISTENT_DEMAND,
         Preset.HETEROGENEOUS_ELASTICITY,
         Preset.NONCONSTANT_ELASTICITY,
         Preset.COMPETITOR_COMOVEMENT,
     ):
-        print(f"misspecified world {preset.value} (3 seeds)...")
+        print(f"misspecified world {preset.value} ({len(SCALE.misspecified_seeds)} seeds)...")
         errs: list[float] = []
         statuses: dict[str, int] = {}
-        for seed in (5, 6, 7):
+        for seed in SCALE.misspecified_seeds:
             panel, truth, _ = build_world_panel(
-                tmp / "miss", preset, seed, use_engine_segments=False
+                tmp / "miss", preset, seed, use_engine_segments=False, size=_panel_size()
             )
+            world = tmp / "miss" / f"{preset.value}_{seed}"
+            curvature = float(
+                json.loads((world / "ground_truth" / "truth_summary.json").read_text())[
+                    "misspecification"
+                ]["elasticity_curvature"]
+            )
+            offsets = local_elasticity_by_segment(world, curvature) if curvature else {}
             sens = run_sensitivity(
                 panel,
                 rules,
@@ -630,19 +790,39 @@ def misspecified_checks(tmp: Path) -> list[dict[str, Any]]:
             )
             for r in sens.to_dicts():
                 statuses[r["status"]] = statuses.get(r["status"], 0) + 1
+                if preset is Preset.NONCONSTANT_ELASTICITY:
+                    curved.append(r)
                 if r["iv"] is not None and r["segment"] in truth:
                     errs.append(abs(r["iv"] - truth[r["segment"]]))
+                    if r["segment"] in offsets:
+                        curved_local.append(
+                            abs(r["iv"] - (truth[r["segment"]] + offsets[r["segment"]]))
+                        )
         med = float(np.median(errs)) if errs else float("nan")
         status_str = ", ".join(f"{k}: {v}" for k, v in sorted(statuses.items()))
+        # On the curved world the planted beta is the elasticity AT LIST, and
+        # sold prices sit below list, so the headline distance is mostly a
+        # reference point. Both numbers are reported; one alone misleads.
+        local_txt = (
+            f"; vs the local elasticity at the sample's own prices "
+            f"{float(np.median(curved_local)):.3f}"
+            if curved_local and preset is Preset.NONCONSTANT_ELASTICITY
+            else ""
+        )
         rows.append(
             _row(
                 f"Misspecified world: {preset.value} (informational)",
                 "Informational - reported, not gated (the planted beta is not the "
                 "estimand under misspecification)",
-                f"median abs error vs planted {med:.3f}; statuses {{{status_str}}}",
+                f"median abs error vs planted {med:.3f}{local_txt}; statuses {{{status_str}}}",
                 True,
             )
         )
+    rows.append(
+        _functional_form_row(
+            "Functional-form gate on the nonconstant-elasticity world (informational)", curved
+        )
+    )
     return rows
 
 
@@ -651,7 +831,7 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     rows = []
     print("weak_instrument preset (seed 3)...")
     panel, _, _ = build_world_panel(
-        tmp / "weak", Preset.WEAK_INSTRUMENT, 3, use_engine_segments=False
+        tmp / "weak", Preset.WEAK_INSTRUMENT, 3, use_engine_segments=False, size=_panel_size()
     )
     sens = run_sensitivity(
         panel,
@@ -672,13 +852,13 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     )
     print("invalid_instrument preset (5 seeds, 250x400)...")
     rejected, downgraded, n = 0, 0, 0
-    for seed in (3, 11, 19, 27, 35):
+    for seed in SCALE.invalid_seeds:
         panel, _, _ = build_world_panel(
             tmp / "inv",
             Preset.INVALID_INSTRUMENT,
             seed,
             use_engine_segments=False,
-            size={"n_customers": 250, "n_items": 400},
+            size=_world_size(n_customers=250, n_items=400),
         )
         sens = run_sensitivity(
             panel,
@@ -702,7 +882,9 @@ def preset_checks(tmp: Path) -> list[dict[str, Any]]:
     )
     for preset, name in ((Preset.PRICE_CONSTANT, "price_constant"), (Preset.SPARSE, "sparse")):
         print(f"{name} preset (seed 3)...")
-        panel, _, _ = build_world_panel(tmp / name, preset, 3, use_engine_segments=False)
+        panel, _, _ = build_world_panel(
+            tmp / name, preset, 3, use_engine_segments=False, size=_panel_size()
+        )
         sens = run_sensitivity(
             panel,
             rules,
@@ -757,10 +939,10 @@ def total_quantity_checks(tmp: Path) -> list[dict[str, Any]]:
     se_ratio: list[float] = []
     range_covered = range_total = 0
     statuses: set[str] = set()
-    for seed in (42, 7, 13):
+    for seed in SCALE.extensive_seeds:
         out = tmp / f"extm_{seed}"
         cfg = GeneratorConfig.for_preset(
-            Preset.EXTENSIVE_MARGIN, seed=seed, n_customers=200, n_items=300
+            Preset.EXTENSIVE_MARGIN, seed=seed, **_world_size(n_customers=200, n_items=300)
         )
         generate(cfg, out)
         truth = {
@@ -891,7 +1073,9 @@ def total_quantity_checks(tmp: Path) -> list[dict[str, Any]]:
 def kvi_check(tmp: Path) -> dict[str, Any]:
     print("KVI candidate recall (seed 12, 100x250)...")
     out = tmp / "kvi"
-    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=12, n_customers=100, n_items=250)
+    cfg = GeneratorConfig.for_preset(
+        Preset.WELL_IDENTIFIED, seed=12, **_world_size(n_customers=100, n_items=250)
+    )
     generate(cfg, out)
     rules = load_rules(REPO / "config" / "rules.yaml")
     res = run_pipeline(out / "erp", MAPPING, rules)
@@ -911,7 +1095,9 @@ def kvi_check(tmp: Path) -> dict[str, Any]:
 def win_curve_check(tmp: Path) -> dict[str, Any]:
     print("win-curve recovery (seed 2, 200x400)...")
     out = tmp / "quotes"
-    cfg = GeneratorConfig.for_preset(Preset.WELL_IDENTIFIED, seed=2, n_customers=200, n_items=400)
+    cfg = GeneratorConfig.for_preset(
+        Preset.WELL_IDENTIFIED, seed=2, **_world_size(n_customers=200, n_items=400)
+    )
     generate(cfg, out)
     res = run_pipeline(out / "erp", MAPPING, load_rules(REPO / "config" / "rules.yaml"))
     pt = pl.read_parquet(out / "ground_truth" / "panel_truth.parquet")
@@ -919,7 +1105,7 @@ def win_curve_check(tmp: Path) -> dict[str, Any]:
         "customer_id", "item_id", pl.col("segment_id").alias("segment_leaf")
     ).unique()
     qi = quote_price_index(res.reference["quotes"], res.reference["price_list"])
-    curves = fit_win_curves(qi, seg_map)
+    curves, _intake = fit_win_curves(qi, seg_map, load_rules(REPO / "config" / "rules.yaml"))
     truth = json.loads((out / "ground_truth" / "truth_summary.json").read_text())["quotes"][
         "win_curve"
     ]
@@ -1008,12 +1194,17 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     rows = [
         _row(
             "Performance (full Run-1 pipeline)",
-            "500k+ lines under 2 minutes, on the measured configuration only",
-            "Measured by the benchmark CI job (.github/workflows/benchmark.yml) on a fixed "
-            "runner, which measures this branch and main back to back and fails the branch "
-            "if it is over the bar or more than 10% slower than main. Not measured on a "
-            "developer machine: the world alone needs about 5.4 GB, and a single local "
-            "reading cannot tell a code regression from a slower machine.",
+            "500k+ lines under 2 minutes on the 14 GB development laptop; on any other "
+            "machine, no more than 10% slower than main measured there",
+            "Measured by the benchmark CI job (.github/workflows/benchmark.yml), which "
+            "times this branch and main back to back on one GitHub ubuntu-24.04 runner "
+            "and fails the branch if it is more than 10% slower than main. Absolute "
+            "timings are per machine and do not transfer: 811,253 lines take 119.0s on "
+            "the 14 GB development laptop and about 187.9s on that runner, which is why "
+            "the runner carries its own 250s backstop rather than the laptop's 120s. Not "
+            "measured on a developer machine here: the world alone needs about 5.4 GB, "
+            "and a single local reading cannot tell a code regression from a slower "
+            "machine.",
             True,
         )
     ]
@@ -1025,7 +1216,7 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     # Generated in a CHILD process so the generator's peak and the pipeline's
     # peak never coexist; the timer covers run_full alone, on a world already
     # written to disk.
-    _generate_world_in_child(out, n_customers=250, n_items=400, seed=1)
+    _generate_world_in_child(out, seed=1, **_world_size(n_customers=250, n_items=400))
     t0 = time.perf_counter()
     res = run_full(out / "erp", MAPPING, REPO / "config" / "rules.yaml", tmp / "perf_out")
     elapsed = time.perf_counter() - t0
@@ -1042,9 +1233,180 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     return rows
 
 
+@dataclass(frozen=True)
+class Check:
+    """One measurement, and the rows it is expected to produce.
+
+    The names are declared rather than discovered because they are needed
+    when the check does NOT run: a check that raises still has to appear in
+    the results under the name the scope document knows it by, or a failure
+    would leave a hole where a row used to be.
+    """
+
+    names: tuple[str, ...]
+    fn: Callable[[Path], list[dict[str, Any]]]
+    #: False for the studies and the performance run that `--quick` skips.
+    in_quick: bool = True
+
+
+def _elasticity_names() -> tuple[str, ...]:
+    per_grain = tuple(
+        name
+        for label in ("planted grain", "end-to-end (engine segments)")
+        for name in (
+            f"Elasticity recovery, {label}",
+            f"Elasticity recovery, {label}, held-out worlds only",
+        )
+    )
+    return (
+        *per_grain,
+        "Naive estimator bias",
+        "Causal support reachable",
+        "Competitor-price path gate",
+        "Anticipation (lead) test false-rejection rate",
+        "Robust first-stage statistic and robust-set shape",
+        "Functional-form gate on the well-identified preset (informational)",
+    )
+
+
+def _misspecified_names() -> tuple[str, ...]:
+    per_world = tuple(
+        f"Misspecified world: {preset} (informational)"
+        for preset in (
+            "persistent_demand",
+            "heterogeneous_elasticity",
+            "nonconstant_elasticity",
+            "competitor_comovement",
+        )
+    )
+    return (*per_world, "Functional-form gate on the nonconstant-elasticity world (informational)")
+
+
+def _cluster_coverage_names() -> tuple[str, ...]:
+    shipped = rules_full().sensitivity.cluster_level
+    return tuple(
+        f"95% CI coverage on the {world} world, grouped by {CLUSTER_LEVEL_NAMES[lv]}"
+        + (" (shipped default)" if lv == shipped else " (alternative)")
+        for world in ("persistent demand", "few clusters")
+        for lv in CLUSTER_LEVELS
+    )
+
+
+def registry() -> list[Check]:
+    """Every check this script runs, in order, with the rows it declares."""
+    return [
+        Check(
+            ("Accounting fixtures", "Ledger reconciliation", "Rebate / freight recovery"),
+            lambda _tmp: fixture_checks(),
+        ),
+        Check(("Planted outlier detection",), lambda tmp: [outlier_check(tmp)]),
+        Check(
+            (
+                "Commercial segments vs planted (out-of-sample ARI)",
+                "Segment stability (bootstrap median ARI)",
+            ),
+            segmentation_checks,
+        ),
+        Check(_elasticity_names(), elasticity_checks),
+        Check(("95% CI coverage",), lambda tmp: [coverage_check(tmp)], in_quick=False),
+        Check(_cluster_coverage_names(), cluster_structure_coverage, in_quick=False),
+        Check(
+            (
+                "weak-instrument preset",
+                "invalid-instrument preset",
+                "price-constant preset",
+                "sparse preset",
+            ),
+            preset_checks,
+        ),
+        Check(_misspecified_names(), misspecified_checks),
+        Check(
+            (
+                "Total-quantity estimate measures the extensive margin",
+                "Total-quantity recovery accuracy (informational)",
+                "Total-quantity resampled interval (informational)",
+                "Split-panel jackknife evaluated, not adopted (informational)",
+            ),
+            total_quantity_checks,
+        ),
+        Check(("KVI candidates",), lambda tmp: [kvi_check(tmp)]),
+        Check(("Win-curve price coefficient",), lambda tmp: [win_curve_check(tmp)]),
+        Check(("Engine determinism",), lambda tmp: [determinism_check(tmp)]),
+        Check(
+            (
+                "Performance (full Run-1 pipeline)",
+                "Performance smoke (reduced scale, developer machine)",
+            ),
+            performance_check,
+            in_quick=False,
+        ),
+    ]
+
+
+def declared_checks() -> tuple[str, ...]:
+    """Every row name this script can produce. `docs/validation-meta.yaml`
+    must carry an entry for each, which `tests/test_validation_script.py`
+    enforces in seconds rather than after a two-hour study."""
+    return tuple(name for check in registry() for name in check.names)
+
+
+def run_check(check: Check, tmp: Path) -> list[dict[str, Any]]:
+    """Run one check in isolation.
+
+    A check that raises is recorded as a failed row per declared name, with
+    the error on it, and the study carries on. The run that prompted this
+    spent two hours on twenty passing checks and then died on a stale call
+    signature in the twenty-first, writing nothing at all: every measurement
+    was lost to a one-line bug in a different check.
+
+    The failed row REPLACES whatever a previous run measured under that name
+    rather than carrying the old number forward. An error means the current
+    code produced no measurement, and the honest report of that is the error,
+    not yesterday's number presented as today's.
+    """
+    try:
+        return check.fn(tmp)
+    except Exception as exc:
+        tb = traceback.format_exc()
+        print(tb, flush=True)
+        frames = traceback.extract_tb(exc.__traceback__)
+        where = (
+            f"{Path(frames[-1].filename).name}:{frames[-1].lineno}" if frames else "unknown line"
+        )
+        rows = []
+        for name in check.names:
+            row = _row(
+                name,
+                "Not measured: the check raised before it could report",
+                f"ERROR at {where} - {type(exc).__name__}: {exc}",
+                False,
+            )
+            row["error"] = tb[-4000:]
+            rows.append(row)
+        return rows
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--quick", action="store_true", help="skip the coverage study and perf run")
+    ap.add_argument("--quick", action="store_true", help="skip the coverage studies and perf")
+    ap.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "run every check on tiny worlds, in minutes. Exits non-zero only if a check "
+            "RAISED or produced a row name the scope document does not know; targets are "
+            "not scored and docs/validation.json is not touched."
+        ),
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=(
+            "where to write the results (default: docs/validation.json; a smoke run "
+            "writes to a temporary file instead unless this is given)"
+        ),
+    )
     ap.add_argument(
         "--seeds",
         type=int,
@@ -1061,8 +1423,18 @@ def main() -> None:
         help="re-measure only the performance check and update it in docs/validation.json",
     )
     args = ap.parse_args()
+    global SCALE
+    if args.smoke:
+        SCALE = SMOKE
+    if args.seeds is not None:
+        SCALE = replace(SCALE, seed_cap=args.seeds)
     t0 = time.perf_counter()
-    out_path = REPO / "docs" / "validation.json"
+    if args.out is not None:
+        out_path = args.out
+    elif args.smoke:
+        out_path = Path(tempfile.gettempdir()) / "validation-smoke.json"
+    else:
+        out_path = REPO / "docs" / "validation.json"
     if args.only_perf:
         with tempfile.TemporaryDirectory() as td:
             perf_rows = performance_check(Path(td))
@@ -1080,35 +1452,33 @@ def main() -> None:
     results: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        results += fixture_checks()
-        results.append(outlier_check(tmp))
-        results += segmentation_checks(tmp)
-        results += elasticity_checks(tmp, args.seeds)
-        if not args.quick:
-            results.append(coverage_check(tmp))
-            results += cluster_structure_coverage(tmp)
-        results += preset_checks(tmp)
-        results += misspecified_checks(tmp)
-        results += total_quantity_checks(tmp)
-        results.append(kvi_check(tmp))
-        results.append(win_curve_check(tmp))
-        results.append(determinism_check(tmp))
-        if not args.quick:
-            results += performance_check(tmp)
+        for check in registry():
+            if args.quick and not check.in_quick:
+                continue
+            results += run_check(check, tmp)
+    undeclared = sorted({str(r["check"]) for r in results} - set(declared_checks()))
+    if undeclared:
+        print(
+            f"\nWARNING: rows {undeclared} are not declared in registry(), so "
+            "docs/validation-meta.yaml cannot be held against them and the "
+            "generated documents will refuse to render."
+        )
+    errored = [r for r in results if "error" in r]
     payload = {
         "generated_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-        "script": "scripts/measure_validation.py" + (" --quick" if args.quick else ""),
+        "script": "scripts/measure_validation.py"
+        + (" --quick" if args.quick else "")
+        + (" --smoke" if args.smoke else ""),
         "runtime_s": round(time.perf_counter() - t0, 1),
         "note": "Every achieved value is measured by this script (or by running the named test files); nothing is hand-typed.",
         "results": results,
     }
-    out_path = REPO / "docs" / "validation.json"
     # Other measurement scripts (measure_hybrid_world, measure_tracker,
     # measure_scale, measure_scenario_matrix) contribute their own rows to
     # this file. Re-running THIS script must not delete their evidence, so
     # any pre-existing row this run did not produce is carried forward.
     carried: list[dict[str, Any]] = []
-    if out_path.exists():
+    if out_path.exists() and not args.smoke:
         try:
             previous = json.loads(out_path.read_text(encoding="utf-8")).get("results", [])
         except (OSError, json.JSONDecodeError):
@@ -1121,6 +1491,15 @@ def main() -> None:
     out_path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8", newline="\n")
     n_pass = sum(r["passed"] for r in results)
     print(f"\nwrote {out_path} - {n_pass}/{len(results)} checks passed, {payload['runtime_s']}s")
+    if args.smoke:
+        # A smoke world is far too small for a target to hold, so an unmet
+        # target there says nothing. What the run can prove is that every
+        # path still runs and every row still has a name the documents know.
+        print(
+            f"smoke: {len(errored)} check(s) raised, {len(undeclared)} undeclared row name(s). "
+            "Targets are not scored at this scale."
+        )
+        sys.exit(1 if (errored or undeclared) else 0)
     if n_pass != len(results):
         sys.exit(1)
 

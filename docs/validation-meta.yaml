@@ -181,10 +181,10 @@ Engine determinism:
   does_not_establish: "Byte identity across operating systems or BLAS builds, which is untested."
 
 Performance (full Run-1 pipeline):
-  worlds: "one world, one machine"
-  method: "Wall-clock time for the full pipeline on a generated world, on the build machine."
-  establishes: "The measured configuration runs in the stated time on the stated hardware."
-  does_not_establish: "Timing on other hardware; run-to-run spread on this machine is several seconds."
+  worlds: "one world, one machine (14 GB laptop)"
+  method: "Wall-clock time for the full pipeline on a generated world, timed on the build machine. CI times the same world on a GitHub ubuntu-24.04 runner and gates on the change against main measured there back to back, not on an absolute figure."
+  establishes: "That this configuration runs in the stated time on the stated hardware: 811,253 lines in 119.0s on the 14 GB development laptop."
+  does_not_establish: "Timing on any other hardware. The same code takes about 187.9s on a GitHub ubuntu-24.04 runner, roughly 58% longer; run-to-run spread on the laptop is about 4s."
 
 "Competitor-price path gate (informational)":
   worlds: "30 segment-seeds"
@@ -221,3 +221,147 @@ Scale (10M-line pipeline):
   method: "The same interventions on a sparse world; share of actions that get a number."
   establishes: "The tracker refuses to measure when the data cannot support it, with reasons."
   does_not_establish: "That every unmeasurable case is caught."
+
+Elasticity recovery, planted grain:
+  worlds: "15 worlds (5 used in development, 10 held out)"
+  method: "FE-2SLS with the market control, on worlds where the segment grain is given rather than estimated; absolute error against the planted elasticity per segment-world, with the median and 90th percentile over those errors and a bootstrap over whole worlds."
+  establishes: "How closely the instrumented estimator recovers a known elasticity on the generator's well-identified demand process."
+  does_not_establish: "Recovery when the engine has to find the segments itself - the end-to-end row is that test. Nor recovery under any demand process other than the generator's."
+
+Elasticity recovery, planted grain, held-out worlds only:
+  worlds: "10 held-out worlds"
+  method: "The same study restricted to seeds introduced in Run 6 Phase 78 and never used while the estimator was being developed."
+  establishes: "That the target holds on worlds nobody tuned against, which the full set cannot show on its own."
+  does_not_establish: "That it holds on a real market, which is not a draw from this generator."
+
+Elasticity recovery, end-to-end (engine segments):
+  worlds: "15 worlds (5 used in development, 10 held out)"
+  method: "FE-2SLS with the market control, on worlds where the engine's own fitted segments are used and mapped to their modal planted segment; absolute error against the planted elasticity per segment-world, with the median and 90th percentile over those errors and a bootstrap over whole worlds."
+  establishes: "How closely the instrumented estimator recovers a known elasticity on the generator's well-identified demand process."
+  does_not_establish: "Recovery on segments the engine mixes: cells below the purity threshold are excluded from the comparison. Nor recovery under any demand process other than the generator's."
+
+Elasticity recovery, end-to-end (engine segments), held-out worlds only:
+  worlds: "10 held-out worlds"
+  method: "The same study restricted to seeds introduced in Run 6 Phase 78 and never used while the estimator was being developed."
+  establishes: "That the target holds on worlds nobody tuned against, which the full set cannot show on its own."
+  does_not_establish: "That it holds on a real market, which is not a draw from this generator."
+
+"95% CI coverage":
+  worlds: "50 simulations, 300 intervals"
+  method: "Repeated well-identified worlds with known truth; share of 95% intervals containing it, with a bootstrap over whole simulations."
+  establishes: "Interval coverage under the generator's independent-shock demand process."
+  does_not_establish: "Coverage under serially correlated demand - the persistent-demand rows below are that test."
+
+"95% CI coverage on the persistent demand world, grouped by supplier (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by supplier, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each clustering option does to coverage when demand persists over months."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the persistent demand world, grouped by supplier and month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by supplier and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each clustering option does to coverage when demand persists over months."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the persistent demand world, grouped by product category (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by product category, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each clustering option does to coverage when demand persists over months."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the persistent demand world, grouped by product category and month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by product category and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each clustering option does to coverage when demand persists over months."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the persistent demand world, grouped by month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each clustering option does to coverage when demand persists over months."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the persistent demand world, grouped by month and customer (shipped default)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by month and customer, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "That the shipped clustering keeps coverage in band on persistent demand worlds."
+  does_not_establish: "Coverage under any other demand process, and coverage when the units the instruments are assigned to are few, which the few-clusters rows report."
+
+"95% CI coverage on the few clusters world, grouped by supplier (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by supplier, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+"95% CI coverage on the few clusters world, grouped by supplier and month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by supplier and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+"95% CI coverage on the few clusters world, grouped by product category (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by product category, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+"95% CI coverage on the few clusters world, grouped by product category and month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by product category and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+"95% CI coverage on the few clusters world, grouped by month (alternative)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+"95% CI coverage on the few clusters world, grouped by month and customer (shipped default)":
+  worlds: "25 simulations per option, on worlds generated once and re-estimated per option"
+  method: "A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by month and customer, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups."
+  establishes: "Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one."
+  does_not_establish: "Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational."
+
+Total-quantity estimate measures the extensive margin:
+  worlds: "3 worlds with a planted price-driven extensive margin"
+  method: "IV-PPML by control function on the panel including its zero rows; the estimate's distance to the planted TOTAL elasticity is compared with its distance to the planted CONDITIONAL one."
+  establishes: "That the estimator is measuring total quantity, including whether the customer buys at all, rather than quantity among buyers."
+  does_not_establish: "Its accuracy, which the next row reports, or any causal standing: the total-quantity ladder has no causal tier and the engine never prices from it."
+
+Total-quantity recovery accuracy (informational):
+  worlds: "3 worlds with a planted extensive margin"
+  method: "Absolute error of the IV-PPML estimate against the planted total elasticity, over segment-worlds."
+  establishes: "How far the total-quantity estimate lands from a known total elasticity."
+  does_not_establish: "A pass or a failure: the row is informational, and the estimator is several times less accurate than the conditional one on its own estimand."
+
+Total-quantity resampled interval (informational):
+  worlds: "3 worlds with a planted extensive margin"
+  method: "Bootstrap that refits the first stage in every replicate; share of resampled ranges containing the planted total elasticity."
+  establishes: "Whether the resampled range behaves like an interval on these worlds."
+  does_not_establish: "Coverage at the level the instruments are assigned: the bootstrap cannot resample that level, which the reported inference says in full."
+
+Split-panel jackknife evaluated, not adopted (informational):
+  worlds: "3 worlds with a planted extensive margin"
+  method: "Half-panel jackknife bias diagnostic computed beside the point estimate and reported, never substituted for it."
+  establishes: "The size of the incidental-parameter bias the diagnostic reports on these worlds."
+  does_not_establish: "That applying the correction would improve the estimate - it is reported, not applied, and the choice is documented in the methodology."
+
+Performance smoke (reduced scale, developer machine):
+  worlds: "1 reduced-scale world"
+  method: "The full pipeline end to end on a world generated in a child process, so the generator's peak and the pipeline's peak never coexist; timed on the development machine."
+  establishes: "That the whole pipeline runs end to end inside the memory floor of a 14 GB machine."
+  does_not_establish: "The section 8 runtime target, which needs 500k+ lines and is measured by the benchmark CI job on a fixed runner."
+
+Functional-form gate on the well-identified preset (informational):
+  worlds: "15 worlds x 6 segments"
+  method: "The segment's instrumented estimate re-run on its cheaper-priced and dearer-priced halves; statuses counted, along with segments whose causal status this gate alone withdrew."
+  establishes: "How often the constant-elasticity assumption is supported, inconclusive or refused on a world where demand really is constant-elasticity - so the gate's false-refusal rate is visible."
+  does_not_establish: "That the gate would catch curvature: the nonconstant-elasticity row is that test, and it reports the gate's limits."
+
+Functional-form gate on the nonconstant-elasticity world (informational):
+  worlds: "3 worlds x 6 segments"
+  method: "The same comparison on a world whose planted local elasticity moves with the price level; statuses counted, along with segments whose causal status this gate alone withdrew."
+  establishes: "How much planted curvature this comparison can actually see at the price separation the generator produces."
+  does_not_establish: "That curvature is detected in general: where the halves differ by less than the comparison can resolve, the gate reports that and withdraws nothing."

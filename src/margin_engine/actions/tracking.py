@@ -99,6 +99,7 @@ _BUCKET = {
     "outside_price_support": "fixed_volume",
     "cost_unavailable": "fixed_volume",
     "competitor_path_uncontrolled": "fixed_volume",
+    "price_response_shape_untested": "fixed_volume",
 }
 
 

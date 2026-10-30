@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.measure_validation import declared_checks
 
 from margin_engine.validation_table import (
     END,
@@ -51,7 +52,7 @@ def _meta_for(doc: dict) -> dict:
 
 def test_readme_table_matches_the_measured_results_file() -> None:
     readme = README.read_text(encoding="utf-8")
-    expected = render(load(RESULTS), load_meta(META))
+    expected = render(load(RESULTS), load_meta(META), declared_checks())
     assert current_block(readme) == expected, (
         "README validation table is out of date. Run:\n"
         "    uv run python scripts/sync_validation_table.py"
@@ -115,7 +116,7 @@ def test_a_pipe_in_a_measurement_cannot_break_the_table() -> None:
 def test_splice_replaces_only_the_block() -> None:
     doc = load(RESULTS)
     before = f"head\n\n{START}\nstale\n{END}\n\ntail\n"
-    after = splice(before, render(doc, load_meta(META)))
+    after = splice(before, render(doc, load_meta(META), declared_checks()))
     assert after.startswith("head\n\n") and after.endswith("\n\ntail\n")
     assert "stale" not in after
 
@@ -127,7 +128,7 @@ def test_a_readme_without_markers_fails_loudly() -> None:
 
 def test_every_measured_check_declares_its_scope() -> None:
     """A number without its scope is the thing Finding 22 objected to."""
-    check_meta(load(RESULTS), load_meta(META))
+    check_meta(load(RESULTS), load_meta(META), declared_checks())
 
 
 def test_a_check_without_scope_is_refused() -> None:
@@ -168,7 +169,7 @@ def test_an_empty_scope_field_is_refused() -> None:
 
 
 def test_the_detail_document_matches_the_measurements() -> None:
-    expected = render_detail(load(RESULTS), load_meta(META))
+    expected = render_detail(load(RESULTS), load_meta(META), declared_checks())
     assert DETAIL.read_text(encoding="utf-8") == expected, (
         "docs/validation.md is out of date. Run: uv run python scripts/sync_validation_table.py"
     )

@@ -25,6 +25,7 @@ asserted.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -56,8 +57,19 @@ def load_meta(path: Path) -> dict[str, dict[str, Any]]:
     return meta
 
 
-def check_meta(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> None:
-    """Every measured check must declare its scope, and vice versa."""
+def check_meta(
+    doc: dict[str, Any],
+    meta: dict[str, dict[str, Any]],
+    declared: Collection[str] = (),
+) -> None:
+    """Every measured check must declare its scope, and vice versa.
+
+    `declared` is the set of rows the measurement scripts CAN produce (see
+    `scripts.measure_validation.declared_checks`). A scope entry for one of
+    those is not an orphan even when the committed results file predates it:
+    the alternative is discovering, at the end of a two-hour study, that the
+    row it just measured has nowhere to say what it establishes.
+    """
     checks = [row["check"] for row in doc["results"]]
     missing = sorted({c for c in checks if c not in meta})
     if missing:
@@ -67,7 +79,7 @@ def check_meta(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> None:
             "computed, what it establishes and what it does not."
         )
         raise MissingScopeError(msg)
-    stale = sorted({c for c in meta if c not in checks})
+    stale = sorted({c for c in meta if c not in checks and c not in set(declared)})
     if stale:
         msg = (
             f"docs/validation-meta.yaml describes checks {stale} that validation.json "
@@ -92,9 +104,13 @@ def _provenance(doc: dict[str, Any]) -> str:
     return f"Measured {doc['generated_utc']} by `{doc['script']}` in {runtime / 60:,.0f} minutes."
 
 
-def render(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> str:
+def render(
+    doc: dict[str, Any],
+    meta: dict[str, dict[str, Any]],
+    declared: Collection[str] = (),
+) -> str:
     """Render the README block, markers included."""
-    check_meta(doc, meta)
+    check_meta(doc, meta, declared)
     lines = [
         START,
         "",
@@ -118,9 +134,13 @@ def render(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def render_detail(doc: dict[str, Any], meta: dict[str, dict[str, Any]]) -> str:
+def render_detail(
+    doc: dict[str, Any],
+    meta: dict[str, dict[str, Any]],
+    declared: Collection[str] = (),
+) -> str:
     """Render `docs/validation.md`: every row with its scope."""
-    check_meta(doc, meta)
+    check_meta(doc, meta, declared)
     passed = sum(1 for r in doc["results"] if r["passed"])
     out = [
         "# Validation results",

@@ -623,6 +623,34 @@ class SensitivityConfig(StrictModel):
     # causal_elasticity_supported additionally requires the Anderson-Rubin set
     # to be bounded and no wider than this multiple of the primary CI (24.7).
     ar_max_width_ratio: float = Field(default=1.5, gt=0)
+    # Functional form: is one elasticity enough for this segment?
+    #
+    # A log-log model assumes the same elasticity at every price. Where demand
+    # is curved the single number it reports is a local average around the
+    # prices the data happens to contain, and a price move away from those
+    # prices is priced off an elasticity that does not hold there. The check
+    # re-estimates the same instrumented specification on the cheaper half and
+    # the dearer half of the segment's customer-item pairs and compares the
+    # two. Past `functional_form_max_gap` the constant-elasticity assumption
+    # is not supported for this segment and the causal status is withheld -
+    # the estimate is still reported, as an instrumented local average.
+    #
+    # The halves are split on a PAIR-level price position (each pair's average
+    # price against its item's average), not on a row's own price: conditioning
+    # on the endogenous regressor itself would select on the demand shock, and
+    # the pair fixed effects already absorb anything constant within a pair.
+    functional_form_check_enabled: bool = True
+    functional_form_max_gap: float = Field(default=0.30, gt=0)
+    # What an INCONCLUSIVE comparison costs. Causal support still stands -
+    # a test without the power to speak is not evidence against - but an
+    # untested shape means the elasticity is only credible near the prices it
+    # was measured at. Each identification-support region is narrowed to this
+    # fraction of its width, around the same midpoint, for expected-change
+    # predictions; beyond the narrowed band the figure is fixed-volume and
+    # labeled. No optimal price is produced for such a segment at all.
+    functional_form_untested_support_fraction: float = Field(default=0.5, gt=0, le=1)
+    functional_form_min_pairs: int = Field(default=20, ge=2)
+    functional_form_min_rows: int = Field(default=200, ge=10)
     # Market/competitor price control adequacy (Run 6, Phase 70). There is
     # deliberately NO switch to disable the competitor-price gate: the only
     # routes to the top status are an adequate control or an instrument whose
