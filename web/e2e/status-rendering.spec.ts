@@ -46,18 +46,54 @@ test("every sensitivity status renders with label and explanation", async ({ pag
   }
 });
 
-test("every opportunity evidence status and volume treatment renders", async ({ page }) => {
+test("every opportunity verdict renders; technical statuses one click away", async ({
+  page,
+}) => {
   const records = bundle.opportunity.top_opportunities;
-  const evidence = [...new Set(records.map((r) => r.evidence_status ?? "insufficient_data"))].sort();
-  const treatments = [...new Set(records.map((r) => r.volume_treatment))].sort();
-  for (const s of evidence) {
-    await page.goto(`/#/opportunity?evidence=${s}`);
-    await expectChip(page, s);
+  const verdicts = [...new Set(records.map((r) => r.verdict ?? "upside_only"))].sort();
+  expect(verdicts.length).toBeGreaterThan(1);
+  // Each verdict renders in the How sure column, reached through the
+  // existing filters (the verdict is derived from them, so filtering by the
+  // technical fields still partitions the table).
+  const sampleFor = (v: string) => records.find((r) => (r.verdict ?? "upside_only") === v)!;
+  for (const v of verdicts) {
+    const r = sampleFor(v);
+    await page.goto(`/#/opportunity?customer=${r.customer_id}&item=${r.item_id}`);
+    await expectChip(page, v);
+    // The decision leads the row and the size line carries its own caveat.
+    await expect(page.locator("tbody").getByText(r.decision ?? "", { exact: false }).first())
+      .toBeVisible();
+    // The technical statuses moved into the expandable details - present, one
+    // click away, never a column a reader must combine. The click must leave
+    // the details OPEN; a settle that wiped it would lose a reader's click
+    // too, so the open state is asserted rather than assumed.
+    const summary = page.locator("tbody details summary").first();
+    await expect(summary).toBeVisible();
+    await summary.click();
+    await expect(page.locator("tbody details[open]")).toHaveCount(1);
+    await expectChip(page, r.evidence_status ?? "insufficient_data");
+    await expectChip(page, r.volume_treatment);
   }
-  for (const t of treatments) {
-    await page.goto(`/#/opportunity?treatment=${t}`);
-    await expectChip(page, t);
+  // The rule behind the verdict: a row with no forecast never wears the
+  // solid supported treatment.
+  const upside = records.find((r) => (r.verdict ?? "upside_only") === "upside_only");
+  if (upside) {
+    await page.goto(`/#/opportunity?customer=${upside.customer_id}&item=${upside.item_id}`);
+    const chip = page.locator("tbody .chip").filter({ hasText: "Upside only" }).first();
+    await expect(chip).toBeVisible();
+    await expect(chip).not.toHaveClass(/chip-solid/);
   }
+});
+
+test("a staged first step names itself on the recommended queue", async ({ page }) => {
+  const staged = bundle.actions_table.find(
+    (a) => a.staged_step && ["proposed", "under_review", "approved"].includes(a.status),
+  );
+  test.skip(!staged, "no open staged-step action in this world");
+  await page.goto("/#/recommended");
+  await expect(page.getByTestId("recommended-list")).toBeVisible();
+  await page.goto(`/#/actions/${staged!.action_id}`);
+  await expect(page.getByTestId("staged-step-note")).toContainText("step 1 of the move to target");
 });
 
 test("every action status and type renders with label and explanation", async ({ page }) => {

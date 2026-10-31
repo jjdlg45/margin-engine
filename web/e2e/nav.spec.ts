@@ -1,6 +1,8 @@
-/** Polish round: grouped navigation. Desktop shows four labeled groups in the
- * header; below 640 px a Menu button opens a collapsible grouped list that
- * closes again on navigation. */
+/** Decision-flow round (ux/decision-flow): the grouped top row became a left
+ * sidebar. Decision pages sit in the four main groups; Waterfall, Opportunity
+ * levels, Segments, Sensitivity and Optional modules live under Advanced
+ * analysis after a divider. Below 640 px a Menu button opens the same groups
+ * as a collapsible list that closes again on navigation. */
 
 import { expect, test } from "@playwright/test";
 
@@ -8,32 +10,39 @@ test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
 });
 
-test("desktop navigation shows four labeled groups", async ({ page }) => {
+test("the sidebar leads with decisions and keeps the analysis reachable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 940 });
   await page.goto("/#/");
   const nav = page.getByRole("navigation", { name: "Primary" });
-  for (const group of ["Margin", "Pricing", "Actions", "Data"]) {
+  for (const group of ["Margin", "Pricing", "Actions", "Data", "Advanced analysis"]) {
     await expect(nav.getByText(group, { exact: true })).toBeVisible();
   }
-  // Every page is reachable from its group.
+  // Every page is reachable from its group - the decision pages in the main
+  // groups, the statistical machinery under Advanced analysis.
   for (const label of [
     "Overview",
-    "Waterfall",
     "Customers & orders",
-    "Segments",
-    "Guidance",
-    "Sensitivity",
-    "Opportunity",
+    "Recommended actions",
+    "Price guidance",
     "Scenarios",
     "Action center",
     "Data & methodology",
+    "Use it with your own data",
+    "Waterfall",
+    "Opportunity levels",
+    "Segments",
+    "Sensitivity",
     "Optional modules",
   ]) {
     await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
-  await nav.getByRole("link", { name: "Guidance", exact: true }).click();
+  await nav.getByRole("link", { name: "Price guidance", exact: true }).click();
   await expect(page).toHaveURL(/#\/guidance/);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // The current page is highlighted in the sidebar.
+  await expect(nav.getByRole("link", { name: "Price guidance", exact: true })).toHaveClass(
+    /bg-petrol/,
+  );
 });
 
 test("mobile menu collapses, groups, navigates and closes", async ({ page }) => {

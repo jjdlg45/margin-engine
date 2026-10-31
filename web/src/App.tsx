@@ -28,11 +28,15 @@ const ActionDetailPage = lazy(() =>
   import("./pages/ActionDetailPage").then((m) => ({ default: m.ActionDetailPage })),
 );
 const GuidePage = lazy(() => import("./pages/GuidePage").then((m) => ({ default: m.GuidePage })));
+const RecommendedPage = lazy(() =>
+  import("./pages/RecommendedPage").then((m) => ({ default: m.RecommendedPage })),
+);
 const LoadDataPage = lazy(() =>
   import("./pages/LoadDataPage").then((m) => ({ default: m.LoadDataPage })),
 );
 
 const PAGES = [
+  { path: "/recommended", label: "Recommended actions", el: <RecommendedPage /> },
   { path: "/waterfall", label: "Waterfall", el: <WaterfallPage /> },
   { path: "/customers", label: "Customers & orders", el: <Customers /> },
   { path: "/segments", label: "Segments", el: <SegmentsPage /> },
@@ -51,24 +55,27 @@ const PAGES = [
     : []),
 ];
 
-/** Navigation grouped by the question a page answers. Paths reference PAGES
- * (the route table) so a page can never be reachable but unlisted. */
-const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: boolean }[] }[] = [
+/** Navigation grouped by the question a page answers, decision pages first.
+ * Paths reference PAGES (the route table) so a page can never be reachable
+ * but unlisted. The main groups hold what a pricing manager acts on; the
+ * statistical machinery lives under Advanced analysis, present but second. */
+const NAV_GROUPS: {
+  label: string;
+  advanced?: boolean;
+  items: { path: string; label: string; end?: boolean }[];
+}[] = [
   {
     label: "Margin",
     items: [
       { path: "/", label: "Overview", end: true },
-      { path: "/waterfall", label: "Waterfall" },
       { path: "/customers", label: "Customers & orders" },
     ],
   },
   {
     label: "Pricing",
     items: [
-      { path: "/segments", label: "Segments" },
-      { path: "/guidance", label: "Guidance" },
-      { path: "/sensitivity", label: "Sensitivity" },
-      { path: "/opportunity", label: "Opportunity" },
+      { path: "/recommended", label: "Recommended actions" },
+      { path: "/guidance", label: "Price guidance" },
       { path: "/scenarios", label: "Scenarios" },
     ],
   },
@@ -77,9 +84,19 @@ const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: b
     label: "Data",
     items: [
       { path: "/methodology", label: "Data & methodology" },
-      { path: "/modules", label: "Optional modules" },
       { path: "/guide", label: "Use it with your own data" },
       ...(dataSource === "http" ? [{ path: "/load", label: "Load your data" }] : []),
+    ],
+  },
+  {
+    label: "Advanced analysis",
+    advanced: true,
+    items: [
+      { path: "/waterfall", label: "Waterfall" },
+      { path: "/opportunity", label: "Opportunity levels" },
+      { path: "/segments", label: "Segments" },
+      { path: "/sensitivity", label: "Sensitivity" },
+      { path: "/modules", label: "Optional modules" },
     ],
   },
 ];
@@ -87,6 +104,11 @@ const NAV_GROUPS: { label: string; items: { path: string; label: string; end?: b
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `whitespace-nowrap rounded-badge px-2 py-1 text-sm no-underline ${
     isActive ? "bg-petrol text-paper" : "text-ink/70 hover:text-ink"
+  }`;
+
+const sideLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `block rounded-badge px-2 py-1 text-sm no-underline ${
+    isActive ? "bg-petrol text-paper" : "text-ink/70 hover:bg-inset hover:text-ink"
   }`;
 
 function ThemeToggle() {
@@ -108,24 +130,26 @@ function ThemeToggle() {
   );
 }
 
-/** Desktop navigation: four labeled groups in one row (wrapping to a second
- * line where needed), separated by hairlines. */
-function DesktopNav() {
+/** Desktop navigation: a left sidebar. Decision pages in the main groups,
+ * the statistical machinery under Advanced analysis after a divider. */
+function Sidebar() {
   return (
-    <nav
-      aria-label="Primary"
-      className="order-last -mx-1 flex w-full flex-wrap items-center gap-y-1 pb-2"
-    >
-      {NAV_GROUPS.map((g, i) => (
-        <span key={g.label} className="flex items-center">
-          {i > 0 && <span aria-hidden="true" className="mx-2 h-4 w-px bg-ink/[0.12]" />}
-          <span className="mr-1 px-1 text-caption secondary">{g.label}</span>
-          {g.items.map((p) => (
-            <NavLink key={p.path} to={p.path} end={p.end} className={navLinkClass}>
-              {p.label}
-            </NavLink>
-          ))}
-        </span>
+    <nav aria-label="Primary" className="flex flex-col gap-5" data-testid="sidebar">
+      {NAV_GROUPS.map((g) => (
+        <div key={g.label} className={g.advanced ? "border-t hairline pt-4" : undefined}>
+          <p className="m-0 mb-1 px-2 text-caption font-semibold uppercase tracking-wide secondary">
+            {g.label}
+          </p>
+          <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+            {g.items.map((p) => (
+              <li key={p.path}>
+                <NavLink key={p.path} to={p.path} end={p.end} className={sideLinkClass}>
+                  {p.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </div>
       ))}
     </nav>
   );
@@ -176,7 +200,7 @@ function Shell() {
   const app = useAppData();
   const compact = useCompact();
   return (
-    <div className="mx-auto min-h-screen max-w-[1120px] px-4 sm:px-8">
+    <div className="mx-auto min-h-screen max-w-[1380px] px-4 sm:px-8">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:bg-card focus:px-3 focus:py-2"
@@ -197,7 +221,7 @@ function Shell() {
             </a>
             <ThemeToggle />
           </span>
-          {compact ? <MobileNav /> : <DesktopNav />}
+          {compact && <MobileNav />}
         </div>
         <p className="mb-2 mt-1 text-caption secondary" data-testid="data-notice">
           {app.data?.data_label ??
@@ -222,7 +246,13 @@ function Shell() {
           ))}
         </p>
       </header>
-      <main id="main" className="min-h-[85vh]">
+      <div className={compact ? undefined : "flex items-start gap-8"}>
+        {!compact && (
+          <aside className="sticky top-0 w-52 shrink-0 self-start overflow-y-auto pb-8 pt-5">
+            <Sidebar />
+          </aside>
+        )}
+        <main id="main" className="min-h-[85vh] min-w-0 flex-1">
         {app.isError && (
           <p className="py-16 text-garnet" role="alert">
             The app data could not be loaded ({app.error.message}). Run
@@ -259,7 +289,8 @@ function Shell() {
             </Routes>
           </Suspense>
         )}
-      </main>
+        </main>
+      </div>
       <footer className="border-t hairline py-6 text-caption secondary">
         Historical benchmarks are not optimal prices. Descriptive elasticities
         are not causal. Allocated amounts are not actuals.

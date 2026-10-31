@@ -57,6 +57,8 @@ def _mk_action(
         "current_price_cents": 900,
         "proposed_price_cents": 1_200,
         "floor_price_cents": floor,
+        "staged_step": False,
+        "full_target_price_cents": None,
         "pass_through_level": None,
         "incremental_cost_cents": None,
         "n_ship_tos": 1,

@@ -156,6 +156,26 @@ export function Overview() {
         </QuerySection>
       </section>
 
+      {/* The start-here flow: the decision queue, one step from the door. */}
+      <section aria-labelledby="start-here" className="pt-10">
+        <Link
+          to="/recommended"
+          data-testid="start-here"
+          className="flex flex-wrap items-baseline justify-between gap-3 rounded-[8px] border hairline bg-inset/60 px-5 py-4 text-ink no-underline hover:border-petrol"
+        >
+          <span>
+            <span className="block text-title font-semibold" id="start-here">
+              Start with the recommended actions
+            </span>
+            <span className="mt-0.5 block text-sm secondary">
+              Every open action ranked by how sure the engine is, then by expected impact -
+              each one leads with the decision in plain words.
+            </span>
+          </span>
+          <span className="font-medium text-petrol">Recommended actions →</span>
+        </Link>
+      </section>
+
       {/* Key findings */}
       <section aria-labelledby="findings" className="py-14">
         <h2 id="findings" className="heading-rule mb-5 mt-0 text-section">

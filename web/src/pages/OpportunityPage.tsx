@@ -18,7 +18,7 @@ import { EmptyState, PageHeader, Section } from "../components/Page";
 import { SortableTable } from "../components/SortableTable";
 import { StatusChip } from "../components/StatusChip";
 import { usePageData, useTableQuery } from "../lib/queries";
-import { count, dollars, dollarsShort } from "../lib/format";
+import { count, dollarsShort } from "../lib/format";
 import type { OpportunityRecord } from "../types/bundle";
 
 const FILTER_KEYS = ["customer", "item", "evidence", "treatment", "gross", "below"];
@@ -101,41 +101,53 @@ function OpportunityTable({ facets }: { facets: OpportunityData["facets"] }) {
         ),
       },
       {
-        header: "Gross opportunity",
-        accessorKey: "gross_price_opportunity_cents",
-        cell: (c) => dollars(c.row.original.gross_price_opportunity_cents),
-      },
-      {
-        header: "Expected change",
-        accessorKey: "expected_contribution_change_cents",
-        cell: (c) =>
-          c.row.original.expected_contribution_change_cents !== null
-            ? dollars(c.row.original.expected_contribution_change_cents)
-            : "—",
-      },
-      {
-        header: "Volume treatment",
-        accessorKey: "volume_treatment",
-        cell: (c) => <StatusChip status={c.row.original.volume_treatment} />,
-      },
-      {
-        header: "Evidence",
-        accessorKey: "evidence_status",
-        cell: (c) => <StatusChip status={c.row.original.evidence_status ?? "insufficient_data"} />,
-      },
-      {
-        header: "Why",
-        accessorKey: "summary",
+        header: "What to do",
+        accessorKey: "decision",
         enableSorting: false,
         meta: { left: true },
         cell: (c) => (
-          <span className="why min-w-[20rem] text-caption">
-            {c.row.original.summary}
-            <details className="mt-1 secondary">
+          <span className="left block min-w-[18rem] whitespace-normal">
+            {c.row.original.decision}
+            {/* The technical statuses live here, one click away - never as
+                columns a reader has to combine to learn what a figure is.
+                Keyed by the record: rows are reused by position when filters
+                change, and an open state inherited from a different pair's
+                row would show the wrong record as expanded. */}
+            <details
+              key={`${c.row.original.customer_id}|${c.row.original.item_id}`}
+              className="mt-1 text-caption secondary"
+            >
               <summary>Full explanation</summary>
-              {c.row.original.explanation}
+              <span className="mt-1 block">{c.row.original.explanation}</span>
+              <span className="mt-2 flex flex-wrap items-center gap-2">
+                <StatusChip status={c.row.original.evidence_status ?? "insufficient_data"} />
+                <StatusChip status={c.row.original.volume_treatment} />
+                <StatusChip status={c.row.original.deduction_treatment ?? "flat_rate_exact"} />
+              </span>
             </details>
           </span>
+        ),
+      },
+      {
+        // Sorted by the gross figure; shown as the sentence that says what
+        // the figure is and is not.
+        header: "How big",
+        accessorKey: "gross_price_opportunity_cents",
+        meta: { left: true },
+        cell: (c) => (
+          <span className="left block min-w-[14rem] whitespace-normal text-caption">
+            {c.row.original.size_line}
+          </span>
+        ),
+      },
+      {
+        header: "How sure",
+        accessorKey: "verdict",
+        cell: (c) => (
+          <StatusChip
+            status={c.row.original.verdict ?? "upside_only"}
+            reason={c.row.original.verdict_reason ?? undefined}
+          />
         ),
       },
     ],

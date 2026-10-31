@@ -77,6 +77,20 @@ VERDICT_FORECAST = "forecast_available"
 VERDICT_UPSIDE_ONLY = "upside_only"
 VERDICT_LOW_EVIDENCE = "too_little_evidence"
 
+
+def verdict_for(
+    *, evidence_status: str | None, has_forecast: bool, cost_unavailable: bool = False
+) -> str:
+    """The verdict for one record: the scalar twin of the columns built in
+    `price_opportunities`, used for action rows, and held to the vectorized
+    classification by a parity test."""
+    if cost_unavailable or evidence_status == STATUS_INSUFFICIENT:
+        return VERDICT_LOW_EVIDENCE
+    if has_forecast:
+        return VERDICT_FORECAST
+    return VERDICT_UPSIDE_ONLY
+
+
 #: Why a row has no forecast, in one plain line, keyed by volume treatment.
 NO_FORECAST_REASON: dict[str, str] = {
     TREATMENT_OUTSIDE_SUPPORT: (

@@ -19,6 +19,7 @@ from margin_engine import __version__
 from margin_engine.config import Rules
 from margin_engine.fiscal import build_calendar
 from margin_engine.labels import LABELS, label, plain_rule, render_text
+from margin_engine.opportunity.sizing import verdict_for
 from margin_engine.report.full_run import FullRunResult
 from margin_engine.scenarios.tariff import CostShock, pass_through_grid
 from margin_engine.webexport import explain
@@ -724,6 +725,22 @@ def build_bundle(
             )
             if r.get("target_index") and r.get("current_index") is not None
             else None,
+            verdict=str(r.get("verdict") or "upside_only"),
+            verdict_reason=r.get("verdict_reason") or None,
+            step_price_cents=_i(r["step_price_cents"])
+            if r.get("step_price_cents") is not None
+            else None,
+            step_move_pct=_rs(r.get("step_move_pct")),
+            step_expected_pocket_gross_profit_change_cents=_i(
+                r["step_expected_pocket_gross_profit_change_cents"]
+            )
+            if r.get("step_expected_pocket_gross_profit_change_cents") is not None
+            else None,
+            step_expected_contribution_change_cents=_i(r["step_expected_contribution_change_cents"])
+            if r.get("step_expected_contribution_change_cents") is not None
+            else None,
+            decision=explain.opportunity_decision(r),
+            size_line=explain.opportunity_size(r),
             summary=explain.opportunity_summary(r),
             explanation=explain.opportunity_explanation(r),
         )
@@ -992,6 +1009,21 @@ def build_bundle(
                     blocked=bool(a["blocked"]),
                     blocked_reason=a["blocked_reason"],
                     status=a_status,
+                    # The verdict, from the same classification the
+                    # opportunity rows use: an action whose impact basis is an
+                    # expected change HAS a forecast - the staged step
+                    # included, since its proposal is the forecastable move.
+                    verdict=verdict_for(
+                        evidence_status=a.get("evidence_status"),
+                        has_forecast=str(a.get("impact_basis") or "").startswith("expected"),
+                        cost_unavailable=a.get("expected_impact_cents") is None,
+                    ),
+                    staged_step=bool(a.get("staged_step") or False),
+                    full_target_price_cents=(
+                        _i(a["full_target_price_cents"])
+                        if a.get("full_target_price_cents") is not None
+                        else None
+                    ),
                     events=events_by_action.get(aid, []),
                     outcome=outcomes_by_action.get(aid),
                 )

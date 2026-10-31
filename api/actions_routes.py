@@ -787,6 +787,9 @@ async def propose(
             "current_price_cents": [None],
             "proposed_price_cents": [int(proposed_price) if proposed_price is not None else None],
             "floor_price_cents": [floor],
+            # A hand-written proposal is its own move, never step 1 of one.
+            "staged_step": [False],
+            "full_target_price_cents": [None],
             "pass_through_level": [None],
             "incremental_cost_cents": [None],
             # A hand-written proposal names one pair; the ship-to span is 1.

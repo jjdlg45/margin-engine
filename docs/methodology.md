@@ -1222,6 +1222,30 @@ optimizer that exists in the codebase and is covered by tests, so that the
 objective and its guardrails are on record if it is ever wired in - not
 behaviour the engine ships.
 
+**The staged first step and the verdict (ux/decision-flow).** Two
+presentation-layer facts are computed in the engine, because the page, the
+report and the action generator must not be able to disagree about them.
+
+The *staged first step* answers the gap the identification-support rule
+leaves: a move refused as beyond supported price variation told the reader
+only what the data cannot do. For a causal-supported pair whose full move to
+target lies outside support, the engine takes the support regions (narrowed
+to the configured fraction where the price-response shape is untested), finds
+the largest movement in the proposal's direction below the full move, and
+prices it: P_step = P0 e^m. The expected change at that step uses the same
+unit economics as the full-move formula. The generated price-change action
+then proposes the step - titled step 1 of the move to target, with the
+unchanged full target in its rationale - so what reaches an approver is the
+move the evidence can speak to. One action per pair as before; the scope and
+overlap rules are untouched.
+
+The *verdict* classifies every opportunity record and action into
+`forecast_available`, `upside_only` or `too_little_evidence`, with a one-line
+reason where there is no forecast. It is derived from the evidence status
+and the volume treatment, which both stay on the record; the tables lead with
+the verdict and keep the technical statuses one click away. A figure without
+a forecast never takes the solid supported styling.
+
 Target optimization maximizes the CONFIGURED objective (Run 6, Phase 65) and
 every output names it. Under `pocket_gross_profit` the objective is
 (P (1 - d) - F - C) Q(P), with the log-log interior optimum

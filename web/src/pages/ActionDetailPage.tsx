@@ -372,7 +372,18 @@ export function ActionDetailPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <StatusChip status={d.status} />
                 <StatusChip status={d.action.action_type} />
+                <StatusChip status={d.action.verdict ?? "upside_only"} />
+                {d.action.staged_step && <StatusChip status="staged_first_step" />}
               </div>
+              {d.action.staged_step &&
+                d.action.full_target_price_cents !== null &&
+                d.action.full_target_price_cents !== undefined && (
+                  <p className="m-0 mt-2 text-sm secondary" data-testid="staged-step-note">
+                    This proposal is step 1 of the move to target. The full target of{" "}
+                    {dollars(d.action.full_target_price_cents)} stands; the move beyond this
+                    step has no volume forecast yet.
+                  </p>
+                )}
               {/* Labeled fields, never a dot-separated meta string. */}
               <dl className="m-0 mt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
                 <div>

@@ -40,6 +40,13 @@ const TREATMENT: Record<string, string> = {
   measured: "chip-solid",
   insufficient_evidence: "chip-dashed",
   rp_review_flag: "chip-fail",
+  // The verdict (ux/decision-flow). Only a real forecast gets the solid
+  // supported treatment; a figure with no volume forecast must never wear it.
+  forecast_available: "chip-solid",
+  upside_only: "chip-outline",
+  too_little_evidence: "chip-dashed",
+  staged_first_step: "chip-hatched",
+  price_response_shape_untested: "chip-dashed",
 };
 
 export function StatusChip({ status, reason }: { status: string; reason?: string }) {

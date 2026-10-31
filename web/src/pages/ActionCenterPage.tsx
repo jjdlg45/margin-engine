@@ -258,7 +258,8 @@ function QueueCards({ items }: { items: ActionRow[] }) {
             <span className="mt-2 flex flex-wrap items-center gap-2">
               <StatusChip status={a.action_type} />
               <StatusChip status={a.status} />
-              <StatusChip status={a.evidence_status ?? "insufficient_data"} />
+              <StatusChip status={a.verdict ?? "upside_only"} />
+              {a.staged_step && <StatusChip status="staged_first_step" />}
               {a.compliance_flags && <StatusChip status="rp_review_flag" />}
             </span>
             <span className="mt-1.5 block text-caption secondary">
@@ -446,9 +447,14 @@ function Queue({ page }: { page: ActionsSection }) {
         cell: (c) => labels(c.row.original.priority).label,
       },
       {
-        header: "Evidence",
-        accessorKey: "evidence_status",
-        cell: (c) => <StatusChip status={c.row.original.evidence_status ?? "insufficient_data"} />,
+        header: "How sure",
+        accessorKey: "verdict",
+        cell: (c) => (
+          <span className="flex flex-wrap items-center gap-1">
+            <StatusChip status={c.row.original.verdict ?? "upside_only"} />
+            {c.row.original.staged_step && <StatusChip status="staged_first_step" />}
+          </span>
+        ),
       },
       {
         header: "Expected impact",

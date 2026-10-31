@@ -331,6 +331,65 @@ METRICS: tuple[MetricDef, ...] = (
         ),
         amount_status="modeled from actual baselines and estimated elasticity and K",
     ),
+    MetricDef(
+        code="expected_change_at_staged_step",
+        label="Expected change at the staged first step",
+        description=(
+            "Where the full move to target reaches beyond the identified price "
+            "range, the expected change at step 1 of the move to target - the "
+            "largest move the data can forecast. The target does not change; the "
+            "rest of the move stays unforecast."
+        ),
+        formula=(
+            "the expected-change formula evaluated at P_step instead of P1, where "
+            "log(P_step / P0) is the largest supported movement in the proposal's "
+            "direction below log(P1 / P0); support means the identification-support "
+            "regions, narrowed to the configured fraction where the price-response "
+            "shape is untested"
+        ),
+        units="pocket cents over the baseline window",
+        denominator="none (a dollar total)",
+        price_basis="invoice price converted to pocket with (1 - d) and fixed deductions F",
+        includes=(
+            "pairs with known cost in causal-supported segments with a resolved "
+            "competitor-price path, whose full move lies outside supported movement "
+            "but whose direction has some supported movement; the contribution "
+            "basis additionally needs a supported K"
+        ),
+        excludes=(
+            "pairs whose full move is already supported (the ordinary expected "
+            "change applies, and no step is named), segments below causal support, "
+            "and pairs with no supported movement in the proposal's direction at all"
+        ),
+        amount_status="modeled from actual baselines and estimated elasticity",
+    ),
+    MetricDef(
+        code="verdict",
+        label="The verdict",
+        description=(
+            "Not a dollar figure: what a reader may do with a row, in one value - "
+            "forecast available, upside only, or too little evidence - with a "
+            "one-line reason where there is no forecast."
+        ),
+        formula=(
+            "derived from the evidence status and the volume treatment: forecast "
+            "available when the figure models the volume response; too little "
+            "evidence when the unit cost is missing or the segment has too little "
+            "data; upside only otherwise"
+        ),
+        units="none (a classification)",
+        denominator="none",
+        price_basis="follows the figure it qualifies",
+        includes=(
+            "every opportunity record and every generated action; the technical "
+            "statuses stay on the record one click away"
+        ),
+        excludes=(
+            "nothing - but a row without a forecast never takes the solid "
+            "supported styling, whatever its dollar figure says"
+        ),
+        amount_status="a classification of the figure's provenance, not an amount",
+    ),
 )
 
 
