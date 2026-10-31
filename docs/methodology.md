@@ -330,7 +330,9 @@ target), insufficient_data. Precedence: insufficient_data >
 insufficient_pricing_headroom > below_floor (the pair's own breach, the most
 actionable per-pair fact) > market_reference_below_floor > band statuses.
 Targets and starts are max(P50/P75, floor) and labeled
-`provisional_historical`: historical benchmarks are not optimal prices.
+`provisional_historical`: historical benchmarks are not optimal prices. They
+are what the engine ships - there is no other kind of target in a pipeline
+run, because the optimizer in section 8 is not wired into one.
 
 ## 7. Price sensitivity
 
@@ -1211,6 +1213,14 @@ labeled `cost_unavailable` — missing cost is never treated as zero.
 Eligibility excludes contract-protected pairs and insufficient-data guidance.
 Every record carries baseline window, action, constraints, quantity basis,
 price assumptions, evidence status and a calculation trace.
+
+**Not wired in.** `optimize_targets` has no caller in `src/`, so no pipeline
+run produces a computed optimal price: the opportunity export carries no
+`target_basis` column, and every target a run emits is the
+`provisional_historical` reference from section 6. What follows describes the
+optimizer that exists in the codebase and is covered by tests, so that the
+objective and its guardrails are on record if it is ever wired in - not
+behaviour the engine ships.
 
 Target optimization maximizes the CONFIGURED objective (Run 6, Phase 65) and
 every output names it. Under `pocket_gross_profit` the objective is

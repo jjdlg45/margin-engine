@@ -1150,6 +1150,18 @@ def determinism_check(tmp: Path) -> dict[str, Any]:
     )
 
 
+def _machine() -> str:
+    """The machine a figure belongs to, in words a reader can read.
+
+    `platform.machine()` is a raw identifier - "AMD64" on Windows, "x86_64"
+    on the Linux runners - and these strings are published on the demo's
+    methodology page, where no raw code may appear.
+    """
+    import platform
+
+    return f"{platform.machine().replace('_', '-')} ({platform.system()})"
+
+
 def _generate_world_in_child(out: Path, *, n_customers: int, n_items: int, seed: int) -> None:
     """Generate a world in a subprocess, so its peak memory goes back to the
     operating system before the caller measures anything."""
@@ -1188,9 +1200,7 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     as a smoke and never as the target: it is below the 500k lines the target
     names, so it cannot pass it.
     """
-    import platform
-
-    machine = f"{platform.machine()} ({platform.system()})"
+    machine = _machine()
     rows = [
         _row(
             "Performance (full Run-1 pipeline)",
@@ -1223,9 +1233,10 @@ def performance_check(tmp: Path) -> list[dict[str, Any]]:
     lines = res.pipeline.ledger.height
     rows.append(
         _row(
-            "Performance smoke (reduced scale, developer machine)",
-            "Completes end to end inside the development machine's memory floor; "
-            "does NOT measure the section 8 target, which is smaller than 500k lines here",
+            "Performance smoke (reduced scale)",
+            "Completes end to end on whatever machine the study runs on, inside a "
+            "14 GB memory floor; does NOT measure the section 8 target, which needs "
+            "more lines than this scale produces",
             f"{lines:,} lines in {elapsed:.1f}s on {machine}",
             lines > 0,
         )
@@ -1335,7 +1346,7 @@ def registry() -> list[Check]:
         Check(
             (
                 "Performance (full Run-1 pipeline)",
-                "Performance smoke (reduced scale, developer machine)",
+                "Performance smoke (reduced scale)",
             ),
             performance_check,
             in_quick=False,

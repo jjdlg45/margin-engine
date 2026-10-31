@@ -6471,3 +6471,121 @@ putting the repo root on the path first.
 Scoped to the files this change touches: `scripts/`, the workflow, the
 validation documents and one new test file. Nothing under `src/` changed, so
 the full suite and the browser gates from the previous commit still stand.
+
+---
+
+## docs/readme-refresh - the 2026-10-30 validation run, fresh screenshots, and a README for a first-time visitor
+
+Branched from `main` at `e2d989a`, which carries the merged Run 6 remediation.
+
+### The validation study, installed
+
+The 2026-10-30 artifact is the first full run since the study was made
+resilient: **4,700s, 59 rows, 58 passed, 0 checks raised**. The one failure is
+the documented 10M-line scale gap. Two things about installing it are worth
+recording.
+
+**Seven rows were stale duplicates.** The study carries forward any row it did
+not produce, so the other measurement scripts' evidence survives a re-run. A
+RENAMED row looks identical to that mechanism: the old name is no longer
+produced, so it is carried, and the file ends up holding both names for one
+check. The six renames from the previous branch plus `Competitor-price path
+gate (informational)` were dropped, with their scope entries. 52 rows now, 51
+passed. The carry-forward rule should learn the difference between "another
+script produced this" and "nothing produces this any more" - logged as a gap
+rather than changed here.
+
+**One row named a machine it no longer runs on.** `Performance smoke (reduced
+scale, developer machine)` was measured on the Linux runner this time, so the
+row's name contradicted its own value. Renamed to `Performance smoke (reduced
+scale)`; the value already names the hardware, which is what the owner asked
+every performance figure to do.
+
+**And the raw-code scanner caught the consequence.** `platform.machine()`
+returns `AMD64` on Windows but `x86_64` on the runner, and that string is
+published on the methodology page, where no raw code may appear. Playwright
+failed on exactly that, twice. Fixed at the source - three scripts now render
+the machine name - and the one committed row was relabelled. The figure was
+not touched.
+
+### Screenshots
+
+`web/capture-readme.mjs` + `npm run readme-shots`, a sibling of the existing
+`capture-review.mjs` using the same vite-preview-plus-chromium mechanism but
+writing `docs/images/` for the README rather than the design-review folder.
+Nine images, 1280x800, **723 KB in total, none over 100 KB**: the six views
+the owner asked for, plus the waterfall (so every walkthrough step has its
+own picture) and the Overview in dark mode and at phone width.
+
+Targets are resolved from the published bundle at capture time - the guidance
+pair is chosen as one priced below its reference band, the action as one far
+enough through the lifecycle to have steps behind and ahead - so a
+regenerated demo world cannot leave the README pointing at a pair or an
+action that no longer exists.
+
+Three shots needed work after looking at them rather than at the exit code:
+the band chart was cut off, and the Action center stopped above its queue.
+Both are scrolled to their subject now. Two "selector never appeared"
+warnings were real: the queue list is virtualized, so its container exists
+before its rows do, and the pass-through control is not an `input[type=range]`.
+
+### README
+
+Rewritten for a first-time visitor in the structure the owner specified:
+pitch, live demo link and the Overview image at the top; "What it does" under
+the headline **Every source dollar reconciled or explained**; a six-step
+walkthrough with a screenshot each; "What it can and can't tell you" as a
+plain-English status table with what the engine *does* with each status;
+"Use it with your own data"; the generated validation table; honest limits;
+license. 400 lines to 264. No "How it was built" section.
+
+Every figure in the walkthrough is one a reader can see in the screenshot
+beside it. Where the text quotes a count, it was re-measured on the current
+demo world rather than carried over: 611 opportunity records, 193 outside
+price support, **60 held at unchanged volume because the price-response shape
+could not be tested**, 1,550 guidance pairs, 277 actions.
+
+One test changed. `test_no_validation_figure_sits_outside_the_generated_block`
+sliced the README from "## Validation results" to "## Method in brief" - a
+section this rewrite removed, so the guard raised ValueError on a section it
+was not guarding. It now slices to the next top-level heading, whatever that
+is. Same coverage, no coupling.
+
+### No surface implies an optimal price
+
+`optimize_targets` has no caller in `src/`, which this branch confirmed from
+the output rather than the source: a full demo run produces an opportunity
+frame with **no `target_basis` column at all**. Four surfaces promised
+optimization "once the evidence supports it" - the methodology's section 8
+and its guidance section, the guidance page's own copy, the
+`provisional_historical` label, and the HTML report template. All now say the
+engine computes no optimal price, and the methodology's optimizer section
+opens by saying it describes code that exists and is tested but is not wired
+into a run.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 (213 files) |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| `npx tsc --noEmit` | 0 |
+| `npx vitest run` | 22 passed |
+| `npm run build` | 0 |
+| Playwright (`CI=true SKIP_SNAPSHOTS=1`) | 233 passed, 5 skipped, 0 failed |
+| Full pytest, one file per process | 73/73 files passed (0 failed) |
+
+The first Playwright run failed 2 of 238 on the raw machine code above; the
+figure recorded here is the re-run after the fix, against a rebuilt bundle.
+
+### Known gaps
+
+* The study's carry-forward cannot tell a renamed row from another script's
+  row, so a rename leaves a stale duplicate behind until someone removes it
+  by hand. Seven were removed this time.
+* `optimize_targets` is still not wired in. The documentation now says so
+  everywhere rather than implying it is about to be.
+* `docs/images/` is committed PNG; there is no image-optimisation step in the
+  build, so the 100 KB ceiling is held by capturing at 1280x800 rather than
+  by compression.

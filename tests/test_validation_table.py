@@ -78,7 +78,11 @@ def test_no_validation_figure_sits_outside_the_generated_block() -> None:
     readme = README.read_text(encoding="utf-8")
     outside = readme.replace(current_block(readme), "")
     section = outside[outside.index("## Validation results") :]
-    section = section[: section.index("## Method in brief")]
+    # To the next top-level heading, whatever it happens to be: naming the
+    # following section made this guard fail when the README was reorganised,
+    # which is a test breaking on something it was not guarding.
+    nxt = section.find("\n## ", 1)
+    section = section[:nxt] if nxt > 0 else section
     assert "| Check |" not in section
     # Percentages and seconds are the shapes the stale figures took.
     assert not re.search(r"\d+\.\d+s\b", section), "a timing figure is typed outside the table"
