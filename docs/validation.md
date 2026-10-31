@@ -4,9 +4,9 @@
      the measurements come from docs/validation.json and the scope from
      docs/validation-meta.yaml. -->
 
-Measured 2026-10-26T20:23:17+00:00 by `scripts/measure_validation.py` in 62 minutes.
+Measured 2026-10-30T03:52:03+00:00 by `scripts/measure_validation.py` in 78 minutes.
 
-34 of 35 checks met their target.
+51 of 52 checks met their target.
 
 Every row below says how many independent worlds or clusters it rests on,
 how it was computed, and - the part a number on its own cannot say - what
@@ -73,30 +73,100 @@ is one draw, and the row says so.
 - **Establishes** The partition is stable to resampling the same data.
 - **Does not establish** Stability over time - that is the separate later-period check on the Segments page.
 
-## Elasticity recovery, planted grain, 5 seeds
+## Elasticity recovery, planted grain
 
 - **Target** Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported)
-- **Measured** Median 0.019, P90 0.077, worst 0.095
+- **Measured** Median 0.024, P90 0.091, worst 0.141 over 15 worlds (5 development, 10 held out)
 - **Result** met
-- **Worlds or clusters** 5
-- **Method** FE-2SLS per planted segment with both instruments; absolute error against the planted elasticity.
-- **Establishes** The estimator recovers a planted constant elasticity when the instruments are valid by construction.
-- **Does not establish** Accuracy on real data, where no instrument is valid by construction.
+- **Worlds or clusters** 15 worlds (5 used in development, 10 held out)
+- **Method** FE-2SLS with the market control, on worlds where the segment grain is given rather than estimated; absolute error against the planted elasticity per segment-world, with the median and 90th percentile over those errors and a bootstrap over whole worlds.
+- **Establishes** How closely the instrumented estimator recovers a known elasticity on the generator's well-identified demand process.
+- **Does not establish** Recovery when the engine has to find the segments itself - the end-to-end row is that test. Nor recovery under any demand process other than the generator's.
+- **Uncertainty** median: 90% world-level bootstrap interval [0.020, 0.026]; P90: 90% world-level bootstrap interval [0.084, 0.095]; width 0.011 meets the 0.05 precision goal
 
-## Elasticity recovery, end-to-end (engine segments), 5 seeds
+| World | Held out | Segments | Median error | Worst error |
+|---|---|---|---|---|
+| seed 2 | no | 6 | 0.0324 | 0.067 |
+| seed 8 | no | 6 | 0.0166 | 0.0946 |
+| seed 15 | no | 6 | 0.0111 | 0.0875 |
+| seed 21 | no | 6 | 0.0173 | 0.0768 |
+| seed 34 | no | 6 | 0.0318 | 0.0828 |
+| seed 1009 | yes | 6 | 0.0389 | 0.058 |
+| seed 1013 | yes | 6 | 0.0126 | 0.1315 |
+| seed 1019 | yes | 6 | 0.0288 | 0.0906 |
+| seed 1021 | yes | 6 | 0.0244 | 0.088 |
+| seed 1031 | yes | 6 | 0.0397 | 0.1175 |
+| seed 1033 | yes | 6 | 0.0229 | 0.0988 |
+| seed 1039 | yes | 6 | 0.0246 | 0.0923 |
+| seed 1049 | yes | 6 | 0.0239 | 0.1328 |
+| seed 1051 | yes | 6 | 0.0279 | 0.1278 |
+| seed 1061 | yes | 6 | 0.0263 | 0.1415 |
+
+## Elasticity recovery, planted grain, held-out worlds only
+
+- **Target** Median abs error ≤ 0.10; P90 ≤ 0.15, on seeds never used in development
+- **Measured** Median 0.025, P90 0.093, worst 0.141 over 10 worlds
+- **Result** met
+- **Worlds or clusters** 10 held-out worlds
+- **Method** The same study restricted to seeds introduced in Run 6 Phase 78 and never used while the estimator was being developed.
+- **Establishes** That the target holds on worlds nobody tuned against, which the full set cannot show on its own.
+- **Does not establish** That it holds on a real market, which is not a draw from this generator.
+- **Uncertainty** 90% world-level bootstrap interval [0.088, 0.119]; width 0.031 meets the 0.05 precision goal
+
+## Elasticity recovery, end-to-end (engine segments)
 
 - **Target** Median abs error ≤ 0.10; P90 ≤ 0.15 (worst reported)
-- **Measured** Median 0.022, P90 0.077, worst 0.095
+- **Measured** Median 0.024, P90 0.091, worst 0.141 over 15 worlds (5 development, 10 held out)
 - **Result** met
-- **Worlds or clusters** 5
-- **Method** As above but on the engine's own segments, scored only on cells that are 90% one planted segment.
-- **Establishes** Recovery survives the engine choosing its own segments rather than being handed them.
-- **Does not establish** Recovery in segments too mixed to score, which are excluded rather than counted.
+- **Worlds or clusters** 15 worlds (5 used in development, 10 held out)
+- **Method** FE-2SLS with the market control, on worlds where the engine's own fitted segments are used and mapped to their modal planted segment; absolute error against the planted elasticity per segment-world, with the median and 90th percentile over those errors and a bootstrap over whole worlds.
+- **Establishes** How closely the instrumented estimator recovers a known elasticity on the generator's well-identified demand process.
+- **Does not establish** Recovery on segments the engine mixes: cells below the purity threshold are excluded from the comparison. Nor recovery under any demand process other than the generator's.
+- **Uncertainty** median: 90% world-level bootstrap interval [0.020, 0.025]; P90: 90% world-level bootstrap interval [0.084, 0.095]; width 0.011 meets the 0.05 precision goal
+
+| World | Held out | Segments | Median error | Worst error |
+|---|---|---|---|---|
+| seed 2 | no | 6 | 0.0324 | 0.067 |
+| seed 8 | no | 6 | 0.0166 | 0.0946 |
+| seed 15 | no | 6 | 0.0111 | 0.0875 |
+| seed 21 | no | 6 | 0.0337 | 0.0768 |
+| seed 34 | no | 6 | 0.0318 | 0.0828 |
+| seed 1009 | yes | 6 | 0.0389 | 0.058 |
+| seed 1013 | yes | 6 | 0.0126 | 0.1315 |
+| seed 1019 | yes | 6 | 0.0288 | 0.0906 |
+| seed 1021 | yes | 6 | 0.0244 | 0.088 |
+| seed 1031 | yes | 6 | 0.0196 | 0.1175 |
+| seed 1033 | yes | 6 | 0.0229 | 0.0988 |
+| seed 1039 | yes | 6 | 0.0246 | 0.0923 |
+| seed 1049 | yes | 6 | 0.0239 | 0.1328 |
+| seed 1051 | yes | 6 | 0.0279 | 0.1278 |
+| seed 1061 | yes | 6 | 0.0263 | 0.1415 |
+
+## Elasticity recovery, end-to-end (engine segments), held-out worlds only
+
+- **Target** Median abs error ≤ 0.10; P90 ≤ 0.15, on seeds never used in development
+- **Measured** Median 0.025, P90 0.093, worst 0.141 over 10 worlds
+- **Result** met
+- **Worlds or clusters** 10 held-out worlds
+- **Method** The same study restricted to seeds introduced in Run 6 Phase 78 and never used while the estimator was being developed.
+- **Establishes** That the target holds on worlds nobody tuned against, which the full set cannot show on its own.
+- **Does not establish** That it holds on a real market, which is not a draw from this generator.
+- **Uncertainty** 90% world-level bootstrap interval [0.088, 0.119]; width 0.031 meets the 0.05 precision goal
+
+## Functional-form gate on the well-identified preset (informational)
+
+- **Target** Informational - how the constant-elasticity comparison lands, reported not gated
+- **Measured** 90 segment-estimates: constant elasticity supported: 78, functional form inconclusive: 11, price dependent elasticity detected: 1; gaps 0.00-0.45 against detectable bounds 0.05-0.42; 0 had the causal status withdrawn by this gate alone
+- **Result** met
+- **Worlds or clusters** 15 worlds x 6 segments
+- **Method** The segment's instrumented estimate re-run on its cheaper-priced and dearer-priced halves; statuses counted, along with segments whose causal status this gate alone withdrew.
+- **Establishes** How often the constant-elasticity assumption is supported, inconclusive or refused on a world where demand really is constant-elasticity - so the gate's false-refusal rate is visible.
+- **Does not establish** That the gate would catch curvature: the nonconstant-elasticity row is that test, and it reports the gate's limits.
 
 ## Naive estimator bias
 
 - **Target** Biased in the planted direction (toward zero) on every seed
-- **Measured** Toward zero on 5/5 seeds, every segment
+- **Measured** Toward zero on 15/15 seeds, every segment
 - **Result** met
 - **Worlds or clusters** 5
 - **Method** FE-OLS on price without instruments, compared to the planted elasticity on every seed.
@@ -116,7 +186,7 @@ is one draw, and the row says so.
 ## Competitor-price path gate
 
 - **Target** Informational: how the Phase 70 gate lands on the well-identified preset
-- **Measured** 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation)
+- **Measured** 50/90 segment-seeds reach causal support; 31/90 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation)
 - **Result** met
 - **Worlds or clusters** 30 segment-seeds
 - **Method** Count of segment-seeds reaching causal support once the market-price control is required.
@@ -126,7 +196,7 @@ is one draw, and the row says so.
 ## Anticipation (lead) test false-rejection rate
 
 - **Target** Informational: on the well-identified preset no anticipation channel is planted, so every rejection is a false positive
-- **Measured** 0/30 segment-seeds rejected as material, 25 passed, 0 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes
+- **Measured** 0/90 segment-seeds rejected as material, 70 passed, 5 detected but below the materiality threshold, 0 reported inconclusive for lack of power; smallest detectable effect 0.00-0.01 log-volume units where it passes
 - **Result** met
 - **Worlds or clusters** 30 segment-seeds
 - **Method** Future instrument values regressed on current quantity where no anticipation is planted.
@@ -136,52 +206,143 @@ is one draw, and the row says so.
 ## Robust first-stage statistic and robust-set shape
 
 - **Target** Informational: the Montiel Olea-Pflueger effective F against the published 23.109 bar, and the shape of the weak-instrument-robust set
-- **Measured** Effective F 361-1985 (heuristic Wald/K 584-3926); robust set interval x30; total accepted width 0.04-0.86
+- **Measured** Effective F 361-1985 (heuristic Wald/K 584-5822); robust set interval x89, single point x1; total accepted width 0.02-0.86
 - **Result** met
 - **Worlds or clusters** 30 segment-seeds
 - **Method** Montiel Olea-Pflueger effective F against the published critical value; Anderson-Rubin set shape.
 - **Establishes** The robust statistic and the robust set are computed and reported on every segment.
 - **Does not establish** That a strong first stage makes an exclusion restriction true.
 
-## 95% CI coverage, 50 simulations
+## 95% CI coverage
 
 - **Target** Covers truth 90-98% of the time
-- **Measured** 284/300 = 94.7%
+- **Measured** 284/300 = 94.7% over 50 simulations
 - **Result** met
 - **Worlds or clusters** 50 simulations, 300 intervals
-- **Method** Repeated worlds with known truth; share of 95% intervals containing it.
+- **Method** Repeated well-identified worlds with known truth; share of 95% intervals containing it, with a bootstrap over whole simulations.
 - **Establishes** Interval coverage under the generator's independent-shock demand process.
 - **Does not establish** Coverage under serially correlated demand - the persistent-demand rows below are that test.
+- **Uncertainty** 90% bootstrap interval on the coverage rate [92.3%, 97.0%] over 300 intervals
 
-## 95% CI coverage under persistent demand, cluster=month (alternative, informational)
+## 95% CI coverage on the persistent demand world, grouped by supplier (alternative)
 
 - **Target** Informational - reported to justify the clustering default
-- **Measured** 253/300 = 84.3%
+- **Measured** 135/150 = 90.0%
 - **Result** met
-- **Worlds or clusters** 50 simulations, 300 intervals
-- **Method** As above with AR(1) customer demand shocks and clustering by month only.
-- **Establishes** That month-only clustering under-covers, which is why it is not the default.
-- **Does not establish** Anything about the shipped configuration.
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by supplier, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each clustering option does to coverage when demand persists over months.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
 
-## 95% CI coverage under persistent demand, cluster=month_customer (shipped default)
+## 95% CI coverage on the persistent demand world, grouped by supplier and month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 120/150 = 80.0%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by supplier and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each clustering option does to coverage when demand persists over months.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
+
+## 95% CI coverage on the persistent demand world, grouped by product category (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** no intervals reported, 150 withdrawn for having too few groups
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by product category, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each clustering option does to coverage when demand persists over months.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
+
+## 95% CI coverage on the persistent demand world, grouped by product category and month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 124/150 = 82.7%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by product category and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each clustering option does to coverage when demand persists over months.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
+
+## 95% CI coverage on the persistent demand world, grouped by month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 126/150 = 84.0%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each clustering option does to coverage when demand persists over months.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
+
+## 95% CI coverage on the persistent demand world, grouped by month and customer (shipped default)
 
 - **Target** Covers truth 90-98% of the time
-- **Measured** 278/300 = 92.7%
+- **Measured** 139/150 = 92.7%
 - **Result** met
-- **Worlds or clusters** 50 simulations, 300 intervals
-- **Method** AR(1) customer demand shocks; two-way clustering by month and customer.
-- **Establishes** The shipped clustering keeps coverage in band when demand is persistent.
-- **Does not establish** Coverage with few assignment-level clusters, which the Phase 73 study reports separately.
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with AR(1) customer demand shocks; the 95% interval is rebuilt with standard errors clustered by month and customer, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** That the shipped clustering keeps coverage in band on persistent demand worlds.
+- **Does not establish** Coverage under any other demand process, and coverage when the units the instruments are assigned to are few, which the few-clusters rows report.
 
-## 95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational)
+## 95% CI coverage on the few clusters world, grouped by supplier (alternative)
 
 - **Target** Informational - reported to justify the clustering default
-- **Measured** 244/300 = 81.3%
+- **Measured** no intervals reported, 150 withdrawn for having too few groups
 - **Result** met
-- **Worlds or clusters** 50 simulations, 300 intervals
-- **Method** As above with clustering at the instrument-assignment level.
-- **Establishes** That assignment-level clustering alone does not absorb the customer dimension.
-- **Does not establish** That assignment-level clustering is wrong in principle - it is right and insufficient here.
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by supplier, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
+
+## 95% CI coverage on the few clusters world, grouped by supplier and month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 135/150 = 90.0%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by supplier and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
+
+## 95% CI coverage on the few clusters world, grouped by product category (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** no intervals reported, 150 withdrawn for having too few groups
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by product category, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
+
+## 95% CI coverage on the few clusters world, grouped by product category and month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 138/150 = 92.0%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by product category and month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
+
+## 95% CI coverage on the few clusters world, grouped by month (alternative)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** 135/150 = 90.0%
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by month, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
+
+## 95% CI coverage on the few clusters world, grouped by month and customer (shipped default)
+
+- **Target** Informational - reported to justify the clustering default
+- **Measured** no intervals reported, 150 withdrawn for having too few groups
+- **Result** met
+- **Worlds or clusters** 25 simulations per option, on worlds generated once and re-estimated per option
+- **Method** A world with five suppliers, four categories, twelve months and strongly serially correlated supplier and category shocks; the 95% interval is rebuilt with standard errors clustered by month and customer, and the share containing the planted elasticity is counted along with the intervals withdrawn for having too few groups.
+- **Establishes** Part of the comparison that establishes what each option does when the units the instruments are assigned to are too few to support an interval, including how often it declines to report one.
+- **Does not establish** Anything about the shipped configuration on its own - the row exists to be compared with the others. It also does not establish a coverage rate worth reading as a pass: an option that covers by refusing to answer has not covered anything, so these rows are informational.
 
 ## weak-instrument preset
 
@@ -226,7 +387,7 @@ is one draw, and the row says so.
 ## Misspecified world: persistent_demand (informational)
 
 - **Target** Informational - reported, not gated (the planted beta is not the estimand under misspecification)
-- **Measured** median abs error vs planted 0.031; statuses {causal_elasticity_supported: 8, descriptive_elasticity: 1, iv_estimated_elasticity: 9}
+- **Measured** median abs error vs planted 0.031; statuses {causal_elasticity_supported: 12, descriptive_elasticity: 1, iv_estimated_elasticity: 5}
 - **Result** met
 - **Worlds or clusters** 1
 - **Method** AR(1) demand shocks; recovery of the planted elasticity reported, not gated.
@@ -236,7 +397,7 @@ is one draw, and the row says so.
 ## Misspecified world: heterogeneous_elasticity (informational)
 
 - **Target** Informational - reported, not gated (the planted beta is not the estimand under misspecification)
-- **Measured** median abs error vs planted 0.025; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8}
+- **Measured** median abs error vs planted 0.025; statuses {descriptive_elasticity: 1, iv_estimated_elasticity: 17}
 - **Result** met
 - **Worlds or clusters** 1
 - **Method** Elasticity varying within segment; recovery of the segment average reported.
@@ -246,7 +407,7 @@ is one draw, and the row says so.
 ## Misspecified world: nonconstant_elasticity (informational)
 
 - **Target** Informational - reported, not gated (the planted beta is not the estimand under misspecification)
-- **Measured** median abs error vs planted 0.303; statuses {causal_elasticity_supported: 9, descriptive_elasticity: 1, iv_estimated_elasticity: 8}
+- **Measured** median abs error vs planted 0.303; vs the local elasticity at the sample's own prices 0.018; statuses {causal_elasticity_supported: 12, descriptive_elasticity: 1, iv_estimated_elasticity: 5}
 - **Result** met
 - **Worlds or clusters** 1
 - **Method** Curved demand fitted with a constant-elasticity model.
@@ -263,6 +424,56 @@ is one draw, and the row says so.
 - **Establishes** That the gate withholds causal support when the competitor-price path is live.
 - **Does not establish** The size of the bias in a real market where competitor prices are unobserved.
 
+## Functional-form gate on the nonconstant-elasticity world (informational)
+
+- **Target** Informational - how the constant-elasticity comparison lands, reported not gated
+- **Measured** 18 segment-estimates: constant elasticity supported: 15, functional form inconclusive: 3; gaps 0.02-0.37 against detectable bounds 0.08-0.41; 0 had the causal status withdrawn by this gate alone
+- **Result** met
+- **Worlds or clusters** 3 worlds x 6 segments
+- **Method** The same comparison on a world whose planted local elasticity moves with the price level; statuses counted, along with segments whose causal status this gate alone withdrew.
+- **Establishes** How much planted curvature this comparison can actually see at the price separation the generator produces.
+- **Does not establish** That curvature is detected in general: where the halves differ by less than the comparison can resolve, the gate reports that and withdraws nothing.
+
+## Total-quantity estimate measures the extensive margin
+
+- **Target** Closer to the planted TOTAL elasticity than to the planted conditional one
+- **Measured** Median absolute error 0.127 against the total elasticity and 0.347 against the conditional one (15 segment-seeds)
+- **Result** met
+- **Worlds or clusters** 3 worlds with a planted price-driven extensive margin
+- **Method** IV-PPML by control function on the panel including its zero rows; the estimate's distance to the planted TOTAL elasticity is compared with its distance to the planted CONDITIONAL one.
+- **Establishes** That the estimator is measuring total quantity, including whether the customer buys at all, rather than quantity among buyers.
+- **Does not establish** Its accuracy, which the next row reports, or any causal standing: the total-quantity ladder has no causal tier and the engine never prices from it.
+
+## Total-quantity recovery accuracy (informational)
+
+- **Target** Informational: the measured accuracy that caps this ladder below the conditional one - no causal tier is awarded on it
+- **Measured** Median 0.127, P90 0.185, worst 0.360 against the conditional estimator's gated 0.10 median and 0.15 P90; statuses reached: descriptive total quantity, iv estimated total quantity; no causal status reached
+- **Result** met
+- **Worlds or clusters** 3 worlds with a planted extensive margin
+- **Method** Absolute error of the IV-PPML estimate against the planted total elasticity, over segment-worlds.
+- **Establishes** How far the total-quantity estimate lands from a known total elasticity.
+- **Does not establish** A pass or a failure: the row is informational, and the estimator is several times less accurate than the conditional one on its own estimand.
+
+## Total-quantity resampled interval (informational)
+
+- **Target** Informational: what the pair cluster bootstrap adds over the analytic cluster-robust standard error, and whether its range covers the planted total elasticity
+- **Measured** Bootstrap standard error is 0.94x the analytic one at the median over 15 segment-seeds, the difference being the first-stage sampling noise the analytic figure omits; the 95% resampled range covers the planted total elasticity in 12/15 cases
+- **Result** met
+- **Worlds or clusters** 3 worlds with a planted extensive margin
+- **Method** Bootstrap that refits the first stage in every replicate; share of resampled ranges containing the planted total elasticity.
+- **Establishes** Whether the resampled range behaves like an interval on these worlds.
+- **Does not establish** Coverage at the level the instruments are assigned: the bootstrap cannot resample that level, which the reported inference says in full.
+
+## Split-panel jackknife evaluated, not adopted (informational)
+
+- **Target** Informational: the half-panel bias correction for IV-PPML with high-dimensional fixed effects is computed and reported; it is adopted as the point estimate only if it measurably improves recovery
+- **Measured** Uncorrected median absolute error 0.127 against corrected 0.109 over 15 segment-seeds (P90 0.185 against 0.282). The correction improves recovery on these worlds; see docs/methodology.md for the adoption decision.
+- **Result** met
+- **Worlds or clusters** 3 worlds with a planted extensive margin
+- **Method** Half-panel jackknife bias diagnostic computed beside the point estimate and reported, never substituted for it.
+- **Establishes** The size of the incidental-parameter bias the diagnostic reports on these worlds.
+- **Does not establish** That applying the correction would improve the estimate - it is reported, not applied, and the choice is documented in the methodology.
+
 ## KVI candidates
 
 - **Target** ≥ 80% of planted KVIs in top-ranked candidates
@@ -276,7 +487,7 @@ is one draw, and the row says so.
 ## Win-curve price coefficient
 
 - **Target** Within ±15% relative of planted, per estimated segment
-- **Measured** Worst estimated segment 4.0% (2 estimated, precision-gated)
+- **Measured** Worst estimated segment 4.1% (2 estimated, precision-gated)
 - **Result** met
 - **Worlds or clusters** 1
 - **Method** Logistic fit per segment on decided quotes, clustered; coefficient against planted, per estimated segment.
@@ -285,8 +496,8 @@ is one draw, and the row says so.
 
 ## Engine determinism
 
-- **Target** Byte-identical bundle across runs on the same input
-- **Measured** Byte-identical
+- **Target** Byte-identical CSV, Parquet and browser-bundle outputs on the same input
+- **Measured** Byte-identical across runs, separate processes and thread counts on the tested platform; identity across operating systems and BLAS builds is untested
 - **Result** met
 - **Worlds or clusters** one world, repeated runs
 - **Method** CSV, Parquet and browser-bundle outputs hashed across repeated runs, separate processes and thread counts.
@@ -295,23 +506,23 @@ is one draw, and the row says so.
 
 ## Performance (full Run-1 pipeline)
 
-- **Target** 500k+ lines under 2 minutes
-- **Measured** 811,253 lines in 119.0s on AMD64 (Windows)
+- **Target** 500k+ lines under 2 minutes on the 14 GB development laptop; on any other machine, no more than 10% slower than main measured there
+- **Measured** Measured by the benchmark CI job (.github/workflows/benchmark.yml), which times this branch and main back to back on one GitHub ubuntu-24.04 runner and fails the branch if it is more than 10% slower than main. Absolute timings are per machine and do not transfer: 811,253 lines take 119.0s on the 14 GB development laptop and about 187.9s on that runner, which is why the runner carries its own 250s backstop rather than the laptop's 120s. Not measured on a developer machine here: the world alone needs about 5.4 GB, and a single local reading cannot tell a code regression from a slower machine.
 - **Result** met
 - **Worlds or clusters** one world, one machine (14 GB laptop)
 - **Method** Wall-clock time for the full pipeline on a generated world, timed on the build machine. CI times the same world on a GitHub ubuntu-24.04 runner and gates on the change against main measured there back to back, not on an absolute figure.
 - **Establishes** That this configuration runs in the stated time on the stated hardware: 811,253 lines in 119.0s on the 14 GB development laptop.
 - **Does not establish** Timing on any other hardware. The same code takes about 187.9s on a GitHub ubuntu-24.04 runner, roughly 58% longer; run-to-run spread on the laptop is about 4s.
 
-## Competitor-price path gate (informational)
+## Performance smoke (reduced scale)
 
-- **Target** Informational - reported, not gated: how the Phase 70 gate lands on the well-identified preset
-- **Measured** 13/30 segment-seeds reach causal support; 17/30 are just-identified after controlling (a category tariff instrument is itself a category market-price mover, so holding the market price constant leaves the supplier cost shock as the identifying variation)
+- **Target** Completes end to end on whatever machine the study runs on, inside a 14 GB memory floor; does NOT measure the section 8 target, which needs more lines than this scale produces
+- **Measured** 162,440 lines in 29.6s on x86-64 (Linux)
 - **Result** met
-- **Worlds or clusters** 30 segment-seeds
-- **Method** Duplicate of the gate row above, retained until the next regeneration.
-- **Establishes** The same thing as the row above.
-- **Does not establish** Anything additional - it is a duplicate, noted rather than edited out of a measured file.
+- **Worlds or clusters** 1 reduced-scale world, on whichever machine ran the study
+- **Method** The full pipeline end to end on a world generated in a child process, so the generator's peak and the pipeline's peak never coexist. The measured value names the machine, because the number belongs to it.
+- **Establishes** That the whole pipeline runs end to end inside a 14 GB memory floor.
+- **Does not establish** The section 8 runtime target, which needs 500k+ lines and is measured by the benchmark CI job; nor timing on any machine other than the one named in the value.
 
 ## Scenario matrix (full tier)
 

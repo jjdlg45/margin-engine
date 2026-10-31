@@ -83,7 +83,7 @@ def main() -> int:
         "seed": args.seed,
         "lines": lines,
         "seconds": round(elapsed, 2),
-        "machine": f"{platform.machine()} ({platform.system()})",
+        "machine": f"{platform.machine().replace('_', '-')} ({platform.system()})",
         "measures_section_8_target": args.scale == "full",
         "target_seconds": TARGET_SECONDS,
         "target_min_lines": TARGET_MIN_LINES,

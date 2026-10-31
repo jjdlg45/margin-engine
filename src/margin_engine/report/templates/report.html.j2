@@ -124,7 +124,7 @@
   <tr><td title="{{ g.status_desc }}">{{ g.status }}</td><td>{{ g.n }}</td><td>{{ g.share }}</td></tr>
   {% endfor %}
 </table>
-<p class="muted">Targets are {{ guidance_label }} — historical reference points, not optimal prices, until elasticity support allows optimization.</p>
+<p class="muted">Targets are {{ guidance_label }} — historical reference points clipped to the floor, not optimal prices. This engine computes no optimal price.</p>
 
 <h2>Opportunity (three levels, never summed)</h2>
 <div>

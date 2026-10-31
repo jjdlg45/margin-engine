@@ -311,9 +311,9 @@ export function GuidancePage() {
           <>
             Historical reference bands within each pair's commercial segment
             and the economic floor that guarantees the configured minimum
-            pocket margin. Bands are historical positions, not optimal prices;
-            targets stay provisional until elasticity evidence supports
-            optimization.
+            pocket margin. Bands are historical positions, not optimal prices,
+            and the target is the historical reference clipped to the floor -
+            this engine does not compute an optimal price.
             {page.data ? <> {count(page.data.n_pairs)} pairs in this run.</> : null}
           </>
         }

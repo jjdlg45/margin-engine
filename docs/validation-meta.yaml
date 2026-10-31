@@ -48,18 +48,6 @@ Segment stability (bootstrap median ARI):
   establishes: "The partition is stable to resampling the same data."
   does_not_establish: "Stability over time - that is the separate later-period check on the Segments page."
 
-Elasticity recovery, planted grain, 5 seeds:
-  worlds: 5
-  method: "FE-2SLS per planted segment with both instruments; absolute error against the planted elasticity."
-  establishes: "The estimator recovers a planted constant elasticity when the instruments are valid by construction."
-  does_not_establish: "Accuracy on real data, where no instrument is valid by construction."
-
-Elasticity recovery, end-to-end (engine segments), 5 seeds:
-  worlds: 5
-  method: "As above but on the engine's own segments, scored only on cells that are 90% one planted segment."
-  establishes: "Recovery survives the engine choosing its own segments rather than being handed them."
-  does_not_establish: "Recovery in segments too mixed to score, which are excluded rather than counted."
-
 Naive estimator bias:
   worlds: 5
   method: "FE-OLS on price without instruments, compared to the planted elasticity on every seed."
@@ -89,30 +77,6 @@ Robust first-stage statistic and robust-set shape:
   method: "Montiel Olea-Pflueger effective F against the published critical value; Anderson-Rubin set shape."
   establishes: "The robust statistic and the robust set are computed and reported on every segment."
   does_not_establish: "That a strong first stage makes an exclusion restriction true."
-
-95% CI coverage, 50 simulations:
-  worlds: "50 simulations, 300 intervals"
-  method: "Repeated worlds with known truth; share of 95% intervals containing it."
-  establishes: "Interval coverage under the generator's independent-shock demand process."
-  does_not_establish: "Coverage under serially correlated demand - the persistent-demand rows below are that test."
-
-95% CI coverage under persistent demand, cluster=month (alternative, informational):
-  worlds: "50 simulations, 300 intervals"
-  method: "As above with AR(1) customer demand shocks and clustering by month only."
-  establishes: "That month-only clustering under-covers, which is why it is not the default."
-  does_not_establish: "Anything about the shipped configuration."
-
-95% CI coverage under persistent demand, cluster=month_customer (shipped default):
-  worlds: "50 simulations, 300 intervals"
-  method: "AR(1) customer demand shocks; two-way clustering by month and customer."
-  establishes: "The shipped clustering keeps coverage in band when demand is persistent."
-  does_not_establish: "Coverage with few assignment-level clusters, which the Phase 73 study reports separately."
-
-95% CI coverage under persistent demand, cluster=supplier_month (alternative, informational):
-  worlds: "50 simulations, 300 intervals"
-  method: "As above with clustering at the instrument-assignment level."
-  establishes: "That assignment-level clustering alone does not absorb the customer dimension."
-  does_not_establish: "That assignment-level clustering is wrong in principle - it is right and insufficient here."
 
 weak-instrument preset:
   worlds: 5
@@ -185,12 +149,6 @@ Performance (full Run-1 pipeline):
   method: "Wall-clock time for the full pipeline on a generated world, timed on the build machine. CI times the same world on a GitHub ubuntu-24.04 runner and gates on the change against main measured there back to back, not on an absolute figure."
   establishes: "That this configuration runs in the stated time on the stated hardware: 811,253 lines in 119.0s on the 14 GB development laptop."
   does_not_establish: "Timing on any other hardware. The same code takes about 187.9s on a GitHub ubuntu-24.04 runner, roughly 58% longer; run-to-run spread on the laptop is about 4s."
-
-"Competitor-price path gate (informational)":
-  worlds: "30 segment-seeds"
-  method: "Duplicate of the gate row above, retained until the next regeneration."
-  establishes: "The same thing as the row above."
-  does_not_establish: "Anything additional - it is a duplicate, noted rather than edited out of a measured file."
 
 Scenario matrix (full tier):
   worlds: 300
@@ -348,11 +306,11 @@ Split-panel jackknife evaluated, not adopted (informational):
   establishes: "The size of the incidental-parameter bias the diagnostic reports on these worlds."
   does_not_establish: "That applying the correction would improve the estimate - it is reported, not applied, and the choice is documented in the methodology."
 
-Performance smoke (reduced scale, developer machine):
-  worlds: "1 reduced-scale world"
-  method: "The full pipeline end to end on a world generated in a child process, so the generator's peak and the pipeline's peak never coexist; timed on the development machine."
-  establishes: "That the whole pipeline runs end to end inside the memory floor of a 14 GB machine."
-  does_not_establish: "The section 8 runtime target, which needs 500k+ lines and is measured by the benchmark CI job on a fixed runner."
+Performance smoke (reduced scale):
+  worlds: "1 reduced-scale world, on whichever machine ran the study"
+  method: "The full pipeline end to end on a world generated in a child process, so the generator's peak and the pipeline's peak never coexist. The measured value names the machine, because the number belongs to it."
+  establishes: "That the whole pipeline runs end to end inside a 14 GB memory floor."
+  does_not_establish: "The section 8 runtime target, which needs 500k+ lines and is measured by the benchmark CI job; nor timing on any machine other than the one named in the value."
 
 Functional-form gate on the well-identified preset (informational):
   worlds: "15 worlds x 6 segments"

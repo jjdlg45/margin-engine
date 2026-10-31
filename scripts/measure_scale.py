@@ -154,7 +154,7 @@ def main() -> None:
     avail_gb = vm.available / 1024**3
     budget = args.max_gb if args.max_gb is not None else min(PEAK_BUDGET_GB, avail_gb - SAFETY_GB)
     hw = (
-        f"{platform.machine()} ({platform.system()}), "
+        f"{platform.machine().replace('_', '-')} ({platform.system()}), "
         f"{vm.total / 1024**3:.1f} GB RAM, {avail_gb:.1f} GB available at start"
     )
     print(f"{hw}; memory budget for this run: {budget:.1f} GB", flush=True)

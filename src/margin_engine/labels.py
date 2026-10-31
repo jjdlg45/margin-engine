@@ -53,8 +53,8 @@ LABELS: dict[str, dict[str, str]] = {
     # --- win-curve statuses ---------------------------------------------------
     "estimated_win_curve": {
         "label": "Estimated win curve",
-        "description": "Fitted within the precision gate; accurate enough to gate and to "
-        "inform win-aware optimization.",
+        "description": "Fitted within the precision gate: accurate enough to gate on, and "
+        "to inform a win-aware price search where one is run.",
     },
     # --- guidance statuses ------------------------------------------------------
     "in_band": {
@@ -110,8 +110,9 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "provisional_historical": {
         "label": "Provisional (historical)",
-        "description": "A historical position, not an optimal price - provisional until "
-        "elasticity evidence supports optimization.",
+        "description": "The midpoint of what comparable customers have paid, clipped to the "
+        "floor. A historical position, not an optimal price: this engine computes no "
+        "optimal price, so this is the only kind of target a run produces.",
     },
     # --- amount statuses -----------------------------------------------------
     "actual": {"label": "Actual", "description": "Taken directly from the source export."},
