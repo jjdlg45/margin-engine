@@ -736,6 +736,32 @@ LABELS: dict[str, dict[str, str]] = {
         "inconclusive result is reported with the smallest effect the test could have "
         "detected.",
     },
+    # --- the verdict: what a reader may do with a row ------------------------
+    "forecast_available": {
+        "label": "Forecast available",
+        "description": "The price response for this segment passed every check, and the "
+        "proposed move sits inside the range of price changes the data can speak to. The "
+        "expected change allows for customers buying less at the higher price.",
+    },
+    "upside_only": {
+        "label": "Upside only: no volume forecast",
+        "description": "The gap is real and reconciled, but there is no confirmed price "
+        "response to apply to it. The figure is what the move is worth if every customer "
+        "keeps buying exactly as much - a ceiling, not a forecast.",
+    },
+    "too_little_evidence": {
+        "label": "Too little evidence",
+        "description": "Not enough here to size the move with confidence: the unit cost is "
+        "missing, or the segment has too little data to estimate a price response at all. "
+        "Treat the gap as a prompt to look, not a number to act on.",
+    },
+    "staged_first_step": {
+        "label": "Step 1 of the move to target",
+        "description": "The largest part of this move the data can speak to. The full move "
+        "reaches further than any price change these customers have been seen to face, so "
+        "the engine forecasts the first step and leaves the rest unforecast - the target "
+        "does not change.",
+    },
     "price_response_shape_untested": {
         "label": "Price-response shape untested; volume held steady",
         "description": "The move is inside the price range this segment's cost and tariff "

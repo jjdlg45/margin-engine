@@ -50,6 +50,7 @@ from margin_engine.opportunity.deductions import (
 from margin_engine.sensitivity.estimate import (
     FF_INCONCLUSIVE,
     STATUS_CAUSAL,
+    STATUS_INSUFFICIENT,
     STATUS_IV,
     parse_support_regions,
 )
@@ -67,6 +68,33 @@ TREATMENT_PATH_UNCONTROLLED = "competitor_path_uncontrolled"
 # segment is held to when its price-response shape could not be tested.
 TREATMENT_SHAPE_UNTESTED = "price_response_shape_untested"
 TARGET_SHAPE_UNTESTED = "provisional_shape_untested"
+
+# The verdict: what a reader may do with this row, in one value. It is
+# derived from the evidence status and the volume treatment, which stay on
+# the record for anyone who wants them - but nobody should have to combine
+# two technical fields to learn whether a number is a forecast.
+VERDICT_FORECAST = "forecast_available"
+VERDICT_UPSIDE_ONLY = "upside_only"
+VERDICT_LOW_EVIDENCE = "too_little_evidence"
+
+#: Why a row has no forecast, in one plain line, keyed by volume treatment.
+NO_FORECAST_REASON: dict[str, str] = {
+    TREATMENT_OUTSIDE_SUPPORT: (
+        "this move is larger than any price change these customers have been seen to face"
+    ),
+    TREATMENT_SHAPE_UNTESTED: (
+        "one price response may not describe the whole segment, so volume is held steady "
+        "beyond a narrow band"
+    ),
+    TREATMENT_RANGE: (
+        "the price response is estimated but not confirmed, so no single forecast is published"
+    ),
+    TREATMENT_PATH_UNCONTROLLED: (
+        "the estimate answers a market-wide price move, not a move by this distributor alone"
+    ),
+    TREATMENT_COST_UNAVAILABLE: "no unit cost is known for this item",
+    TREATMENT_FIXED: "no confirmed price response exists for this segment",
+}
 
 
 @dataclass
@@ -329,6 +357,14 @@ def price_opportunities(
     # Contribution basis: subtract K per unit on both sides.
     kc = pl.col("k_per_unit_cents").fill_null(0)
     delta_contrib = ((unit_c1 - kc) * q1 - (unit_c0 - kc) * q0).round(0)
+    # The same arithmetic at the staged first step (defined below, once the
+    # support regions exist): a price the engine CAN forecast, on a row whose
+    # full move it cannot.
+    p_step = (p0 * pl.col("_step_move_log").exp()).round(0)
+    unit_cs = p_step * pl.col("pocket_retention") - pl.col("fixed_deduction_f") - unit_cost
+    q_step = q0 * (p_step / p0).pow(pl.col("elasticity"))
+    delta_step = (unit_cs * q_step - unit_c0 * q0).round(0)
+    delta_step_contrib = ((unit_cs - kc) * q_step - (unit_c0 - kc) * q0).round(0)
 
     # The same arithmetic under the total-quantity elasticity: what the figure
     # would be if the extensive margin moved as the zeros-inclusive estimate
@@ -477,6 +513,31 @@ def price_opportunities(
     )
     # What a modeled volume response is actually allowed over.
     in_priceable = in_support & in_narrow
+
+    # --- the staged first step ---------------------------------------------
+    # The largest move in the proposed direction that still lands inside
+    # movement the instruments induced (and inside the narrowed band, where
+    # the price-response shape could not be tested). It is a FIRST STEP
+    # towards the same target, not a smaller target: the rest of the move is
+    # not refused, it is simply not something this data can forecast yet.
+    if max_regions:
+        step_parts = [
+            pl.when((lo <= move) & (hi > pl.lit(0.0)))
+            .then(pl.min_horizontal(hi, move))
+            .otherwise(None)
+            for lo, hi in narrowed
+        ]
+        step_raw = pl.max_horizontal(*step_parts)
+    else:
+        step_raw = pl.min_horizontal(_mid + _half, move)
+    # Only a positive move short of the full one is a step worth naming.
+    step_move = (
+        pl.when((move > pl.lit(0.0)) & (step_raw > pl.lit(0.0)) & (step_raw < move))
+        .then(step_raw)
+        .otherwise(None)
+    )
+    # Materialised now: the step economics below are expressions over it.
+    g = g.with_columns(step_move.alias("_step_move_log"))
     g = g.with_columns(
         pl.when(measured_regions)
         .then(region_gap)
@@ -538,6 +599,27 @@ def price_opportunities(
         .then(pl.lit(TREATMENT_RANGE))
         .otherwise(pl.lit(TREATMENT_FIXED))
         .alias("volume_treatment"),
+        # The staged first step: a price this row's evidence can speak to,
+        # on a row whose full move it cannot. Only where the segment's
+        # elasticity could carry a forecast at all - a step is a smaller
+        # move, not weaker evidence.
+        pl.when(causal & has_cost & path_ok)
+        .then(p_step)
+        .otherwise(None)
+        .cast(pl.Int64)
+        .alias("step_price_cents"),
+        pl.when(causal & has_cost & path_ok)
+        .then(pl.col("_step_move_log").exp() - 1.0)
+        .otherwise(None)
+        .alias("step_move_pct"),
+        pl.when(causal & has_cost & path_ok)
+        .then(delta_step)
+        .otherwise(None)
+        .alias("step_expected_pocket_gross_profit_change_cents"),
+        pl.when(causal & has_cost & has_k & path_ok)
+        .then(delta_step_contrib)
+        .otherwise(None)
+        .alias("step_expected_contribution_change_cents"),
         pl.when(pl.col("total_quantity_elasticity").is_not_null() & has_cost & in_priceable)
         .then(delta_total)
         .otherwise(None)
@@ -578,6 +660,21 @@ def price_opportunities(
             pl.col("baseline_qty"),
         ).alias("calc_trace"),
     )
+    # --- the verdict (one value a reader can act on) -------------------------
+    # Derived from the evidence status and the volume treatment, both of which
+    # stay on the record. Nothing is lost; what changes is that the reader is
+    # no longer the one combining them.
+    treatment = pl.col("volume_treatment")
+    g = g.with_columns(
+        pl.when(pl.col("cost_unavailable") | (pl.col("evidence_status") == STATUS_INSUFFICIENT))
+        .then(pl.lit(VERDICT_LOW_EVIDENCE))
+        .when(treatment == TREATMENT_EXPECTED)
+        .then(pl.lit(VERDICT_FORECAST))
+        .otherwise(pl.lit(VERDICT_UPSIDE_ONLY))
+        .alias("verdict"),
+        treatment.replace_strict(NO_FORECAST_REASON, default="").alias("verdict_reason"),
+    )
+
     # --- deduction treatment (Run 6, Phase 66) -------------------------------
     tiered_set = sorted({str(c) for c in (tiered_customers or set())})
     if tiered_set:
@@ -621,6 +718,12 @@ def price_opportunities(
         "price_support_distance",
         "price_support_reason",
         "functional_form_status",
+        "verdict",
+        "verdict_reason",
+        "step_price_cents",
+        "step_move_pct",
+        "step_expected_pocket_gross_profit_change_cents",
+        "step_expected_contribution_change_cents",
         "total_quantity_elasticity",
         "total_quantity_status",
         "gp_change_total_quantity_basis_cents",
