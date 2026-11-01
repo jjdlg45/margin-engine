@@ -61,7 +61,7 @@ jobs:
           path: base
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
 
