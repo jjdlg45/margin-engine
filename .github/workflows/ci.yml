@@ -65,7 +65,7 @@ jobs:
         run: uv run python scripts/measure_validation.py --smoke --out smoke.json
       - name: Upload the smoke results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: validation-smoke
           path: smoke.json
