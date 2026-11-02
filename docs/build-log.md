@@ -7294,3 +7294,54 @@ serious or critical violations** and four new snapshot baselines recorded
 (light and dark, desktop and mobile). API-mode Playwright: **15 passed**,
 whole suite, including the three previously failing tests fixed in the
 preceding commit.
+
+## Phase 95 — Documentation and report (2026-11-02, Run 7 branch)
+
+- **README gains "Connecting your systems"** between "Use it with your own
+  data" and the validation table: what connectors exist, a status column that
+  says plainly which is verified live and which is "built against the
+  documented API, not yet verified live", the honest data gaps (QuickBooks
+  has no unit cost; only decided HubSpot deals count), and the file-drop
+  route for everything else. No logos, no claim of any official
+  partnership, and the CLI and Connections screen named so a reader knows
+  where the controls are.
+- **`docs/connectors.md`**: the interface, what the framework guarantees so a
+  connector need not re-implement it, the rules every connector follows
+  (read-only, no credential anywhere, plain-English failures, Decimal money),
+  and a six-step recipe for adding one - including that its
+  `live_verification` must stay honest until a real run happened, and the
+  contract tests it has to pass. Salesforce is documented as following the
+  HubSpot pattern and deliberately not built.
+- **`docs/run7-report.md`**: every phase with what was built and tested, the
+  three pre-existing defects the gates surfaced, the verification summary,
+  the known gaps, and - the part that matters for the owner - exactly which
+  credential values to create, where, and what to update after a successful
+  live run.
+- `docs/data-sources.md` carries the Intuit and HubSpot entries written in
+  Phases 92 and 93 (endpoints, auth, verified rate limits, terms,
+  verification status, fixture location).
+
+`RUN7.md` itself is left untracked, as the Run 5 and Run 6 spec files were;
+its content lives in CLAUDE.md as section "RUN 7" (commit `docs: Run 7 spec`).
+
+### Scope held
+
+Three things were noticed and logged rather than built, per the stay-in-scope
+rule:
+
+- The `always_positive_with_type` sign convention is declared in the mapping
+  schema but applied nowhere in the pipeline. Found while writing the
+  QuickBooks mapping, which is why that connector writes revenue-effect signs
+  itself instead of relying on it. Recorded in the run report's known gaps.
+- `docs/connectors.md` describes a Salesforce connector's shape without
+  building it.
+- The file-drop guide stops at general orientation for each ERP rather than
+  product-specific steps, because nothing in it was verified against a live
+  instance.
+
+### Checks
+
+Docs-only phase for the engine, but the README is test-covered:
+`tests/test_validation_table.py` + `tests/test_metrics.py` 22 passed (the
+validation-table block is unchanged by the new section). Full-suite and
+fresh-clone results follow in the final entry.
