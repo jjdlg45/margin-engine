@@ -1029,3 +1029,84 @@ Dockerfile and compose file for API + UI + scheduler. CI builds the image and ru
 85.3 `docs/run6-report.md`: every finding (1–24) → what changed, tests added, before/after headline numbers (expected impacts, status counts, tracker results, coverage), what remains open and why, and decisions for the owner. Update README, methodology, metric dictionary, and the validation table from validation.json.
 
 Final commit on `run6`, then **stop**. Do not merge, do not push.
+
+---
+
+# RUN 7 — System connectors
+
+**Goal:** let the engine pull data from a company's systems on a schedule instead of relying on manual exports, without changing anything downstream. Every connector produces the **same canonical files** the engine already reads, so mapping, validation, reconciliation, and every test stay exactly as they are.
+
+**Honesty rule for this run:** a connector is only described as working if it has been run end to end against the real service (or its official sandbox). Anything verified only against documented schemas is labeled "built against the documented API, not yet verified live." No stubs for systems that can't be tested (Infor, SAP, Epicor, NetSuite, commercial TMSs); those are covered by the file-drop connector and a guide.
+
+---
+
+## 0. Run mode and rules
+
+- **Branch** `run7` from an up-to-date `main` (after the UX round is merged). Never commit to `main`; never push. The owner pushes and opens a PR.
+- Continuous run; one commit per phase (`phase-N: <summary>`); confirm every exit code; build-log entry per phase; memory rules unchanged (3 GB per test process, abort below 2 GB free, heavy jobs in the background).
+- Verify like CI from a fresh clone before the final commit.
+- **Credentials:** never in the repo, logs, exceptions, test output, or the run manifest. Read from environment variables or a local `.env` (already gitignored). If a phase needs a credential that isn't set, finish everything that doesn't need it, then **stop and ask the owner**, listing exactly which values to create and where.
+- **Tests run offline.** Live calls only in an opt-in `@pytest.mark.live` group that skips cleanly when credentials are absent. CI never needs credentials.
+- **Read-only:** every connector requests the narrowest read-only scopes available and never writes to the source system.
+- Stop conditions as in previous runs.
+
+---
+
+## Phase 90 — Connector framework
+
+- A `Connector` interface: `describe()` (name, system, data produced, required settings, scopes), `check()` (credentials and reachability, plain-English result), `sync(since)` (fetch new or changed records), and `materialize()` (write canonical files plus a sync manifest).
+- **Canonical output only:** connectors write the same CSV/Parquet files and mapping-compatible columns the engine already ingests (invoice lines, customers, items, quotes, GL totals, freight, receipts), into a per-sync folder. The existing ingest path reads them unchanged.
+- **Incremental sync:** a per-connector cursor (timestamp or ID) stored locally; re-running a sync is idempotent; a full resync is available. Late-arriving edits and deletions are handled explicitly (re-fetch window, tombstones where the API exposes them).
+- **Sync manifest:** connector name and version, source, time window, record counts per object, checksum per file, warnings, and the cursor used. It's linked from the run manifest so every engine run names exactly which syncs fed it.
+- **Scheduling:** a scheduler entry per connector (reuses the live-mode scheduler), with a manual "run now."
+- **Resilience:** reuses the Phase 29 rate limiter and backoff; partial failures leave the previous good sync in place and are reported, never half-written.
+- **Credential store:** env/.env by default; in production mode, credentials are encrypted at rest and only admins can configure connectors (extends Phase 82 roles).
+- **Tests:** a fake connector proving the contract (idempotency, cursor advance, partial-failure rollback, manifest completeness, no secrets in any output).
+
+## Phase 91 — File-drop connector (covers large ERPs and TMSs today)
+
+How mid-size companies actually connect Infor CloudSuite, SAP, Epicor, NetSuite, or a TMS to outside tools: the source system exports files on a schedule to a secure location, and the tool picks them up.
+
+- Sources: a local/network **watched folder** and **SFTP** (key-based auth).
+- Pick-up rules: only complete files (stable size or a done-marker), checksum recorded, processed files archived, bad files quarantined with a plain-English reason, never processed twice.
+- Each dropped file is matched to a mapping (by filename pattern) and validated before it's accepted.
+- **Tests:** an in-process SFTP test server (no Docker needed locally); partial-file, duplicate-file, wrong-format, and permission-error cases.
+- **Guide:** "Connecting Infor, SAP, Epicor, NetSuite, or a TMS," explaining how to schedule an export to the drop folder in general terms, without claiming product-specific steps that weren't verified.
+
+## Phase 92 — QuickBooks Online connector
+
+- **Auth:** OAuth 2.0 authorization-code flow with refresh tokens, using an Intuit developer app and a **sandbox company** (owner creates these; stop and ask if absent). Read-only accounting scope.
+- **Pulls:** customers, items, invoices and their lines, credit memos, and monthly profit-and-loss totals (for the GL variance check).
+- **Maps to:** `customers`, `items`, `invoice_lines`, credit memo rows, and `gl_totals.csv`, plus a committed mapping file.
+- **Known data gap, stated honestly:** QuickBooks invoice lines usually don't carry unit cost. Use the item's purchase cost when present; otherwise those lines report `cost_unavailable`, never an invented cost.
+- Rate limits and API minor-version pinned per the current Intuit documentation (verify before use; record in `docs/data-sources.md`).
+- **Tests:** fixtures recorded from the sandbox once credentials exist; until then, fixtures built from the documented schema and labeled as such. The opt-in live test runs a full sync against the sandbox and then an engine run on the result.
+
+## Phase 93 — CRM connector (HubSpot)
+
+- **Auth:** a HubSpot developer test account with a private app token, read-only scopes (owner creates; stop and ask if absent).
+- **Pulls:** companies (customer names), deals with line items and stages, quotes where available.
+- **Maps to:** customer names, and `quotes.csv` with won/lost outcomes, where only closed-won and closed-lost deals count as outcomes and open deals are excluded with reasons (consistent with Phase 77).
+- **Tests:** as in Phase 92 (recorded or documented-schema fixtures; opt-in live test).
+- Note in the docs: Salesforce follows the same pattern and could be added with a free Developer Edition, but isn't built in this run.
+
+## Phase 94 — Connections screen (local and API mode only)
+
+- A "Connections" page: each connector's status, what it provides, last sync time and record counts, warnings in plain English, "Check connection," "Sync now," and schedule settings. Admin-only in production mode.
+- The public static demo shows an explanatory "Connections" page (what each connector does and how to set it up), with no live controls and no credentials.
+- Loading, error, and retry states as elsewhere; raw-code scanner and accessibility checks pass.
+
+## Phase 95 — Documentation and report
+
+- README section **"Connecting your systems":** which connectors exist, which are verified live (and when), which are documented-schema only, and the file-drop route for everything else. No logos or claims of official partnership.
+- `docs/connectors.md`: how to add a new connector against the interface, with the contract tests it must pass.
+- `docs/run7-report.md`: every phase, tests added, which connectors were verified live versus not, and anything waiting on the owner (credentials, sandbox setup).
+- Final commit on `run7`, then **stop**. Do not merge, do not push.
+
+---
+
+## Owner setup (only needed for live verification)
+
+1. **QuickBooks:** create a free Intuit Developer account, create an app (accounting scope), and use its sandbox company. Put the client ID, client secret, and redirect URL in `.env`.
+2. **HubSpot:** create a free developer test account, then a private app with read-only scopes for companies, deals, line items, and quotes. Put the token in `.env`.
+3. Never paste credentials into chat or commit them.
