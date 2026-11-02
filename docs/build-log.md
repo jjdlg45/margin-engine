@@ -6963,3 +6963,106 @@ empty `known_hosts` refusing the connection. Plus rules-validation errors.
 `ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
 `tests/test_filedrop.py` + `tests/test_connector_framework.py` 30 passed.
 `margin-engine connectors` smoke-run against the real registry.
+
+## Phase 92 — QuickBooks Online connector (2026-11-01, Run 7 branch)
+
+**Status: built against the documented API, not yet verified live.** The spec
+is explicit that this label is the honest one until a real end-to-end run has
+happened, and no Intuit developer app or sandbox company exists for this
+project yet. Per the run's credential rule the phase was finished as far as
+it can go without one, and the exact values the owner needs are listed in
+`docs/run7-report.md` and repeated at the end of this entry.
+
+### Verified before writing any code
+
+Searched and recorded in `docs/data-sources.md` (2026-11-02):
+
+- **Minor version 75** is pinned. Intuit retired versions 1-74 on 2025-08-01;
+  requests below 75 now receive 75's data regardless. A request that does not
+  say which contract it expects is a request that will break silently, so
+  every call carries `minorversion=75` and a test asserts it.
+- **Rate limits**: 500 requests/minute per realm, 10 concurrent per
+  app+realm, HTTP 429 with a documented 60-second wait. Client limiter spaces
+  calls 0.2 s apart and a 429 waits 60 s before one retry.
+- A third-party claim of a ~10,000/day cap could not be confirmed against
+  Intuit's own pages and is recorded as unverified rather than designed
+  around.
+
+### What it pulls, and what it honestly cannot
+
+Customers, items, invoices with their lines, credit memos, and the monthly
+ProfitAndLoss report. Materializes `invoice_lines.csv`, `customers.csv`,
+`items.csv` and `gl_totals.csv` (month, net sales, COGS - the input the Phase
+64 GL variance check already takes), with the mapping committed at
+`config/mappings/quickbooks_online.yaml`.
+
+Two data gaps are stated in the mapping next to the fields they affect:
+
+- **No unit cost.** QuickBooks invoice lines do not carry one. The connector
+  joins the item's `PurchaseCost` where the item declares it and leaves the
+  cell blank otherwise, so those lines report `cost_unavailable` and nothing
+  is invented. The mapping also says what the joined value *is*: a current
+  purchase cost, declared `cost_basis: standard`, not a transaction-time
+  cost. A number that looks like a cost but is not the cost of that sale is
+  worse than a blank.
+- **Credit memos are stored positive.** The connector writes the
+  revenue-effect sign (negative amount and quantity) so the mapping's
+  `sign_convention: natural` is an accurate declaration rather than a
+  convenient one, and says so in both files.
+
+Document keys are prefixed (`INV-130`, `CM-45`) because QuickBooks numbers
+invoices and credit memos in separate sequences and `DocNumber` may be blank
+or duplicated; line keys are `<prefix>-<txn>-<line>`.
+
+### Auth, incremental sync, money
+
+OAuth 2.0 authorization-code with refresh tokens. Intuit rotates the refresh
+token, so every grant response's newest token is written to a local cache
+file outside the repo and used ahead of the environment value - losing a
+rotation means re-authorizing by hand. `--authorize` runs the one-time
+consent against a localhost redirect and refuses a non-localhost one with
+the alternative named. A 401 refreshes once and retries.
+
+Incremental sync uses the Change Data Capture endpoint with a one-day
+re-fetch window; deleted invoices and credit memos arrive as tombstones that
+remove their lines. Items are always fetched in full: changed invoice lines
+need the purchase-cost map even when no item changed, and the item list is
+small next to transaction volume. Full sync paginates on `STARTPOSITION`.
+
+Every transport parses JSON with `parse_float=Decimal`. Money in this engine
+is exact, and a connector is the one place where a float would enter from
+outside.
+
+### Tests added
+
+`tests/test_quickbooks.py`, 11 offline tests against fixtures **built from
+the documented schema and labeled as such** in the module docstring, plus one
+`@pytest.mark.live` test (full sandbox sync, then an engine ingest) that
+skips cleanly when credentials are absent.
+
+The offline suite asserts the engine's output, not the connector's
+intermediate shapes: a full sync materializes three line rows, and
+`load_lines` under the committed mapping gives the sale at 10500 cents with
+unit cost 105000 at scale, the credit memo at **-2100** cents, and the
+service line with **no** cost. Then: CDC upserts and a deleted credit memo
+whose lines disappear, the re-fetch window actually applied, pagination
+following `STARTPOSITION` (3 calls at page size 1 for 2 customers), token
+rotation persisted and the planted client secret, refresh token, rotated
+token and access token absent from every byte under the state directory, a
+401 triggering exactly one refresh, a 429 backing off and succeeding, the
+P&L parser degrading to a warning when the report has no month columns or no
+income row, and `QBO_ENVIRONMENT=staging` refused.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_quickbooks.py` 11 passed (live test deselected).
+
+### Waiting on the owner
+
+`QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_REALM_ID` in `.env`, then either
+`margin-engine connect quickbooks_online --authorize` once (with
+`http://localhost:8723/callback` registered on the app) or `QBO_REFRESH_TOKEN`
+from Intuit's OAuth playground. After a successful live run: update
+`live_verification`, the README table and `docs/data-sources.md` with the
+date, and replace the documented-schema fixtures with recorded responses.

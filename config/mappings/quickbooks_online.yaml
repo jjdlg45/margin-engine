@@ -1,0 +1,72 @@
+# QuickBooks Online connector output (Run 7, Phase 92).
+#
+# These files are MATERIALIZED BY the quickbooks_online connector, so the
+# column names are fixed by src/margin_engine/connectors/quickbooks.py; this
+# mapping declares their business meaning for the engine. Endpoints, limits
+# and terms: docs/data-sources.md. Status: built against the documented API
+# (minorversion 75); live verification awaits the owner's Intuit sandbox.
+source_system: quickbooks_online
+lines_file: invoice_lines.csv
+decimal_separator: "."
+
+lines:
+  # LINE_ID = <INV|CM>-<TxnId>-<LineId>: stable per QuickBooks line.
+  source_line_key: {column: LINE_ID}
+  # INVOICE_ID would collide between invoice 42 and credit memo 42, so the
+  # connector prefixes the document type: INV-42 / CM-42. DocNumber is not
+  # used as the key because QuickBooks allows it to be blank or duplicated.
+  invoice_id: {column: TXN_KEY}
+  invoice_date: {column: TXN_DT, format: "%Y-%m-%d"}
+  customer_id: {column: CUSTOMER_ID}
+  item_id: {column: ITEM_ID}
+  quantity: {column: QTY}
+  # Line Amount from the document. QuickBooks stores credit-memo lines
+  # positive; the CONNECTOR writes the revenue-effect sign (credit memo
+  # lines negative), so `natural` is the accurate declaration here.
+  net_amount:
+    column: NET_AMOUNT
+    currency: line_currency
+    sign_convention: natural
+    discounts_embedded: true   # QBO line amounts are after any line discount
+  unit_price:
+    column: UNIT_PRICE
+    currency: line_currency
+    authoritative: false       # NET_AMOUNT is authoritative
+  # HONEST DATA GAP (spec Phase 92): QuickBooks invoice lines carry no unit
+  # cost. The connector joins the ITEM's purchase cost where one is declared;
+  # that is a current standard-like cost, not a transaction-time cost. Lines
+  # without it have a blank UNIT_COST and every cost-dependent metric reports
+  # them cost_unavailable; no cost is ever invented.
+  unit_cost:
+    column: UNIT_COST
+    currency: USD
+    cost_basis: standard
+    includes_inbound_freight: false
+    includes_duty: false
+    includes_vendor_rebates: false
+    per_uom: line_uom
+    missing_as: blank
+  transaction_type:
+    column: TXN_TYPE
+    code_map: {INV: sale, CM: credit}
+  currency: {column: CURRENCY}
+
+reference_tables:
+  customers:
+    file: customers.csv
+    columns:
+      customer_id: CUSTOMER_ID
+      customer_name: CUSTOMER_NAME
+  items:
+    file: items.csv
+    columns:
+      item_id: ITEM_ID
+      item_description: ITEM_NAME
+  # Monthly profit-and-loss totals for the GL variance check (Run 4, 27.3):
+  # Total Income and Total COGS per month from the ProfitAndLoss report.
+  gl_totals:
+    file: gl_totals.csv
+    columns:
+      month: MONTH
+      net_sales: NET_SALES
+      cogs: COGS

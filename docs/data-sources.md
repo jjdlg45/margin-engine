@@ -74,3 +74,29 @@ same cost shocks that identify the elasticity also move it. A selling-price
 series used as an instrument would be the channel the exclusion restriction
 has to rule out - and feeding competitors' prices into a pricing model is the
 antitrust concern itself, not a modelling nicety.
+
+## Intuit QuickBooks Online Accounting API (Run 7, Phase 92)
+
+| Item | Value |
+|---|---|
+| Docs | https://developer.intuit.com/app/developer/qbo/docs/get-started |
+| Base URLs | sandbox `https://sandbox-quickbooks.api.intuit.com`, production `https://quickbooks.api.intuit.com`; token endpoint `https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer` |
+| Auth | OAuth 2.0 authorization-code with refresh tokens; scope `com.intuit.quickbooks.accounting` (used read-only: queries and reports only). Intuit rotates refresh tokens; the connector persists the newest one in a local token cache (never committed, never in any output) |
+| API version | Minor version pinned to **75** - the only supported one since 2025-08-01, when versions 1-74 were retired (verified 2026-11-02 against Intuit's announcement and ecosystem notes: codat.io update 250219, python-quickbooks PR #381) |
+| Rate limits (verified 2026-11-02, developer.intuit.com/.../limits-and-throttles) | 500 requests/min per realm, 10 concurrent per app+realm; HTTP 429 with a 60 s wait advised. Client limiter: 0.2 s spacing, 429 handled with a 60 s wait and retry |
+| Terms | Intuit Developer terms; sandbox companies are free developer resources intended for integration testing |
+| Status | **Built against the documented API, not yet verified live** - live verification awaits the owner's Intuit developer app and sandbox company |
+| Fixtures | `tests/test_quickbooks.py` - documented-schema fixtures, labeled as such (to be replaced by recorded sandbox responses once credentials exist) |
+
+## HubSpot CRM v3 API (Run 7, Phase 93)
+
+| Item | Value |
+|---|---|
+| Docs | https://developers.hubspot.com/docs - CRM v3 objects (companies, deals, line items), pipelines, search |
+| Base URL | `https://api.hubapi.com` |
+| Auth | Private app token (Bearer), read-only scopes: `crm.objects.companies.read`, `crm.objects.deals.read`, `crm.objects.line_items.read`, `crm.objects.quotes.read` |
+| Rate limits (verified 2026-11-02, developers.hubspot.com usage guidelines) | private apps ~100 requests/10 s on Free/Starter (190 on Pro/Enterprise) plus daily caps by tier; 429 carries `Retry-After`. Client limiter: 0.15 s spacing, honors `Retry-After` |
+| Terms | HubSpot developer terms; free developer test accounts are intended for integration testing |
+| Status | **Built against the documented API, not yet verified live** - live verification awaits the owner's developer test account and private app token |
+| Fixtures | `tests/test_hubspot.py` - documented-schema fixtures, labeled as such |
+| Note | Won/lost is read from each pipeline's own stage metadata (`isClosed`, `probability`), never guessed from stage names; only closed-won/closed-lost deals become quote outcomes (open, stage-unknown, company-less, line-item-less deals are excluded with recorded reasons) |
