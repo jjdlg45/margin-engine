@@ -180,13 +180,38 @@ each got a regression test.
 
 ## Verification summary
 
-- Python: ruff, ruff format, mypy (strict, 103 files), full pytest
-  (per-phase results in the build log; final full-suite run before the last
-  commit).
-- Web: tsc, vitest, production build, static Playwright suite (axe, label
-  scanner, nav, size gates, snapshots incl. 4 new baselines), API-mode
-  Playwright suite 15/15 against the real BFF.
-- Fresh-clone verification before the final commit (build log).
+Per-phase results are in `docs/build-log.md`; these are the final numbers.
+
+**On this working tree**
+
+| Check | Result |
+|---|---|
+| `ruff check` / `ruff format` / `mypy src api` (strict) | 0 / 0 / 0 (103 source files) |
+| Full `pytest` | 956 passed, 11 deselected, exit 0 (19:36) |
+| `tsc --noEmit` / vitest / production build | 0 / 22 passed / 0 |
+| Static Playwright (`SKIP_SNAPSHOTS=1`) | 249 passed, 5 skipped, exit 0 |
+| Snapshot + axe suite (snapshots on) | 56 passed; no serious or critical axe violations; 4 new Connections baselines, 2 re-baselined for the card's longer setup text |
+| API-mode Playwright against the real BFF | 15/15, three consecutive runs after the one-worker fix |
+
+**Fresh clone of `run7`, CI's own steps** (the spec's "verify like CI")
+
+| Step | Result |
+|---|---|
+| `uv sync --frozen --all-groups` | exit 0 |
+| Full `pytest` | 957 passed, 11 deselected, exit 0 (19:48) at `be1c1af`; the only later code change is one added test, re-run in the clone at the final commit (16 passed) |
+| `margin-engine export-web --demo` | exit 0 |
+| `npm ci` | exit 0 |
+| `npm run gen-types` + `git diff --exit-code src/types/bundle.ts` | exit 0 - generated types are in sync with the schema |
+| `npm run build` / `npm test` | exit 0 / 22 passed |
+| `CI=true SKIP_SNAPSHOTS=1 npx playwright test` | 249 passed, 5 skipped, exit 0 |
+
+Opt-in live tests (`-m live`) are deselected everywhere and skip cleanly
+without credentials, so CI never needs a secret.
+
+Machine note: on this Windows machine the `mypy` and `uvicorn` console shims
+are blocked by Application Control (os error 4551); `python -m mypy` and
+`python -m uvicorn` work, and the API Playwright config now uses the module
+form so the suite starts on a locked-down machine.
 
 ## Waiting on the owner
 

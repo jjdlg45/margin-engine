@@ -7437,3 +7437,44 @@ Also in this commit: the Connections page throws `ApiError` rather than
 `Error`, so the query client's "never retry a 4xx" rule can see the status -
 a 403 "configuring connectors requires the admin role" and a 409 "a sync is
 already running" are answers to show the reader, not requests to repeat.
+
+## Run 7 — final verification, like CI, from a fresh clone (2026-11-02)
+
+The spec asks for CI's own steps against a clone, not against the working
+tree where everything was built. Clone of branch `run7`, nothing reused:
+
+| Step | Result |
+|---|---|
+| `uv sync --frozen --all-groups` | exit 0 (130 packages) |
+| Full `pytest` | **957 passed**, 11 deselected, exit 0 (1188 s) at `be1c1af` |
+| `pytest tests/test_filedrop.py` at the final code commit | 16 passed (the one file changed after the full run above) |
+| `margin-engine export-web --demo --out web/public/data` | exit 0 |
+| `npm ci` | exit 0 |
+| `npm run gen-types` then `git diff --exit-code src/types/bundle.ts` | **exit 0** - the generated TypeScript matches the schema, which is the gate that would have caught the bundle's new `connections` section going unregenerated |
+| `npm run build` | exit 0 |
+| `npm test` (vitest) | 22 passed |
+| `CI=true SKIP_SNAPSHOTS=1 npx playwright test` | **249 passed, 5 skipped**, exit 0 |
+
+And on this working tree, for the record: full pytest 956 passed exit 0;
+ruff, ruff format and `mypy src api` (strict, 103 files) all 0; the snapshot
+and axe suite 56 passed with no serious or critical violations; the API-mode
+suite 15/15 three times running.
+
+The opt-in `live` tests are deselected by default and skip cleanly without
+credentials, so CI never needs a secret - which is the point of the marker.
+
+### What this run leaves open
+
+- **QuickBooks Online and HubSpot are not verified live.** Their fixtures
+  encode the documented schemas and say so in the test modules. The owner
+  setup, the exact environment values, and what to update after a successful
+  live run are in `docs/run7-report.md`.
+- The `always_positive_with_type` sign convention remains declared in the
+  mapping schema and applied nowhere in the pipeline - noticed while writing
+  the QuickBooks mapping, logged rather than changed, which is why that
+  connector writes revenue-effect signs itself.
+- `RUN7.md` stays untracked (as Runs 5 and 6 did); its content is CLAUDE.md's
+  section "RUN 7".
+
+Final commit on `run7`. Not merged, not pushed - the owner pushes and opens
+the PR.
