@@ -6881,3 +6881,85 @@ Note on this machine: `mypy` and `uvicorn` console shims are blocked by
 Windows Application Control (os error 4551). `uv run python -m mypy` and
 `python -m uvicorn` run fine, and the Playwright API config now uses the
 module form so the suite starts on a locked-down machine.
+
+## Phase 91 — File-drop connector (2026-11-01, Run 7 branch)
+
+This is the connector that actually covers the systems a distributor runs.
+Nobody gives an outside tool API access to Infor CloudSuite, SAP, Epicor,
+NetSuite or a TMS; what they do is schedule an export to a folder or an SFTP
+site. So the file-drop connector is not the fallback - it is the primary
+path, and it is the one connector in this run that is **verified end to end**,
+because both of its sources can be stood up for real in a test.
+
+### Sources
+
+- A local or network **watched folder**. Accepted files move to `archive/`
+  beside the drop, rejected ones to `quarantine/` with the reason written
+  next to them.
+- **SFTP**, key-based auth only, no password auth. `known_hosts` is required
+  and an unknown host key is rejected - a connector that silently accepts
+  whatever answers on port 22 is not read-only in any sense worth having.
+  The connector never renames, moves or deletes anything on the server; the
+  downloaded copy is archived locally and deduplication relies on the
+  checksum ledger instead.
+
+### Pick-up rules
+
+- **Only complete files.** A `<name>.done` marker, or a size that has not
+  changed across a settle interval. A file still being written is reported
+  as such and waits for the next sync.
+- **Never twice.** Every accepted file's SHA-256 goes in a processed ledger;
+  identical bytes under a new filename are archived as a duplicate and not
+  reprocessed.
+- **Matched to a mapping, then validated.** `config/filedrop.yaml` holds the
+  rules: filename pattern -> mapping file + role (`lines` or
+  `reference:<table>`). A dropped file must parse under that mapping's own
+  declared input options and carry every column the mapping names for the
+  role, or it is quarantined with a message naming the missing columns and
+  the ones found. Rules are cross-checked against their mappings at load, so
+  a rule pointing at a reference table the mapping does not declare fails
+  immediately rather than at the first drop.
+- Accepted files are served **verbatim** under the filename the mapping
+  expects. The engine's own loader does the parsing; the connector does not
+  re-write a single byte, so there is no second interpretation of the data.
+
+### CLI
+
+`margin-engine connectors` lists each connector with what it provides, its
+verification status and any missing settings. `margin-engine connect <name>`
+syncs; `--check` verifies credentials and reachability; `--full-resync`
+ignores the cursor; `--authorize` runs a connector's one-time consent flow
+(Phase 92's, included here with the command).
+
+### Guide
+
+`docs/connecting-erp-file-drop.md`: the pattern (pick the data, pick the
+location, schedule the export, describe the files, run it), what the
+connector guarantees, and product notes for Infor, SAP, Epicor, NetSuite and
+TMSs written as general orientation. No click-paths are claimed - export
+scheduling lives in each product's admin tooling and varies by version, and
+nothing in that file was verified against a live instance.
+
+### Tests added
+
+`tests/test_filedrop.py`, 15 tests, and `tests/sftp_server.py` - a real
+paramiko SFTP server in-process over a loopback socket, with generated host
+and client keys, serving one folder read-only. No Docker, which is the point:
+the spec asked for a test server that runs on a developer machine.
+
+Watched folder: end to end, including `load_lines` on the materialized folder
+and a byte-identical check against the original export; an equivalence test
+that the frame from the connector's folder `.equals()` the frame from reading
+the export directly; incomplete-file wait, then pick-up once a `.done` marker
+appears; duplicate rejection; wrong-format and no-rule quarantine with their
+reason files asserted; a permission error leaving the file in place for the
+next sync (not quarantined - a lock is not a bad file). SFTP: the same end to
+end over the protocol, the remote file still present afterwards, the second
+sync refusing to reprocess it, remote permission-denied as a warning, and an
+empty `known_hosts` refusing the connection. Plus rules-validation errors.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_filedrop.py` + `tests/test_connector_framework.py` 30 passed.
+`margin-engine connectors` smoke-run against the real registry.
