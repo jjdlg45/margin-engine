@@ -7066,3 +7066,71 @@ income row, and `QBO_ENVIRONMENT=staging` refused.
 from Intuit's OAuth playground. After a successful live run: update
 `live_verification`, the README table and `docs/data-sources.md` with the
 date, and replace the documented-schema fixtures with recorded responses.
+
+## Phase 93 — HubSpot CRM connector (2026-11-02, Run 7 branch)
+
+**Status: built against the documented CRM v3 API, not yet verified live** -
+same reason and same honesty label as Phase 92; no HubSpot developer test
+account exists for this project yet.
+
+### Verified before use
+
+Recorded in `docs/data-sources.md` (2026-11-02): private apps get roughly
+100 requests per 10 seconds on free/starter tiers (190 on professional and
+enterprise) plus per-tier daily caps, and a 429 carries `Retry-After`. The
+client spaces calls 0.15 s apart - under the lowest tier - and honors
+`Retry-After` when it is sent. Read-only scopes only:
+`crm.objects.companies.read`, `.deals.read`, `.line_items.read`,
+`.quotes.read`.
+
+### Won and lost come from the pipeline, not from stage names
+
+A deal's outcome is read from each pipeline's own stage metadata -
+`isClosed` and `probability` - never from matching stage labels like
+"Closed won". Customers rename stages; a connector that guesses from labels
+produces win curves fitted on a string match.
+
+This matters because the output feeds Phase 77, which was explicit that only
+decided quotes are evidence. So: only closed-won and closed-lost deals become
+rows in `quotes.csv`, and every other deal is excluded **with its reason
+recorded** in a companion `quote_exclusions.csv` - `open`,
+`stage_not_recognized`, `no_company`, `no_line_items` - and counted in the
+sync warnings. A deal that is later decided stops being an exclusion
+(tombstone on the exclusions table), so the file never accumulates stale
+"open" rows. HubSpot line items carry one price, so there is no close price
+to report: the mapping documents that and the negotiation-gap analysis stays
+off rather than being fed a quoted price twice.
+
+Also materializes `customers.csv` (company id and name) for the display-name
+path. Incremental sync uses the deals search endpoint on
+`hs_lastmodifieddate` with the same one-day re-fetch window; archived deals
+and companies arrive as tombstones.
+
+### Tests added
+
+`tests/test_hubspot.py`, 5 offline tests on documented-schema fixtures
+(labeled as such) plus one `@pytest.mark.live` test that skips without a
+token: the full sync's three quote rows with their outcomes, prices and
+dates, and the four exclusions with the exact reason per deal; an
+incremental sync where an open deal closes as won (and leaves the exclusions
+table) while another deal is archived (and leaves quotes); `Retry-After`
+honored on 429; the check messages.
+
+The fifth is the one that matters most for "nothing downstream changes": it
+writes a tiny ERP world next to the connector's output, declares both files
+in one mapping's `reference_tables` (`quotes` and `customers`), and loads
+them through the engine's own `load_reference_table`. Prices in the fixture
+are `Decimal("12.50")` rather than floats, because that is what the real
+transport's `parse_float=Decimal` delivers, and a fixture that quietly says
+`12.5` would be testing a different connector than the one that ships.
+
+### Salesforce
+
+Noted in `docs/connectors.md` as following this pattern exactly (free
+Developer Edition, REST query API, read-only scopes) and deliberately not
+built in this run.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_hubspot.py` 5 passed (live test deselected).
