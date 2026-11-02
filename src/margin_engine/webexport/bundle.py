@@ -811,6 +811,24 @@ class ActionsSection(BaseModel):
     notes: list[str]
 
 
+class ConnectorCard(BaseModel):
+    """Run 7, Phase 94: one system connector, described for the static demo's
+    explanatory Connections page (no live state, no credentials)."""
+
+    name: str
+    system: str
+    description: str
+    produces: list[str]
+    scopes: list[str]
+    live_verification: str
+    setup: str
+
+
+class ConnectionsSection(BaseModel):
+    note: str
+    connectors: list[ConnectorCard]
+
+
 class WebBundle(BaseModel):
     bundle_version: str
     engine_version: str
@@ -841,3 +859,5 @@ class WebBundle(BaseModel):
     actions: ActionsSection
     actions_table: list[ActionRow]
     compliance: ComplianceSection | None = None
+    # Run 7, Phase 94: the explanatory Connections page for the static demo.
+    connections: ConnectionsSection

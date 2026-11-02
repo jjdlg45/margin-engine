@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from api.actions_routes import router as actions_router
 from api.audit import AuditLog
 from api.auth import AuthError, build_authenticator
+from api.connections_routes import router as connections_router
 from api.filters import paginate
 from api.load_routes import router as load_router
 from api.ratelimit import TokenBucketLimiter
@@ -98,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.audit = audit
     app.include_router(actions_router)
     app.include_router(load_router)
+    app.include_router(connections_router)
 
     @app.exception_handler(AuthError)
     async def _auth_error(_request: Request, exc: AuthError) -> Response:

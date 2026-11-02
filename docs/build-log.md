@@ -7209,3 +7209,88 @@ which fails on the positional insert and passes on `BY NAME`.
 `tests/test_actions_api.py` + `tests/test_actions.py` 25 passed.
 API-mode Playwright: the two actions-api failures and the load-data failure
 now pass (full suite result under Phase 94).
+
+## Phase 94 — Connections screen (2026-11-02, Run 7 branch)
+
+Two different pages behind one route, because the public demo and a real
+deployment have genuinely different jobs here.
+
+### API and local mode: live status and controls
+
+`api/connections_routes.py`, implementing four endpoints added to
+`docs/api/openapi.yaml`:
+
+- `GET /api/connections` - every registered connector with its system name,
+  description, what it provides, scopes, verification status, whether its
+  settings are in place (and if not, each missing setting **with what it is
+  for**), whether it is scheduled and at what interval, its last sync
+  summary, and its last failure.
+- `POST /api/connections/{name}/check` and `/sync` - the same code paths the
+  CLI and the scheduler use, run off the request thread. A sync failure
+  answers 409 with the connector's plain-English message; the previous good
+  sync stands.
+- `PUT /api/connections/{name}/schedule` - persisted interval override that
+  re-arms the scheduler's task, clamped to 60 s, and honest when the
+  connector is not in `MARGIN_API_CONNECTORS` ("stored, but no job runs
+  until it is enabled there").
+
+**Admin-only in production mode.** A new `admin` role extends Phase 82's
+set; local single-user mode does not gate (and the page says so, because
+identity there is not authentication). Production keeps rejecting
+client-supplied identity, so an `X-User` header buys nothing.
+
+### Static demo: an explanation, not disabled buttons
+
+A disabled "Sync now" on a static site is a lie about what the page is. The
+bundle gains a `connections` section built from the connector descriptions
+themselves (`webexport/build.py`, `ConnectionsSection`/`ConnectorCard`), so
+the public page explains what each connector does, what it provides, its
+verification status, and how to set it up - with a note that the demo is
+static and nothing is connected. Deterministic by construction: every field
+comes from `describe()` plus a setup text per connector.
+
+### The page
+
+`web/src/pages/ConnectionsPage.tsx`, in the Data nav group, picking its view
+from `dataSource`. Live cards show settings state, the last sync with per-file
+row counts, warnings and failures in plain English, and the three controls;
+idempotency surfaces as "no changes since the last one" rather than a silent
+no-op. Loading skeletons and error-with-retry come from the shared
+`QuerySection`, and the page uses the project's own tokens - no new colours.
+
+### Tests added
+
+`tests/test_connections_api.py`, 8 tests: the four routes present in the
+OpenAPI spec and responses validated against its schemas; local-mode listing
+with all three connectors and their verification text; **a real file-drop
+sync driven through the API** against temp folders, then an idempotent second
+sync, then the listing showing the counts; unknown connector 404 on all three
+verbs; a configuration failure as 409 naming the missing setting; schedule
+validation, clamping and persistence; and production mode refusing anonymous
+(401), refusing an analyst (403, "requires the admin role"), allowing an
+admin, and refusing a spoofed `X-User` (400).
+
+`web/e2e-api/connections.spec.ts`: the page in API-mode navigation; the
+file-drop connector checked, synced (asserting `invoice_lines.csv: 2 rows (2
+new or changed)` on screen), re-synced to the idempotency message, and
+rescheduled; HubSpot showing its missing token and a "Not ready" check. The
+API Playwright config seeds fixed e2e drop folders for it, and now starts the
+server as `python -m uvicorn` so it runs on a machine whose console shims are
+blocked.
+
+Static suite updated where a new page must be registered rather than merely
+work: `labels.spec.ts` ROUTES (plus allowlist entries for canonical file
+names and scope strings, which are intentional technical terms),
+`quality.spec.ts` ROUTES, `nav.spec.ts` link list, and `livedata.spec.ts`
+APP_FILES so `connections.json` is held to the 1 MB per-file gate.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (103 files, strict).
+`tests/test_connections_api.py` 8 passed. `npx tsc --noEmit` 0; vitest 22
+passed; `npm run build` 0. Static Playwright: nav + labels + livedata 54
+passed; `quality.spec.ts -g connections` 4 passed with **axe reporting no
+serious or critical violations** and four new snapshot baselines recorded
+(light and dark, desktop and mobile). API-mode Playwright: **15 passed**,
+whole suite, including the three previously failing tests fixed in the
+preceding commit.

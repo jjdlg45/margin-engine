@@ -13,8 +13,10 @@ export default defineConfig({
   },
   webServer: [
     {
+      // python -m uvicorn: locked-down Windows machines (Smart App Control)
+      // can block the uvicorn exe shim while the module runs fine.
       command:
-        "cd .. && uv run uvicorn api.main:app --host 127.0.0.1 --port 8321",
+        "cd .. && uv run python -m uvicorn api.main:app --host 127.0.0.1 --port 8321",
       url: "http://127.0.0.1:8321/api/health",
       reuseExistingServer: true,
       timeout: 120_000,
@@ -36,6 +38,12 @@ export default defineConfig({
         // next run is hermetic regardless.
         MARGIN_API_DB: ".api_state/e2e-api.duckdb",
         MARGIN_API_UPLOADS_DIR: ".api_state/e2e-uploads",
+        // Connections (Run 7, Phase 94): the file-drop connector against
+        // fixed e2e folders the spec seeds and cleans (connections.spec.ts).
+        MARGIN_FILEDROP_DIR: ".api_state/e2e-filedrop/drop",
+        MARGIN_FILEDROP_WORK: ".api_state/e2e-filedrop/work",
+        MARGIN_FILEDROP_SETTLE_SECONDS: "0",
+        MARGIN_API_CONNECTORS_DIR: ".api_state/e2e-filedrop/connectors",
       },
     },
     {

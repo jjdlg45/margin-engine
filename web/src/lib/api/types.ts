@@ -147,6 +147,22 @@ export interface MethodologyData {
   manifest: ManifestInfo;
 }
 
+/** Run 7, Phase 94: the static demo's explanatory Connections page. */
+export interface ConnectorCard {
+  name: string;
+  system: string;
+  description: string;
+  produces: string[];
+  scopes: string[];
+  live_verification: string;
+  setup: string;
+}
+
+export interface ConnectionsData {
+  note: string;
+  connectors: ConnectorCard[];
+}
+
 export interface PageDataMap {
   overview: OverviewData;
   // The actions page carries the Robinson-Patman review flags beside the
@@ -161,6 +177,7 @@ export interface PageDataMap {
   scenarios: ScenariosData;
   methodology: MethodologyData;
   modules: OptionalModules;
+  connections: ConnectionsData;
   dispersion: DispersionSection; // reserved; not currently routed
 }
 

@@ -1173,6 +1173,77 @@
    "title": "ComplianceSection",
    "type": "object"
   },
+  "ConnectionsSection": {
+   "properties": {
+    "connectors": {
+     "items": {
+      "$ref": "#/$defs/ConnectorCard"
+     },
+     "title": "Connectors",
+     "type": "array"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    }
+   },
+   "required": [
+    "note",
+    "connectors"
+   ],
+   "title": "ConnectionsSection",
+   "type": "object"
+  },
+  "ConnectorCard": {
+   "description": "Run 7, Phase 94: one system connector, described for the static demo's\nexplanatory Connections page (no live state, no credentials).",
+   "properties": {
+    "description": {
+     "title": "Description",
+     "type": "string"
+    },
+    "live_verification": {
+     "title": "Live Verification",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "produces": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Produces",
+     "type": "array"
+    },
+    "scopes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Scopes",
+     "type": "array"
+    },
+    "setup": {
+     "title": "Setup",
+     "type": "string"
+    },
+    "system": {
+     "title": "System",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "system",
+    "description",
+    "produces",
+    "scopes",
+    "live_verification",
+    "setup"
+   ],
+   "title": "ConnectorCard",
+   "type": "object"
+  },
   "CrossPriceEstimate": {
    "properties": {
     "conditional_effective_f": {
@@ -4889,6 +4960,9 @@
    ],
    "default": null
   },
+  "connections": {
+   "$ref": "#/$defs/ConnectionsSection"
+  },
   "data_label": {
    "title": "Data Label",
    "type": "string"
@@ -5044,7 +5118,8 @@
   "validation_results",
   "manifest",
   "actions",
-  "actions_table"
+  "actions_table",
+  "connections"
  ],
  "title": "WebBundle",
  "type": "object"

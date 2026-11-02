@@ -34,6 +34,9 @@ const RecommendedPage = lazy(() =>
 const LoadDataPage = lazy(() =>
   import("./pages/LoadDataPage").then((m) => ({ default: m.LoadDataPage })),
 );
+const ConnectionsPage = lazy(() =>
+  import("./pages/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage })),
+);
 
 const PAGES = [
   { path: "/recommended", label: "Recommended actions", el: <RecommendedPage /> },
@@ -47,6 +50,7 @@ const PAGES = [
   { path: "/scenarios", label: "Scenarios", el: <ScenariosPage /> },
   { path: "/modules", label: "Optional modules", el: <ModulesPage /> },
   { path: "/methodology", label: "Data & methodology", el: <MethodologyPage /> },
+  { path: "/connections", label: "Connections", el: <ConnectionsPage /> },
   { path: "/guide", label: "Use it with your own data", el: <GuidePage /> },
   // API/local mode only: the static demo has no server to upload to, so the
   // public site never lists or routes this page.
@@ -84,6 +88,7 @@ const NAV_GROUPS: {
     label: "Data",
     items: [
       { path: "/methodology", label: "Data & methodology" },
+      { path: "/connections", label: "Connections" },
       { path: "/guide", label: "Use it with your own data" },
       ...(dataSource === "http" ? [{ path: "/load", label: "Load your data" }] : []),
     ],
