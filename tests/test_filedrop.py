@@ -18,7 +18,7 @@ from margin_engine.connectors.base import ConnectorError
 from margin_engine.connectors.credentials import CredentialStore
 from margin_engine.connectors.filedrop import FileDropConnector, _WatchedFolder, load_rules
 from margin_engine.connectors.framework import SyncStore, run_sync
-from margin_engine.ingest.loader import load_lines
+from margin_engine.ingest.loader import load_lines, load_reference_table
 from margin_engine.ingest.mapping import load_mapping
 from tests.fixtures.builder import FixtureWorld
 from tests.sftp_server import InProcessSftpServer
@@ -310,3 +310,36 @@ def test_materialized_frame_matches_direct_read(drop: Path, tmp_path: Path) -> N
     via_connector = load_lines(sync_dir, mapping)
     direct = load_lines(staging, mapping)
     assert via_connector.equals(direct)
+
+
+def test_any_declared_reference_table_can_be_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 7, Phase 90's canonical-output list includes freight and receipts,
+    not just lines and customers. Nothing in the connector is special-cased
+    per table: a rule may name ANY reference table its mapping declares, and
+    the engine's own reference loader reads the result."""
+    watch = tmp_path / "drop2"
+    watch.mkdir()
+    monkeypatch.setenv("MARGIN_FILEDROP_DIR", str(watch))
+    monkeypatch.setenv("MARGIN_FILEDROP_WORK", str(tmp_path / "work2"))
+    monkeypatch.setenv("MARGIN_FILEDROP_SETTLE_SECONDS", "0")
+    rules = tmp_path / "freight_rules.yaml"
+    rules.write_text(
+        f'rules:\n  - pattern: "freight*.csv"\n    mapping: {MAPPING}\n'
+        f'    role: "reference:freight_log"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MARGIN_FILEDROP_RULES", str(rules))
+
+    mapping = load_mapping(MAPPING)
+    spec = mapping.reference_tables["freight_log"]
+    header = ",".join(spec.columns.values())
+    (watch / "freight_20260101.csv").write_text(f"{header}\nORD1,25.00\n", encoding="utf-8")
+
+    manifest = run_sync(_connector(), tmp_path / "state2")
+    assert manifest["records"]["freight_log.csv"]["rows"] == 1
+    sync_dir = SyncStore(tmp_path / "state2", "filedrop").latest_dir()
+    assert sync_dir is not None
+    freight = load_reference_table(sync_dir, mapping, "freight_log")
+    assert freight is not None and freight.height == 1
