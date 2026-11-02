@@ -6766,3 +6766,118 @@ already past review.
 
 Python engine code is untouched by this follow-up; the two Python files were
 re-run because they assert the bundle contract the UI reads.
+
+## Phase 90 — Connector framework (2026-11-01, Run 7 branch)
+
+Run 7 starts from a single constraint: the engine already knows how to read a
+company's data. It reads line-level exports through a mapping that declares
+business meaning, reconciles them, and refuses to guess. A connector must
+not become a second way in. So a connector here is not an ingest path - it is
+a thing that **produces the same canonical files a person would have exported
+by hand**, into a folder, with a manifest. The existing ingest path then reads
+that folder unchanged, and mapping, validation, reconciliation and every test
+stay exactly as they are.
+
+### The interface
+
+`src/margin_engine/connectors/framework.py`. A `SystemConnector` implements
+three methods and the framework owns everything else:
+
+- `describe()` -> `ConnectorInfo`: name, version, system, what it produces,
+  required settings (each marked secret or optional), read-only scopes, and
+  the run's honesty field - `live_verification`, which either names the date
+  of a real end-to-end run or says "built against the documented API, not yet
+  verified live".
+- `check()` -> `CheckResult`: credentials and reachability in plain English.
+- `sync(since)` -> `SyncBatch`: records new or changed since the cursor
+  (`None` = everything), as either per-table upserts with declared key
+  columns and optional tombstones, or as `raw_files` - validated source files
+  served verbatim, which is what the file-drop connector needs and what keeps
+  a dropped export byte-identical on the way through.
+
+The spec listed `materialize()` as a fourth connector method. It is a
+framework function (`run_sync`) instead, deliberately: materialization is
+where the invariants live, and every connector must get them identically
+rather than re-implement them. A connector that could write its own files
+could also write a half-finished sync.
+
+### What the framework guarantees
+
+- **Canonical output only.** Per-sync folder
+  `.api_state/connectors/<name>/syncs/<sync-id>/`, holding the CSVs plus
+  `sync_manifest.json`.
+- **Incremental, idempotent.** A cursor per connector in `cursor.json`;
+  merged state per table in Parquet; upsert-by-key. A re-run whose content
+  hashes identically keeps the previous sync folder and only advances the
+  cursor - so "sync now" twice does not create two sync ids for one state of
+  the world. `--full-resync` ignores the cursor and rebuilds from nothing.
+- **Late edits and deletions, explicitly.** Connectors widen `since` by their
+  own re-fetch window (QuickBooks: one day), which is safe precisely because
+  the merge is an upsert. Tombstones delete by key, or by any column subset
+  the table has - so one tombstone for a deleted invoice removes every line
+  of it, which is what the CDC endpoints actually hand you.
+- **Partial failure leaves the previous good sync.** Staging-then-swap for
+  the sync folder, the table state and the raw-file state; the cursor moves
+  last. A connector that raises mid-fetch leaves cursor, state and the last
+  good folder untouched, and no `.staging-*` directory behind.
+- **The manifest, and the run that used it.** Connector name and version,
+  framework version, source, window, cursor used and next, record counts per
+  object (rows, new-or-changed, deleted), a checksum per file, warnings, and
+  the content hash. `manifest/run_manifest.py` gains `source_sync`: when a
+  run's `--data` folder carries a `sync_manifest.json`, the run manifest
+  links it, so a result months later names the sync that fed it.
+- **No credential in any output.** Secret setting values are scrubbed out of
+  warnings, and a connector that manages to put one in its manifest aborts
+  the sync before anything is written.
+
+### Credentials
+
+`connectors/credentials.py`. Resolution order: process environment, then a
+local `.env` (already gitignored), then - in production mode - a Fernet
+keystore encrypted at rest with the key from `MARGIN_CONNECTOR_KEY`. DuckDB
+has no at-rest encryption of its own and connector credentials are the one
+thing in this system worth stealing, so they do not go in it. `missing()`
+and `missing_message()` produce the stop-and-ask text the spec asks for:
+every absent setting named with what it is for, and the reminder not to
+commit it.
+
+### Scheduling
+
+`MARGIN_API_CONNECTORS="filedrop:900,quickbooks_online:86400"` adds one job
+per connector to the live-mode scheduler (`api/refresh.py`), with intervals
+clamped to 60 s. Manual "run now" and the scheduled tick share
+`sync_connector`, which holds a per-connector lock: a second caller is
+refused in plain English rather than racing the first. The schedule-override
+plumbing (`set_schedule`, re-arming the task) lands in this file too though
+it is Phase 94's feature - splitting one method out of one module across two
+commits would have cost more than it explained.
+
+Dependency and test-marker changes for the whole run are in this commit as
+well: `cryptography` (keystore), `paramiko` + `types-paramiko` (Phase 91
+SFTP), and the `live` marker, deselected by default, that Phases 92 and 93
+hang their opt-in tests on.
+
+### Tests added
+
+`tests/test_connector_framework.py`, 15 tests, all against a fake connector
+whose source system is an in-memory list - the contract, not a service:
+manifest completeness; cursor advance and an incremental sync that sees only
+what changed while state keeps everything; idempotent re-run (one sync folder,
+not two); partial-failure rollback (cursor unmoved, previous folder intact,
+no staging left); tombstones; full resync; the run manifest's link; `.env`
+parsing; credential resolution order; the missing-settings message; keystore
+round-trip with the secret absent from the file's bytes; a wrong key failing
+with a plain message; the scheduler's spec parsing. One test plants a
+credential and asserts it appears in none of the bytes the framework wrote.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (100 files, strict).
+`tests/test_connector_framework.py` 15 passed. Full pytest: **915 passed, 9
+deselected, exit 0** (2308 s), run as a background job per the memory rule;
+3.4 GB free at launch, no excursion.
+
+Note on this machine: `mypy` and `uvicorn` console shims are blocked by
+Windows Application Control (os error 4551). `uv run python -m mypy` and
+`python -m uvicorn` run fine, and the Playwright API config now uses the
+module form so the suite starts on a locked-down machine.

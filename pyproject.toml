@@ -20,6 +20,7 @@ dependencies = [
     "jinja2>=3.1",
     "numpy>=1.26",
     "openpyxl>=3.1.5",
+    "paramiko>=5.1.0",
 ]
 
 [project.scripts]
@@ -30,6 +31,8 @@ api = [
     "fastapi>=0.159.1",
     "httpx>=0.28.1",
     "uvicorn>=0.54.0",
+    # Run 7, Phase 90: encrypted-at-rest connector keystore (production mode).
+    "cryptography>=43.0",
 ]
 dev = [
     "ruff>=0.8",
@@ -42,6 +45,7 @@ dev = [
     "pandas-stubs>=3.0.5.260914",
     "jsonschema>=4.26.0",
     "types-openpyxl>=3.1.5.20261017",
+    "types-paramiko>=5.1.0.20261030",
 ]
 
 [build-system]
@@ -99,11 +103,12 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -m 'not slow and not network and not memory_heavy'"
+addopts = "-q -m 'not slow and not network and not memory_heavy and not live'"
 markers = [
     "slow: full-tier scenario matrix and other long runs (run explicitly with -m slow)",
     "network: tests that make live external calls (everything else passes offline)",
     "memory_heavy: needs more RAM than a 14 GB developer machine can spare; run in CI (-m memory_heavy)",
+    "live: Run 7 connector tests against a real service/sandbox; opt-in (-m live), skip cleanly without credentials",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pandera.*",
