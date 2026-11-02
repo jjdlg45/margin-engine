@@ -10,7 +10,6 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { QuerySection } from "../components/Async";
-import { EntityLabel } from "../components/EntityLabel";
 import { EntityCombobox } from "../components/filters/Combobox";
 import { FilterBar } from "../components/filters/FilterBar";
 import { MultiSelect } from "../components/filters/MultiSelect";
@@ -22,6 +21,7 @@ import type { ActionsSection } from "../types/bundle";
 import type { ActionRow } from "../types/bundle";
 import { ChipDescriptor, rangeChipLabel, useFilterParams } from "../lib/filters";
 import { dollars, dollarsShort, count, num, pct } from "../lib/format";
+import { actionHeadline } from "../lib/actionTitle";
 import { useLabels } from "../lib/labels";
 import {
   useActionOutcomes,
@@ -149,11 +149,30 @@ function ProposePanel() {
   );
 }
 
+type LargestChange = {
+  action_id: string;
+  customer_id: string | null;
+  item_id: string | null;
+  current_price_cents: number | null;
+  proposed_price_cents: number | null;
+  change_pct: number | null;
+};
+
 function ExportButton() {
   const [user] = useCurrentUser();
   const [summary, setSummary] = useState<string | null>(null);
+  const [largest, setLargest] = useState<LargestChange[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Names for the preview's largest changes: the summary rows carry IDs only.
+  const names = useTableQuery("actions", { page: 1, page_size: 5000, filters: {} });
   if (dataClient.actions.readOnly) return null;
+  const nameOf = (kind: "customer" | "item", id: string | null): string | null => {
+    if (!id) return null;
+    const row = (names.data?.items as ActionRow[] | undefined)?.find((x) =>
+      kind === "customer" ? x.customer_id === id : x.item_id === id,
+    );
+    return (kind === "customer" ? row?.customer_name : row?.item_name) ?? id;
+  };
   const run = async (dryRun: boolean) => {
     if (!user) {
       setError("Choose a working identity first.");
@@ -162,12 +181,13 @@ function ExportButton() {
     setError(null);
     try {
       const res = await dataClient.actions.priceExport(user, dryRun);
-      const s = res.summary as { n_changes?: number };
+      const s = res.summary as { n_changes?: number; largest_changes?: LargestChange[] };
       setSummary(
         dryRun
           ? `Preview: ${s.n_changes ?? 0} price changes would export.`
           : `Exported ${s.n_changes ?? 0} price changes; ${res.n_transitioned} moved to exported.`,
       );
+      setLargest(dryRun ? (s.largest_changes ?? []) : []);
       if (!dryRun) {
         const blob = new Blob([res.csv], { type: "text/csv" });
         const a = document.createElement("a");
@@ -197,6 +217,20 @@ function ExportButton() {
           {summary}
         </span>
       )}
+      {largest.length > 0 && (
+        <ul className="m-0 w-full list-none p-0 text-caption secondary" data-testid="export-largest">
+          {largest.map((c) => (
+            <li key={c.action_id}>
+              Largest: {nameOf("customer", c.customer_id)}
+              {c.item_id ? `, ${nameOf("item", c.item_id)}` : ""} —{" "}
+              {c.change_pct !== null ? `+${c.change_pct.toFixed(1)}%` : "change"}
+              {c.proposed_price_cents !== null && c.proposed_price_cents !== undefined
+                ? ` to ${dollars(c.proposed_price_cents)}`
+                : ""}
+            </li>
+          ))}
+        </ul>
+      )}
       {error && (
         <span className="text-caption text-amber" role="alert">
           {error}
@@ -206,27 +240,14 @@ function ExportButton() {
   );
 }
 
-/** Linked action title: type + entities when the action targets a pair or a
- * customer, otherwise the generated title. Shared by the desktop table and
- * the compact card list so both read identically. */
+/** Linked action title: the shared headline - names first, the size of a
+ * price move stated, IDs kept for the detail page. Shared by the desktop
+ * table and the compact card list so both read identically. */
 function ActionTitle({ a }: { a: ActionRow }) {
   const labels = useLabels();
   return (
     <Link to={`/actions/${a.action_id}`} className="font-medium">
-      {a.customer_id ? (
-        <>
-          {labels(a.action_type).label}:{" "}
-          <EntityLabel name={a.customer_name} id={a.customer_id} />
-          {a.item_id && (
-            <>
-              {" / "}
-              <EntityLabel name={a.item_name} id={a.item_id} />
-            </>
-          )}
-        </>
-      ) : (
-        a.title
-      )}
+      {actionHeadline(a, labels(a.action_type).label)}
     </Link>
   );
 }
@@ -258,7 +279,8 @@ function QueueCards({ items }: { items: ActionRow[] }) {
             <span className="mt-2 flex flex-wrap items-center gap-2">
               <StatusChip status={a.action_type} />
               <StatusChip status={a.status} />
-              <StatusChip status={a.evidence_status ?? "insufficient_data"} />
+              <StatusChip status={a.verdict ?? "upside_only"} />
+              {a.staged_step && <StatusChip status="staged_first_step" />}
               {a.compliance_flags && <StatusChip status="rp_review_flag" />}
             </span>
             <span className="mt-1.5 block text-caption secondary">
@@ -412,7 +434,10 @@ function Queue({ page }: { page: ActionsSection }) {
     () => [
       {
         header: "Action",
-        accessorKey: "title",
+        // Sorted by what the column SHOWS (the names-first headline), not by
+        // the stored title with its IDs.
+        accessorFn: (a: ActionRow) => actionHeadline(a, labels(a.action_type).label),
+        id: "title",
         meta: { left: true },
         cell: (c) => (
           <span className="left block min-w-[16rem]">
@@ -446,9 +471,14 @@ function Queue({ page }: { page: ActionsSection }) {
         cell: (c) => labels(c.row.original.priority).label,
       },
       {
-        header: "Evidence",
-        accessorKey: "evidence_status",
-        cell: (c) => <StatusChip status={c.row.original.evidence_status ?? "insufficient_data"} />,
+        header: "How sure",
+        accessorKey: "verdict",
+        cell: (c) => (
+          <span className="flex flex-wrap items-center gap-1">
+            <StatusChip status={c.row.original.verdict ?? "upside_only"} />
+            {c.row.original.staged_step && <StatusChip status="staged_first_step" />}
+          </span>
+        ),
       },
       {
         header: "Expected impact",

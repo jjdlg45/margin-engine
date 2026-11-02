@@ -77,6 +77,64 @@ def guidance_explanation(row: dict[str, Any]) -> str:
     )
 
 
+def _pct(x: float) -> str:
+    """A move as people say it: +4%, not +0.0404."""
+    return f"{x * 100:+.0f}%" if abs(x) >= 0.005 else f"{x * 100:+.1f}%"
+
+
+def opportunity_decision(row: dict[str, Any]) -> str:
+    """The decision in one sentence, leading the row. Built from the record's
+    own verdict and staged step, so the sentence can never promise more than
+    the figures beside it."""
+    verdict = row.get("verdict") or "upside_only"
+    cur = row.get("current_invoice_price_cents")
+    prop = row.get("proposed_invoice_price_cents")
+    full_pct = (float(prop) / float(cur) - 1.0) if cur and prop else None
+    step_pct = row.get("step_move_pct")
+    if verdict == "too_little_evidence":
+        return (
+            "Look before acting: this gap cannot be sized with confidence "
+            f"({(row.get('verdict_reason') or 'too little evidence')})."
+        )
+    if step_pct is not None and verdict != "forecast_available":
+        return (
+            f"Raise this customer's price on this item; start with {_pct(float(step_pct))} "
+            "- step 1 of the move to target."
+        )
+    if verdict == "forecast_available" and full_pct is not None:
+        return f"Raise this customer's price on this item to the target ({_pct(full_pct)})."
+    if full_pct is not None:
+        return (
+            f"Consider raising this customer's price toward the target ({_pct(full_pct)}); "
+            "no volume forecast supports the move."
+        )
+    return "Close the gap to the proposed pocket price."
+
+
+def opportunity_size(row: dict[str, Any]) -> str:
+    """How big, stated so the figure cannot be read as more than it is."""
+    verdict = row.get("verdict") or "upside_only"
+    gross = row.get("gross_price_opportunity_cents")
+    expected = row.get("expected_contribution_change_cents")
+    expected_gp = row.get("expected_pocket_gross_profit_change_cents")
+    step_pct = row.get("step_move_pct")
+    step_gp = row.get("step_expected_pocket_gross_profit_change_cents")
+    step_contrib = row.get("step_expected_contribution_change_cents")
+    if verdict == "forecast_available":
+        best = expected if expected is not None else expected_gp
+        if best is not None:
+            return f"{_dollars(best)} expected change, allowing for customers buying less."
+    if step_pct is not None and (step_contrib is not None or step_gp is not None):
+        at_step = step_contrib if step_contrib is not None else step_gp
+        return (
+            f"{_dollars(at_step)} expected at the first step; up to {_dollars(gross)} "
+            f"if no customers react; no forecast beyond {_pct(float(step_pct))}."
+        )
+    if verdict == "too_little_evidence":
+        return f"Gap of {_dollars(gross)}; too little evidence to size a move."
+    return f"Up to {_dollars(gross)} if every customer keeps buying the same."
+
+
 def opportunity_summary(row: dict[str, Any]) -> str:
     """One short, row-specific sentence stating what DRIVES the gap - the
     price position vs the proposed target - not the dollar figures already

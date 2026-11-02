@@ -50,7 +50,7 @@ Six stops in the [live demo](https://jjdlg45.github.io/margin-engine/). Every fi
 
 ![Overview](docs/images/overview.png)
 
-The headline is the reconciliation, not a KPI: **every source dollar reconciled or explained**. Underneath it, the price waterfall is the signature visual, data coverage says what share of lines each metric could use, and the key findings link to the page that proves them.
+The headline is the reconciliation, not a KPI: **every source dollar reconciled or explained**. Underneath it, the price waterfall is the signature visual, data coverage says what share of lines each metric could use, and the key findings link to the page that proves them. A start-here card leads to **Recommended actions**: every open action ranked by how sure the engine is and then by expected impact, so the first click answers "what should I do" rather than "what data exists". The sidebar keeps the decision pages in front; the statistical machinery sits under Advanced analysis, present but second.
 
 ### 2. Waterfall — where the money goes between list and contribution
 
@@ -72,6 +72,8 @@ The explanation under the chart says what the band is *not*: a historical positi
 
 **Observed leakage ($3.93M)** is an accounting fact: reconciled dollars that left between list and pocket. **Gross price opportunity ($414k)** is the gap to the proposed price at unchanged volume — a ceiling, not a forecast. **Expected contribution change ($12k)** is the only figure that models a volume response, and it counts only records whose elasticity is causal-supported and whose proposed move sits inside the price range the instruments actually identified.
 
+Each row leads with the decision in one sentence — *"Raise this customer's price on this item; start with +3% — step 1 of the move to target"* — then the size with its own caveat attached, then one verdict chip saying how sure. The evidence status and volume treatment are still there, one click away under Full explanation.
+
 They are never added together. The distance between $414k and $12k is the honest gap between "what this is worth if nothing moves" and "what there is evidence will happen".
 
 ### 5. A scenario — a cost increase, and how much of it you can pass through
@@ -86,7 +88,7 @@ Pick a scope and a pass-through level. The slider snaps between points the engin
 
 Findings become reviewable actions with an owner, a due date, an evidence status and an expected impact at the right opportunity level. Try the loop in the demo sandbox (your changes stay in your browser; there is a Reset demo button):
 
-1. **Propose an action** — guardrails apply as they would live: nothing below the binding floor, contract-protected pairs blocked with the reason shown.
+1. **Propose an action** — guardrails apply as they would live: nothing below the binding floor, contract-protected pairs blocked with the reason shown. Where the full move to target reaches beyond the tested price range, the generated action proposes **Step 1 of the move to target** — the largest move the data can forecast — with the unchanged full target in its rationale.
 2. **Switch identity** with the "Working as" selector and **approve** it. An approver cannot approve their own proposal, and approving a price-discrimination review flag requires a written justification.
 3. **Export approved prices** — an ERP-importable price file carrying effective date, previous price, new price, UOM and the approval id. Re-exporting rewrites identical bytes.
 
@@ -99,6 +101,22 @@ Each action shows where it stands — proposed, under review, approved, exported
 ## What it can and can't tell you
 
 Every model output carries an evidence status, and the status decides what the engine will do with the number.
+
+Three verdicts lead every opportunity and action table - the technical
+statuses stay one click away on the row:
+
+| Verdict | Meaning |
+|---|---|
+| **Forecast available** | The price response passed every check and the move sits inside the tested range; the figure models customers buying less |
+| **Upside only: no volume forecast** | The gap is real, but the figure is what the move is worth *if no customers react* - a ceiling, not a forecast - with a one-line reason |
+| **Too little evidence** | Missing cost or too little data; the gap is a prompt to look, not a number to act on |
+
+Where the full move to target is beyond the tested range but a smaller move
+is inside it, the engine proposes **Step 1 of the move to target**: the
+largest move it can forecast, with its expected change, the full target
+unchanged and the remainder honestly unforecast.
+
+Underneath the verdicts, the technical statuses:
 
 | Status | In plain English | What the engine does with it |
 |---|---|---|

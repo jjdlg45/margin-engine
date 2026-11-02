@@ -436,6 +436,18 @@
      ],
      "title": "Floor Price Cents"
     },
+    "full_target_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Full Target Price Cents"
+    },
     "guidance_status": {
      "anyOf": [
       {
@@ -566,6 +578,11 @@
      ],
      "title": "Segment"
     },
+    "staged_step": {
+     "default": false,
+     "title": "Staged Step",
+     "type": "boolean"
+    },
     "status": {
      "title": "Status",
      "type": "string"
@@ -584,6 +601,11 @@
       }
      ],
      "title": "Uom"
+    },
+    "verdict": {
+     "default": "upside_only",
+     "title": "Verdict",
+     "type": "string"
     },
     "volume_treatment": {
      "anyOf": [
@@ -2081,6 +2103,12 @@
      "default": null,
      "title": "Customer Name"
     },
+    "decision": {
+     "default": "",
+     "description": "The decision in one sentence; leads the row",
+     "title": "Decision",
+     "type": "string"
+    },
     "deduction_treatment": {
      "default": "flat_rate_exact",
      "title": "Deduction Treatment",
@@ -2180,10 +2208,81 @@
      ],
      "title": "Segment"
     },
+    "size_line": {
+     "default": "",
+     "description": "How big, with its own caveat attached",
+     "title": "Size Line",
+     "type": "string"
+    },
+    "step_expected_contribution_change_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Step Expected Contribution Change Cents"
+    },
+    "step_expected_pocket_gross_profit_change_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Step Expected Pocket Gross Profit Change Cents"
+    },
+    "step_move_pct": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Step Move Pct"
+    },
+    "step_price_cents": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Step Price Cents"
+    },
     "summary": {
      "description": "One short row-specific sentence for the table",
      "title": "Summary",
      "type": "string"
+    },
+    "verdict": {
+     "default": "upside_only",
+     "title": "Verdict",
+     "type": "string"
+    },
+    "verdict_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Verdict Reason"
     },
     "volume_treatment": {
      "title": "Volume Treatment",

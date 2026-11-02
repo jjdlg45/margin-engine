@@ -414,6 +414,19 @@ class OpportunityRecord(BaseModel):
     pct_below_target: float | None = Field(
         default=None, description="(target - current) / target, from the pair's guidance"
     )
+    # The verdict (ux/decision-flow): one value saying what a reader may do
+    # with the row, derived in the engine. The technical statuses above stay
+    # for the expandable detail; nobody has to combine them to read the table.
+    verdict: str = "upside_only"
+    verdict_reason: str | None = None
+    # The staged first step: the largest move inside the identified price
+    # range, with its own forecast, on rows whose full move has none.
+    step_price_cents: int | None = None
+    step_move_pct: float | None = None
+    step_expected_pocket_gross_profit_change_cents: int | None = None
+    step_expected_contribution_change_cents: int | None = None
+    decision: str = Field(default="", description="The decision in one sentence; leads the row")
+    size_line: str = Field(default="", description="How big, with its own caveat attached")
     summary: str = Field(description="One short row-specific sentence for the table")
     explanation: str
 
@@ -688,6 +701,11 @@ class ActionRow(BaseModel):
     blocked: bool
     blocked_reason: str | None
     status: str
+    # The verdict and the staged step (ux/decision-flow), mirroring the
+    # opportunity record they came from.
+    verdict: str = "upside_only"
+    staged_step: bool = False
+    full_target_price_cents: int | None = None
     events: list[ActionEventRow]
     outcome: ActionOutcome | None = None
 

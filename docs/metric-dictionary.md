@@ -166,3 +166,27 @@ Level 3: contribution at the new price minus today's, with the causal-supported 
 - **Includes:** pairs with known cost, a supported cost-to-serve estimate K (labeled estimated when it comes from config activity rates), causal-supported elasticity and a proposed move inside the segment's identifying price support; at instrumented-only evidence a labeled sensitivity range is shown instead
 - **Excludes:** pairs without cost (missing cost is never zero) or without a supported K (the figure is unavailable, never borrowed from the gross profit basis); moves outside price support; never summed with level 1, level 2 or the pocket gross profit basis
 - **Amount status:** modeled from actual baselines and estimated elasticity and K
+
+## Expected change at the staged first step
+
+Where the full move to target reaches beyond the identified price range, the expected change at step 1 of the move to target - the largest move the data can forecast. The target does not change; the rest of the move stays unforecast.
+
+- **Formula:** the expected-change formula evaluated at P_step instead of P1, where log(P_step / P0) is the largest supported movement in the proposal's direction below log(P1 / P0); support means the identification-support regions, narrowed to the configured fraction where the price-response shape is untested
+- **Units:** pocket cents over the baseline window
+- **Denominator:** none (a dollar total)
+- **Price basis:** invoice price converted to pocket with (1 - d) and fixed deductions F
+- **Includes:** pairs with known cost in causal-supported segments with a resolved competitor-price path, whose full move lies outside supported movement but whose direction has some supported movement; the contribution basis additionally needs a supported K
+- **Excludes:** pairs whose full move is already supported (the ordinary expected change applies, and no step is named), segments below causal support, and pairs with no supported movement in the proposal's direction at all
+- **Amount status:** modeled from actual baselines and estimated elasticity
+
+## The verdict
+
+Not a dollar figure: what a reader may do with a row, in one value - forecast available, upside only, or too little evidence - with a one-line reason where there is no forecast.
+
+- **Formula:** derived from the evidence status and the volume treatment: forecast available when the figure models the volume response; too little evidence when the unit cost is missing or the segment has too little data; upside only otherwise
+- **Units:** none (a classification)
+- **Denominator:** none
+- **Price basis:** follows the figure it qualifies
+- **Includes:** every opportunity record and every generated action; the technical statuses stay on the record one click away
+- **Excludes:** nothing - but a row without a forecast never takes the solid supported styling, whatever its dollar figure says
+- **Amount status:** a classification of the figure's provenance, not an amount

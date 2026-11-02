@@ -60,6 +60,8 @@ def _action(**kw: object) -> dict[str, object]:
             "current_price_cents": 9_000,
             "proposed_price_cents": 9_500,
             "floor_price_cents": 6_316,
+            "staged_step": False,
+            "full_target_price_cents": None,
             "scope_key": "price|C1|I1|EA|2026-02-01",
             "priority": "medium",
             "owner": "unassigned",

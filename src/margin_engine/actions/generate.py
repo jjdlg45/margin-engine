@@ -65,6 +65,12 @@ ACTIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "current_price_cents": pl.Int64,
     "proposed_price_cents": pl.Int64,
     "floor_price_cents": pl.Int64,
+    # The staged first step (ux/decision-flow): True when the proposed price
+    # is step 1 of a larger move - the largest move inside the price range the
+    # instruments identified - with the unchanged full target beside it. Only
+    # price_change actions can carry it; every other type holds null/False.
+    "staged_step": pl.Boolean,
+    "full_target_price_cents": pl.Int64,
     # cost_pass_through only: the chosen pass-through level and the scenario's
     # incremental cost, so the UI can show the action's evidence without
     # re-deriving anything (null for every other type).
@@ -172,7 +178,10 @@ def _finalize(
     ac = rules.actions
     due_days = {"high": ac.due_days_high, "medium": ac.due_days_medium, "low": ac.due_days_low}
     fp = fingerprints or {}
-    out = rows.with_columns(_priority_expr(rules).alias("priority"))
+    out = rows.with_columns(
+        _priority_expr(rules).alias("priority"),
+        pl.col("staged_step").fill_null(value=False),
+    )
     out = out.with_columns(
         pl.lit(ac.default_owner).alias("owner"),
         (
@@ -312,6 +321,13 @@ def _pair_base(
         "volume_treatment",
         "evidence_status",
         "pocket_retention",
+        # The staged first step (ux/decision-flow): the largest move the
+        # instruments identified, with its own forecast, on pairs whose full
+        # move has none.
+        "step_price_cents",
+        "step_move_pct",
+        "step_expected_pocket_gross_profit_change_cents",
+        "step_expected_contribution_change_cents",
     ]
     opp = opportunities.select([c for c in opp_cols if c in opportunities.columns])
     g = guidance.join(opp, on=["customer_id", "item_id"], how="left", maintain_order="left")
@@ -495,6 +511,30 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
     if rows.height == 0:
         return pl.DataFrame()
     expected = pl.col("volume_treatment") == "expected_change"
+    # The staged first step: where the full move to target has no forecast
+    # but a smaller move inside the identified range does, the ACTION proposes
+    # the step. The target does not change - the rationale carries it - but
+    # what is put in front of an approver is the move the data can speak to.
+    # One action per pair either way, so the one-proposed-price-per-scope rule
+    # (Phase 68) is untouched.
+    step_col = (
+        pl.col("step_price_cents")
+        if "step_price_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    step_gp = (
+        pl.col("step_expected_pocket_gross_profit_change_cents")
+        if "step_expected_pocket_gross_profit_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    step_contrib = (
+        pl.col("step_expected_contribution_change_cents")
+        if "step_expected_contribution_change_cents" in rows.columns
+        else pl.lit(None, dtype=pl.Int64)
+    )
+    has_step = (
+        ~expected & step_col.is_not_null() & (step_gp.is_not_null() | step_contrib.is_not_null())
+    )
     # Two expected-change bases, never conflated (Run 6, Phase 65): the
     # CONTRIBUTION change (subtracts per-unit cost-to-serve K) when K is
     # supported, the pocket GROSS PROFIT change otherwise - each named.
@@ -515,6 +555,10 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         .then(contrib_col)
         .when(expected & has_gp)
         .then(gp_col)
+        .when(has_step & step_contrib.is_not_null())
+        .then(step_contrib)
+        .when(has_step)
+        .then(step_gp)
         .otherwise(pl.col("gross_price_opportunity_cents"))
         .round(0)
         .cast(pl.Int64)
@@ -523,10 +567,21 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         .then(pl.lit("expected_contribution_change"))
         .when(expected & has_gp)
         .then(pl.lit("expected_pocket_gross_profit_change"))
+        .when(has_step & step_contrib.is_not_null())
+        .then(pl.lit("expected_contribution_change"))
+        .when(has_step)
+        .then(pl.lit("expected_pocket_gross_profit_change"))
         .otherwise(pl.lit("gross_price_opportunity_fixed_volume"))
         .alias("impact_basis"),
         pl.col("current_invoice_price_cents").round(0).cast(pl.Int64).alias("_cur"),
-        pl.col("proposed_invoice_price_cents").round(0).cast(pl.Int64).alias("_prop"),
+        pl.when(has_step)
+        .then(step_col)
+        .otherwise(pl.col("proposed_invoice_price_cents"))
+        .round(0)
+        .cast(pl.Int64)
+        .alias("_prop"),
+        has_step.alias("_has_step"),
+        pl.col("proposed_invoice_price_cents").round(0).cast(pl.Int64).alias("_full_target"),
     )
     return rows.select(
         pl.concat_str(
@@ -543,7 +598,9 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.lit("price_change").alias("action_type"),
         pl.concat_str(
             [
-                pl.lit("Raise price: customer "),
+                pl.when(pl.col("_has_step"))
+                .then(pl.lit("Raise price, step 1 of the move to target: customer "))
+                .otherwise(pl.lit("Raise price: customer ")),
                 pl.col("customer_id"),
                 pl.lit(", item "),
                 pl.col("item_id"),
@@ -572,6 +629,22 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
                         "a contribution figure)."
                     )
                 )
+                .when(pl.col("_has_step"))
+                .then(
+                    pl.concat_str(
+                        [
+                            pl.lit(
+                                "The full move to target reaches beyond the price "
+                                "range the instruments identified, so this action "
+                                "proposes step 1 of the move to target: the largest "
+                                "move the data can forecast. The impact shown is the "
+                                "expected change AT THIS STEP; the full target of "
+                            ),
+                            _usd_expr("_full_target"),
+                            pl.lit(" stands, and the rest of the move stays unforecast."),
+                        ]
+                    )
+                )
                 .otherwise(
                     pl.lit(
                         "The volume evidence does not support predicting a response, "
@@ -590,7 +663,7 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("evidence_status"),
         pl.col("volume_treatment"),
         pl.when(
-            expected
+            (expected | pl.col("_has_step"))
             & pl.col("_seg_elasticity").is_not_null()
             & (pl.col("_cur") > 0)
             & pl.col("_prop").is_not_null()
@@ -614,6 +687,11 @@ def _price_change_actions(base: pl.DataFrame, anchor: dt.date) -> pl.DataFrame:
         pl.col("_compliance").alias("compliance_flags"),
         pl.lit(value=False).alias("blocked"),
         pl.lit(None, dtype=pl.String).alias("blocked_reason"),
+        pl.col("_has_step").alias("staged_step"),
+        pl.when(pl.col("_has_step"))
+        .then(pl.col("_full_target"))
+        .otherwise(None)
+        .alias("full_target_price_cents"),
     )
 
 
@@ -913,6 +991,20 @@ def generate_actions(
         "scenario_id",
         "overlap_group",
     )
+    # Columns only one action type can carry. Filled as nulls for the rest
+    # HERE and nowhere wider: a generator missing any other schema column
+    # still fails loudly, which is the guard doing its job.
+    per_type_optional = ("staged_step", "full_target_price_cents")
+    frames = [
+        f.with_columns(
+            [
+                pl.lit(None).cast(ACTIONS_SCHEMA[c]).alias(c)
+                for c in per_type_optional
+                if c not in f.columns
+            ]
+        )
+        for f in frames
+    ]
     combined = pl.concat(
         [f.select([c for c in ACTIONS_SCHEMA if c not in finalize_built]) for f in frames],
         how="vertical_relaxed",

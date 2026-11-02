@@ -6,6 +6,7 @@ import type { WebBundle } from "../src/types/bundle";
 
 const ROUTES = [
   "/",
+  "/recommended",
   "/waterfall",
   "/customers",
   "/segments",

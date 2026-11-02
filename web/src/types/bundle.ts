@@ -81,6 +81,7 @@ export type Events = ActionEventRow[];
 export type EvidenceStatus = string | null;
 export type ExpectedImpactCents = number | null;
 export type FloorPriceCents = number | null;
+export type FullTargetPriceCents = number | null;
 export type GuidanceStatus = string | null;
 export type ImpactBasis = string;
 /**
@@ -129,9 +130,11 @@ export type ProposedPriceCents1 = number | null;
 export type Rationale = string;
 export type Scope = string;
 export type Segment = number | null;
+export type StagedStep = boolean;
 export type Status2 = string;
 export type Title = string;
 export type Uom = string | null;
+export type Verdict = string;
 export type VolumeTreatment = string | null;
 export type ActionsTable = ActionRow[];
 export type BundleVersion = string;
@@ -309,6 +312,10 @@ export type OptimizerObjective = string;
 export type CostUnavailable = boolean;
 export type CustomerId4 = string;
 export type CustomerName3 = string | null;
+/**
+ * The decision in one sentence; leads the row
+ */
+export type Decision = string;
 export type DeductionTreatment = string;
 export type EvidenceStatus1 = string | null;
 export type ExpectedContributionChangeCents = number | null;
@@ -324,9 +331,19 @@ export type ItemName2 = string | null;
 export type PctBelowTarget = number | null;
 export type Segment2 = number | null;
 /**
+ * How big, with its own caveat attached
+ */
+export type SizeLine = string;
+export type StepExpectedContributionChangeCents = number | null;
+export type StepExpectedPocketGrossProfitChangeCents = number | null;
+export type StepMovePct = number | null;
+export type StepPriceCents = number | null;
+/**
  * One short row-specific sentence for the table
  */
 export type Summary = string;
+export type Verdict1 = string;
+export type VerdictReason = string | null;
 export type VolumeTreatment1 = string;
 export type TopOpportunities = OpportunityRecord[];
 /**
@@ -764,6 +781,7 @@ export interface ActionRow {
   evidence_status: EvidenceStatus;
   expected_impact_cents: ExpectedImpactCents;
   floor_price_cents: FloorPriceCents;
+  full_target_price_cents?: FullTargetPriceCents;
   guidance_status: GuidanceStatus;
   impact_basis: ImpactBasis;
   incremental_cost_cents?: IncrementalCostCents;
@@ -779,9 +797,11 @@ export interface ActionRow {
   rationale: Rationale;
   scope: Scope;
   segment: Segment;
+  staged_step?: StagedStep;
   status: Status2;
   title: Title;
   uom: Uom;
+  verdict?: Verdict;
   volume_treatment: VolumeTreatment;
 }
 /**
@@ -1022,6 +1042,7 @@ export interface OpportunityRecord {
   cost_unavailable?: CostUnavailable;
   customer_id: CustomerId4;
   customer_name?: CustomerName3;
+  decision?: Decision;
   deduction_treatment?: DeductionTreatment;
   evidence_status: EvidenceStatus1;
   expected_contribution_change_cents: ExpectedContributionChangeCents;
@@ -1033,7 +1054,14 @@ export interface OpportunityRecord {
   item_name?: ItemName2;
   pct_below_target?: PctBelowTarget;
   segment: Segment2;
+  size_line?: SizeLine;
+  step_expected_contribution_change_cents?: StepExpectedContributionChangeCents;
+  step_expected_pocket_gross_profit_change_cents?: StepExpectedPocketGrossProfitChangeCents;
+  step_move_pct?: StepMovePct;
+  step_price_cents?: StepPriceCents;
   summary: Summary;
+  verdict?: Verdict1;
+  verdict_reason?: VerdictReason;
   volume_treatment: VolumeTreatment1;
 }
 export interface OptionalModules {

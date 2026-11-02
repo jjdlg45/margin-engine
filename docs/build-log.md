@@ -6589,3 +6589,180 @@ figure recorded here is the re-run after the fix, against a rebuilt bundle.
 * `docs/images/` is committed PNG; there is no image-optimisation step in the
   build, so the 100 KB ceiling is held by capturing at 1280x800 rather than
   by compression.
+
+---
+
+## ux/decision-flow - lead with the decision, then the size, then the why
+
+Branched from `main` and rebased onto `docs/readme-refresh` at the owner's
+direction, so this lands after the README PR and regenerates its screenshots
+once, here. A pricing manager should be able to answer "what should I do, how
+big is it, how sure are we" without decoding statistics; before this round
+the opportunity table answered those with two technical status columns and a
+dollar figure whose meaning depended on combining them.
+
+### The staged first step (engine)
+
+A move refused as `outside_price_support` told the reader only what the data
+cannot do. For a causal-supported pair whose full move to target lies outside
+supported price movement, the engine now computes the largest move in the
+same direction that stays inside it - inside the narrowed band, where the
+price-response shape is untested - and prices and sizes that step with the
+same unit economics as the full move. The generated price-change action then
+PROPOSES the step, titled "step 1 of the move to target", with the unchanged
+full target in its rationale: what reaches an approver is the move the
+evidence can speak to. One action per pair as before; the Phase 68 scope and
+overlap rules are untouched.
+
+Measured on the demo world: **143 of 611 records gain a forecastable step**
+(83 outside price support, 60 shape-untested), every step strictly between
+today's price and the target, every one carrying its own expected change.
+Worked example: $59.07 today, step $60.91 (+3.1%), target $67.34 - $1,187.52
+expected at the step where the full move's forecast is None.
+
+### One verdict (engine)
+
+Every opportunity record and action now carries `forecast_available`,
+`upside_only` or `too_little_evidence`, derived in the engine with a one-line
+plain reason, so the page, the report and the action generator cannot
+disagree about what a figure is. The evidence status and volume treatment
+stay on the record. Demo world: 99 forecast-available, 512 upside-only. A
+scalar `verdict_for` serves action rows and is held to the vectorized
+classification by a parity test.
+
+### The decision flow (UI)
+
+* **Left sidebar** with Margin / Pricing / Actions / Data and the current
+  page highlighted; on mobile the Menu button opens the same groups.
+  **Advanced analysis** sits after a divider with Waterfall, Opportunity
+  levels, Segments, Sensitivity and Optional modules - present, but second.
+  The owner's main-sidebar list named seven pages; Waterfall and Opportunity
+  were not among them and went under Advanced analysis (judgment call: the
+  Overview carries the waterfall as its signature visual, and Recommended
+  actions is the decision-first door to opportunity).
+* **Recommended actions**, the start-here page: open actions ranked by
+  verdict and then expected impact - a forecast-backed $5k outranks an
+  unforecast $50k - with a verdict quick filter, linked prominently from a
+  card on the Overview.
+* **Opportunity and action tables lead with the decision.** Columns are now
+  What to do / How big / How sure; each row opens with a sentence ("Raise
+  this customer's price on this item; start with +3% - step 1 of the move to
+  target"), the size line carries its own caveat ("$2,344.33 expected at the
+  first step; up to $21,550.25 if no customers react; no forecast beyond
+  +3%"), and the verdict chip answers how sure. Evidence status, volume
+  treatment and deduction treatment moved into the row's expandable details.
+  Only `forecast_available` wears the solid supported chip - a figure with no
+  forecast can never carry the green treatment.
+* **Table layout at 1440 px** verified from the committed snapshots: no
+  clipped headers, text columns left-aligned, the decision and size columns
+  wrap fully.
+
+### What the checks caught
+
+* **A real state-leak bug.** The expandable details in opportunity rows are
+  reused by position when filters change, so an open state from one pair's
+  row survived into a different pair's row. Found because the new e2e test
+  asserts the details is OPEN after the click rather than assuming it - the
+  click was toggling an inherited open state closed. Fixed by keying the
+  details element by record identity.
+* **axe refused the first Recommended page** (link-in-text-block, 17 nodes):
+  inline links distinguishable only by colour. Card titles became block
+  links; inline links are underlined outright.
+
+### Snapshots, re-baselined deliberately
+
+Every page's visual snapshot changed - the sidebar is on all of them - and
+`/recommended` adds four. The sequence, so the re-baseline is evidence and
+not a reset: the full suite was green with snapshots skipped (243 passed),
+then `--update-snapshots` regenerated 48 and added 4 (52 passed), then a
+clean run against the new baselines passed **52/52** with no update flag.
+The README screenshots in docs/images were regenerated the same way (9
+images, 887 KB); the walkthrough's quoted figures were re-checked against
+them - same pair, same band, same waterfall totals.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` | 0 |
+| `uv run ruff format --check .` | 0 |
+| `uv run mypy src api` | 0 (96 files, strict) |
+| `tests/test_decision_flow.py` (new) | 11 passed |
+| Full pytest, one file per process | 74 files: 72 passed in the full run; the 2 failures (a hand-edited generated doc; one fixture missing the new action columns) fixed at the source and re-run green with test_display and test_webexport |
+| `npx tsc --noEmit` | 0 |
+| `npx vitest run` | 22 passed |
+| `npm run build` | 0 |
+| Playwright, snapshots skipped | 243 passed, 5 skipped, 0 failed |
+| Playwright `quality.spec.ts` against the new baselines | 52 passed |
+| Final pass, snapshots ENFORCED (quality, labels, status-rendering) | 90 passed, 0 failed |
+
+Two of the Python failures were themselves worth the run: the metric
+dictionary refused a hand edit because it is generated from
+`src/margin_engine/metrics.py` - the staged step and the verdict are now
+registry entries and the doc is regenerated from them - and a tracker fixture
+caught that the actions schema grew. The bundle was rebuilt after the
+registry change (the labels dictionary ships in it) and the final Playwright
+pass above ran against that rebuild.
+
+### Known gaps
+
+* The verdict exists on opportunity records and actions. Guidance rows keep
+  their guidance statuses (in band, below reference, below floor), which are
+  already plain-language; folding them under the same verdict vocabulary was
+  not asked for and was not done.
+* The Opportunity page's filter controls still filter by evidence status and
+  volume treatment (plainly labeled); a verdict filter exists on the
+  Recommended page, where the decision flow starts. Adding one to the
+  Opportunity page would touch the API table contract and was left out.
+* The staged step only looks in the direction of the proposed move (price
+  increases, in practice). A decrease toward a target below current price
+  would step the same way in principle; no such record exists on the demo
+  world to measure it against.
+
+---
+
+## ux/decision-flow, follow-up - actions introduce themselves by name
+
+Three owner fixes before the push.
+
+**One headline per action, names first.** A new pure helper
+(`web/src/lib/actionTitle.ts`) composes every action headline from the row's
+own fields, and every surface that shows an action uses it - the queue table
+and its mobile cards, the Recommended page, the detail page's heading and
+breadcrumb, and the export preview - so an action can never introduce itself
+differently in two places. Price actions state the size of their move, per
+the owner's spec: "Raise price 3.1% to $60.91 (step 1 of the move to
+target): Sun Valley Mechanical Supply, 1/2 in. PVC Relay Switch"; a
+below-floor fix reads "(fix a below-floor price)". Names lead and the ID
+appears only when the export carries no name; the IDs moved to the detail
+page as labeled Customer and Item fields with the name-first, ID-secondary
+treatment. The queue's Action column now also SORTS by the headline it
+shows rather than by the stored title with its IDs.
+
+The stored engine title is unchanged: it is data (CSV exports, the API, the
+event log), and the display layer is where display names belong. Pass-through
+actions keep their generated titles - their scope is a category or supplier
+code, and no name map for those reaches the action rows; logged as the one
+surface still showing a scope code.
+
+**The export preview names its largest changes.** The engine's diff summary
+always carried the five largest changes with IDs; the preview now renders
+them with names ("Largest: Sun Valley Mechanical Supply, 1/2 in. PVC Relay
+Switch - +3.1% to $60.91") instead of reducing the summary to a count.
+
+**The card's link matches what a reader can do there.** "Review and decide"
+only for proposed and under-review actions; "View details" for everything
+already past review.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / format / `mypy src api` | 0 / 0 / 0 |
+| `tests/test_decision_flow.py`, `tests/test_webexport.py` | exit 0 (engine code untouched; the two files assert the bundle contract the UI reads) |
+| `npx tsc --noEmit` / vitest / build | 0 / 22 passed / 0 |
+| Playwright, snapshots skipped | 243 passed, 5 skipped, 0 failed |
+| Snapshot re-baseline then clean verify | 52 passed re-baseline, then 52 passed clean; 4 mobile baselines changed (actions and recommended pages, light and dark) - desktop headline diffs sat inside the 2% pixel tolerance |
+
+Python engine code is untouched by this follow-up; the two Python files were
+re-run because they assert the bundle contract the UI reads.
