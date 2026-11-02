@@ -16,6 +16,7 @@ import { SandboxBanner } from "../components/SandboxBanner";
 import { StepTracker } from "../components/StepTracker";
 import type { ActionRow } from "../types/bundle";
 import { dollars, num, pct } from "../lib/format";
+import { actionHeadline } from "../lib/actionTitle";
 import { useLabels } from "../lib/labels";
 import {
   queryClient,
@@ -361,9 +362,15 @@ export function ActionDetailPage() {
         {(d) => (
           <>
             <Breadcrumbs
-              trail={[{ label: "Action center", to: "/actions" }, { label: d.action.title }]}
+              trail={[
+                { label: "Action center", to: "/actions" },
+                { label: actionHeadline(d.action, labels(d.action.action_type).label) },
+              ]}
             />
-            <PageHeader title={d.action.title} lede={d.action.rationale} />
+            <PageHeader
+              title={actionHeadline(d.action, labels(d.action.action_type).label)}
+              lede={d.action.rationale}
+            />
             <SandboxBanner />
             <Section title="Where it stands">
               <div className="mb-4">
@@ -386,6 +393,22 @@ export function ActionDetailPage() {
                 )}
               {/* Labeled fields, never a dot-separated meta string. */}
               <dl className="m-0 mt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
+                {d.action.customer_id && (
+                  <div>
+                    <dt className="text-caption secondary">Customer</dt>
+                    <dd className="m-0 font-medium">
+                      <EntityLabel name={d.action.customer_name} id={d.action.customer_id} />
+                    </dd>
+                  </div>
+                )}
+                {d.action.item_id && (
+                  <div>
+                    <dt className="text-caption secondary">Item</dt>
+                    <dd className="m-0 font-medium">
+                      <EntityLabel name={d.action.item_name} id={d.action.item_id} />
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-caption secondary">Priority</dt>
                   <dd className="m-0 font-medium">{labels(d.action.priority).label}</dd>

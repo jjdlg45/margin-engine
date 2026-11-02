@@ -6718,3 +6718,51 @@ pass above ran against that rebuild.
   increases, in practice). A decrease toward a target below current price
   would step the same way in principle; no such record exists on the demo
   world to measure it against.
+
+---
+
+## ux/decision-flow, follow-up - actions introduce themselves by name
+
+Three owner fixes before the push.
+
+**One headline per action, names first.** A new pure helper
+(`web/src/lib/actionTitle.ts`) composes every action headline from the row's
+own fields, and every surface that shows an action uses it - the queue table
+and its mobile cards, the Recommended page, the detail page's heading and
+breadcrumb, and the export preview - so an action can never introduce itself
+differently in two places. Price actions state the size of their move, per
+the owner's spec: "Raise price 3.1% to $60.91 (step 1 of the move to
+target): Sun Valley Mechanical Supply, 1/2 in. PVC Relay Switch"; a
+below-floor fix reads "(fix a below-floor price)". Names lead and the ID
+appears only when the export carries no name; the IDs moved to the detail
+page as labeled Customer and Item fields with the name-first, ID-secondary
+treatment. The queue's Action column now also SORTS by the headline it
+shows rather than by the stored title with its IDs.
+
+The stored engine title is unchanged: it is data (CSV exports, the API, the
+event log), and the display layer is where display names belong. Pass-through
+actions keep their generated titles - their scope is a category or supplier
+code, and no name map for those reaches the action rows; logged as the one
+surface still showing a scope code.
+
+**The export preview names its largest changes.** The engine's diff summary
+always carried the five largest changes with IDs; the preview now renders
+them with names ("Largest: Sun Valley Mechanical Supply, 1/2 in. PVC Relay
+Switch - +3.1% to $60.91") instead of reducing the summary to a count.
+
+**The card's link matches what a reader can do there.** "Review and decide"
+only for proposed and under-review actions; "View details" for everything
+already past review.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / format / `mypy src api` | 0 / 0 / 0 |
+| `tests/test_decision_flow.py`, `tests/test_webexport.py` | exit 0 (engine code untouched; the two files assert the bundle contract the UI reads) |
+| `npx tsc --noEmit` / vitest / build | 0 / 22 passed / 0 |
+| Playwright, snapshots skipped | 243 passed, 5 skipped, 0 failed |
+| Snapshot re-baseline then clean verify | 52 passed re-baseline, then 52 passed clean; 4 mobile baselines changed (actions and recommended pages, light and dark) - desktop headline diffs sat inside the 2% pixel tolerance |
+
+Python engine code is untouched by this follow-up; the two Python files were
+re-run because they assert the bundle contract the UI reads.

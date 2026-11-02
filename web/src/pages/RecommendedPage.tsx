@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { StatusChip } from "../components/StatusChip";
+import { actionHeadline } from "../lib/actionTitle";
 import { useLabels } from "../lib/labels";
 import { useTableQuery } from "../lib/queries";
 import { count, dollars } from "../lib/format";
@@ -30,10 +31,12 @@ function rank(a: ActionRow): [number, number] {
 
 function RecommendedCard({ a }: { a: ActionRow }) {
   const labels = useLabels();
+  // The link label matches what the reader can actually do there.
+  const decidable = a.status === "proposed" || a.status === "under_review";
   return (
     <li className="border-t hairline py-5 first:border-t-0">
       <Link to={`/actions/${a.action_id}`} className="block w-fit font-medium text-ink no-underline underline-offset-4 hover:underline">
-        {a.title}
+        {actionHeadline(a, labels(a.action_type).label)}
       </Link>
       <span className="mt-1.5 flex flex-wrap items-center gap-2">
         <StatusChip status={a.verdict ?? "upside_only"} />
@@ -49,7 +52,7 @@ function RecommendedCard({ a }: { a: ActionRow }) {
         Owner: {a.owner}
         {a.due_date ? `. Due ${a.due_date}` : ""} ·{" "}
         <Link to={`/actions/${a.action_id}`} className="text-petrol underline underline-offset-4">
-          Review and decide
+          {decidable ? "Review and decide" : "View details"}
         </Link>
       </span>
     </li>
