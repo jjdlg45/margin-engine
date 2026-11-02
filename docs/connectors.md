@@ -13,7 +13,7 @@ Built-in connectors:
 |---|---|---|
 | `filedrop` | Watched folder / SFTP (how Infor, SAP, Epicor, NetSuite and TMSs connect in practice; see docs/connecting-erp-file-drop.md) | Verified end to end against a local watched folder and an in-process SFTP server |
 | `quickbooks_online` | QuickBooks Online (Intuit Accounting API, minorversion 75) | Built against the documented API, not yet verified live (needs the owner's sandbox) |
-| `hubspot` | HubSpot CRM v3 (companies, deals, line items) | Built against the documented API, not yet verified live (needs the owner's test account) |
+| `hubspot` | HubSpot CRM v3 (companies, deals, line items; the separate Quotes object is not read) | Built against the documented API, not yet verified live (needs the owner's test account) |
 
 Endpoints, licenses/terms and rate limits for the API connectors are
 recorded in `docs/data-sources.md`. A connector is only ever described as

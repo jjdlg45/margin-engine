@@ -17,6 +17,12 @@ Honesty rules, consistent with the engine's quote handling (Run 6, Phase 77):
   the mapping documents that, and the negotiation-gap analysis stays off.
 - Won/lost comes from the deal pipeline's own stage metadata (isClosed and
   probability), never from guessing stage labels.
+- The spec asked for "quotes where available". The quote rows here are
+  derived from decided DEALS and their line items; HubSpot's separate Quotes
+  object is NOT read in this run, so its scope is not requested either. A
+  quote object carries its own states, versions and associations, none of
+  which could be verified without a live account - deriving the rows from
+  deals is the part that can be built honestly today.
 
 Salesforce note (docs/connectors.md): the same pattern fits a Salesforce
 free Developer Edition, but that connector is not built in this run.
@@ -176,11 +182,16 @@ class HubSpotConnector(SystemConnector):
             ),
             produces=("customers.csv", "quotes.csv", "quote_exclusions.csv"),
             required_settings=SETTINGS,
+            # Only what this connector actually reads. The run's rule is the
+            # narrowest read-only scopes available, so the HubSpot Quotes
+            # object's scope is NOT listed: the quote rows here come from
+            # decided deals and their line items (see the module docstring),
+            # and a scope the code never uses would misdescribe what the
+            # token is for.
             scopes=(
                 "crm.objects.companies.read",
                 "crm.objects.deals.read",
                 "crm.objects.line_items.read",
-                "crm.objects.quotes.read",
             ),
             live_verification=(
                 "built against the documented CRM v3 API, not yet verified live; "

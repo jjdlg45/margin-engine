@@ -7345,3 +7345,23 @@ Docs-only phase for the engine, but the README is test-covered:
 `tests/test_validation_table.py` + `tests/test_metrics.py` 22 passed (the
 validation-table block is unchanged by the new section). Full-suite and
 fresh-clone results follow in the final entry.
+
+## Phase 93 follow-up — the scope a connector never used (2026-11-02, Run 7 branch)
+
+Self-review before the final verification: the HubSpot connector's
+`describe()` listed `crm.objects.quotes.read` among its scopes, and the code
+never reads HubSpot's Quotes object. The run's rule is the narrowest
+read-only scopes available, and a scope listed but unused misdescribes what
+the token is for - the one thing a reader of a Connections screen should be
+able to trust.
+
+Dropped from the declared scopes, with the reason recorded where it belongs:
+the quote rows this connector produces come from decided **deals** and their
+line items (the spec's "quotes where available"), and HubSpot's separate
+Quotes object - with its own states, versions and associations, none of them
+verifiable without a live account - is not read in this run. Stated in the
+module docstring, the README's connector table and `docs/connectors.md`.
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (103 files).
+`tests/test_hubspot.py`, `tests/test_connections_api.py`,
+`tests/test_validation_table.py` 27 passed.
