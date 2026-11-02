@@ -649,3 +649,32 @@ def test_actions_bundle_parity_and_validity(
     # The static page payloads exist and stay within the app size gate.
     assert (out / "actions.json").exists()
     assert (out / "tables" / "actions.json").stat().st_size < 1024 * 1024
+
+
+def test_connections_section_is_independent_of_the_working_directory(tmp_path: Path) -> None:
+    """Run 7, Phase 94: the static demo's Connections page explains the
+    connectors; it must not reflect whichever machine ran the export. The
+    file-drop connector's own describe() reports the LOCAL pick-up rules
+    (right for the live screen), and its default rules path is relative, so
+    building the section from a different directory would otherwise change
+    the hosted bundle's content."""
+    import os
+
+    from margin_engine.webexport.build import build_connections_section
+
+    here = os.getcwd()
+    try:
+        from_repo = build_connections_section().model_dump(mode="json")
+        os.chdir(tmp_path)
+        from_elsewhere = build_connections_section().model_dump(mode="json")
+    finally:
+        os.chdir(here)
+
+    assert from_repo == from_elsewhere
+    by_name = {c["name"]: c for c in from_repo["connectors"]}
+    assert "invoice_lines.csv" in by_name["filedrop"]["produces"]
+    # Honesty rule: a connector not run end to end against the real service
+    # says so, on the page a viewer reads.
+    assert "not yet verified live" in by_name["quickbooks_online"]["live_verification"]
+    assert "not yet verified live" in by_name["hubspot"]["live_verification"]
+    assert "verified end to end" in by_name["filedrop"]["live_verification"]

@@ -7365,3 +7365,32 @@ module docstring, the README's connector table and `docs/connectors.md`.
 `ruff check` 0; `ruff format` 0; `mypy src api` 0 (103 files).
 `tests/test_hubspot.py`, `tests/test_connections_api.py`,
 `tests/test_validation_table.py` 27 passed.
+
+## Phase 94 follow-up — the demo card must not reflect a developer's machine (2026-11-02, Run 7 branch)
+
+Second self-review finding. `build_connections_section` built the static
+demo's file-drop card from the connector's own `describe()`, which reports
+what the **local** pick-up rules are configured to serve - correct for the
+live Connections screen, wrong for a hosted explanation. And because the
+default rules path is relative (the convention this codebase already uses for
+`config/rules.yaml`), the bundle's content depended on the directory
+`export-web` ran from: from anywhere but the repo root the card's file list
+came out empty. The existing cross-process determinism test runs both
+processes with `cwd=REPO`, so it could not see this.
+
+The static card now names the committed example file list from a constant,
+and its setup text says that is what it is. The section is independent of
+local connector configuration entirely - the other two connectors' outputs
+were already fixed in code.
+
+### Tests added
+
+`tests/test_webexport.py`: the section built from the repo root and from a
+temp directory must be equal, the file-drop card still names
+`invoice_lines.csv`, and - the honesty rule, asserted on the page a viewer
+reads - the two API connectors say "not yet verified live" while file drop
+says "verified end to end".
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0. New test passed; the demo
+bundle was regenerated and the connections snapshots re-baselined (the card's
+setup text changed), results in the final entry.

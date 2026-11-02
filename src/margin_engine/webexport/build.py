@@ -1456,7 +1456,8 @@ _CONNECTOR_SETUP = {
     "filedrop": (
         "Point MARGIN_FILEDROP_DIR at a folder your ERP exports into (or set "
         "the MARGIN_FILEDROP_SFTP_* settings for an SFTP site), describe each "
-        "export in config/filedrop.yaml, and schedule the connector. The guide "
+        "export in config/filedrop.yaml (the files listed above are the "
+        "committed example), and schedule the connector. The guide "
         "docs/connecting-erp-file-drop.md walks through it for Infor, SAP, "
         "Epicor, NetSuite and TMS exports."
     ),
@@ -1474,11 +1475,21 @@ _CONNECTOR_SETUP = {
 }
 
 
+# The file-drop connector's describe() reports what the LOCAL pick-up rules
+# are configured to serve, which is right for the live Connections screen and
+# wrong for a hosted explanation: a public page should not reflect whichever
+# machine ran the export, and a CWD-relative config path would otherwise make
+# the bundle's content depend on where the command was run. The static card
+# names the committed example instead, and the setup text says it is one.
+_DEMO_PRODUCES = {"filedrop": ("invoice_lines.csv", "customers.csv", "items.csv")}
+
+
 def build_connections_section() -> ConnectionsSection:
     """Run 7, Phase 94: the explanatory Connections page for the static demo -
     what each connector does and how to set it up, with no live state and no
-    credentials. Deterministic: everything comes from the connector
-    descriptions and this module's setup texts."""
+    credentials. Deterministic and independent of local connector
+    configuration: everything comes from the connector descriptions, the
+    example file list above, and this module's setup texts."""
     from margin_engine.connectors.credentials import CredentialStore
     from margin_engine.connectors.registry import build_connector, connector_names
 
@@ -1491,7 +1502,7 @@ def build_connections_section() -> ConnectionsSection:
                 name=info.name,
                 system=info.system,
                 description=info.description,
-                produces=list(info.produces),
+                produces=list(_DEMO_PRODUCES.get(name, info.produces)),
                 scopes=list(info.scopes),
                 live_verification=info.live_verification,
                 setup=_CONNECTOR_SETUP.get(name, "See docs/connectors.md."),
