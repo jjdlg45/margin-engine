@@ -7394,3 +7394,46 @@ says "verified end to end".
 `ruff check` 0; `ruff format` 0; `mypy src api` 0. New test passed; the demo
 bundle was regenerated and the connections snapshots re-baselined (the card's
 setup text changed), results in the final entry.
+
+## fix — the API-mode suite was running four specs against one shared server in parallel (2026-11-02, Run 7 branch)
+
+"manual proposal appears in the queue" failed intermittently in the full
+API-mode suite and passed every time on its own. The first guess - a stale
+reused server - was wrong (nothing was listening on the port between runs),
+and so was the second (within-file ordering: the file passes alone). The
+answer came from the execution order the list reporter prints:
+
+```
+ok  1 load-data.spec.ts:42 ...
+ok  4 connections.spec.ts:26 ...
+ok  3 api-mode.spec.ts:14 ...
+ok  2 actions-api.spec.ts:34 ...
+```
+
+Interleaved, out of order. `fullyParallel: false` makes tests serial *within*
+a file; it does not stop Playwright running the **files** concurrently across
+workers, and no `workers` was set. So four specs were driving one BFF, with
+one action store and one served bundle - and `load-data.spec.ts` deliberately
+runs the pipeline on an upload and **swaps the served bundle**, which is why
+its own header comment says it must run last. That comment was true when
+files ran serially. Under parallel workers the swap could land while
+`actions-api.spec.ts` was reading the queue, so the queue's facets and rows
+changed under it and the new proposal's row was no longer where the test
+looked. The failure it produced ("Showing 278 of 278 actions" - the owner
+filter apparently ignored) pointed at the filter contract, which turned out
+to be correct on both sides; the data had moved, not the filter.
+
+Latent since Phase 42 and not a Run 7 regression - Run 7 only changed the
+timing by adding a fourth spec file. Fixed where the assumption lives:
+`workers: 1` in `playwright.api.config.ts`, with the reason written next to
+it. Shared mutable server state is not parallelisable, and saying so once in
+the config is cheaper than making every spec defend itself against the
+others.
+
+Order is now strictly alphabetical with load-data genuinely last, and the
+suite passed **three consecutive full runs, 15/15 each**.
+
+Also in this commit: the Connections page throws `ApiError` rather than
+`Error`, so the query client's "never retry a 4xx" rule can see the status -
+a 403 "configuring connectors requires the admin role" and a 409 "a sync is
+already running" are answers to show the reader, not requests to repeat.

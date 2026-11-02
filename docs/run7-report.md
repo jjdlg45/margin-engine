@@ -92,7 +92,9 @@ changed. One commit per phase; full check results per phase in
 
 ### Phase 93 — HubSpot CRM (built against the documented API)
 
-- Private-app token, read-only scopes. Pulls companies (customer names) and
+- Private-app token, read-only scopes (companies, deals, line items - and
+  only those: HubSpot's separate Quotes object is not read in this run, so
+  its scope is not declared either). Pulls companies (customer names) and
   deals with line items; stage won/lost comes from each pipeline's own
   metadata (`isClosed`, `probability`), never from stage-name guessing.
 - Materializes `customers.csv` and `quotes.csv` where only closed-won /
@@ -132,6 +134,23 @@ changed. One commit per phase; full check results per phase in
 - README "Connecting your systems"; `docs/connectors.md` (interface, rules,
   how to add one, contract tests); `docs/data-sources.md` entries for Intuit
   and HubSpot (endpoints, terms, limits, verification dates); this report.
+
+## Two things self-review caught before the final commit
+
+- **A scope the code never used.** HubSpot's declared scopes included
+  `crm.objects.quotes.read` while the connector reads only companies, deals
+  and line items. Dropped, with the reason recorded in the module docstring,
+  the README table and `docs/connectors.md`: the quote rows come from decided
+  deals, and a declared-but-unused scope misdescribes what the token is for.
+- **A demo card that mirrored a developer's machine.** The static
+  Connections page built its file-drop card from the connector's own
+  `describe()`, which reports the *local* pick-up rules, via a CWD-relative
+  config path - so the hosted bundle's content depended on where
+  `export-web` ran (empty file list from anywhere but the repo root). The
+  static card now names the committed example from a constant, with a test
+  asserting the section is identical when built from two different working
+  directories. The existing cross-process determinism test could not see
+  this, because it runs both processes from the repo root.
 
 ## Three pre-existing failures surfaced by the Run 7 gates (fixed)
 

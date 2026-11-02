@@ -12,7 +12,7 @@ import { useState } from "react";
 import { QuerySection } from "../components/Async";
 import { EmptyState, PageHeader, Section } from "../components/Page";
 import { dataSource } from "../lib/api/client";
-import type { ConnectorCard } from "../lib/api/types";
+import { ApiError, type ConnectorCard } from "../lib/api/types";
 import { queryClient } from "../lib/queries";
 import { usePageData } from "../lib/queries";
 
@@ -48,8 +48,13 @@ async function requestJson<T>(path: string, method: string, body?: unknown): Pro
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const data = (await res.json()) as T & { detail?: string };
-  if (!res.ok) throw new Error(data.detail ?? `the request failed (${res.status})`);
+  const data = (await res.json()) as T & { detail?: string; code?: string };
+  // ApiError, not Error: the query client never retries a 4xx, and a refusal
+  // (403 "requires the admin role", 409 "a sync is already running") is an
+  // answer to show the reader, not a request to repeat.
+  if (!res.ok) {
+    throw new ApiError(data.detail ?? `the request failed (${res.status})`, res.status, data.code);
+  }
   return data;
 }
 

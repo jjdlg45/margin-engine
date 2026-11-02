@@ -7,6 +7,16 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e-api",
   fullyParallel: false,
+  // One worker, not just serial-within-a-file. Every spec here drives ONE
+  // shared BFF with one action store and one served bundle: the lifecycle
+  // specs consume proposed actions, and load-data.spec.ts deliberately
+  // swaps the served bundle (which is why it is named to sort last). With
+  // several workers, Playwright runs the FILES concurrently, so that swap
+  // can land while another spec is reading the queue - which is exactly how
+  // "manual proposal appears in the queue" failed intermittently. Shared
+  // mutable server state is not parallelisable; saying so here is cheaper
+  // than making every spec defend itself.
+  workers: 1,
   reporter: [["list"]],
   use: {
     baseURL: "http://127.0.0.1:4174",
