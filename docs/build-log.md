@@ -7134,3 +7134,78 @@ built in this run.
 
 `ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
 `tests/test_hubspot.py` 5 passed (live test deselected).
+
+## fix — three pre-existing failures the Run 7 gates surfaced (2026-11-02, Run 7 branch)
+
+Phase 94 runs the API-mode Playwright suite, which had not run on this
+machine before in this session. Three tests failed. All three reproduced on
+unmodified `main` (verified by stashing the Run 7 work and driving the same
+calls against a server built from `main`'s code), so none is a Run 7
+regression - Run 7 is just the first thing to run those gates since the
+defects landed. Each is fixed here with a regression test, in its own commit
+so the semantic change in the first one is reviewable on its own.
+
+### 1. The demo's review workflow had expired by calendar
+
+Approving any seeded demo action returned `stale_action`: "expiry: was
+2026-04-28, now 2026-11-02".
+
+Phase 69 gave proposals an `expires_on` so an untouched proposal cannot be
+approved on stale evidence. Generation anchors dates to **the data's last
+invoice date** - the demo world ends 2026-01-28, plus the 90-day policy
+window gives 2026-04-28 - but revalidation compared that date against
+`datetime.now()`. From 2026-04-28 onward, every action in the committed demo
+world was permanently un-approvable, and the public demo's whole review
+workflow was dead. A date-triggered failure that no test would catch until
+the day it fired.
+
+The fix is to judge expiry on the same clock the expiry was written on.
+`evidence_as_of(events, fallback)` returns the newest **engine-authored**
+event in the action store - the engine's own data date, which a regeneration
+advances with the data - falling back to today when no engine event exists.
+User events (submit, approve) are wall-clock and deliberately do not move
+it. Approval (`api/actions_routes.py`) and export
+(`actions/export.py`) now use it, so both sides of the lifecycle agree.
+
+What this changes in meaning: expiry asks "is this proposal's evidence older
+than the policy window?", and evidence ages against the engine's outputs,
+not the calendar. In a live deployment the behaviour is identical - refreshes
+advance the data date, and a proposal left sitting through two regenerations
+still goes stale. A frozen demo world no longer rots on a date. This also
+matches the convention already in the file: overdue is computed from event
+dates, not wall time.
+
+### 2. Every manual proposal returned 500
+
+`ActionStore.add_action` inserted positionally -
+`INSERT INTO actions SELECT * FROM read_parquet(?)`. The store's column order
+is whatever seeded it (a parquet export), and the ux round added action
+columns, so the route's frame and the table no longer lined up: DuckDB tried
+to cast the scope-key string `service_policy|manual|act_...` into an INT64
+column and raised. Positional inserts against a schema that grows are a
+standing trap - the failure mode when the types *do* line up is silent data
+in the wrong column. Fixed with `INSERT ... BY NAME` for actions, events and
+edits.
+
+### 3. A load-data e2e locator had drifted
+
+The mapping-column combobox option's accessible name gained a dtype hint
+("INV_DT date"), so an exact-name locator never matched and the test spent
+its 7-minute timeout waiting. The spec now matches the option by its exact
+column-name text.
+
+### Tests added
+
+`tests/test_actions_api.py` (+3): expiry judged against the engine's data
+date, so an action whose `expires_on` is months past wall clock still
+approves; the same action refused as stale once a **newer engine event**
+moves the data date past the window (so the guard still guards); and a
+manual proposal against a store seeded with **reversed column order**,
+which fails on the positional insert and passes on `BY NAME`.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_actions_api.py` + `tests/test_actions.py` 25 passed.
+API-mode Playwright: the two actions-api failures and the load-data failure
+now pass (full suite result under Phase 94).

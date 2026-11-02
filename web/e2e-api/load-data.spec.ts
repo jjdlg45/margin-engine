@@ -22,7 +22,13 @@ async function pickColumn(page: Page, label: string, column: string) {
   const combo = page.getByRole("combobox", { name: label });
   await combo.click();
   await combo.fill(column);
-  await page.getByRole("option", { name: column, exact: true }).click();
+  // The option's accessible name is the column plus its dtype hint
+  // ("INV_DT date"), so match the option by its exact column-name text.
+  await page
+    .getByRole("option")
+    .filter({ has: page.getByText(column, { exact: true }) })
+    .first()
+    .click();
 }
 
 test("the load page exists in API mode navigation", async ({ page }) => {

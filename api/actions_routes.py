@@ -25,7 +25,11 @@ from margin_engine.actions.model import (
     TransitionError,
     replay_status,
 )
-from margin_engine.actions.revalidate import revalidate_action, revalidation_rows
+from margin_engine.actions.revalidate import (
+    evidence_as_of,
+    revalidate_action,
+    revalidation_rows,
+)
 from margin_engine.actions.review import (
     EDITABLE_FIELDS,
     ReviewError,
@@ -246,11 +250,14 @@ def _transition(
             # proposal's key values against the engine's CURRENT outputs. Both
             # versions land in the audit trail; a blocking verdict refuses the
             # approval and names what moved.
+            # Expiry is judged against the engine's own data date (the
+            # newest engine-authored event), falling back to today: evidence
+            # ages with the engine's outputs, not the calendar alone.
             rev = revalidate_action(
                 action,
                 rules=_rules(request),
                 guidance=_current_guidance(request),
-                as_of=dt.datetime.now(dt.UTC).date(),
+                as_of=evidence_as_of(store.events(), dt.datetime.now(dt.UTC).date()),
             )
             if rev.differences or rev.verdict != "unchanged":
                 store.record_revalidation(

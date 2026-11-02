@@ -383,3 +383,135 @@ def test_price_export_endpoint(client: TestClient) -> None:
         "/api/actions/price-export", headers={"X-User": "demo-analyst"}, json={}
     ).json()
     assert again["n_transitioned"] == 0 and again["csv"] == real["csv"]
+
+
+def _expiry_client(tmp_path: Path, extra_engine_event_at: dt.datetime | None) -> TestClient:
+    """One action whose expires_on (2026-04-28) is long past WALL CLOCK but
+    not past the engine's own data date (AT). Run 7 regression: the fixed-date
+    demo world's actions must stay approvable until the ENGINE's outputs move
+    past the policy window, not until the calendar does."""
+    action = _mk_action("act_exp000000001")
+    action["expires_on"] = dt.date(2026, 4, 28)
+    events = [
+        {
+            "action_id": "act_exp000000001",
+            "seq": 0,
+            "who": "engine",
+            "at": AT,
+            "from_status": None,
+            "to_status": "proposed",
+            "note": "generated",
+        }
+    ]
+    actions_df = pl.DataFrame([action]).cast(ACTIONS_SCHEMA)
+    if extra_engine_event_at is not None:
+        other = _mk_action("act_exp000000002")
+        other["expires_on"] = extra_engine_event_at.date() + dt.timedelta(days=90)
+        actions_df = pl.DataFrame([action, other]).cast(ACTIONS_SCHEMA)
+        events.append(
+            {
+                "action_id": "act_exp000000002",
+                "seq": 0,
+                "who": "engine",
+                "at": extra_engine_event_at,
+                "from_status": None,
+                "to_status": "proposed",
+                "note": "generated",
+            }
+        )
+    seed = tmp_path / "seed-exp"
+    seed.mkdir()
+    actions_df.write_parquet(seed / "actions.parquet")
+    pl.DataFrame(events, schema=EVENTS_SCHEMA).write_parquet(seed / "action_events.parquet")
+    settings = Settings(
+        bundle_dir=tmp_path / "nobundle-exp",
+        db_path=tmp_path / "api-exp.duckdb",
+        actions_db=tmp_path / "actions-exp.duckdb",
+        actions_seed_dir=seed,
+        fx_refresh_s=10_000,
+        ppi_refresh_s=10_000,
+    )
+    return TestClient(create_app(settings))
+
+
+def test_expiry_judged_against_engine_data_date_not_wall_clock(tmp_path: Path) -> None:
+    with _expiry_client(tmp_path, extra_engine_event_at=None) as client:
+        aid = "act_exp000000001"
+        assert client.post(f"/api/actions/{aid}/submit", headers={"X-User": "demo-lead"}).json()[
+            "changed"
+        ]
+        r = client.post(
+            f"/api/actions/{aid}/approve",
+            headers={"X-User": "demo-approver"},
+            json={"note": "fits policy"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["changed"] is True
+
+
+def test_expiry_blocks_once_engine_outputs_moved_past_the_window(tmp_path: Path) -> None:
+    # A newer engine regeneration (2026-09-01) moves the engine's data date
+    # past the first action's expiry; approving it is now refused as stale.
+    with _expiry_client(
+        tmp_path, extra_engine_event_at=dt.datetime(2026, 9, 1, tzinfo=dt.UTC)
+    ) as client:
+        aid = "act_exp000000001"
+        client.post(f"/api/actions/{aid}/submit", headers={"X-User": "demo-lead"})
+        r = client.post(
+            f"/api/actions/{aid}/approve",
+            headers={"X-User": "demo-approver"},
+            json={"note": "fits policy"},
+        )
+        assert r.status_code == 409
+        assert r.json()["code"] == "stale_action"
+        assert "expired" in r.json()["detail"]
+
+
+def test_manual_proposal_survives_any_seed_column_order(tmp_path: Path) -> None:
+    """Run 7 regression: the action store is seeded from parquet, so its
+    column order is whatever the seed had. A manual proposal must insert BY
+    NAME - the ux round added columns and the old positional insert sheared a
+    scope_key string into an INT64 column (500 on every manual proposal)."""
+    base = pl.DataFrame([_mk_action("act_order0000001")]).cast(ACTIONS_SCHEMA)
+    reversed_cols = base.select(list(reversed(base.columns)))
+    events = pl.DataFrame(
+        [
+            {
+                "action_id": "act_order0000001",
+                "seq": 0,
+                "who": "engine",
+                "at": AT,
+                "from_status": None,
+                "to_status": "proposed",
+                "note": "generated",
+            }
+        ],
+        schema=EVENTS_SCHEMA,
+    )
+    seed = tmp_path / "seed-order"
+    seed.mkdir()
+    reversed_cols.write_parquet(seed / "actions.parquet")
+    events.write_parquet(seed / "action_events.parquet")
+    settings = Settings(
+        bundle_dir=tmp_path / "nb",
+        db_path=tmp_path / "o.duckdb",
+        actions_db=tmp_path / "oa.duckdb",
+        actions_seed_dir=seed,
+        fx_refresh_s=10_000,
+        ppi_refresh_s=10_000,
+    )
+    with TestClient(create_app(settings)) as client:
+        r = client.post(
+            "/api/actions",
+            headers={"X-User": "demo-analyst"},
+            json={
+                "action_type": "service_policy",
+                "title": "Review delivery cadence",
+                "rationale": "asked by the account team",
+            },
+        )
+        assert r.status_code == 200, r.text
+        detail = client.get(f"/api/actions/{r.json()['action_id']}").json()
+        assert detail["status"] == "proposed"
+        assert detail["action"]["title"] == "Review delivery cadence"
+        assert str(detail["action"]["scope_key"]).startswith("service_policy|manual|")

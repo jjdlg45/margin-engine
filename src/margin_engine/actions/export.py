@@ -252,12 +252,19 @@ def export_price_file(
 
     held: list[dict[str, object]] = []
     if guidance is not None and rows.height:
-        from margin_engine.actions.revalidate import revalidate_action, revalidation_rows
+        from margin_engine.actions.revalidate import (
+            evidence_as_of,
+            revalidate_action,
+            revalidation_rows,
+        )
 
         stamp = at if at is not None else dt.datetime.now(dt.UTC)
+        # Same clock as approval: evidence ages against the engine's own
+        # data date, not the calendar alone (see evidence_as_of).
+        reval_as_of = evidence_as_of(events, stamp.date())
         keep: list[str] = []
         for r in rows.sort("action_id").iter_rows(named=True):
-            rev = revalidate_action(r, rules=rules, guidance=guidance, as_of=stamp.date())
+            rev = revalidate_action(r, rules=rules, guidance=guidance, as_of=reval_as_of)
             if not dry_run and rev.differences:
                 store.record_revalidation(
                     revalidation_rows(str(r["action_id"]), rev, who=who, trigger="export", at=stamp)
