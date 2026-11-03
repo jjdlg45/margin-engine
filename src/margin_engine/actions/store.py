@@ -135,7 +135,9 @@ class ActionStore:
                 # BY NAME: the table's column order comes from whatever
                 # seeded it; a positional insert silently shears values into
                 # the wrong columns the moment the schema gains a field.
-                con.execute("INSERT INTO actions BY NAME SELECT * FROM read_parquet(?)", [str(a_pq)])
+                con.execute(
+                    "INSERT INTO actions BY NAME SELECT * FROM read_parquet(?)", [str(a_pq)]
+                )
                 con.execute(
                     "INSERT INTO action_events BY NAME SELECT * FROM read_parquet(?)", [str(e_pq)]
                 )
@@ -205,7 +207,9 @@ class ActionStore:
             with tempfile.TemporaryDirectory() as td:
                 pq = Path(td) / "edit.parquet"
                 row.write_parquet(pq)
-                con.execute("INSERT INTO action_edits BY NAME SELECT * FROM read_parquet(?)", [str(pq)])
+                con.execute(
+                    "INSERT INTO action_edits BY NAME SELECT * FROM read_parquet(?)", [str(pq)]
+                )
             safe = action_id.replace("'", "''")
             con.execute(f"UPDATE actions SET \"{field}\" = ? WHERE action_id = '{safe}'", [value])
         finally:
@@ -224,7 +228,9 @@ class ActionStore:
                 # BY NAME: the table's column order comes from whatever
                 # seeded it; a positional insert silently shears values into
                 # the wrong columns the moment the schema gains a field.
-                con.execute("INSERT INTO actions BY NAME SELECT * FROM read_parquet(?)", [str(a_pq)])
+                con.execute(
+                    "INSERT INTO actions BY NAME SELECT * FROM read_parquet(?)", [str(a_pq)]
+                )
                 con.execute(
                     "INSERT INTO action_events BY NAME SELECT * FROM read_parquet(?)", [str(e_pq)]
                 )
