@@ -27,6 +27,7 @@ test("the sidebar leads with decisions and keeps the analysis reachable", async 
     "Scenarios",
     "Action center",
     "Data & methodology",
+    "Connections",
     "Use it with your own data",
     "Waterfall",
     "Opportunity levels",

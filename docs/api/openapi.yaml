@@ -36,7 +36,8 @@ paths:
             type: string
             enum:
               [overview, waterfall, customers, segments, guidance,
-               sensitivity, opportunity, scenarios, methodology, modules]
+               sensitivity, opportunity, scenarios, methodology, modules,
+               connections]
       responses:
         "200":
           description: >
@@ -462,6 +463,98 @@ paths:
                 properties:
                   state: { type: string, enum: [idle, running, done, failed] }
                   message: { type: string }
+  # System connectors (Run 7, Phase 94). Admin-only in production mode;
+  # open in local single-user mode. The static demo never calls these.
+  /connections:
+    get:
+      summary: Every system connector with its status, last sync and schedule
+      parameters: [{ $ref: "#/components/parameters/XUser" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionsList" }
+  /connections/{name}/check:
+    post:
+      summary: Verify credentials and reachability (plain-English result)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, message]
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /connections/{name}/sync:
+    post:
+      summary: Run one sync now; a failure leaves the previous good sync
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_resync: { type: boolean }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, sync]
+                properties:
+                  status: { type: string }
+                  sync: { $ref: "#/components/schemas/SyncSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The sync failed or one is already running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [detail]
+                properties:
+                  detail: { type: string }
+                  code: { type: string }
+  /connections/{name}/schedule:
+    put:
+      summary: Set the connector's sync interval (seconds, minimum 60)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/XUser" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interval_s]
+              properties:
+                interval_s: { type: number }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, interval_s, scheduled]
+                properties:
+                  status: { type: string }
+                  interval_s: { type: number }
+                  scheduled: { type: boolean }
+                  note: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
 components:
   parameters:
@@ -610,6 +703,62 @@ components:
               action_id: { type: string }
               outcome: { type: string, enum: [approved, unchanged, refused] }
               reason: { type: string }
+    SyncSummary:
+      type: object
+      required: [sync_id, synced_utc, records, warnings, unchanged_rerun]
+      properties:
+        sync_id: { type: string }
+        synced_utc: { type: string }
+        window:
+          type: object
+          properties:
+            since: { type: [string, "null"] }
+            until: { type: string }
+        records:
+          type: object
+          additionalProperties:
+            type: object
+            required: [rows, new_or_changed, deleted]
+            properties:
+              rows: { type: integer }
+              new_or_changed: { type: integer }
+              deleted: { type: integer }
+        warnings: { type: array, items: { type: string } }
+        unchanged_rerun: { type: boolean }
+    ConnectionsList:
+      type: object
+      required: [mode, connectors]
+      properties:
+        mode: { type: string }
+        connectors:
+          type: array
+          items:
+            type: object
+            required:
+              [name, system, description, produces, scopes, live_verification,
+               configured, missing_settings, scheduled, last_sync]
+            properties:
+              name: { type: string }
+              system: { type: string }
+              description: { type: string }
+              produces: { type: array, items: { type: string } }
+              scopes: { type: array, items: { type: string } }
+              live_verification: { type: string }
+              configured: { type: boolean }
+              missing_settings:
+                type: array
+                items:
+                  type: object
+                  required: [env, purpose]
+                  properties:
+                    env: { type: string }
+                    purpose: { type: string }
+              scheduled: { type: boolean }
+              schedule_interval_s: { type: [number, "null"] }
+              last_sync:
+                description: A SyncSummary, or null before the first sync
+                type: [object, "null"]
+              last_error: { type: [string, "null"] }
   responses:
     NotFound:
       description: Unknown page, table or pair

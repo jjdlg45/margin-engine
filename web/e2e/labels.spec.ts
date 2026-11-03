@@ -19,6 +19,7 @@ const ROUTES = [
   "/scenarios",
   "/modules",
   "/methodology",
+  "/connections",
 ];
 
 // Intentional technical terms allowed in visible text.
@@ -34,6 +35,16 @@ const ALLOW = new Set([
   "web/public/data/bundle.json",
   // mapping artifact shown in the data label
   "scripts/measure_validation.py",
+  // Run 7: canonical file names, CLI and scope strings on the Connections page
+  "invoice_lines.csv",
+  "customers.csv",
+  "items.csv",
+  "gl_totals.csv",
+  "quotes.csv",
+  "quote_exclusions.csv",
+  "quickbooks_online",
+  "crm.objects",
+  "MARGIN_FILEDROP",
 ]);
 
 const SNAKE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;

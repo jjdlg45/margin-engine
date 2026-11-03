@@ -124,6 +124,21 @@ class Settings:
             "demo-lead:analyst+approver,demo-viewer:viewer",
         )
     )
+    # System connectors (Run 7, Phase 90): comma-separated "name" or
+    # "name:interval_s" entries, e.g. "filedrop:900,quickbooks_online:86400".
+    # Empty = no connector jobs. State (cursors, synced files, manifests)
+    # lives under connectors_dir.
+    connectors_spec: str = field(
+        default_factory=lambda: os.environ.get("MARGIN_API_CONNECTORS", "")
+    )
+    connectors_dir: Path = field(
+        default_factory=lambda: _env_path(
+            "MARGIN_API_CONNECTORS_DIR", REPO / ".api_state" / "connectors"
+        )
+    )
+    connector_default_refresh_s: float = field(
+        default_factory=lambda: float(os.environ.get("MARGIN_API_CONNECTOR_REFRESH_S", "3600"))
+    )
     # Scheduled connector refreshes (seconds; defaults: FX daily, PPI monthly).
     fx_refresh_s: float = field(
         default_factory=lambda: float(os.environ.get("MARGIN_API_FX_REFRESH_S", str(24 * 3600)))

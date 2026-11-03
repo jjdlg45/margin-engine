@@ -34,6 +34,8 @@ from margin_engine.webexport.bundle import (
     CausalGate,
     CompliancePair,
     ComplianceSection,
+    ConnectionsSection,
+    ConnectorCard,
     CrossPriceEstimate,
     CustomerEconomics,
     CustomerLeakage,
@@ -1198,6 +1200,7 @@ def build_bundle(
         validation_results=validation,
         manifest=manifest,
         actions=actions_section,
+        connections=build_connections_section(),
         actions_table=actions_table,
         compliance=_compliance_section(res, rules),
     )
@@ -1449,6 +1452,72 @@ from margin_engine.webexport.bundle import QuoteExclusion  # noqa: E402
 from margin_engine.webexport.bundle import QuoteIntake as QuoteIntakeModel  # noqa: E402
 from margin_engine.webexport.bundle import WinCurve as WinCurveModel  # noqa: E402
 
+_CONNECTOR_SETUP = {
+    "filedrop": (
+        "Point MARGIN_FILEDROP_DIR at a folder your ERP exports into (or set "
+        "the MARGIN_FILEDROP_SFTP_* settings for an SFTP site), describe each "
+        "export in config/filedrop.yaml (the files listed above are the "
+        "committed example), and schedule the connector. The guide "
+        "docs/connecting-erp-file-drop.md walks through it for Infor, SAP, "
+        "Epicor, NetSuite and TMS exports."
+    ),
+    "quickbooks_online": (
+        "Create a free Intuit developer app with the accounting scope, put its "
+        "client ID, secret and redirect URL in a local .env file, run "
+        "margin-engine connect quickbooks_online --authorize once, then "
+        "schedule the connector."
+    ),
+    "hubspot": (
+        "Create a HubSpot private app with read-only scopes for companies, "
+        "deals, line items and quotes, put its token in a local .env file as "
+        "HUBSPOT_TOKEN, then schedule the connector."
+    ),
+}
+
+
+# The file-drop connector's describe() reports what the LOCAL pick-up rules
+# are configured to serve, which is right for the live Connections screen and
+# wrong for a hosted explanation: a public page should not reflect whichever
+# machine ran the export, and a CWD-relative config path would otherwise make
+# the bundle's content depend on where the command was run. The static card
+# names the committed example instead, and the setup text says it is one.
+_DEMO_PRODUCES = {"filedrop": ("invoice_lines.csv", "customers.csv", "items.csv")}
+
+
+def build_connections_section() -> ConnectionsSection:
+    """Run 7, Phase 94: the explanatory Connections page for the static demo -
+    what each connector does and how to set it up, with no live state and no
+    credentials. Deterministic and independent of local connector
+    configuration: everything comes from the connector descriptions, the
+    example file list above, and this module's setup texts."""
+    from margin_engine.connectors.credentials import CredentialStore
+    from margin_engine.connectors.registry import build_connector, connector_names
+
+    creds = CredentialStore()
+    cards = []
+    for name in connector_names():
+        info = build_connector(name, creds).describe()
+        cards.append(
+            ConnectorCard(
+                name=info.name,
+                system=info.system,
+                description=info.description,
+                produces=list(_DEMO_PRODUCES.get(name, info.produces)),
+                scopes=list(info.scopes),
+                live_verification=info.live_verification,
+                setup=_CONNECTOR_SETUP.get(name, "See docs/connectors.md."),
+            )
+        )
+    return ConnectionsSection(
+        note=(
+            "This public demo is a static site, so nothing here is connected "
+            "to a live system. In the engine's local and API modes this page "
+            "shows each connector's status, last sync and record counts, with "
+            "Check connection, Sync now and schedule controls."
+        ),
+        connectors=cards,
+    )
+
 
 def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
     """Per-page projections of the bundle (the static files behind the data
@@ -1574,6 +1643,7 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
             "manifest": d["manifest"],
         },
         "modules": d["optional_modules"],
+        "connections": d["connections"],
         # Explanations ride a companion file fetched only when a pair is
         # opened, and null fields are omitted from table rows (absent ==
         # null to the UI) - keeps the table file itself under the size gate.

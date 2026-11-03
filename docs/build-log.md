@@ -6766,3 +6766,715 @@ already past review.
 
 Python engine code is untouched by this follow-up; the two Python files were
 re-run because they assert the bundle contract the UI reads.
+
+## Phase 90 — Connector framework (2026-11-01, Run 7 branch)
+
+Run 7 starts from a single constraint: the engine already knows how to read a
+company's data. It reads line-level exports through a mapping that declares
+business meaning, reconciles them, and refuses to guess. A connector must
+not become a second way in. So a connector here is not an ingest path - it is
+a thing that **produces the same canonical files a person would have exported
+by hand**, into a folder, with a manifest. The existing ingest path then reads
+that folder unchanged, and mapping, validation, reconciliation and every test
+stay exactly as they are.
+
+### The interface
+
+`src/margin_engine/connectors/framework.py`. A `SystemConnector` implements
+three methods and the framework owns everything else:
+
+- `describe()` -> `ConnectorInfo`: name, version, system, what it produces,
+  required settings (each marked secret or optional), read-only scopes, and
+  the run's honesty field - `live_verification`, which either names the date
+  of a real end-to-end run or says "built against the documented API, not yet
+  verified live".
+- `check()` -> `CheckResult`: credentials and reachability in plain English.
+- `sync(since)` -> `SyncBatch`: records new or changed since the cursor
+  (`None` = everything), as either per-table upserts with declared key
+  columns and optional tombstones, or as `raw_files` - validated source files
+  served verbatim, which is what the file-drop connector needs and what keeps
+  a dropped export byte-identical on the way through.
+
+The spec listed `materialize()` as a fourth connector method. It is a
+framework function (`run_sync`) instead, deliberately: materialization is
+where the invariants live, and every connector must get them identically
+rather than re-implement them. A connector that could write its own files
+could also write a half-finished sync.
+
+### What the framework guarantees
+
+- **Canonical output only.** Per-sync folder
+  `.api_state/connectors/<name>/syncs/<sync-id>/`, holding the CSVs plus
+  `sync_manifest.json`.
+- **Incremental, idempotent.** A cursor per connector in `cursor.json`;
+  merged state per table in Parquet; upsert-by-key. A re-run whose content
+  hashes identically keeps the previous sync folder and only advances the
+  cursor - so "sync now" twice does not create two sync ids for one state of
+  the world. `--full-resync` ignores the cursor and rebuilds from nothing.
+- **Late edits and deletions, explicitly.** Connectors widen `since` by their
+  own re-fetch window (QuickBooks: one day), which is safe precisely because
+  the merge is an upsert. Tombstones delete by key, or by any column subset
+  the table has - so one tombstone for a deleted invoice removes every line
+  of it, which is what the CDC endpoints actually hand you.
+- **Partial failure leaves the previous good sync.** Staging-then-swap for
+  the sync folder, the table state and the raw-file state; the cursor moves
+  last. A connector that raises mid-fetch leaves cursor, state and the last
+  good folder untouched, and no `.staging-*` directory behind.
+- **The manifest, and the run that used it.** Connector name and version,
+  framework version, source, window, cursor used and next, record counts per
+  object (rows, new-or-changed, deleted), a checksum per file, warnings, and
+  the content hash. `manifest/run_manifest.py` gains `source_sync`: when a
+  run's `--data` folder carries a `sync_manifest.json`, the run manifest
+  links it, so a result months later names the sync that fed it.
+- **No credential in any output.** Secret setting values are scrubbed out of
+  warnings, and a connector that manages to put one in its manifest aborts
+  the sync before anything is written.
+
+### Credentials
+
+`connectors/credentials.py`. Resolution order: process environment, then a
+local `.env` (already gitignored), then - in production mode - a Fernet
+keystore encrypted at rest with the key from `MARGIN_CONNECTOR_KEY`. DuckDB
+has no at-rest encryption of its own and connector credentials are the one
+thing in this system worth stealing, so they do not go in it. `missing()`
+and `missing_message()` produce the stop-and-ask text the spec asks for:
+every absent setting named with what it is for, and the reminder not to
+commit it.
+
+### Scheduling
+
+`MARGIN_API_CONNECTORS="filedrop:900,quickbooks_online:86400"` adds one job
+per connector to the live-mode scheduler (`api/refresh.py`), with intervals
+clamped to 60 s. Manual "run now" and the scheduled tick share
+`sync_connector`, which holds a per-connector lock: a second caller is
+refused in plain English rather than racing the first. The schedule-override
+plumbing (`set_schedule`, re-arming the task) lands in this file too though
+it is Phase 94's feature - splitting one method out of one module across two
+commits would have cost more than it explained.
+
+Dependency and test-marker changes for the whole run are in this commit as
+well: `cryptography` (keystore), `paramiko` + `types-paramiko` (Phase 91
+SFTP), and the `live` marker, deselected by default, that Phases 92 and 93
+hang their opt-in tests on.
+
+### Tests added
+
+`tests/test_connector_framework.py`, 15 tests, all against a fake connector
+whose source system is an in-memory list - the contract, not a service:
+manifest completeness; cursor advance and an incremental sync that sees only
+what changed while state keeps everything; idempotent re-run (one sync folder,
+not two); partial-failure rollback (cursor unmoved, previous folder intact,
+no staging left); tombstones; full resync; the run manifest's link; `.env`
+parsing; credential resolution order; the missing-settings message; keystore
+round-trip with the secret absent from the file's bytes; a wrong key failing
+with a plain message; the scheduler's spec parsing. One test plants a
+credential and asserts it appears in none of the bytes the framework wrote.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (100 files, strict).
+`tests/test_connector_framework.py` 15 passed. Full pytest: **915 passed, 9
+deselected, exit 0** (2308 s), run as a background job per the memory rule;
+3.4 GB free at launch, no excursion.
+
+Note on this machine: `mypy` and `uvicorn` console shims are blocked by
+Windows Application Control (os error 4551). `uv run python -m mypy` and
+`python -m uvicorn` run fine, and the Playwright API config now uses the
+module form so the suite starts on a locked-down machine.
+
+## Phase 91 — File-drop connector (2026-11-01, Run 7 branch)
+
+This is the connector that actually covers the systems a distributor runs.
+Nobody gives an outside tool API access to Infor CloudSuite, SAP, Epicor,
+NetSuite or a TMS; what they do is schedule an export to a folder or an SFTP
+site. So the file-drop connector is not the fallback - it is the primary
+path, and it is the one connector in this run that is **verified end to end**,
+because both of its sources can be stood up for real in a test.
+
+### Sources
+
+- A local or network **watched folder**. Accepted files move to `archive/`
+  beside the drop, rejected ones to `quarantine/` with the reason written
+  next to them.
+- **SFTP**, key-based auth only, no password auth. `known_hosts` is required
+  and an unknown host key is rejected - a connector that silently accepts
+  whatever answers on port 22 is not read-only in any sense worth having.
+  The connector never renames, moves or deletes anything on the server; the
+  downloaded copy is archived locally and deduplication relies on the
+  checksum ledger instead.
+
+### Pick-up rules
+
+- **Only complete files.** A `<name>.done` marker, or a size that has not
+  changed across a settle interval. A file still being written is reported
+  as such and waits for the next sync.
+- **Never twice.** Every accepted file's SHA-256 goes in a processed ledger;
+  identical bytes under a new filename are archived as a duplicate and not
+  reprocessed.
+- **Matched to a mapping, then validated.** `config/filedrop.yaml` holds the
+  rules: filename pattern -> mapping file + role (`lines` or
+  `reference:<table>`). A dropped file must parse under that mapping's own
+  declared input options and carry every column the mapping names for the
+  role, or it is quarantined with a message naming the missing columns and
+  the ones found. Rules are cross-checked against their mappings at load, so
+  a rule pointing at a reference table the mapping does not declare fails
+  immediately rather than at the first drop.
+- Accepted files are served **verbatim** under the filename the mapping
+  expects. The engine's own loader does the parsing; the connector does not
+  re-write a single byte, so there is no second interpretation of the data.
+
+### CLI
+
+`margin-engine connectors` lists each connector with what it provides, its
+verification status and any missing settings. `margin-engine connect <name>`
+syncs; `--check` verifies credentials and reachability; `--full-resync`
+ignores the cursor; `--authorize` runs a connector's one-time consent flow
+(Phase 92's, included here with the command).
+
+### Guide
+
+`docs/connecting-erp-file-drop.md`: the pattern (pick the data, pick the
+location, schedule the export, describe the files, run it), what the
+connector guarantees, and product notes for Infor, SAP, Epicor, NetSuite and
+TMSs written as general orientation. No click-paths are claimed - export
+scheduling lives in each product's admin tooling and varies by version, and
+nothing in that file was verified against a live instance.
+
+### Tests added
+
+`tests/test_filedrop.py`, 15 tests, and `tests/sftp_server.py` - a real
+paramiko SFTP server in-process over a loopback socket, with generated host
+and client keys, serving one folder read-only. No Docker, which is the point:
+the spec asked for a test server that runs on a developer machine.
+
+Watched folder: end to end, including `load_lines` on the materialized folder
+and a byte-identical check against the original export; an equivalence test
+that the frame from the connector's folder `.equals()` the frame from reading
+the export directly; incomplete-file wait, then pick-up once a `.done` marker
+appears; duplicate rejection; wrong-format and no-rule quarantine with their
+reason files asserted; a permission error leaving the file in place for the
+next sync (not quarantined - a lock is not a bad file). SFTP: the same end to
+end over the protocol, the remote file still present afterwards, the second
+sync refusing to reprocess it, remote permission-denied as a warning, and an
+empty `known_hosts` refusing the connection. Plus rules-validation errors.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_filedrop.py` + `tests/test_connector_framework.py` 30 passed.
+`margin-engine connectors` smoke-run against the real registry.
+
+## Phase 92 — QuickBooks Online connector (2026-11-01, Run 7 branch)
+
+**Status: built against the documented API, not yet verified live.** The spec
+is explicit that this label is the honest one until a real end-to-end run has
+happened, and no Intuit developer app or sandbox company exists for this
+project yet. Per the run's credential rule the phase was finished as far as
+it can go without one, and the exact values the owner needs are listed in
+`docs/run7-report.md` and repeated at the end of this entry.
+
+### Verified before writing any code
+
+Searched and recorded in `docs/data-sources.md` (2026-11-02):
+
+- **Minor version 75** is pinned. Intuit retired versions 1-74 on 2025-08-01;
+  requests below 75 now receive 75's data regardless. A request that does not
+  say which contract it expects is a request that will break silently, so
+  every call carries `minorversion=75` and a test asserts it.
+- **Rate limits**: 500 requests/minute per realm, 10 concurrent per
+  app+realm, HTTP 429 with a documented 60-second wait. Client limiter spaces
+  calls 0.2 s apart and a 429 waits 60 s before one retry.
+- A third-party claim of a ~10,000/day cap could not be confirmed against
+  Intuit's own pages and is recorded as unverified rather than designed
+  around.
+
+### What it pulls, and what it honestly cannot
+
+Customers, items, invoices with their lines, credit memos, and the monthly
+ProfitAndLoss report. Materializes `invoice_lines.csv`, `customers.csv`,
+`items.csv` and `gl_totals.csv` (month, net sales, COGS - the input the Phase
+64 GL variance check already takes), with the mapping committed at
+`config/mappings/quickbooks_online.yaml`.
+
+Two data gaps are stated in the mapping next to the fields they affect:
+
+- **No unit cost.** QuickBooks invoice lines do not carry one. The connector
+  joins the item's `PurchaseCost` where the item declares it and leaves the
+  cell blank otherwise, so those lines report `cost_unavailable` and nothing
+  is invented. The mapping also says what the joined value *is*: a current
+  purchase cost, declared `cost_basis: standard`, not a transaction-time
+  cost. A number that looks like a cost but is not the cost of that sale is
+  worse than a blank.
+- **Credit memos are stored positive.** The connector writes the
+  revenue-effect sign (negative amount and quantity) so the mapping's
+  `sign_convention: natural` is an accurate declaration rather than a
+  convenient one, and says so in both files.
+
+Document keys are prefixed (`INV-130`, `CM-45`) because QuickBooks numbers
+invoices and credit memos in separate sequences and `DocNumber` may be blank
+or duplicated; line keys are `<prefix>-<txn>-<line>`.
+
+### Auth, incremental sync, money
+
+OAuth 2.0 authorization-code with refresh tokens. Intuit rotates the refresh
+token, so every grant response's newest token is written to a local cache
+file outside the repo and used ahead of the environment value - losing a
+rotation means re-authorizing by hand. `--authorize` runs the one-time
+consent against a localhost redirect and refuses a non-localhost one with
+the alternative named. A 401 refreshes once and retries.
+
+Incremental sync uses the Change Data Capture endpoint with a one-day
+re-fetch window; deleted invoices and credit memos arrive as tombstones that
+remove their lines. Items are always fetched in full: changed invoice lines
+need the purchase-cost map even when no item changed, and the item list is
+small next to transaction volume. Full sync paginates on `STARTPOSITION`.
+
+Every transport parses JSON with `parse_float=Decimal`. Money in this engine
+is exact, and a connector is the one place where a float would enter from
+outside.
+
+### Tests added
+
+`tests/test_quickbooks.py`, 11 offline tests against fixtures **built from
+the documented schema and labeled as such** in the module docstring, plus one
+`@pytest.mark.live` test (full sandbox sync, then an engine ingest) that
+skips cleanly when credentials are absent.
+
+The offline suite asserts the engine's output, not the connector's
+intermediate shapes: a full sync materializes three line rows, and
+`load_lines` under the committed mapping gives the sale at 10500 cents with
+unit cost 105000 at scale, the credit memo at **-2100** cents, and the
+service line with **no** cost. Then: CDC upserts and a deleted credit memo
+whose lines disappear, the re-fetch window actually applied, pagination
+following `STARTPOSITION` (3 calls at page size 1 for 2 customers), token
+rotation persisted and the planted client secret, refresh token, rotated
+token and access token absent from every byte under the state directory, a
+401 triggering exactly one refresh, a 429 backing off and succeeding, the
+P&L parser degrading to a warning when the report has no month columns or no
+income row, and `QBO_ENVIRONMENT=staging` refused.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_quickbooks.py` 11 passed (live test deselected).
+
+### Waiting on the owner
+
+`QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_REALM_ID` in `.env`, then either
+`margin-engine connect quickbooks_online --authorize` once (with
+`http://localhost:8723/callback` registered on the app) or `QBO_REFRESH_TOKEN`
+from Intuit's OAuth playground. After a successful live run: update
+`live_verification`, the README table and `docs/data-sources.md` with the
+date, and replace the documented-schema fixtures with recorded responses.
+
+## Phase 93 — HubSpot CRM connector (2026-11-02, Run 7 branch)
+
+**Status: built against the documented CRM v3 API, not yet verified live** -
+same reason and same honesty label as Phase 92; no HubSpot developer test
+account exists for this project yet.
+
+### Verified before use
+
+Recorded in `docs/data-sources.md` (2026-11-02): private apps get roughly
+100 requests per 10 seconds on free/starter tiers (190 on professional and
+enterprise) plus per-tier daily caps, and a 429 carries `Retry-After`. The
+client spaces calls 0.15 s apart - under the lowest tier - and honors
+`Retry-After` when it is sent. Read-only scopes only:
+`crm.objects.companies.read`, `.deals.read`, `.line_items.read`,
+`.quotes.read`.
+
+### Won and lost come from the pipeline, not from stage names
+
+A deal's outcome is read from each pipeline's own stage metadata -
+`isClosed` and `probability` - never from matching stage labels like
+"Closed won". Customers rename stages; a connector that guesses from labels
+produces win curves fitted on a string match.
+
+This matters because the output feeds Phase 77, which was explicit that only
+decided quotes are evidence. So: only closed-won and closed-lost deals become
+rows in `quotes.csv`, and every other deal is excluded **with its reason
+recorded** in a companion `quote_exclusions.csv` - `open`,
+`stage_not_recognized`, `no_company`, `no_line_items` - and counted in the
+sync warnings. A deal that is later decided stops being an exclusion
+(tombstone on the exclusions table), so the file never accumulates stale
+"open" rows. HubSpot line items carry one price, so there is no close price
+to report: the mapping documents that and the negotiation-gap analysis stays
+off rather than being fed a quoted price twice.
+
+Also materializes `customers.csv` (company id and name) for the display-name
+path. Incremental sync uses the deals search endpoint on
+`hs_lastmodifieddate` with the same one-day re-fetch window; archived deals
+and companies arrive as tombstones.
+
+### Tests added
+
+`tests/test_hubspot.py`, 5 offline tests on documented-schema fixtures
+(labeled as such) plus one `@pytest.mark.live` test that skips without a
+token: the full sync's three quote rows with their outcomes, prices and
+dates, and the four exclusions with the exact reason per deal; an
+incremental sync where an open deal closes as won (and leaves the exclusions
+table) while another deal is archived (and leaves quotes); `Retry-After`
+honored on 429; the check messages.
+
+The fifth is the one that matters most for "nothing downstream changes": it
+writes a tiny ERP world next to the connector's output, declares both files
+in one mapping's `reference_tables` (`quotes` and `customers`), and loads
+them through the engine's own `load_reference_table`. Prices in the fixture
+are `Decimal("12.50")` rather than floats, because that is what the real
+transport's `parse_float=Decimal` delivers, and a fixture that quietly says
+`12.5` would be testing a different connector than the one that ships.
+
+### Salesforce
+
+Noted in `docs/connectors.md` as following this pattern exactly (free
+Developer Edition, REST query API, read-only scopes) and deliberately not
+built in this run.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_hubspot.py` 5 passed (live test deselected).
+
+## fix — three pre-existing failures the Run 7 gates surfaced (2026-11-02, Run 7 branch)
+
+Phase 94 runs the API-mode Playwright suite, which had not run on this
+machine before in this session. Three tests failed. All three reproduced on
+unmodified `main` (verified by stashing the Run 7 work and driving the same
+calls against a server built from `main`'s code), so none is a Run 7
+regression - Run 7 is just the first thing to run those gates since the
+defects landed. Each is fixed here with a regression test, in its own commit
+so the semantic change in the first one is reviewable on its own.
+
+### 1. The demo's review workflow had expired by calendar
+
+Approving any seeded demo action returned `stale_action`: "expiry: was
+2026-04-28, now 2026-11-02".
+
+Phase 69 gave proposals an `expires_on` so an untouched proposal cannot be
+approved on stale evidence. Generation anchors dates to **the data's last
+invoice date** - the demo world ends 2026-01-28, plus the 90-day policy
+window gives 2026-04-28 - but revalidation compared that date against
+`datetime.now()`. From 2026-04-28 onward, every action in the committed demo
+world was permanently un-approvable, and the public demo's whole review
+workflow was dead. A date-triggered failure that no test would catch until
+the day it fired.
+
+The fix is to judge expiry on the same clock the expiry was written on.
+`evidence_as_of(events, fallback)` returns the newest **engine-authored**
+event in the action store - the engine's own data date, which a regeneration
+advances with the data - falling back to today when no engine event exists.
+User events (submit, approve) are wall-clock and deliberately do not move
+it. Approval (`api/actions_routes.py`) and export
+(`actions/export.py`) now use it, so both sides of the lifecycle agree.
+
+What this changes in meaning: expiry asks "is this proposal's evidence older
+than the policy window?", and evidence ages against the engine's outputs,
+not the calendar. In a live deployment the behaviour is identical - refreshes
+advance the data date, and a proposal left sitting through two regenerations
+still goes stale. A frozen demo world no longer rots on a date. This also
+matches the convention already in the file: overdue is computed from event
+dates, not wall time.
+
+### 2. Every manual proposal returned 500
+
+`ActionStore.add_action` inserted positionally -
+`INSERT INTO actions SELECT * FROM read_parquet(?)`. The store's column order
+is whatever seeded it (a parquet export), and the ux round added action
+columns, so the route's frame and the table no longer lined up: DuckDB tried
+to cast the scope-key string `service_policy|manual|act_...` into an INT64
+column and raised. Positional inserts against a schema that grows are a
+standing trap - the failure mode when the types *do* line up is silent data
+in the wrong column. Fixed with `INSERT ... BY NAME` for actions, events and
+edits.
+
+### 3. A load-data e2e locator had drifted
+
+The mapping-column combobox option's accessible name gained a dtype hint
+("INV_DT date"), so an exact-name locator never matched and the test spent
+its 7-minute timeout waiting. The spec now matches the option by its exact
+column-name text.
+
+### Tests added
+
+`tests/test_actions_api.py` (+3): expiry judged against the engine's data
+date, so an action whose `expires_on` is months past wall clock still
+approves; the same action refused as stale once a **newer engine event**
+moves the data date past the window (so the guard still guards); and a
+manual proposal against a store seeded with **reversed column order**,
+which fails on the positional insert and passes on `BY NAME`.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (strict).
+`tests/test_actions_api.py` + `tests/test_actions.py` 25 passed.
+API-mode Playwright: the two actions-api failures and the load-data failure
+now pass (full suite result under Phase 94).
+
+## Phase 94 — Connections screen (2026-11-02, Run 7 branch)
+
+Two different pages behind one route, because the public demo and a real
+deployment have genuinely different jobs here.
+
+### API and local mode: live status and controls
+
+`api/connections_routes.py`, implementing four endpoints added to
+`docs/api/openapi.yaml`:
+
+- `GET /api/connections` - every registered connector with its system name,
+  description, what it provides, scopes, verification status, whether its
+  settings are in place (and if not, each missing setting **with what it is
+  for**), whether it is scheduled and at what interval, its last sync
+  summary, and its last failure.
+- `POST /api/connections/{name}/check` and `/sync` - the same code paths the
+  CLI and the scheduler use, run off the request thread. A sync failure
+  answers 409 with the connector's plain-English message; the previous good
+  sync stands.
+- `PUT /api/connections/{name}/schedule` - persisted interval override that
+  re-arms the scheduler's task, clamped to 60 s, and honest when the
+  connector is not in `MARGIN_API_CONNECTORS` ("stored, but no job runs
+  until it is enabled there").
+
+**Admin-only in production mode.** A new `admin` role extends Phase 82's
+set; local single-user mode does not gate (and the page says so, because
+identity there is not authentication). Production keeps rejecting
+client-supplied identity, so an `X-User` header buys nothing.
+
+### Static demo: an explanation, not disabled buttons
+
+A disabled "Sync now" on a static site is a lie about what the page is. The
+bundle gains a `connections` section built from the connector descriptions
+themselves (`webexport/build.py`, `ConnectionsSection`/`ConnectorCard`), so
+the public page explains what each connector does, what it provides, its
+verification status, and how to set it up - with a note that the demo is
+static and nothing is connected. Deterministic by construction: every field
+comes from `describe()` plus a setup text per connector.
+
+### The page
+
+`web/src/pages/ConnectionsPage.tsx`, in the Data nav group, picking its view
+from `dataSource`. Live cards show settings state, the last sync with per-file
+row counts, warnings and failures in plain English, and the three controls;
+idempotency surfaces as "no changes since the last one" rather than a silent
+no-op. Loading skeletons and error-with-retry come from the shared
+`QuerySection`, and the page uses the project's own tokens - no new colours.
+
+### Tests added
+
+`tests/test_connections_api.py`, 8 tests: the four routes present in the
+OpenAPI spec and responses validated against its schemas; local-mode listing
+with all three connectors and their verification text; **a real file-drop
+sync driven through the API** against temp folders, then an idempotent second
+sync, then the listing showing the counts; unknown connector 404 on all three
+verbs; a configuration failure as 409 naming the missing setting; schedule
+validation, clamping and persistence; and production mode refusing anonymous
+(401), refusing an analyst (403, "requires the admin role"), allowing an
+admin, and refusing a spoofed `X-User` (400).
+
+`web/e2e-api/connections.spec.ts`: the page in API-mode navigation; the
+file-drop connector checked, synced (asserting `invoice_lines.csv: 2 rows (2
+new or changed)` on screen), re-synced to the idempotency message, and
+rescheduled; HubSpot showing its missing token and a "Not ready" check. The
+API Playwright config seeds fixed e2e drop folders for it, and now starts the
+server as `python -m uvicorn` so it runs on a machine whose console shims are
+blocked.
+
+Static suite updated where a new page must be registered rather than merely
+work: `labels.spec.ts` ROUTES (plus allowlist entries for canonical file
+names and scope strings, which are intentional technical terms),
+`quality.spec.ts` ROUTES, `nav.spec.ts` link list, and `livedata.spec.ts`
+APP_FILES so `connections.json` is held to the 1 MB per-file gate.
+
+### Checks
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (103 files, strict).
+`tests/test_connections_api.py` 8 passed. `npx tsc --noEmit` 0; vitest 22
+passed; `npm run build` 0. Static Playwright: nav + labels + livedata 54
+passed; `quality.spec.ts -g connections` 4 passed with **axe reporting no
+serious or critical violations** and four new snapshot baselines recorded
+(light and dark, desktop and mobile). API-mode Playwright: **15 passed**,
+whole suite, including the three previously failing tests fixed in the
+preceding commit.
+
+## Phase 95 — Documentation and report (2026-11-02, Run 7 branch)
+
+- **README gains "Connecting your systems"** between "Use it with your own
+  data" and the validation table: what connectors exist, a status column that
+  says plainly which is verified live and which is "built against the
+  documented API, not yet verified live", the honest data gaps (QuickBooks
+  has no unit cost; only decided HubSpot deals count), and the file-drop
+  route for everything else. No logos, no claim of any official
+  partnership, and the CLI and Connections screen named so a reader knows
+  where the controls are.
+- **`docs/connectors.md`**: the interface, what the framework guarantees so a
+  connector need not re-implement it, the rules every connector follows
+  (read-only, no credential anywhere, plain-English failures, Decimal money),
+  and a six-step recipe for adding one - including that its
+  `live_verification` must stay honest until a real run happened, and the
+  contract tests it has to pass. Salesforce is documented as following the
+  HubSpot pattern and deliberately not built.
+- **`docs/run7-report.md`**: every phase with what was built and tested, the
+  three pre-existing defects the gates surfaced, the verification summary,
+  the known gaps, and - the part that matters for the owner - exactly which
+  credential values to create, where, and what to update after a successful
+  live run.
+- `docs/data-sources.md` carries the Intuit and HubSpot entries written in
+  Phases 92 and 93 (endpoints, auth, verified rate limits, terms,
+  verification status, fixture location).
+
+`RUN7.md` itself is left untracked, as the Run 5 and Run 6 spec files were;
+its content lives in CLAUDE.md as section "RUN 7" (commit `docs: Run 7 spec`).
+
+### Scope held
+
+Three things were noticed and logged rather than built, per the stay-in-scope
+rule:
+
+- The `always_positive_with_type` sign convention is declared in the mapping
+  schema but applied nowhere in the pipeline. Found while writing the
+  QuickBooks mapping, which is why that connector writes revenue-effect signs
+  itself instead of relying on it. Recorded in the run report's known gaps.
+- `docs/connectors.md` describes a Salesforce connector's shape without
+  building it.
+- The file-drop guide stops at general orientation for each ERP rather than
+  product-specific steps, because nothing in it was verified against a live
+  instance.
+
+### Checks
+
+Docs-only phase for the engine, but the README is test-covered:
+`tests/test_validation_table.py` + `tests/test_metrics.py` 22 passed (the
+validation-table block is unchanged by the new section). Full-suite and
+fresh-clone results follow in the final entry.
+
+## Phase 93 follow-up — the scope a connector never used (2026-11-02, Run 7 branch)
+
+Self-review before the final verification: the HubSpot connector's
+`describe()` listed `crm.objects.quotes.read` among its scopes, and the code
+never reads HubSpot's Quotes object. The run's rule is the narrowest
+read-only scopes available, and a scope listed but unused misdescribes what
+the token is for - the one thing a reader of a Connections screen should be
+able to trust.
+
+Dropped from the declared scopes, with the reason recorded where it belongs:
+the quote rows this connector produces come from decided **deals** and their
+line items (the spec's "quotes where available"), and HubSpot's separate
+Quotes object - with its own states, versions and associations, none of them
+verifiable without a live account - is not read in this run. Stated in the
+module docstring, the README's connector table and `docs/connectors.md`.
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0 (103 files).
+`tests/test_hubspot.py`, `tests/test_connections_api.py`,
+`tests/test_validation_table.py` 27 passed.
+
+## Phase 94 follow-up — the demo card must not reflect a developer's machine (2026-11-02, Run 7 branch)
+
+Second self-review finding. `build_connections_section` built the static
+demo's file-drop card from the connector's own `describe()`, which reports
+what the **local** pick-up rules are configured to serve - correct for the
+live Connections screen, wrong for a hosted explanation. And because the
+default rules path is relative (the convention this codebase already uses for
+`config/rules.yaml`), the bundle's content depended on the directory
+`export-web` ran from: from anywhere but the repo root the card's file list
+came out empty. The existing cross-process determinism test runs both
+processes with `cwd=REPO`, so it could not see this.
+
+The static card now names the committed example file list from a constant,
+and its setup text says that is what it is. The section is independent of
+local connector configuration entirely - the other two connectors' outputs
+were already fixed in code.
+
+### Tests added
+
+`tests/test_webexport.py`: the section built from the repo root and from a
+temp directory must be equal, the file-drop card still names
+`invoice_lines.csv`, and - the honesty rule, asserted on the page a viewer
+reads - the two API connectors say "not yet verified live" while file drop
+says "verified end to end".
+
+`ruff check` 0; `ruff format` 0; `mypy src api` 0. New test passed; the demo
+bundle was regenerated and the connections snapshots re-baselined (the card's
+setup text changed), results in the final entry.
+
+## fix — the API-mode suite was running four specs against one shared server in parallel (2026-11-02, Run 7 branch)
+
+"manual proposal appears in the queue" failed intermittently in the full
+API-mode suite and passed every time on its own. The first guess - a stale
+reused server - was wrong (nothing was listening on the port between runs),
+and so was the second (within-file ordering: the file passes alone). The
+answer came from the execution order the list reporter prints:
+
+```
+ok  1 load-data.spec.ts:42 ...
+ok  4 connections.spec.ts:26 ...
+ok  3 api-mode.spec.ts:14 ...
+ok  2 actions-api.spec.ts:34 ...
+```
+
+Interleaved, out of order. `fullyParallel: false` makes tests serial *within*
+a file; it does not stop Playwright running the **files** concurrently across
+workers, and no `workers` was set. So four specs were driving one BFF, with
+one action store and one served bundle - and `load-data.spec.ts` deliberately
+runs the pipeline on an upload and **swaps the served bundle**, which is why
+its own header comment says it must run last. That comment was true when
+files ran serially. Under parallel workers the swap could land while
+`actions-api.spec.ts` was reading the queue, so the queue's facets and rows
+changed under it and the new proposal's row was no longer where the test
+looked. The failure it produced ("Showing 278 of 278 actions" - the owner
+filter apparently ignored) pointed at the filter contract, which turned out
+to be correct on both sides; the data had moved, not the filter.
+
+Latent since Phase 42 and not a Run 7 regression - Run 7 only changed the
+timing by adding a fourth spec file. Fixed where the assumption lives:
+`workers: 1` in `playwright.api.config.ts`, with the reason written next to
+it. Shared mutable server state is not parallelisable, and saying so once in
+the config is cheaper than making every spec defend itself against the
+others.
+
+Order is now strictly alphabetical with load-data genuinely last, and the
+suite passed **three consecutive full runs, 15/15 each**.
+
+Also in this commit: the Connections page throws `ApiError` rather than
+`Error`, so the query client's "never retry a 4xx" rule can see the status -
+a 403 "configuring connectors requires the admin role" and a 409 "a sync is
+already running" are answers to show the reader, not requests to repeat.
+
+## Run 7 — final verification, like CI, from a fresh clone (2026-11-02)
+
+The spec asks for CI's own steps against a clone, not against the working
+tree where everything was built. Clone of branch `run7`, nothing reused:
+
+| Step | Result |
+|---|---|
+| `uv sync --frozen --all-groups` | exit 0 (130 packages) |
+| Full `pytest` | **957 passed**, 11 deselected, exit 0 (1188 s) at `be1c1af` |
+| `pytest tests/test_filedrop.py` at the final code commit | 16 passed (the one file changed after the full run above) |
+| `margin-engine export-web --demo --out web/public/data` | exit 0 |
+| `npm ci` | exit 0 |
+| `npm run gen-types` then `git diff --exit-code src/types/bundle.ts` | **exit 0** - the generated TypeScript matches the schema, which is the gate that would have caught the bundle's new `connections` section going unregenerated |
+| `npm run build` | exit 0 |
+| `npm test` (vitest) | 22 passed |
+| `CI=true SKIP_SNAPSHOTS=1 npx playwright test` | **249 passed, 5 skipped**, exit 0 |
+
+And on this working tree, for the record: full pytest 956 passed exit 0;
+ruff, ruff format and `mypy src api` (strict, 103 files) all 0; the snapshot
+and axe suite 56 passed with no serious or critical violations; the API-mode
+suite 15/15 three times running.
+
+The opt-in `live` tests are deselected by default and skip cleanly without
+credentials, so CI never needs a secret - which is the point of the marker.
+
+### What this run leaves open
+
+- **QuickBooks Online and HubSpot are not verified live.** Their fixtures
+  encode the documented schemas and say so in the test modules. The owner
+  setup, the exact environment values, and what to update after a successful
+  live run are in `docs/run7-report.md`.
+- The `always_positive_with_type` sign convention remains declared in the
+  mapping schema and applied nowhere in the pipeline - noticed while writing
+  the QuickBooks mapping, logged rather than changed, which is why that
+  connector writes revenue-effect signs itself.
+- `RUN7.md` stays untracked (as Runs 5 and 6 did); its content is CLAUDE.md's
+  section "RUN 7".
+
+Final commit on `run7`. Not merged, not pushed - the owner pushes and opens
+the PR.

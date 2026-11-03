@@ -45,6 +45,28 @@ def fingerprint_inputs(data_dir: Path) -> list[dict[str, Any]]:
     return out
 
 
+def linked_sync_manifest(data_dir: Path) -> dict[str, Any] | None:
+    """When the input folder was materialized by a system connector (Run 7),
+    link its sync manifest so the run names exactly which sync fed it."""
+    p = data_dir / "sync_manifest.json"
+    if not p.exists():
+        return None
+    try:
+        sync = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"file": p.name, "sha256": _sha256(p), "note": "sync manifest unreadable"}
+    return {
+        "file": p.name,
+        "sha256": _sha256(p),
+        "connector": sync.get("connector"),
+        "connector_version": sync.get("connector_version"),
+        "sync_id": sync.get("sync_id"),
+        "synced_utc": sync.get("synced_utc"),
+        "window": sync.get("window"),
+        "live_verification": sync.get("live_verification"),
+    }
+
+
 def build_manifest(
     *,
     data_dir: Path,
@@ -69,6 +91,7 @@ def build_manifest(
         "mapping_file": str(mapping_path),
         "mapping_sha256": _sha256(mapping_path),
         "input_files": fingerprint_inputs(data_dir),
+        "source_sync": linked_sync_manifest(data_dir),
         "software_versions": versions,
         "seed": seed,
         "cleaning_decisions": cleaning_decisions,

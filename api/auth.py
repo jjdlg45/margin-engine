@@ -41,7 +41,10 @@ MODE_PRODUCTION = "production"
 ROLE_ANALYST = "analyst"
 ROLE_APPROVER = "approver"
 ROLE_VIEWER = "viewer"
-KNOWN_ROLES = frozenset({ROLE_ANALYST, ROLE_APPROVER, ROLE_VIEWER})
+# Run 7, Phase 94: configures system connectors (check/sync/schedule) in
+# production mode; local single-user mode does not gate on it.
+ROLE_ADMIN = "admin"
+KNOWN_ROLES = frozenset({ROLE_ANALYST, ROLE_APPROVER, ROLE_VIEWER, ROLE_ADMIN})
 
 AUTH_HEADER_IDENTITY = "local-identity-header"
 AUTH_PASSWORD = "password"

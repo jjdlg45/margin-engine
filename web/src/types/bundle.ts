@@ -166,6 +166,15 @@ export type RecommendedPriceBCents = number | null;
 export type ReviewerDecision = string | null;
 export type Pairs = CompliancePair[];
 export type ScreenAttributes = string[];
+export type Description = string;
+export type LiveVerification = string;
+export type Name = string;
+export type Produces = string[];
+export type Scopes = string[];
+export type Setup = string;
+export type System = string;
+export type Connectors = ConnectorCard[];
+export type Note2 = string;
 export type DataLabel = string;
 export type FlagNote = string;
 export type NCommercialOutlierFlags = number;
@@ -272,7 +281,7 @@ export type VisibleResidualCents = number;
  * Time window every KPI covers, e.g. '24 months'
  */
 export type WindowLabel = string;
-export type Description = string;
+export type Description1 = string;
 export type Label = string;
 export type AmountCents = number;
 export type Component = string;
@@ -410,14 +419,14 @@ export type ResidualCents = number | null;
 export type SourceTotalCents = number | null;
 export type Reconciliation = ReconciliationCheck[];
 export type AmountCents1 = number;
-export type Name = string;
+export type Name1 = string;
 export type What = string;
 export type WhereListed = string;
 export type WhyNotAllocated = string;
 export type Residuals = Residual[];
 export type CogsTiming = string;
 export type NPairs = number;
-export type Name1 = string;
+export type Name2 = string;
 export type PctIncrease = number;
 export type ContributionEffectCents = number | null;
 export type ContributionEffectSupportedEverywhere = boolean;
@@ -441,7 +450,7 @@ export type MaeWithoutSamePeriodFeatures = number | null;
 export type NEvalPairs = number;
 export type NEvalPeriods = number;
 export type NFitPeriods = number;
-export type Note2 = string;
+export type Note3 = string;
 export type SamePeriodFeatures = string[];
 export type NPairs1 = number;
 export type P25 = number;
@@ -473,7 +482,7 @@ export type NLines = number;
 /**
  * Plain-English name derived from the rule; covers every branch
  */
-export type Name2 = string;
+export type Name3 = string;
 /**
  * One-sentence description derived from the rule
  */
@@ -635,6 +644,7 @@ export interface WebBundle {
   actions_table: ActionsTable;
   bundle_version: BundleVersion;
   compliance?: ComplianceSection | null;
+  connections: ConnectionsSection;
   data_label: DataLabel;
   dispersion: DispersionSection;
   economics: EconomicsSection;
@@ -886,6 +896,23 @@ export interface CompliancePair {
   recommended_price_b_cents: RecommendedPriceBCents;
   reviewer_decision: ReviewerDecision;
 }
+export interface ConnectionsSection {
+  connectors: Connectors;
+  note: Note2;
+}
+/**
+ * Run 7, Phase 94: one system connector, described for the static demo's
+ * explanatory Connections page (no live state, no credentials).
+ */
+export interface ConnectorCard {
+  description: Description;
+  live_verification: LiveVerification;
+  name: Name;
+  produces: Produces;
+  scopes: Scopes;
+  setup: Setup;
+  system: System;
+}
 export interface DispersionSection {
   abc_revenue_counts: AbcRevenueCounts;
   flag_note: FlagNote;
@@ -984,7 +1011,7 @@ export interface Labels {
   [k: string]: LabelEntry;
 }
 export interface LabelEntry {
-  description: Description;
+  description: Description1;
   label: Label;
 }
 export interface LeakageComponent {
@@ -1143,7 +1170,7 @@ export interface ReconciliationCheck {
 }
 export interface Residual {
   amount_cents: AmountCents1;
-  name: Name;
+  name: Name1;
   what: What;
   where_listed: WhereListed;
   why_not_allocated: WhyNotAllocated;
@@ -1151,7 +1178,7 @@ export interface Residual {
 export interface ScenarioGrid {
   cogs_timing: CogsTiming;
   n_pairs: NPairs;
-  name: Name1;
+  name: Name2;
   pct_increase: PctIncrease;
   points: Points;
   scope: Scope1;
@@ -1187,7 +1214,7 @@ export interface SegmentHoldout {
   n_eval_pairs: NEvalPairs;
   n_eval_periods: NEvalPeriods;
   n_fit_periods: NFitPeriods;
-  note: Note2;
+  note: Note3;
   same_period_features: SamePeriodFeatures;
 }
 export interface SegmentIndexStats {
@@ -1206,7 +1233,7 @@ export interface SegmentRule {
   n_customers: NCustomers1;
   n_items: NItems1;
   n_lines: NLines;
-  name: Name2;
+  name: Name3;
   plain: Plain;
   technical_note: TechnicalNote;
 }

@@ -167,6 +167,18 @@ Three tools exist for real deployments:
 
 **Going further.** A FastAPI backend ([`api/`](api/)) implements [`docs/api/openapi.yaml`](docs/api/openapi.yaml) with DuckDB storage, response caching, rate limiting and scheduled refreshes; `uv run python scripts/live_mode.py` runs the UI against it with a replay feed, and `docker compose up --build` starts the whole stack. Hosting notes: [`docs/deploy-api.md`](docs/deploy-api.md).
 
+## Connecting your systems
+
+Instead of manual exports, system connectors pull data on a schedule and materialize the **same canonical files the engine already reads** — mapping, validation, reconciliation and every test stay exactly as they are. Each sync writes a manifest (window, counts, checksums, warnings) that the run manifest links, and a failed sync leaves the previous good one in place. Credentials live in the environment or a local `.env`, never in the repo, logs or outputs.
+
+| Connector | Covers | Status |
+|---|---|---|
+| **File drop** (watched folder or key-based SFTP) | How Infor CloudSuite, SAP, Epicor, NetSuite and TMSs connect to outside tools in practice: scheduled exports to an agreed location. Complete-file detection, checksummed dedup (never processed twice), archive, and quarantine with a plain-English reason. Guide: [`docs/connecting-erp-file-drop.md`](docs/connecting-erp-file-drop.md) | **Verified end to end** against a local watched folder and an in-process SFTP server |
+| **QuickBooks Online** | Customers, items, invoices, credit memos and monthly P&L totals (for the GL variance check), via OAuth 2.0 with refresh tokens, read-only scope. QuickBooks lines carry no unit cost: the item's purchase cost is used where present, otherwise `cost_unavailable` — never an invented cost | Built against the documented API (minorversion 75), **not yet verified live** — needs an Intuit sandbox |
+| **HubSpot CRM** | Company names and deals with line items as `quotes.csv`; only closed-won/closed-lost deals count as outcomes, everything else is excluded with its reason recorded. Won/lost is read from each pipeline's own stage metadata, never guessed from stage names; HubSpot's separate Quotes object is not read in this run | Built against the documented API, **not yet verified live** — needs a developer test account |
+
+`margin-engine connectors` lists them; `margin-engine connect <name> --check` verifies credentials and reachability; `margin-engine connect <name>` syncs now. In API mode the **Connections** screen shows per-connector status, last sync and record counts with "Check connection", "Sync now" and schedule settings (admin-only in production mode). No logos are used and no official partnership is claimed; adding a connector against the same interface is documented in [`docs/connectors.md`](docs/connectors.md).
+
 ---
 
 ## Validation results

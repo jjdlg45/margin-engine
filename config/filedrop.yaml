@@ -1,0 +1,24 @@
+# File-drop pick-up rules (Run 7, Phase 91).
+#
+# Each rule matches dropped files by filename pattern (fnmatch) and names the
+# mapping that validates them plus the role the file plays:
+#   role: lines                -> the invoice-lines export
+#   role: reference:<table>    -> a reference table the mapping declares
+#
+# A dropped file is accepted only if it parses under the mapping's declared
+# input options and carries every column the mapping requires for its role;
+# otherwise it is quarantined with the reason written next to it. Accepted
+# files are served to the engine under the filename the mapping expects.
+#
+# These defaults cover the synthetic ERP export, which is also what the
+# file-drop tests use. Point patterns at your own export names and mapping.
+rules:
+  - pattern: "invoice_lines*.csv"
+    mapping: config/mappings/synth_erp.yaml
+    role: lines
+  - pattern: "customers*.csv"
+    mapping: config/mappings/synth_erp.yaml
+    role: "reference:customers"
+  - pattern: "items*.csv"
+    mapping: config/mappings/synth_erp.yaml
+    role: "reference:items"

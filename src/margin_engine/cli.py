@@ -458,5 +458,74 @@ def anonymize(
         typer.echo("Money columns were scaled by a secret factor (internally consistent).")
 
 
+@app.command()
+def connectors() -> None:
+    """List the system connectors (Run 7) and what each one provides."""
+    from margin_engine.connectors.credentials import CredentialStore
+    from margin_engine.connectors.registry import build_connector, connector_names
+
+    creds = CredentialStore()
+    for name in connector_names():
+        info = build_connector(name, creds).describe()
+        typer.echo(f"{info.name}: {info.system}")
+        typer.echo(f"  {info.description}")
+        typer.echo(f"  produces: {', '.join(info.produces) or '(configure pick-up rules)'}")
+        typer.echo(f"  status: {info.live_verification}")
+        missing = creds.missing(info)
+        if missing:
+            typer.echo(f"  missing settings: {', '.join(s.env for s in missing)}")
+
+
+@app.command()
+def connect(
+    name: str = typer.Argument(..., help="Connector name (see `margin-engine connectors`)"),
+    check: bool = typer.Option(False, "--check", help="Only verify credentials and reachability"),
+    authorize: bool = typer.Option(
+        False,
+        "--authorize",
+        help="Run the connector's one-time OAuth consent flow (QuickBooks Online)",
+    ),
+    full_resync: bool = typer.Option(
+        False, "--full-resync", help="Ignore the cursor and fetch everything again"
+    ),
+    state_dir: Path = typer.Option(  # noqa: B008
+        Path(".api_state/connectors"),
+        "--state-dir",
+        help="Where cursors, state and synced folders live",
+    ),
+) -> None:
+    """Check or sync one system connector (Run 7). A sync materializes the
+    canonical files the engine ingests, plus a sync manifest."""
+    from margin_engine.connectors.base import ConnectorError
+    from margin_engine.connectors.framework import run_sync
+    from margin_engine.connectors.registry import build_connector
+
+    try:
+        connector = build_connector(name)
+        if authorize:
+            flow = getattr(connector, "authorize", None)
+            if flow is None:
+                typer.echo(f"Connector '{name}' has no authorization flow.", err=True)
+                raise typer.Exit(code=1)
+            typer.echo(flow())
+            raise typer.Exit(code=0)
+        if check:
+            result = connector.check()
+            typer.echo(("OK: " if result.ok else "NOT READY: ") + result.message)
+            raise typer.Exit(code=0 if result.ok else 1)
+        manifest = run_sync(connector, state_dir, full_resync=full_resync)
+    except ConnectorError as exc:
+        _fail("connector", exc)
+        return
+    if manifest.get("unchanged_rerun"):
+        typer.echo("No changes since the last sync; the previous folder stands.")
+    for table, counts in sorted(manifest["records"].items()):
+        typer.echo(f"  {table}: {counts['rows']} row(s), {counts['new_or_changed']} new or changed")
+    for warning in manifest["warnings"]:
+        typer.echo(f"  note: {warning}")
+    typer.echo(f"Synced folder: {state_dir / name / 'syncs' / manifest['sync_id']}")
+    typer.echo("Run the engine on it with --data pointing at that folder.")
+
+
 if __name__ == "__main__":
     app()

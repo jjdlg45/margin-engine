@@ -106,6 +106,29 @@ def _rel_move(stored: object, current: object) -> float | None:
     return abs(c - s) / abs(s)
 
 
+def evidence_as_of(events: pl.DataFrame, fallback: dt.date) -> dt.date:
+    """The engine's own data date: the newest ENGINE-authored event in the
+    store. Expiry means "the evidence is older than the policy window", and
+    evidence ages against the engine's current outputs, not the wall clock:
+    in a live deployment regeneration advances this date with the data, while
+    a frozen demo world does not go stale by the calendar alone (Run 7 fix of
+    a Phase 69 time bomb: the fixed-date demo's actions all expired on
+    2026-04-28 wall-clock and the review workflow died). User events
+    (submit, approve) are wall-clock and deliberately do not move it.
+    `fallback` (normally today) applies when no engine event exists."""
+    if events.height == 0 or "who" not in events.columns:
+        return fallback
+    engine_events = events.filter(pl.col("who") == "engine")
+    if engine_events.height == 0:
+        return fallback
+    newest = engine_events["at"].max()
+    if isinstance(newest, dt.datetime):
+        return newest.date()
+    if isinstance(newest, dt.date):
+        return newest
+    return fallback
+
+
 def revalidate_action(
     action: dict[str, Any],
     *,

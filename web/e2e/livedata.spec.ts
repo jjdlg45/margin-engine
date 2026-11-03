@@ -20,6 +20,7 @@ const APP_FILES = [
   "scenarios.json",
   "methodology.json",
   "modules.json",
+  "connections.json",
   "tables/guidance.json",
   "tables/guidance_explanations.json",
   "tables/opportunities.json",

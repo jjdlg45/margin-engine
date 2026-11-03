@@ -32,6 +32,7 @@ PAGES = [
     "scenarios",
     "methodology",
     "modules",
+    "connections",
 ]
 TABLES = ["guidance", "opportunities", "customers"]
 
