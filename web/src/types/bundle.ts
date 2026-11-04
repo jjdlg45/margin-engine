@@ -209,6 +209,17 @@ export type MinOrderValueCents = number;
 export type NOrders1 = number;
 export type NegativeContributionOrders = number;
 export type OrdersBelowMinValue = number;
+export type EffectiveSampleSize = number;
+export type ItemCategory = string;
+export type ParentElasticity = number | null;
+export type RawElasticity = number | null;
+export type RawSe = number | null;
+export type Segment1 = number;
+export type ShrinkWeightParent = number;
+export type ShrunkElasticity = number | null;
+export type ShrunkSe = number | null;
+export type Status3 = string;
+export type ElasticityPooling = ElasticityPooling1[];
 export type EngineVersion = string;
 export type AnnualNetRevenueCents = number | null;
 export type BandP25 = number | null;
@@ -227,8 +238,8 @@ export type ItemId2 = string;
 export type ItemName1 = string | null;
 export type ListProvenance = string | null;
 export type PocketFloorCents = number | null;
-export type Segment1 = number | null;
-export type Status3 = string;
+export type Segment2 = number | null;
+export type Status4 = string;
 export type TargetIndex = number | null;
 export type TargetLabel = string | null;
 export type Guidance = GuidancePair[];
@@ -338,7 +349,7 @@ export type ItemName2 = string | null;
  * (target - current) / target, from the pair's guidance
  */
 export type PctBelowTarget = number | null;
-export type Segment2 = number | null;
+export type Segment3 = number | null;
 /**
  * How big, with its own caveat attached
  */
@@ -372,7 +383,7 @@ export type NAbsorbedParameters = number | null;
 export type NClusters = number | null;
 export type NObs = number;
 export type Reasons = string;
-export type Status4 = string;
+export type Status5 = string;
 export type CrossPriceAbsentReason = string | null;
 export type CogsTotalCents = number;
 export type Method = string;
@@ -406,8 +417,8 @@ export type NegotiationGap = number | null;
 export type PriceCoef = number | null;
 export type PriceCoefSe = number | null;
 export type Reasons1 = string;
-export type Segment3 = number;
-export type Status5 = string;
+export type Segment4 = number;
+export type Status6 = string;
 export type WinRate = number;
 export type WinCurvesAbsentReason = string | null;
 export type ActualCents = number;
@@ -443,6 +454,13 @@ export type Scope1 = string;
 export type ScopeLabel = string | null;
 export type ScopeValue = string;
 export type ScenarioGrids = ScenarioGrid[];
+export type DifferenceCents = number;
+export type JointCents = number;
+export type NPairsJoint = number;
+export type NScenarios = number;
+export type NaiveSumCents1 = number;
+export type Note3 = string;
+export type ScenarioNames = string[];
 export type BootstrapMedianAri = number | null;
 export type Mae = number | null;
 export type MaeBaseline = number | null;
@@ -450,13 +468,13 @@ export type MaeWithoutSamePeriodFeatures = number | null;
 export type NEvalPairs = number;
 export type NEvalPeriods = number;
 export type NFitPeriods = number;
-export type Note3 = string;
+export type Note4 = string;
 export type SamePeriodFeatures = string[];
 export type NPairs1 = number;
 export type P25 = number;
 export type P50 = number;
 export type P75 = number;
-export type Segment4 = number;
+export type Segment5 = number;
 export type IndexDistribution = SegmentIndexStats[];
 export type MarginDriverNote = string;
 /**
@@ -594,10 +612,10 @@ export type PrimaryIntervalBasis = string | null;
 export type RobustnessExcludedWeak = string | null;
 export type RobustnessNSpecifications = number | null;
 export type RobustnessSpread = number | null;
-export type Segment5 = number;
+export type Segment6 = number;
 export type SmallClusterDetail = string | null;
 export type SmallClusterMethodUsed = string | null;
-export type Status6 = string;
+export type Status7 = string;
 export type StatusReasons = string;
 export type SupportDetail = string | null;
 export type SupportLogHi = number | null;
@@ -648,6 +666,7 @@ export interface WebBundle {
   data_label: DataLabel;
   dispersion: DispersionSection;
   economics: EconomicsSection;
+  elasticity_pooling?: ElasticityPooling;
   engine_version: EngineVersion;
   guidance: Guidance;
   honest_labels: HonestLabels;
@@ -661,6 +680,7 @@ export interface WebBundle {
   reconciliation: Reconciliation;
   residuals: Residuals;
   scenario_grids: ScenarioGrids;
+  scenario_overlap?: ScenarioOverlap | null;
   segments: SegmentsSection;
   sensitivity: Sensitivity;
   unallocated_settlements: UnallocatedSettlements;
@@ -961,6 +981,23 @@ export interface OrderEconomicsSummary {
   negative_contribution_orders: NegativeContributionOrders;
   orders_below_min_value: OrdersBelowMinValue;
 }
+/**
+ * One segment x item-category child's elasticity before and after being
+ * shrunk toward its parent segment (spec 8.6). Reported beside the segment
+ * estimates; the engine prices from the segment number, not from these.
+ */
+export interface ElasticityPooling1 {
+  effective_sample_size: EffectiveSampleSize;
+  item_category: ItemCategory;
+  parent_elasticity: ParentElasticity;
+  raw_elasticity: RawElasticity;
+  raw_se: RawSe;
+  segment: Segment1;
+  shrink_weight_parent: ShrinkWeightParent;
+  shrunk_elasticity: ShrunkElasticity;
+  shrunk_se: ShrunkSe;
+  status: Status3;
+}
 export interface GuidancePair {
   annual_net_revenue_cents?: AnnualNetRevenueCents;
   band_p25: BandP25;
@@ -979,8 +1016,8 @@ export interface GuidancePair {
   item_name?: ItemName1;
   list_provenance?: ListProvenance;
   pocket_floor_cents: PocketFloorCents;
-  segment: Segment1;
-  status: Status3;
+  segment: Segment2;
+  status: Status4;
   target_index: TargetIndex;
   target_label: TargetLabel;
 }
@@ -1080,7 +1117,7 @@ export interface OpportunityRecord {
   item_id: ItemId3;
   item_name?: ItemName2;
   pct_below_target?: PctBelowTarget;
-  segment: Segment2;
+  segment: Segment3;
   size_line?: SizeLine;
   step_expected_contribution_change_cents?: StepExpectedContributionChangeCents;
   step_expected_pocket_gross_profit_change_cents?: StepExpectedPocketGrossProfitChangeCents;
@@ -1113,7 +1150,7 @@ export interface CrossPriceEstimate {
   n_clusters?: NClusters;
   n_obs: NObs;
   reasons: Reasons;
-  status: Status4;
+  status: Status5;
 }
 export interface InventorySection {
   cogs_total_cents: CogsTotalCents;
@@ -1155,8 +1192,8 @@ export interface WinCurve {
   price_coef: PriceCoef;
   price_coef_se: PriceCoefSe;
   reasons: Reasons1;
-  segment: Segment3;
-  status: Status5;
+  segment: Segment4;
+  status: Status6;
   win_rate: WinRate;
 }
 export interface ReconciliationCheck {
@@ -1194,6 +1231,24 @@ export interface ScenarioGridPoint {
   recovered_cents: RecoveredCents;
   residual_exposure_cents: ResidualExposureCents;
 }
+/**
+ * What the scenario cards cost if they all happened at once.
+ *
+ * The cards above overlap by construction - a category scope and a supplier
+ * scope share items - so adding their incremental costs is wrong twice over:
+ * a shared pair gets counted once per card, and two 10% increases on one
+ * pair compound to 21%, not 20%. This row evaluates every scope jointly over
+ * one baseline, charging each pair once at its compounded factor.
+ */
+export interface ScenarioOverlap {
+  difference_cents: DifferenceCents;
+  joint_cents: JointCents;
+  n_pairs_joint: NPairsJoint;
+  n_scenarios: NScenarios;
+  naive_sum_cents: NaiveSumCents1;
+  note: Note3;
+  scenario_names: ScenarioNames;
+}
 export interface SegmentsSection {
   bootstrap_median_ari: BootstrapMedianAri;
   holdout?: SegmentHoldout | null;
@@ -1214,7 +1269,7 @@ export interface SegmentHoldout {
   n_eval_pairs: NEvalPairs;
   n_eval_periods: NEvalPeriods;
   n_fit_periods: NFitPeriods;
-  note: Note3;
+  note: Note4;
   same_period_features: SamePeriodFeatures;
 }
 export interface SegmentIndexStats {
@@ -1222,7 +1277,7 @@ export interface SegmentIndexStats {
   p25: P25;
   p50: P50;
   p75: P75;
-  segment: Segment4;
+  segment: Segment5;
 }
 export interface SegmentRule {
   conditions: Conditions;
@@ -1333,10 +1388,10 @@ export interface SensitivitySegment {
   robustness_excluded_weak?: RobustnessExcludedWeak;
   robustness_n_specifications?: RobustnessNSpecifications;
   robustness_spread: RobustnessSpread;
-  segment: Segment5;
+  segment: Segment6;
   small_cluster_detail?: SmallClusterDetail;
   small_cluster_method_used?: SmallClusterMethodUsed;
-  status: Status6;
+  status: Status7;
   status_reasons: StatusReasons;
   support_detail?: SupportDetail;
   support_log_hi?: SupportLogHi;

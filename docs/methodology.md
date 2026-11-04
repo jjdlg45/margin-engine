@@ -660,9 +660,30 @@ Evidence statuses:
   weak-IV-robust evidence disagrees with the plug-in interval, the top status
   is not awarded.
 
-Partial pooling: segment x item-category estimates shrink toward the parent
-segment with precision weights (method-of-moments between-variance); raw and
-shrunk estimates, effective sample size and uncertainty are all reported.
+Partial pooling (`sensitivity.partial_pooling`, **off by default**): segment x
+item-category estimates shrink toward the parent segment with precision
+weights (method-of-moments between-variance); raw and shrunk estimates,
+effective sample size and uncertainty are all reported in
+`elasticity_pooling.csv` and on the sensitivity page. The engine always prices
+from the segment estimate, never from a pooled child, so this is a reporting
+option and switching it on moves no dollar figure.
+
+It is off by default because each child is a full segment fit - it must be,
+since the table reports a per-child evidence status, and a status without its
+diagnostics would be a guess. Measured on the demo world (2 segments, 8
+categories, 16 children): the sensitivity stage goes 3.8s to 9.6s (2.51x) and
+the whole pipeline 22.6s to 29.5s (1.30x), against a CI gate that fails a
+branch more than 10% slower than `main`.
+
+What it showed on the demo world, for honesty about what pooling buys here:
+the method-of-moments between-child variance came out at zero in both
+segments, so every child collapsed fully onto its parent (pooling weight
+1.00) and no child's shrunk estimate differs from its segment's. Raw child
+estimates span -2.81 to -2.06 against a parent of -2.33, and -2.13 to -1.00
+against a parent of -1.28; pooling's verdict is that all of that spread is
+sampling noise rather than real sub-segment variation. That is a genuine
+finding, not a failure - and it is why the default run does not pay 30% of its
+runtime for it.
 
 Known limitation (by design of the test itself): the overidentification test
 detects an invalid instrument only when the two instruments disagree.
@@ -1264,10 +1285,26 @@ the floor and corridor; inelastic segments get the corridor top, labeled. All
 other targets remain provisional historical.
 
 Cost/tariff scenarios state scope (item / supplier / category), magnitude and
-effective date; pass-through strategies 0% / 50% / 100% and segment-weighted
-are shown side by side; full pass-through is never assumed; contract-protected
-lines are excluded and their exposure reported. Combined scenarios are modeled
-jointly — overlapping single-scenario numbers are never added.
+effective date; full pass-through is never assumed; contract-protected lines
+are excluded and their exposure reported. A shipped run emits a pass-through
+grid in 1% steps from 0% to 100%, which contains the 0% / 50% / 100% points
+the spec names; the separate four-row strategy table (those three plus
+segment-weighted) is built by `run_cost_scenario`, which the Run 8 wiring
+audit found has no caller in `src/` — the grid superseded it, and the canonical
+strategy values are pinned against the grid by test instead.
+
+Combined scenarios are modeled jointly (Run 8). The scenario cards a run
+emits — the top categories and the top suppliers by baseline revenue — overlap
+by construction, because a category scope and a supplier scope cover some of
+the same items. The bundle therefore carries a joint evaluation beside them:
+every scope applied over one baseline, each customer-item pair charged once at
+its compounded factor. Adding the cards is wrong in both directions at once —
+a shared pair is counted once per card, while two 10% increases on one pair
+compound to 21% rather than 20% — so the joint figure is not simply smaller
+than the sum, and the page says to use the joint figure for all of the
+scenarios together and a single card for one of them. Before Run 8 the joint
+evaluation existed in the codebase with no caller while this paragraph claimed
+it ran.
 
 ### Quote win/loss modeling (Run 2)
 
@@ -1343,9 +1380,19 @@ segment at or under the threshold recovered within 7 percent, while segments
 above it erred by up to 28 percent. The gate is roughly a 1.5-sigma criterion
 against the +/-15 percent bound, so it is probabilistic rather than a
 guarantee — stated here rather than hidden. The negotiation gap (quote to
-close on won deals) informs the start price. Win-aware optimization (Run 6,
-Phase 65) translates the quote index into a monetary price and maximizes the
-POCKET objective times the win probability — (P (1 - d) - F - C) x P_win(P),
+close on won deals) is measured and reported per segment; nothing uses it to
+set a start price, and until Run 8 this paragraph said it did.
+
+**Not wired in**, on the same footing as the demand optimizer above:
+`optimal_price_win_aware` has no caller in `src/`, so no run produces a
+win-aware price and none reaches the exports or the bundle. The win-curve path
+that does run ends at diagnostics — coefficient, interval, calibration,
+status. What follows describes the optimizer that exists in the codebase and
+is covered by tests, kept because it is where the engine's refusal to multiply
+a win curve by an elasticity is written down and pinned. Win-aware
+optimization (Run 6, Phase 65) translates the quote index into a monetary
+price and maximizes the POCKET objective times the win probability —
+(P (1 - d) - F - C) x P_win(P),
 or with per-unit cost-to-serve K also subtracted under the contribution
 objective (refused, not guessed, when no K is supported) — with deal size
 held at baseline: ONE volume-response source

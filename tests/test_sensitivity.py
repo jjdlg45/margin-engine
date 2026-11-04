@@ -43,6 +43,7 @@ from margin_engine.sensitivity.estimate import (
     STATUS_INSUFFICIENT,
     estimate_segment,
     run_sensitivity,
+    run_sensitivity_full,
 )
 from margin_engine.sensitivity.market_control import SOURCE_MAPPED, select_market_index
 from margin_engine.sensitivity.shrinkage import shrink_to_segment
@@ -620,6 +621,41 @@ def test_shrinkage_reports_raw_and_shrunk(tmp_path: Path) -> None:
     )
     assert between.height == est.height
     assert (est["effective_sample_size"] > 0).all()
+
+
+def test_the_sensitivity_stage_runs_pooling_and_leaves_the_segment_numbers_alone(
+    tmp_path: Path,
+) -> None:
+    """The stage, not just the function: `with_partial_pooling` produces the
+    table, and switching it on changes no segment estimate.
+
+    The engine prices from the segment number. Pooling is reported beside it
+    (spec 8.6), so the figures the opportunity math reads must be identical
+    whichever way the flag is set - otherwise wiring pooling in would have
+    silently moved every downstream dollar.
+    """
+    rules = rules_full()
+    panel, _, _ = build_world_panel(
+        tmp_path,
+        Preset.WELL_IDENTIFIED,
+        4,
+        use_engine_segments=False,
+        size={"n_customers": 120, "n_items": 250},
+    )
+    off = run_sensitivity_full(panel, rules, with_total_quantity=False)
+    on = run_sensitivity_full(panel, rules, with_total_quantity=False, with_partial_pooling=True)
+
+    assert off.pooling is None, "pooling must stay off unless it is asked for"
+    assert on.pooling is not None and on.pooling.height, "the stage produced no pooling table"
+    assert on.estimates.equals(off.estimates), "pooling moved a segment estimate"
+    assert on.gates.equals(off.gates)
+
+    # Every child belongs to a segment the stage actually estimated, and
+    # carries both numbers so a reader can see the shrinkage for themselves.
+    seg_ids = set(off.estimates["segment"].to_list())
+    assert set(on.pooling["segment"].to_list()) <= seg_ids
+    for col in ("raw_elasticity", "shrunk_elasticity", "parent_elasticity", "status"):
+        assert col in on.pooling.columns
 
 
 def _realistic_noise(

@@ -1532,6 +1532,100 @@
    "title": "EconomicsSection",
    "type": "object"
   },
+  "ElasticityPooling": {
+   "description": "One segment x item-category child's elasticity before and after being\nshrunk toward its parent segment (spec 8.6). Reported beside the segment\nestimates; the engine prices from the segment number, not from these.",
+   "properties": {
+    "effective_sample_size": {
+     "title": "Effective Sample Size",
+     "type": "integer"
+    },
+    "item_category": {
+     "title": "Item Category",
+     "type": "string"
+    },
+    "parent_elasticity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Parent Elasticity"
+    },
+    "raw_elasticity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Raw Elasticity"
+    },
+    "raw_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Raw Se"
+    },
+    "segment": {
+     "title": "Segment",
+     "type": "integer"
+    },
+    "shrink_weight_parent": {
+     "title": "Shrink Weight Parent",
+     "type": "number"
+    },
+    "shrunk_elasticity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Shrunk Elasticity"
+    },
+    "shrunk_se": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Shrunk Se"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "segment",
+    "item_category",
+    "raw_elasticity",
+    "raw_se",
+    "parent_elasticity",
+    "shrunk_elasticity",
+    "shrunk_se",
+    "effective_sample_size",
+    "shrink_weight_parent",
+    "status"
+   ],
+   "title": "ElasticityPooling",
+   "type": "object"
+  },
   "EventStudyCoefficient": {
    "properties": {
     "ci_high_pct": {
@@ -3010,6 +3104,53 @@
     "contribution_effect_supported_everywhere"
    ],
    "title": "ScenarioGridPoint",
+   "type": "object"
+  },
+  "ScenarioOverlap": {
+   "description": "What the scenario cards cost if they all happened at once.\n\nThe cards above overlap by construction - a category scope and a supplier\nscope share items - so adding their incremental costs is wrong twice over:\na shared pair gets counted once per card, and two 10% increases on one\npair compound to 21%, not 20%. This row evaluates every scope jointly over\none baseline, charging each pair once at its compounded factor.",
+   "properties": {
+    "difference_cents": {
+     "title": "Difference Cents",
+     "type": "integer"
+    },
+    "joint_cents": {
+     "title": "Joint Cents",
+     "type": "integer"
+    },
+    "n_pairs_joint": {
+     "title": "N Pairs Joint",
+     "type": "integer"
+    },
+    "n_scenarios": {
+     "title": "N Scenarios",
+     "type": "integer"
+    },
+    "naive_sum_cents": {
+     "title": "Naive Sum Cents",
+     "type": "integer"
+    },
+    "note": {
+     "title": "Note",
+     "type": "string"
+    },
+    "scenario_names": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Scenario Names",
+     "type": "array"
+    }
+   },
+   "required": [
+    "scenario_names",
+    "n_scenarios",
+    "naive_sum_cents",
+    "joint_cents",
+    "difference_cents",
+    "n_pairs_joint",
+    "note"
+   ],
+   "title": "ScenarioOverlap",
    "type": "object"
   },
   "SegmentHoldout": {
@@ -4973,6 +5114,13 @@
   "economics": {
    "$ref": "#/$defs/EconomicsSection"
   },
+  "elasticity_pooling": {
+   "items": {
+    "$ref": "#/$defs/ElasticityPooling"
+   },
+   "title": "Elasticity Pooling",
+   "type": "array"
+  },
   "engine_version": {
    "title": "Engine Version",
    "type": "string"
@@ -5045,6 +5193,17 @@
    },
    "title": "Scenario Grids",
    "type": "array"
+  },
+  "scenario_overlap": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/ScenarioOverlap"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
   },
   "segments": {
    "$ref": "#/$defs/SegmentsSection"

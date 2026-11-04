@@ -29,6 +29,10 @@ MAPPING = REPO / "config" / "mappings" / "synth_erp.yaml"
 def _fast_rules(tmp: Path) -> Path:
     rules = yaml.safe_load((REPO / "config" / "rules.yaml").read_text(encoding="utf-8"))
     rules["segmentation"]["bootstrap_resamples"] = 2
+    # Partial pooling is off in a default run (it costs 2.5x the sensitivity
+    # stage; see config.py). This fixture turns it on so the optional table
+    # gets the same bundle-parity and page-split coverage as everything else.
+    rules["sensitivity"]["partial_pooling"] = True
     p = tmp / "rules.yaml"
     p.write_text(yaml.safe_dump(rules), encoding="utf-8")
     return p
@@ -544,6 +548,109 @@ def test_split_page_files(built: tuple[FullRunResult, Rules, WebBundle, Path]) -
 
     customers = json.loads((out / "tables" / "customers.json").read_text(encoding="utf-8"))
     assert customers["items"] == full["economics"]["customers"]
+
+
+def test_partial_pooling_reaches_the_bundle_and_the_sensitivity_page(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """Partial pooling (spec 8.6) is computed by the run, carried into the
+    bundle and served on the sensitivity page.
+
+    Before Run 8 `shrink_to_segment` had no caller outside its own unit test
+    while the methodology stated pooling was reported, so this asserts the
+    whole path - engine frame, bundle model, split page file - rather than
+    just that the function works.
+    """
+    res, _, bundle, out = built
+    assert res.elasticity_pooling is not None, "the run produced no pooling table"
+    engine = res.elasticity_pooling
+    assert engine.height, "pooling ran but estimated no children"
+    assert bundle.elasticity_pooling, "pooling never reached the bundle"
+    assert len(bundle.elasticity_pooling) == engine.height
+
+    # Value parity against the engine frame, child by child.
+    by_key = {(int(r["segment"]), str(r["item_category"])): r for r in engine.to_dicts()}
+    for row in bundle.elasticity_pooling:
+        src = by_key[(row.segment, row.item_category)]
+        assert row.status == src["status"]
+        assert row.effective_sample_size == int(src["effective_sample_size"])
+        for field, col in (
+            ("raw_elasticity", "raw_elasticity"),
+            ("shrunk_elasticity", "shrunk_elasticity"),
+            ("parent_elasticity", "parent_elasticity"),
+        ):
+            got, want = getattr(row, field), src[col]
+            if want is None:
+                assert got is None
+            else:
+                # The bundle stabilises solver output to 6 significant digits.
+                assert got == pytest.approx(want, rel=1e-5)
+
+    # And it is on the page the app actually fetches.
+    page = json.loads((out / "sensitivity.json").read_text(encoding="utf-8"))
+    assert "pooling" in page, "the sensitivity page carries no pooling rows"
+    assert page["pooling"] == [r.model_dump(mode="json") for r in bundle.elasticity_pooling]
+
+    # A child with no estimable elasticity inherits its parent, labeled - it is
+    # never shown as an estimate of its own.
+    inherited = [r for r in bundle.elasticity_pooling if r.raw_elasticity is None]
+    for row in inherited:
+        assert row.status == "insufficient_data"
+        assert row.shrunk_elasticity == row.parent_elasticity
+        assert row.shrink_weight_parent == 1.0
+
+
+def test_overlapping_scenarios_are_evaluated_jointly(
+    built: tuple[FullRunResult, Rules, WebBundle, Path],
+) -> None:
+    """The scenario cards overlap, so the bundle says what they cost together.
+
+    The page ships up to eight cards - top categories and top suppliers - and
+    those scopes share items by construction. Until Run 8 nothing evaluated
+    them jointly: `combined_scenario_no_double_count` existed with no caller
+    while the methodology said combined scenarios were modeled jointly. This
+    asserts the joint row is computed, is not the sum, and reaches the page.
+    """
+    res, rules, bundle, out = built
+    assert len(bundle.scenario_grids) > 1, "fixture must ship overlapping cards"
+    ov = bundle.scenario_overlap
+    assert ov is not None, "overlapping cards shipped with no joint evaluation"
+
+    assert ov.n_scenarios == len(bundle.scenario_grids)
+    assert ov.scenario_names == [g.name for g in bundle.scenario_grids]
+    assert ov.n_pairs_joint > 0
+    assert ov.difference_cents == ov.joint_cents - ov.naive_sum_cents
+    # Each pair charged once at its compounded factor is not the sum of the
+    # cards; if it were, there would be nothing to report.
+    assert ov.joint_cents != ov.naive_sum_cents
+
+    # Parity with the engine function on this run's own inputs.
+    from datetime import date
+
+    from margin_engine.scenarios.tariff import CostShock, combined_scenario_no_double_count
+
+    shocks = [
+        CostShock(
+            name=g.name,
+            scope=g.scope,
+            scope_value=g.scope_value,
+            pct_increase=g.pct_increase,
+            effective=date(2000, 1, 1),
+        )
+        for g in bundle.scenario_grids
+    ]
+    assert res.panel is not None
+    direct = combined_scenario_no_double_count(
+        res.panel, res.guidance, res.sensitivity, shocks, rules
+    )
+    assert int(direct["incremental_cost_cents"][0]) == ov.joint_cents
+    assert int(direct["n_pairs"][0]) == ov.n_pairs_joint
+
+    # And it is on the page the app fetches, with its plain-English reading.
+    page = json.loads((out / "scenarios.json").read_text(encoding="utf-8"))
+    assert page["overlap"]["joint_cents"] == ov.joint_cents
+    assert "overlap" in ov.note and "compound" in ov.note
+    assert "_" not in ov.note, "the note is read by a person"
 
 
 def test_shard_table_roundtrip() -> None:

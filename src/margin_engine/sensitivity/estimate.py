@@ -644,15 +644,6 @@ def identification_support(
     return SupportProfile(lo, hi, n, tuple(regions), obs_lo, obs_hi, detail)
 
 
-def support_distance(move: float, regions: Sequence[tuple[float, float]]) -> float:
-    """Zero when the move sits in a supported region, otherwise the log-price
-    distance to the nearest one. Positive numbers say how far the proposal
-    reaches beyond anything the instruments induced."""
-    if not regions:
-        return float("inf")
-    return min(max(a - move, move - b, 0.0) for a, b in regions)
-
-
 def parse_support_regions(text: str) -> tuple[tuple[float, float], ...]:
     """Read back the compact export form written by `SupportProfile`."""
     if not text:
@@ -2856,6 +2847,11 @@ class SensitivityResult:
 
     estimates: pl.DataFrame
     gates: pl.DataFrame
+    # Empirical-Bayes partial pooling of segment x item-category children
+    # toward their parent segment (spec 8.6). Empty unless the caller asked
+    # for it: it costs one extra fit per child, which a simulation study that
+    # never reads the result should not pay.
+    pooling: pl.DataFrame | None = None
 
 
 GATES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -2874,6 +2870,7 @@ def run_sensitivity_full(
     market_control_source: str = SOURCE_ABSENT,
     market_control_grain: str | None = None,
     with_total_quantity: bool = True,
+    with_partial_pooling: bool = False,
 ) -> SensitivityResult:
     """Estimate every segment; returns the estimates and the gate record.
 
@@ -2942,7 +2939,16 @@ def run_sensitivity_full(
         if gate_rows
         else pl.DataFrame(schema=GATES_SCHEMA)
     )
-    return SensitivityResult(estimates=pl.DataFrame(rows), gates=gates)
+    # Partial pooling (spec 8.6). The parents are already fitted here, so the
+    # children shrink toward the same objects the estimates frame was built
+    # from - no second parent fit. Imported locally: shrinkage reads this
+    # module, so a module-level import would close the cycle.
+    pooling: pl.DataFrame | None = None
+    if with_partial_pooling:
+        from margin_engine.sensitivity.shrinkage import shrink_to_segment
+
+        pooling = shrink_to_segment(panel, {int(e.segment): e for e in ests}, rules)
+    return SensitivityResult(estimates=pl.DataFrame(rows), gates=gates, pooling=pooling)
 
 
 def run_sensitivity(

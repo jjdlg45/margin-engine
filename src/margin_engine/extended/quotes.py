@@ -36,11 +36,18 @@ revisions are counted.
 customer or rep level, and the number of clusters is reported, because that
 - not the row count - is what the precision gate is really reading.
 
-The negotiation gap (quote -> close on won deals) informs the start price:
-quoting start = target / (1 - gap) lands at the target after typical
-negotiation. Win-aware optimization maximizes the pocket objective x P_win(P)
-on a grid - used only where the segment's elasticity is causal-supported AND
-the win curve is estimated; everything else stays provisional.
+**Neither of the next two runs anywhere.** The Run 8 wiring audit found that
+`optimal_price_win_aware` has no caller in `src/`, and that the start-price
+formula was never implemented at all, while this docstring and the methodology
+described both in the present tense. They are kept and tested rather than
+deleted because this is where the engine's refusal to double-count volume
+response is written down; the docs now mark them as not wired in.
+
+The negotiation gap (quote -> close on won deals) is measured and reported per
+segment. The unimplemented intent was: start = target / (1 - gap), landing at
+the target after typical negotiation. Win-aware optimization maximizes the
+pocket objective x P_win(P) on a grid, and would be used only where the
+segment's elasticity is causal-supported AND the win curve is estimated.
 """
 
 from __future__ import annotations

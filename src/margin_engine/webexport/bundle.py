@@ -248,6 +248,23 @@ class CausalGate(BaseModel):
     detail: str
 
 
+class ElasticityPooling(BaseModel):
+    """One segment x item-category child's elasticity before and after being
+    shrunk toward its parent segment (spec 8.6). Reported beside the segment
+    estimates; the engine prices from the segment number, not from these."""
+
+    segment: int
+    item_category: str
+    raw_elasticity: float | None
+    raw_se: float | None
+    parent_elasticity: float | None
+    shrunk_elasticity: float | None
+    shrunk_se: float | None
+    effective_sample_size: int
+    shrink_weight_parent: float
+    status: str
+
+
 class SensitivitySegment(BaseModel):
     segment: int
     n_obs: int
@@ -505,6 +522,25 @@ class ScenarioGrid(BaseModel):
     n_pairs: int
     cogs_timing: str
     points: list[ScenarioGridPoint]
+
+
+class ScenarioOverlap(BaseModel):
+    """What the scenario cards cost if they all happened at once.
+
+    The cards above overlap by construction - a category scope and a supplier
+    scope share items - so adding their incremental costs is wrong twice over:
+    a shared pair gets counted once per card, and two 10% increases on one
+    pair compound to 21%, not 20%. This row evaluates every scope jointly over
+    one baseline, charging each pair once at its compounded factor.
+    """
+
+    scenario_names: list[str]
+    n_scenarios: int
+    naive_sum_cents: int
+    joint_cents: int
+    difference_cents: int
+    n_pairs_joint: int
+    note: str
 
 
 class WinCurve(BaseModel):
@@ -850,9 +886,15 @@ class WebBundle(BaseModel):
     segments: SegmentsSection
     guidance: list[GuidancePair]
     sensitivity: list[SensitivitySegment]
+    # Partial pooling (spec 8.6), empty when the run switched it off or no
+    # child was estimable.
+    elasticity_pooling: list[ElasticityPooling] = Field(default_factory=list)
     opportunity: OpportunitySection
     economics: EconomicsSection
     scenario_grids: list[ScenarioGrid]
+    # The joint cost of every scenario card at once (Run 8). None when fewer
+    # than two cards exist, so there is nothing to overlap.
+    scenario_overlap: ScenarioOverlap | None = None
     optional_modules: OptionalModules
     validation_results: list[ValidationResult]
     manifest: ManifestInfo

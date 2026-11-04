@@ -151,14 +151,20 @@ the quote date`:
 
     P_win(x) = 1 / (1 + exp(-(a + b x)))
 
-Win-aware optimal price (grid search over the index, deal size at baseline):
+Win-aware optimal price — **not wired in**: no run computes this, and no
+export or bundle field carries it (grid search over the index, deal size at
+baseline):
 
     P*_win = argmax over P of (P x (1 - d) - F - C [- K]) x P_win(P / list)
 
 clipped to [floor, upper corridor]. ONE volume-response source per record:
 the win curve is never multiplied with a demand elasticity (lost deals are
-the zeros PPML already models). Negotiation start: `start = target / (1 -
+the zeros PPML already models).
+
+Negotiation start — **not implemented in any form**: `start = target / (1 -
 negotiation gap)`, with the gap measured on won deals as `1 - close / quote`.
+The gap itself is measured and reported; this formula is not applied to it
+anywhere.
 
 Since Phase 65 the objective translates the index into a monetary price and
 applies the pair's post-invoice economics: `(P x (1 - d) - F - C) x P_win`,

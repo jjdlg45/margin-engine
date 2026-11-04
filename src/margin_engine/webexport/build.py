@@ -21,7 +21,11 @@ from margin_engine.fiscal import build_calendar
 from margin_engine.labels import LABELS, label, plain_rule, render_text
 from margin_engine.opportunity.sizing import verdict_for
 from margin_engine.report.full_run import FullRunResult
-from margin_engine.scenarios.tariff import CostShock, pass_through_grid
+from margin_engine.scenarios.tariff import (
+    CostShock,
+    combined_scenario_no_double_count,
+    pass_through_grid,
+)
 from margin_engine.webexport import explain
 from margin_engine.webexport.bundle import (
     BUNDLE_VERSION,
@@ -41,6 +45,7 @@ from margin_engine.webexport.bundle import (
     CustomerLeakage,
     DispersionSection,
     EconomicsSection,
+    ElasticityPooling,
     EventStudyCoefficient,
     EventStudySection,
     GroupWaterfall,
@@ -60,6 +65,7 @@ from margin_engine.webexport.bundle import (
     ResultsBreakdownRow,
     ScenarioGrid,
     ScenarioGridPoint,
+    ScenarioOverlap,
     SegmentHoldout,
     SegmentIndexStats,
     SegmentRule,
@@ -693,6 +699,27 @@ def build_bundle(
             )
         )
 
+    # Partial pooling (spec 8.6): the sub-segment children beside their
+    # parents. Solver output, so the same 6-significant-digit stabilisation
+    # the segment rows get.
+    pooling_rows: list[ElasticityPooling] = []
+    if res.elasticity_pooling is not None and res.elasticity_pooling.height:
+        for p in res.elasticity_pooling.sort("segment", "item_category").to_dicts():
+            pooling_rows.append(
+                ElasticityPooling(
+                    segment=int(p["segment"]),
+                    item_category=str(p["item_category"]),
+                    raw_elasticity=_rs(p.get("raw_elasticity")),
+                    raw_se=_rs(p.get("raw_se")),
+                    parent_elasticity=_rs(p.get("parent_elasticity")),
+                    shrunk_elasticity=_rs(p.get("shrunk_elasticity")),
+                    shrunk_se=_rs(p.get("shrunk_se")),
+                    effective_sample_size=_i(p.get("effective_sample_size")),
+                    shrink_weight_parent=_rs(p.get("shrink_weight_parent")) or 0.0,
+                    status=str(p["status"]),
+                )
+            )
+
     # --- opportunity -----------------------------------------------------------
     leak = res.leakage
     opp_df = res.opportunities.join(
@@ -860,7 +887,7 @@ def build_bundle(
     economics = EconomicsSection(customers=customers, orders=orders)
 
     # --- scenario grids ------------------------------------------------------------
-    scenario_grids = _scenario_grids(res, rules, supp_name, cat_name)
+    scenario_grids, scenario_overlap = _scenario_grids(res, rules, supp_name, cat_name)
 
     # --- optional modules ------------------------------------------------------------
     optional = _optional_modules(res)
@@ -1193,9 +1220,11 @@ def build_bundle(
         segments=segments,
         guidance=guidance_pairs,
         sensitivity=sens_rows,
+        elasticity_pooling=pooling_rows,
         opportunity=opportunity,
         economics=economics,
         scenario_grids=scenario_grids,
+        scenario_overlap=scenario_overlap,
         optional_modules=optional,
         validation_results=validation,
         manifest=manifest,
@@ -1211,7 +1240,7 @@ def _scenario_grids(
     rules: Rules,
     supp_name: dict[str, str],
     cat_name: dict[str, str],
-) -> list[ScenarioGrid]:
+) -> tuple[list[ScenarioGrid], ScenarioOverlap | None]:
     """Pass-through grids (0..100% in 1% steps) for the top categories and
     suppliers by baseline revenue, at a +10% landed-cost shock. The fine grid
     lets the UI slider move in 1% steps while every displayed value still
@@ -1221,7 +1250,7 @@ def _scenario_grids(
     from margin_engine.extended.inventory import scenario_timing_statement
 
     if res.panel is None:
-        return []
+        return [], None
     panel = res.panel
     sale = res.pipeline.observations
     cost_method = (
@@ -1231,6 +1260,9 @@ def _scenario_grids(
     )
     timing = scenario_timing_statement(cost_method, rules.tariff_scenarios.cost_pool)
     grids: list[ScenarioGrid] = []
+    # Every shock that produced a card, kept so the cards can be evaluated
+    # jointly below instead of being left to a reader to add up.
+    shown: list[CostShock] = []
     for scope, col in (("category", "item_category"), ("supplier", "supplier_id")):
         if col not in panel.columns:
             continue
@@ -1258,6 +1290,7 @@ def _scenario_grids(
             if n_pairs == 0:
                 continue
             scope_label = (supp_name if scope == "supplier" else cat_name).get(str(value))
+            shown.append(shock)
             grids.append(
                 ScenarioGrid(
                     name=shock.name,
@@ -1285,7 +1318,42 @@ def _scenario_grids(
                     ],
                 )
             )
-    return grids
+
+    # The cards overlap by construction: a category scope and a supplier scope
+    # share items. Evaluate them jointly over one baseline so the page can say
+    # what running all of them costs, rather than implying the sum.
+    overlap: ScenarioOverlap | None = None
+    if len(shown) > 1:
+        joint = combined_scenario_no_double_count(
+            panel, res.guidance, res.sensitivity, shown, rules
+        )
+        if joint.height:
+            naive = sum(
+                max((pt.incremental_cost_cents for pt in g.points), default=0) for g in grids
+            )
+            joint_cents = _i(joint["incremental_cost_cents"][0])
+            n_joint = _i(joint["n_pairs"][0])
+            diff = joint_cents - naive
+            overlap = ScenarioOverlap(
+                scenario_names=[g.name for g in grids],
+                n_scenarios=len(grids),
+                naive_sum_cents=naive,
+                joint_cents=joint_cents,
+                difference_cents=diff,
+                n_pairs_joint=n_joint,
+                note=(
+                    f"Adding the {len(grids)} scenarios above gives "
+                    f"{naive / 100:,.2f} dollars of extra cost, but they overlap: a "
+                    "category and a supplier scope cover some of the same items. "
+                    f"Run together they cost {joint_cents / 100:,.2f} dollars across "
+                    f"{n_joint:,} customer-item pairs, each pair charged once at its "
+                    "combined increase. Two 10 percent increases on one pair compound "
+                    "to 21 percent, not 20, which is why the joint figure is not simply "
+                    "lower than the sum. Use the joint figure for all of them at once "
+                    "and a single card for one of them; the sum is neither."
+                ),
+            )
+    return grids, overlap
 
 
 def _optional_modules(res: FullRunResult) -> OptionalModules:
@@ -1603,7 +1671,11 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
                 "segments": seg_names,
             },
         },
-        "sensitivity": {"rows": sens, "segment_names": seg_names},
+        "sensitivity": {
+            "rows": sens,
+            "segment_names": seg_names,
+            "pooling": d["elasticity_pooling"],
+        },
         "opportunity": {
             "never_summed_note": opp["never_summed_note"],
             "window_label": opp["window_label"],
@@ -1632,7 +1704,10 @@ def _page_payloads(bundle: WebBundle) -> dict[str, dict[str, object]]:
                 "treatments": sorted({r["volume_treatment"] for r in opp["top_opportunities"]}),
             },
         },
-        "scenarios": {"grids": d["scenario_grids"]},
+        "scenarios": {
+            "grids": d["scenario_grids"],
+            "overlap": d["scenario_overlap"],
+        },
         "methodology": {
             "data_label": d["data_label"],
             "reconciliation": d["reconciliation"],

@@ -8,11 +8,15 @@ and category-tariff shocks, clustered by month. Evidence statuses mirror
 Phase 6; when the two items share supplier AND category the instruments cannot
 separate the two prices and the group is labeled, never estimated.
 
-Opportunity adjustment: when raising A's price at causal own-price support and
-an estimated positive cross effect exists, a recapture share of lost volume
-shifts to the substitute: recapture = clip(cross / |own|, 0, 0.9). The
-adjustment is labeled and shown next to, never merged into, the unadjusted
-number.
+No opportunity adjustment. A recapture rule - a share of A's lost volume
+shifting to the substitute, clip(cross / |own|, 0, 0.9) - existed here from
+Phase 17 until Run 8, when the wiring audit found it had never had a caller:
+opportunity sizing is own-price only, and nothing ever displayed an adjusted
+figure. It was removed rather than connected, because every cross estimate
+this module produces is capped below causal support by design (see the status
+cap below), so recapturing volume from one would forecast off evidence the
+engine refuses to price from anywhere else. Cross-price estimates are reported
+as elasticities; they move no dollar figure.
 """
 
 from __future__ import annotations
@@ -239,19 +243,3 @@ def estimate_cross_effects(panel: pl.DataFrame, groups: pl.DataFrame, rules: Rul
             est.reasons = "; ".join(reasons)
             out.append(est.to_dict())
     return pl.DataFrame(out)
-
-
-def substitution_adjusted_change(
-    expected_change_cents: int,
-    own_elasticity: float,
-    cross_elasticity: float | None,
-    substitute_margin_cents_per_unit: int,
-    lost_units: float,
-) -> tuple[int, str]:
-    """Labeled substitution adjustment for a price-increase scenario: part of
-    the lost volume shifts to the substitute and keeps its margin."""
-    if cross_elasticity is None or cross_elasticity <= 0 or own_elasticity >= 0:
-        return expected_change_cents, "no_substitution_adjustment"
-    recapture = min(cross_elasticity / abs(own_elasticity), 0.9)
-    recaptured = round(lost_units * recapture * substitute_margin_cents_per_unit)
-    return expected_change_cents + recaptured, f"substitution_recapture={recapture:.2f}"
