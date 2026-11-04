@@ -40,7 +40,6 @@ establishes it.
 
 from __future__ import annotations
 
-import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -93,10 +92,6 @@ ESTIMAND = (
     "(never-treated and not-yet-treated), with pair and calendar-month fixed "
     "effects"
 )
-
-
-def _month_index(d: dt.date) -> int:
-    return d.year * 12 + (d.month - 1)
 
 
 def build_event_panel(

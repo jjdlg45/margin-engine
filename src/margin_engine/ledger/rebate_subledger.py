@@ -94,12 +94,6 @@ def _quarter_end_month(period: str) -> str:
     return period
 
 
-def _entries_frame(rows: list[dict[str, object]]) -> pl.DataFrame:
-    if not rows:
-        return pl.DataFrame(schema=ENTRY_SCHEMA)
-    return pl.DataFrame(rows, schema=ENTRY_SCHEMA)
-
-
 def build_rebate_subledger(
     ledger: pl.DataFrame,
     rebate_programs: pl.DataFrame | None,

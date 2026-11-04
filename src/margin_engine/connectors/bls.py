@@ -137,10 +137,3 @@ def fetch_ppi_series(
     if missing:
         notes.append(f"{SOURCE_NAME}: no data returned for series {missing}")
     return df, notes
-
-
-def write_external_cost_series_csv(df: pl.DataFrame, out_path: Path) -> None:
-    """Write the engine's external_cost_series reference table (canonical
-    columns series_id, period, value - see 27.6)."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.select("series_id", "period", "value").write_csv(out_path)

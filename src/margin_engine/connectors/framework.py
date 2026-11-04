@@ -237,11 +237,6 @@ class SyncStore:
         data = json.loads(p.read_text(encoding="utf-8"))
         return {str(k): int(v) for k, v in data.items()}
 
-    def clear_state(self) -> None:
-        state = self.dir / "state"
-        if state.exists():
-            shutil.rmtree(state)
-
 
 def _merge_table(existing: pl.DataFrame | None, batch: TableBatch, table: str) -> pl.DataFrame:
     """Upsert-by-key into the current state, then apply tombstones."""

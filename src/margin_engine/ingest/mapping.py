@@ -363,16 +363,6 @@ class SourceMapping(StrictModel):
                 sep = override.decimal_separator
         return opts, sep
 
-    def require(self, field: str, needed_for: str) -> None:
-        """Fail actionably if an optional field needed by a calculation is absent."""
-        if getattr(self.lines, field, None) is None:
-            msg = (
-                f"mapping '{self.source_system}' does not map '{field}', which is "
-                f"required for: {needed_for}. Add a '{field}' entry under 'lines' "
-                f"in the mapping YAML (with its semantics), or disable the feature."
-            )
-            raise MappingError(msg)
-
 
 KNOWN_REFERENCE_TABLES = {
     "price_list",

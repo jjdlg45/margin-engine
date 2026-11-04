@@ -52,7 +52,8 @@ jobs and the optional `-m network` test group.
 | Site | https://hts.usitc.gov/ |
 | Endpoint (verified working 2026-10-22) | `GET https://hts.usitc.gov/reststop/exportList?from=<hts>&to=<hts>&format=JSON` — the site's own machine-readable export (also offered as CSV/Excel from the search UI) |
 | Key / terms | None; US government work (public domain). No published rate limit — client uses 2 s spacing, 30-day cache |
-| **Documented limitation** | The endpoint serves the **current revision only — no history**. A constant rate has no identifying variation, so HTS rates feed cost/tariff **pass-through scenarios**, never the tariff instrument (which still requires an effective-dated tariff_schedule table). Compound/specific rates ("2.5c/kg + 4%") are kept as raw text, never coerced to a percentage |
+| **Documented limitation** | The endpoint serves the **current revision only — no history**. A constant rate has no identifying variation, so it could never feed the tariff instrument (which still requires an effective-dated tariff_schedule table). Compound/specific rates ("2.5c/kg + 4%") are kept as raw text, never coerced to a percentage |
+| **Status: evaluated, not wired in** | No run fetches HTS rates. The intended use was cost/tariff pass-through scenarios, and this row used to say they fed them — the Run 8 wiring audit found the connector has no caller outside its tests. Three things block it: every `CostShock` in `src/` uses a fixed +10%, no HTS-code-to-item-category map exists in `config/`, and a published rate is a level rather than the increase a shock needs. Kept verified and fixtured because Phase 29.3 asked for the source to be evaluated and recorded; scenarios still take a user-specified percentage |
 | Fixture | `tests/fixtures/hts_8501_8516.json` — a recorded real export (440 rows, HTS 8501-8516) |
 
 ## Series kinds and the role each one may play (Run 6, Phase 80)

@@ -15,6 +15,7 @@ reporting that lets a reader see whether a refusal was marginal.
 
 from __future__ import annotations
 
+from math import exp
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +27,16 @@ from margin_engine.config import Rules, load_rules
 from margin_engine.sensitivity.estimate import (
     identification_support,
     parse_support_regions,
-    support_distance,
 )
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def _covered(move: float, regions: tuple[tuple[float, float], ...]) -> bool:
+    """Whether a move sits in any supported stretch. Plain membership, used
+    only to describe a profile's shape; how far OUTSIDE a move reaches is the
+    shipped expression's job and is asserted on its output below."""
+    return any(lo <= move <= hi for lo, hi in regions)
 
 
 def _profile(predicted: np.ndarray, **kw: Any):
@@ -69,8 +76,8 @@ def test_skewed_support_gives_an_off_centre_region() -> None:
     lo, hi = prof.regions[0]
     # The supported stretch sits on the negative side, where the movement was.
     assert (lo + hi) / 2 < 0
-    assert support_distance(-0.03, prof.regions) == 0.0
-    assert support_distance(+0.05, prof.regions) > 0.0
+    assert _covered(-0.03, prof.regions)
+    assert not _covered(+0.05, prof.regions)
 
 
 def test_two_clusters_with_a_gap_are_two_regions_and_the_gap_is_refused() -> None:
@@ -86,10 +93,10 @@ def test_two_clusters_with_a_gap_are_two_regions_and_the_gap_is_refused() -> Non
     assert low[1] < 0 < high[0]
     # Inside the outer bounds, outside both regions.
     assert prof.lo < 0.0 < prof.hi
-    assert support_distance(0.0, prof.regions) > 0.0
+    assert not _covered(0.0, prof.regions)
     # And each cluster's own centre is supported.
-    assert support_distance(-0.06, prof.regions) == 0.0
-    assert support_distance(0.04, prof.regions) == 0.0
+    assert _covered(-0.06, prof.regions)
+    assert _covered(0.04, prof.regions)
 
 
 def test_too_little_movement_anywhere_leaves_no_region() -> None:
@@ -97,7 +104,7 @@ def test_too_little_movement_anywhere_leaves_no_region() -> None:
     prof = _profile(rng.normal(0, 0.05, 40), min_observations=30)
     assert prof.regions == ()
     assert "no part of" in prof.detail
-    assert support_distance(0.0, prof.regions) == float("inf")
+    assert not _covered(0.0, prof.regions)
 
 
 def test_no_movement_at_all_is_reported_rather_than_dividing_by_zero() -> None:
@@ -112,13 +119,26 @@ def test_no_movement_at_all_is_reported_rather_than_dividing_by_zero() -> None:
 
 
 def test_distance_is_zero_inside_and_grows_outside() -> None:
-    regions = ((-0.05, -0.01), (0.02, 0.06))
-    assert support_distance(-0.03, regions) == 0.0
-    assert support_distance(0.04, regions) == 0.0
-    assert support_distance(0.0, regions) == pytest.approx(0.01)  # nearer the upper one
-    assert support_distance(-0.02, regions) == 0.0
-    assert support_distance(0.10, regions) == pytest.approx(0.04)
-    assert support_distance(-0.20, regions) == pytest.approx(0.15)
+    """The distance arithmetic, asserted on the expression that ships.
+
+    Until Run 8 this was a scalar `support_distance` helper that nothing but
+    this test called: the pipeline computes the same min-over-regions of
+    max(lo - move, move - hi, 0) as a Polars expression in opportunity/sizing.
+    Two implementations of one rule drift, so the helper went and these cases
+    now drive the live path. `_sized` prices a pair at 0.90 of list, so a
+    target of 0.90 x exp(m) proposes a move of m.
+    """
+    regions = "-0.050000:-0.010000|0.020000:0.060000"
+
+    inside = _sized(_sensitivity(regions=regions, lo=-0.08, hi=0.08), target_index=0.90 * exp(0.04))
+    assert inside["volume_treatment"] == "expected_change"
+    assert inside["price_support_distance"] == pytest.approx(0.0)
+
+    beyond = _sized(_sensitivity(regions=regions, lo=-0.08, hi=0.08), target_index=0.90 * exp(0.10))
+    assert beyond["volume_treatment"] == "outside_price_support"
+    # 0.10 reaches 0.04 past the upper stretch, and the LOWER stretch is
+    # further away - the rule takes the nearest one.
+    assert beyond["price_support_distance"] == pytest.approx(0.04, abs=1e-6)
 
 
 def test_the_window_and_the_minimum_count_both_move_the_regions() -> None:
@@ -268,7 +288,6 @@ def test_a_measured_segment_with_no_dense_movement_refuses_every_move() -> None:
     the instruments moved price nowhere densely enough to use. That has to
     refuse, where a genuinely absent measurement does not."""
     assert parse_support_regions("") == ()
-    assert support_distance(0.01, parse_support_regions("")) == float("inf")
     row = _sized(_sensitivity(regions="", lo=-0.5, hi=0.5))
     assert row["volume_treatment"] == "outside_price_support"
 

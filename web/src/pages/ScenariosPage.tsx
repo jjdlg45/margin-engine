@@ -8,11 +8,17 @@ import { useSearchParams } from "react-router-dom";
 import { QuerySection } from "../components/Async";
 import { EntityCombobox } from "../components/filters/Combobox";
 import { EmptyState, PageHeader, Section } from "../components/Page";
-import type { ScenarioGrid } from "../types/bundle";
+import type { ScenarioGrid, ScenarioOverlap } from "../types/bundle";
 import { usePageData } from "../lib/queries";
 import { count, dollars, pct } from "../lib/format";
 
-function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
+function ScenariosBody({
+  grids,
+  overlap,
+}: {
+  grids: ScenarioGrid[];
+  overlap: ScenarioOverlap | null;
+}) {
   const [params, setParams] = useSearchParams();
   const name = params.get("scenario") ?? grids[0]?.name ?? "";
   const grid = useMemo(() => grids.find((g) => g.name === name) ?? grids[0], [grids, name]);
@@ -136,6 +142,28 @@ function ScenariosBody({ grids }: { grids: ScenarioGrid[] }) {
           reports against revenue.
         </p>
       </Section>
+      {overlap && (
+        <Section
+          title="If all of these happened at once"
+          lede="These scenarios share items, so adding them up answers no real question."
+        >
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div>
+              <dt className="text-caption secondary">All {overlap.n_scenarios} together</dt>
+              <dd className="m-0 font-medium">{dollars(overlap.joint_cents)}</dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">The scenarios added up</dt>
+              <dd className="m-0 font-medium">{dollars(overlap.naive_sum_cents)}</dd>
+            </div>
+            <div>
+              <dt className="text-caption secondary">Customer and item pairs affected</dt>
+              <dd className="m-0 font-medium">{overlap.n_pairs_joint.toLocaleString()}</dd>
+            </div>
+          </dl>
+          <p className="mb-0 mt-4 max-w-2xl text-caption secondary">{overlap.note}</p>
+        </Section>
+      )}
     </>
   );
 }
@@ -145,7 +173,7 @@ export function ScenariosPage() {
   return (
     <div>
       <QuerySection query={q} label="cost and tariff scenarios" lines={8}>
-        {(d) => <ScenariosBody grids={d.grids} />}
+        {(d) => <ScenariosBody grids={d.grids} overlap={d.overlap ?? null} />}
       </QuerySection>
     </div>
   );

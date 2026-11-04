@@ -109,6 +109,10 @@ class FullRunResult:
     action_portfolio: pl.DataFrame | None = None
     # Long-form causal-gate record per segment (Run 6, Phase 70).
     sensitivity_gates: pl.DataFrame | None = None
+    # Partial-pooling table: one row per segment x item-category child with
+    # its raw and shrunk elasticity (spec 8.6). Reported beside the segment
+    # estimates; the engine still prices from the segment number.
+    elasticity_pooling: pl.DataFrame | None = None
 
 
 def _fmt_dollars(cents: int | float | None) -> str:
@@ -204,6 +208,7 @@ _EXPORT_KEYS: dict[str, list[str]] = {
     "action_portfolio_groups": ["overlap_group"],
     "sensitivity": ["segment"],
     "sensitivity_gates": ["segment", "gate_order"],
+    "elasticity_pooling": ["segment", "item_category"],
     "opportunities": ["customer_id", "item_id"],
     "order_economics": ["order_id"],
     "customer_economics": ["customer_id"],
@@ -235,7 +240,9 @@ def _natural_sort(name: str, frame: pl.DataFrame) -> pl.DataFrame:
 # last few ulps between otherwise identical runs, so these frames are rounded
 # to 10 significant digits at export time only. In-memory results are
 # untouched; 10 digits is far beyond any decision-relevant precision.
-_SOLVER_EXPORTS = frozenset({"sensitivity", "win_curves", "cross_price_estimates"})
+_SOLVER_EXPORTS = frozenset(
+    {"sensitivity", "win_curves", "cross_price_estimates", "elasticity_pooling"}
+)
 
 
 def _round_solver_outputs(name: str, frame: pl.DataFrame) -> pl.DataFrame:
@@ -526,6 +533,11 @@ def run_full(
             supplier_idx, inotes = build_supplier_cost_index(receipts_ref, items_ref)
             res.notes.extend(inotes)
     elif src_mode == "external":
+        # The table is supplied by the user's mapping, like every other
+        # reference table: canonical columns series_id, period, value (27.6).
+        # Nothing in this repo writes the file - a BLS writer that claimed to
+        # had no caller and was removed in the Run 8 wiring audit - so the
+        # contract is stated here, next to the code that reads it.
         from margin_engine.sensitivity.instruments import external_cost_index
 
         series_ref = res.reference.get("external_cost_series")
@@ -605,6 +617,7 @@ def run_full(
                 rules,
                 market_control_source=mkt_source,
                 market_control_grain="item_category:month",
+                with_partial_pooling=rules.sensitivity.partial_pooling,
             )
     else:
         sens_res = run_sensitivity_full(
@@ -612,8 +625,10 @@ def run_full(
             rules,
             market_control_source=mkt_source,
             market_control_grain="item_category:month",
+            with_partial_pooling=rules.sensitivity.partial_pooling,
         )
     sens, sens_gates = sens_res.estimates, sens_res.gates
+    sens_pooling = sens_res.pooling
     timings["sensitivity"] = time.perf_counter() - t
     rss_log("sensitivity")
     peaks.mark("sensitivity")
@@ -841,6 +856,11 @@ def run_full(
         "action_portfolio_groups": action_portfolio,
         "sensitivity": sens,
         "sensitivity_gates": sens_gates,
+        **(
+            {"elasticity_pooling": sens_pooling}
+            if sens_pooling is not None and sens_pooling.height
+            else {}
+        ),
         "opportunities": opps,
         "leakage": leak,
         "order_economics": cts.order_economics,
@@ -1318,6 +1338,7 @@ def run_full(
         guidance=guidance_res.guidance,
         sensitivity=sens,
         sensitivity_gates=sens_gates,
+        elasticity_pooling=sens_pooling,
         opportunities=opps,
         leakage=leak,
         timings=timings,

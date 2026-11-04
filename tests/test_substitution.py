@@ -1,6 +1,6 @@
 """Phase 17 verification: planted cross-price direction recovered on
-well_identified; unsupported cases labeled, not estimated; substitution-aware
-opportunity adjustment labeled."""
+well_identified; unsupported cases labeled, not estimated; cross-price
+estimates reported without moving any dollar figure (Run 8)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from margin_engine.extended.substitution import (
     STATUS_CROSS,
     STATUS_CROSS_CAUSAL,
     estimate_cross_effects,
-    substitution_adjusted_change,
 )
 from margin_engine.ledger.pipeline import run_pipeline
 from margin_engine.panel.build import build_panel
@@ -113,17 +112,29 @@ def test_conditional_statistic_is_what_gates_the_cross_status(world) -> None:
     print(f"\nmarginal vs conditional verdict differs on {disagree.height} pairs")
 
 
-def test_substitution_adjustment_labeled() -> None:
-    adj, label = substitution_adjusted_change(
-        expected_change_cents=-10_000,
-        own_elasticity=-2.0,
-        cross_elasticity=0.5,
-        substitute_margin_cents_per_unit=300,
-        lost_units=100.0,
+def test_cross_price_effects_move_no_dollar_figure(world) -> None:
+    """Cross-price estimates are reported, never priced from.
+
+    Run 8 removed a `substitution_adjusted_change` recapture rule that had no
+    caller: opportunity sizing is own-price only, and every cross estimate
+    this module produces is capped below causal support, so recapturing volume
+    from one would forecast off evidence the engine refuses elsewhere. This
+    pins both halves of that position so the rule cannot drift back in
+    unnoticed.
+    """
+    import margin_engine.extended.substitution as sub
+    from margin_engine.opportunity import sizing
+
+    assert not hasattr(sub, "substitution_adjusted_change"), (
+        "the recapture rule is back; wire it to the opportunity output and the "
+        "bundle, or the docstring and the methodology are wrong again"
     )
-    # recapture = 0.25 -> 100 x 0.25 x 300 = 7500 recaptured.
-    assert adj == -10_000 + 7_500
-    assert "substitution_recapture=0.25" in label
-    same, label2 = substitution_adjusted_change(-10_000, -2.0, None, 300, 100.0)
-    assert same == -10_000
-    assert label2 == "no_substitution_adjustment"
+    # Nothing in opportunity sizing consults a cross effect.
+    src = Path(sizing.__file__).read_text(encoding="utf-8")
+    for token in ("cross_elasticity", "substitution", "recapture"):
+        assert token not in src, f"opportunity sizing now reads {token}"
+
+    # And the status cap that is the reason for all of the above still holds:
+    # no cross estimate on a well-identified world reaches causal support.
+    _truth, est = world
+    assert STATUS_CROSS_CAUSAL not in est["status"].unique().to_list()

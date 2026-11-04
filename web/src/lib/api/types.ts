@@ -23,6 +23,7 @@ import type {
   ReconciliationCheck,
   Residual,
   ScenarioGrid,
+  ScenarioOverlap,
   SegmentsSection,
   SensitivitySegment,
   SummaryKpis,
@@ -135,6 +136,8 @@ export interface OpportunityData {
 
 export interface ScenariosData {
   grids: ScenarioGrid[];
+  /** The joint cost of every grid at once; null when fewer than two exist. */
+  overlap: ScenarioOverlap | null;
 }
 
 export interface MethodologyData {

@@ -146,13 +146,8 @@ class CredentialStore:
         """The settings a connector still needs, for a stop-and-ask message."""
         return [s for s in info.required_settings if not s.optional and not self.get(s.env)]
 
-    def missing_message(self, info: ConnectorInfo) -> str:
-        gaps = self.missing(info)
-        if not gaps:
-            return ""
-        lines = [
-            f"{info.system} ({info.name}) is missing {len(gaps)} setting(s). "
-            f"Create them in the environment or a local .env file (never commit them):"
-        ]
-        lines += [f"  {s.env} - {s.purpose}" for s in gaps]
-        return "\n".join(lines)
+    # There was a missing_message() formatter here until the Run 8 wiring
+    # audit: nothing called it, because each of the four places that reports a
+    # credential gap (the CLI, the connections endpoint, and the two API
+    # connectors' own check()) words it for its own context. missing() above is
+    # the shared part, and it is what they all use.

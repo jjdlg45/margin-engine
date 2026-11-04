@@ -159,14 +159,6 @@ class ReturnsConfig(StrictModel):
 # ---------------------------------------------------------------------------
 
 
-class CostBasis(StrEnum):
-    STANDARD = "standard"
-    AVERAGE = "average"
-    FIFO = "fifo"
-    LIFO = "lifo"
-    LANDED = "landed"
-
-
 class CostingConfig(StrictModel):
     # Whether product cost (as mapped) already includes these components.
     # Must be declared in the mapping; these are engine-level fallbacks that
@@ -733,6 +725,21 @@ class SensitivityConfig(StrictModel):
     # Commercial-outlier exclusion from the estimation panel requires at least
     # this many lines of pair history to be reliable (24.14; was hardcoded 6).
     outlier_exclusion_min_pair_lines: int = Field(default=6, ge=1)
+    # Empirical-Bayes partial pooling of segment x item-category children
+    # toward their parent segment (spec 8.6). Produces a reported table; the
+    # engine still prices from the segment estimate, so this is a reporting
+    # dial, not a policy one.
+    #
+    # OFF by default, on measurement rather than preference. Each child runs a
+    # full estimate_segment - and must, because the table reports a per-child
+    # evidence status, which is only meaningful with the diagnostics behind it
+    # (first stage, robustness specs, weak-IV-robust set). On the demo world
+    # that is 16 children against 2 segments: the sensitivity stage goes 3.8s
+    # -> 9.6s (2.51x) and the whole pipeline 22.6s -> 29.5s (1.30x), against a
+    # CI gate that fails a branch more than 10% slower than main. Switching it
+    # on by default would breach that gate; quietly cutting the diagnostics to
+    # fit under it would make the status column a guess.
+    partial_pooling: bool = False
     # Instrument builder (Run 4, 27.6): where the supplier cost instrument
     # comes from. "reference_table" uses a mapped supplier_cost_index table as
     # before; "receipts" builds it from purchase/receipt history (log change

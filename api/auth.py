@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
 import time
 from collections.abc import Callable
@@ -354,7 +353,3 @@ def _cli() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_cli())
-
-
-def mode_from_env() -> str:
-    return os.environ.get("MARGIN_API_MODE", MODE_LOCAL)

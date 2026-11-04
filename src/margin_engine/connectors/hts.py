@@ -3,10 +3,20 @@ machine-readable export at hts.usitc.gov/reststop (verified; terms and the
 documented limitation recorded in docs/data-sources.md).
 
 LIMITATION, stated up front: the endpoint serves the CURRENT revision only -
-no history. A constant rate carries no identifying variation, so this source
-feeds cost/tariff PASS-THROUGH SCENARIOS (incremental landed cost by
-category), never the tariff instrument. The tariff instrument still requires
-an effective-dated tariff_schedule table.
+no history. A constant rate carries no identifying variation, so it could
+never feed the tariff instrument, which still requires an effective-dated
+tariff_schedule table.
+
+NOT WIRED INTO ANY RUN. The intended use was cost/tariff pass-through
+scenarios (incremental landed cost by category), and until Run 8 this
+docstring and docs/data-sources.md said that was happening. It is not: a
+CostShock carries a pct_increase that every caller in src/ sets to a fixed
++10%, there is no HTS-code-to-item-category map anywhere in config/, and the
+published rate is a LEVEL rather than the increase a shock wants - so using it
+would mean inventing a baseline to subtract. The source is kept, verified and
+fixtured (Phase 29.3 asked for exactly that evaluation) with its rate parsing
+and its refusal to coerce compound rates tested, and the engine's shipped
+answer stays: scenarios take a user-specified percentage.
 """
 
 from __future__ import annotations
