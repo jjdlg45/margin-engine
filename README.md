@@ -7,11 +7,19 @@ Margin Engine reads an ERP invoice export, reconciles every dollar from list pri
 
 [![The Overview page of the hosted demo](docs/images/overview.png)](https://jjdlg45.github.io/margin-engine/)
 
-Built for industrial, electrical, HVAC, plumbing and foodservice distribution: any business with negotiated prices.
+Built with Python (Polars, DuckDB), React + TypeScript and FastAPI; tested in CI on every change.
+
+---
+
+## In 30 seconds
+
+Margin Engine is for B2B distributors — industrial, electrical, HVAC, plumbing, foodservice — any business where each customer has a negotiated price. Margin leaks a little at a time: a point of discount here, a rebate there, freight absorbed on a rush order, a return credited back untidily. Each one sits in a different report, so the total is nobody's number. It reads the invoice export you already have, follows every dollar from list price down to what is actually left, and shows which customers and products the money went to. What makes it different is that it reconciles to the cent, and that it tells you when it is not sure: where the data cannot support an answer, it says so instead of printing a confident-looking number.
 
 ---
 
 ## What it does
+
+Finding the leak takes one piece of arithmetic, not four reports. Margin Engine puts every dollar in a single chain — what the price started at, everything that came off it, what the product cost, what it cost to serve, and what was left — and ties that chain back to the source totals to the cent. From there it answers which customers and products the leakage is concentrated in, which prices sit out of line with comparable customers, and which of those gaps there is real evidence to act on.
 
 ### Every source dollar reconciled or explained
 
@@ -100,10 +108,10 @@ Each action shows where it stands — proposed, under review, approved, exported
 
 ## What it can and can't tell you
 
-Every model output carries an evidence status, and the status decides what the engine will do with the number.
-
-Three verdicts lead every opportunity and action table - the technical
-statuses stay one click away on the row:
+Every figure the engine puts in front of you leads with one of three plain
+verdicts, so you know what kind of thing a number is before you read it. The
+verdict is on the row in every opportunity and action table; the technical
+status stays one click away.
 
 | Verdict | Meaning |
 |---|---|
@@ -116,7 +124,9 @@ is inside it, the engine proposes **Step 1 of the move to target**: the
 largest move it can forecast, with its expected change, the full target
 unchanged and the remainder honestly unforecast.
 
-Underneath the verdicts, the technical statuses:
+**For analysts: the statuses underneath.** Every model output also carries a
+technical evidence status, and the status decides what the engine will do with
+the number.
 
 | Status | In plain English | What the engine does with it |
 |---|---|---|
@@ -253,6 +263,13 @@ An **independent methodology review** raised 24 findings about the gap between w
 ---
 
 ## Honest limits
+
+- **It has only ever run on synthetic data and one public dataset.** Nothing here is validated against a real company's outcomes.
+- **It does not compute an optimal price.** It shows where a price is unusual against comparable customers, not what the price ought to be.
+- **Price-sensitivity estimates are used only where the evidence holds.** One of the demo world's six segments clears that bar; for the rest the engine holds volume steady and labels the figure, rather than forecasting anyway.
+- **The QuickBooks Online and HubSpot connectors have not been run against the live services.** They are built against the documented APIs and labeled as such; only the file-drop connector is verified end to end.
+
+**In detail:**
 
 - **There is no optimal price.** Targets are `provisional_historical`: the midpoint of what comparable customers paid, clipped to the floor. An optimizer exists in the codebase and is tested, but it is **not wired into the pipeline**, so no run produces a computed optimum — the opportunity exports carry no target-basis column at all. Bands show where a price is unusual, not what it should be.
 - **Descriptive elasticities are not causal.** The naive estimate is reported to document bias, never used for decisions.
