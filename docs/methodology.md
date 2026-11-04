@@ -660,30 +660,41 @@ Evidence statuses:
   weak-IV-robust evidence disagrees with the plug-in interval, the top status
   is not awarded.
 
-Partial pooling (`sensitivity.partial_pooling`, **off by default**): segment x
-item-category estimates shrink toward the parent segment with precision
-weights (method-of-moments between-variance); raw and shrunk estimates,
-effective sample size and uncertainty are all reported in
+**Partial pooling: an optional setting, off by default.**
+`sensitivity.partial_pooling` in `rules.yaml` turns it on. It exists for data
+where item categories inside one commercial segment genuinely behave
+differently on price — the case where a single segment elasticity averages
+over real variation, and the sub-segment numbers are worth having.
+
+What it does when on: estimate each segment x item-category child, then shrink
+each child toward its parent segment with precision weights
+(method-of-moments between-child variance, clipped at zero). Raw estimate,
+shrunk estimate, effective sample size and uncertainty are all reported, in
 `elasticity_pooling.csv` and on the sensitivity page. The engine always prices
-from the segment estimate, never from a pooled child, so this is a reporting
-option and switching it on moves no dollar figure.
+from the SEGMENT estimate, never from a pooled child, so this adds a table and
+moves no dollar figure — switching it on changes no opportunity, action or
+scenario number.
 
-It is off by default because each child is a full segment fit - it must be,
-since the table reports a per-child evidence status, and a status without its
-diagnostics would be a guess. Measured on the demo world (2 segments, 8
-categories, 16 children): the sensitivity stage goes 3.8s to 9.6s (2.51x) and
-the whole pipeline 22.6s to 29.5s (1.30x), against a CI gate that fails a
-branch more than 10% slower than `main`.
+Why it is off by default, in order of importance:
 
-What it showed on the demo world, for honesty about what pooling buys here:
-the method-of-moments between-child variance came out at zero in both
-segments, so every child collapsed fully onto its parent (pooling weight
-1.00) and no child's shrunk estimate differs from its segment's. Raw child
-estimates span -2.81 to -2.06 against a parent of -2.33, and -2.13 to -1.00
-against a parent of -1.28; pooling's verdict is that all of that spread is
-sampling noise rather than real sub-segment variation. That is a genuine
-finding, not a failure - and it is why the default run does not pay 30% of its
-runtime for it.
+1. **On data without real sub-segment differences it finds nothing, by
+   construction.** On the demo world the between-child variance came out at
+   zero in both segments, so every child collapsed fully onto its parent
+   (pooling weight 1.00) and no shrunk estimate differs from its segment's.
+   Raw children span -2.81 to -2.06 against a parent of -2.33, and -2.13 to
+   -1.00 against -1.28; pooling's verdict is that all of that spread is
+   sampling noise. That is the estimator working, not failing — and it is also
+   the reason a synthetic demo is the wrong place to judge the feature.
+2. **It is not cheap.** Each child is a full segment fit, and has to be: the
+   table reports a per-child evidence status, and a status without the
+   diagnostics behind it would be a guess. Measured on the demo world (2
+   segments, 8 categories, 16 children), the sensitivity stage goes 3.8s to
+   9.6s (2.51x) and the whole pipeline 22.6s to 29.5s (1.30x), against a CI
+   gate that fails a branch more than 10% slower than `main`.
+
+So the default pays nothing for a table that, on this data, repeats the
+segment estimate eight times. On a real export with heterogeneous categories,
+turn it on.
 
 Known limitation (by design of the test itself): the overidentification test
 detects an invalid instrument only when the two instruments disagree.

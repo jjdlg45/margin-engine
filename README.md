@@ -43,6 +43,8 @@ Two more rules sit beside it:
 
 **Optional modules** switch on when their input exists and say so when it does not: multi-currency, customer hierarchies and price-protected contracts, tiered retrospective rebates, kits and free goods, activity-based cost-to-serve, inventory costing (standard / average / FIFO / LIFO), key-value-item detection, quote win/loss curves, and cross-price effects within substitution groups. Periods follow a configurable fiscal calendar: calendar months, 4-4-5 / 4-5-4 / 5-4-4, or a custom table.
 
+**Partial pooling of price sensitivity is an optional setting, off by default** (`sensitivity.partial_pooling` in `rules.yaml`). Switched on, it estimates an elasticity for each segment × item category, shrinks each one toward its parent segment by precision, and reports the raw and pooled figures side by side; the engine still prices from the segment estimate either way. It is off by default for two reasons. It costs roughly a third of the pipeline's runtime, because every sub-segment needs a full fit to earn the evidence status reported beside it. And on the synthetic demo world there is nothing for it to find: the categories within a segment differ by no more than their own sampling noise, so every one of them collapses onto its parent. Turn it on for data where categories genuinely behave differently from one another — that is the case it exists for, and the case synthetic data does not reproduce.
+
 <p>
   <img src="docs/images/overview-dark.png" alt="The Overview in dark mode" width="47%">
   <img src="docs/images/overview-mobile.png" alt="The Overview on a phone" width="18%">

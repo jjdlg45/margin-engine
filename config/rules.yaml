@@ -249,6 +249,18 @@ sensitivity:
   #   external         a public series (e.g. BLS PPI) mapped to categories via
   #                    external_index_map, then to suppliers by modal category
   instrument_source: reference_table
+  # Partial pooling of sub-segment elasticities (spec 8.6). On, it estimates
+  # each segment x item-category child and shrinks it toward its parent
+  # segment, reporting raw and pooled figures side by side in
+  # elasticity_pooling.csv. The engine prices from the SEGMENT estimate either
+  # way, so this adds a table and moves no dollar figure.
+  #
+  # Off by default. It is for data where categories inside one segment really
+  # do behave differently on price; on the synthetic demo world they do not,
+  # so every child collapses onto its parent and the table repeats the segment
+  # number. It also costs about a third of the pipeline's runtime, because
+  # each child needs a full fit to earn the evidence status reported beside it.
+  partial_pooling: false
   # Total-quantity estimand (Run 6, Phase 72): an IV-Poisson control function
   # over the panel INCLUDING months with no purchase, answering how expected
   # quantity responds to price counting whether the customer buys at all. It

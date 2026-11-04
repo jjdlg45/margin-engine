@@ -75,6 +75,22 @@ DELIBERATELY_UNWIRED = {
 
 NOT_WIRED_MARKERS = ("not wired in", "not implemented", "not yet verified live")
 
+# Features that run only when switched on. Each maps the config attribute
+# path to the docs that must say so, in words, where a reader will see it.
+#
+# This is the pair the audit was missing in the other direction: the docs used
+# to assert partial pooling was reported when nothing computed it, and now
+# that it IS computed, the risk flips to the docs claiming it runs by default
+# when it does not. Tying the prose to the live default means neither can move
+# without the other.
+OPTIONAL_OFF_BY_DEFAULT = {
+    "sensitivity.partial_pooling": {
+        "docs": [REPO / "README.md", REPO / "docs" / "methodology.md"],
+        "names": ("partial pooling", "partial_pooling"),
+        "markers": ("off by default",),
+    },
+}
+
 
 def _py_files(root: Path) -> list[Path]:
     return [p for p in root.rglob("*.py") if "__pycache__" not in p.parts]
@@ -125,9 +141,7 @@ def test_every_documented_function_is_reachable_or_declared_unwired(
     assert documented, "no documented functions found - the doc scan is broken"
 
     undeclared = sorted(
-        name
-        for name in documented
-        if name not in called and name not in DELIBERATELY_UNWIRED
+        name for name in documented if name not in called and name not in DELIBERATELY_UNWIRED
     )
     assert not undeclared, (
         "the docs describe these functions, but nothing in src/ calls them:\n  "
@@ -173,8 +187,7 @@ def test_the_unwired_allowlist_has_no_stale_entries(
     )
     unknown = sorted(n for n in DELIBERATELY_UNWIRED if n not in defined)
     assert not unknown, (
-        "these are listed as deliberately unwired but no longer exist:\n  "
-        + "\n  ".join(unknown)
+        "these are listed as deliberately unwired but no longer exist:\n  " + "\n  ".join(unknown)
     )
 
 
@@ -195,3 +208,33 @@ def test_documented_and_reachable_features_are_exercised_by_a_test(
         "the docs describe these as active and src/ calls them, but no test "
         "names them:\n  " + "\n  ".join(untested)
     )
+
+
+def test_optional_features_are_described_as_optional_and_really_are() -> None:
+    """A feature the docs call "off by default" must actually default to off,
+    and every doc that names it must say so.
+
+    Both halves matter. If someone flips the default to on, the wording
+    becomes a lie and this fails until the docs follow; if someone drops the
+    "off by default" phrase from a doc, a reader is left assuming a table that
+    no run produces.
+    """
+    from margin_engine.config import load_rules
+
+    rules = load_rules(REPO / "config" / "rules.yaml")
+    for path, spec in OPTIONAL_OFF_BY_DEFAULT.items():
+        section, _, attr = path.partition(".")
+        value = getattr(getattr(rules, section), attr)
+        assert value is False, (
+            f"{path} is {value!r} in the shipped rules.yaml, but the docs call "
+            "it off by default. Change the docs or change the default."
+        )
+        for doc in spec["docs"]:
+            text = doc.read_text(encoding="utf-8").lower()
+            named = any(n.lower() in text for n in spec["names"])
+            assert named, f"{doc.relative_to(REPO)} never mentions {path}"
+            disclosed = any(m in text for m in spec["markers"])
+            assert disclosed, (
+                f"{doc.relative_to(REPO)} describes {path} without saying it is "
+                f"off by default (looked for {spec['markers']})"
+            )
