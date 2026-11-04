@@ -1343,9 +1343,9 @@ def _scenario_grids(
                 n_pairs_joint=n_joint,
                 note=(
                     f"Adding the {len(grids)} scenarios above gives "
-                    f"{naive / 100:,.2f} dollars of extra cost, but they overlap: a "
+                    f"${naive / 100:,.2f} of extra cost, but they overlap: a "
                     "category and a supplier scope cover some of the same items. "
-                    f"Run together they cost {joint_cents / 100:,.2f} dollars across "
+                    f"Run together they cost ${joint_cents / 100:,.2f} across "
                     f"{n_joint:,} customer-item pairs, each pair charged once at its "
                     "combined increase. Two 10 percent increases on one pair compound "
                     "to 21 percent, not 20, which is why the joint figure is not simply "
