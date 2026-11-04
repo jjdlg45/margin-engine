@@ -71,7 +71,7 @@ jobs:
         run: npx playwright test
       - name: Upload Playwright debug artifacts (traces, screenshots, videos)
         if: failure()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results
           path: web/test-results/
@@ -85,7 +85,7 @@ jobs:
           node lighthouse.mjs
       - name: Upload Lighthouse report (kept only when the gate fails)
         if: failure()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-report
           path: web/lighthouse-report.json
