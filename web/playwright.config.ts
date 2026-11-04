@@ -16,11 +16,16 @@ export default defineConfig({
         }
       : {}),
   },
+  // Refuses to run against a stale dist/. See the file for why a green
+  // snapshot run against the previous build is worse than a red one.
+  globalSetup: "./e2e/assert-build-is-current.ts",
   webServer: {
-    command: "npm run preview -- --host 127.0.0.1 --port 4173 --strictPort",
+    // BUILD, then serve. `vite preview` serves dist/, so without this the
+    // suite tests whatever was built last rather than the working tree.
+    command: "npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: true,
-    timeout: 60_000,
+    timeout: 180_000,
   },
   projects: [
     {

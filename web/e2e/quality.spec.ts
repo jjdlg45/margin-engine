@@ -59,6 +59,17 @@ for (const route of ROUTES) {
         await expect(page).toHaveScreenshot(`${slug(route)}-${theme}.png`, {
           fullPage: true,
           maxDiffPixelRatio: 0.02,
+          // toHaveScreenshot captures repeatedly until two in a row match,
+          // and only then compares to the baseline. Capturing a page this
+          // tall (methodology is 8,842px) twice does not fit in the default
+          // 5s on a loaded machine, and the first capture is taken while the
+          // viewport is still being expanded to the full document - which
+          // removes the vertical scrollbar and reflows every row ~18px
+          // sideways. Measured at 8 workers: consecutive captures differed
+          // by 989,574 pixels while the image it finally settles on is
+          // within 8,179 of the baseline, i.e. the comparison was right and
+          // only the clock was wrong. Failed 8 runs in 10 at 5s.
+          timeout: 30_000,
         });
       }
     });
