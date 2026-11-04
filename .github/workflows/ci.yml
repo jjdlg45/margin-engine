@@ -21,6 +21,13 @@ jobs:
         run: uv run ruff format --check .
       - name: Type check
         run: uv run mypy src api
+      # Dead-code gate (Run 8). Fails on a function, class or method that
+      # nothing in src/api/synth/scripts reaches. Deliberately does not count
+      # usage from tests/: the audit this gate came out of was six functions
+      # that had tests and no caller. scripts/check_dead_code.py explains the
+      # scope; .vulture_allowlist.py holds the exceptions with their reasons.
+      - name: Dead-code gate
+        run: uv run python scripts/check_dead_code.py
       - name: Tests
         run: uv run pytest --cov --cov-report=term
       # Excluded from the default run because they need more RAM than the

@@ -159,14 +159,6 @@ class ReturnsConfig(StrictModel):
 # ---------------------------------------------------------------------------
 
 
-class CostBasis(StrEnum):
-    STANDARD = "standard"
-    AVERAGE = "average"
-    FIFO = "fifo"
-    LIFO = "lifo"
-    LANDED = "landed"
-
-
 class CostingConfig(StrictModel):
     # Whether product cost (as mapped) already includes these components.
     # Must be declared in the mapping; these are engine-level fallbacks that

@@ -309,13 +309,23 @@ def test_credential_resolution_order(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert store.get("C_TOKEN") is None
 
 
-def test_missing_message_names_each_setting(tmp_path: Path) -> None:
+def test_missing_settings_are_named_with_what_each_one_is_for(tmp_path: Path) -> None:
+    """A credential gap has to name the variable to create and why.
+
+    This used to assert on a `missing_message` formatter that the Run 8 wiring
+    audit found nothing called - each of the four places that reports a gap
+    words it for its own context. So it now asserts on `missing()`, which all
+    four share, and on the fields a caller needs to write the sentence.
+    """
     info = FakeConnector().describe()
     store = CredentialStore(env_file=tmp_path / ".env")
-    msg = store.missing_message(info)
-    assert "FAKE_TOKEN" in msg
-    assert "API token" in msg
-    assert "never commit" in msg
+    gaps = store.missing(info)
+    assert [s.env for s in gaps] == ["FAKE_TOKEN"]
+    assert gaps[0].purpose == "API token"
+    assert gaps[0].secret is True
+    # An optional setting is not a gap: the file-drop connector's watched
+    # folder and SFTP settings are alternatives, not requirements.
+    assert all(not s.optional for s in gaps)
 
 
 def test_encrypted_keystore_round_trip_and_no_plaintext(

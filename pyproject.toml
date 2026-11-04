@@ -46,6 +46,9 @@ dev = [
     "jsonschema>=4.26.0",
     "types-openpyxl>=3.1.5.20261017",
     "types-paramiko>=5.1.0.20261030",
+    # Run 8: dead-code gate. The wiring audit found six tested-but-uncalled
+    # functions by hand; this is what finds the seventh.
+    "vulture>=2.14",
 ]
 
 [build-system]

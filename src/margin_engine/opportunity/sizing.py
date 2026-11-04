@@ -35,8 +35,6 @@ price assumptions, evidence status and a calculation trace string.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import polars as pl
 
 from margin_engine.config import Rules
@@ -109,13 +107,6 @@ NO_FORECAST_REASON: dict[str, str] = {
     TREATMENT_COST_UNAVAILABLE: "no unit cost is known for this item",
     TREATMENT_FIXED: "no confirmed price response exists for this segment",
 }
-
-
-@dataclass
-class OpportunityResult:
-    leakage: pl.DataFrame
-    opportunities: pl.DataFrame
-    notes: list[str]
 
 
 def observed_leakage(

@@ -270,11 +270,9 @@ class TargetEncoder:
             )
         return np.column_stack(cols).astype(np.float64)
 
-    def categories_below(self, feature: str, threshold: float) -> list[str]:
-        return sorted(c for c, v in self.maps[feature].items() if v <= threshold)
-
-    def categories_above(self, feature: str, threshold: float) -> list[str]:
-        return sorted(c for c, v in self.maps[feature].items() if v > threshold)
+    # categories_below/above lived here until the Run 8 wiring audit found
+    # nothing calling them: the rule extractors do the same split inline,
+    # against the allowed set they are already carrying down the tree.
 
 
 def _pairs_for(work: pl.DataFrame, features: list[str]) -> pl.DataFrame:
@@ -530,68 +528,6 @@ def _extract_rules(
                 "n_customers": s["n_customers"],
                 "n_items": s["n_items"],
                 "mean_target": float(tree.value[leaf_id][0][0]),
-            }
-        )
-    return out
-
-
-def _extract_rules_encoded(
-    model: DecisionTreeRegressor,
-    encoder: TargetEncoder,
-    df: pl.DataFrame,
-    assigned: np.ndarray,
-) -> list[dict[str, Any]]:
-    """Readable set-membership rule per assigned cell for target-encoded trees:
-    'industry IN {facilities, retail} AND size_band IN {small, medium}'."""
-    tree = model.tree_
-    all_cats = {f: set(encoder.maps[f].keys()) for f in encoder.features}
-    paths: dict[int, dict[str, set[str]]] = {}
-
-    def walk(node: int, allowed: dict[str, set[str]]) -> None:
-        paths[node] = {f: set(s) for f, s in allowed.items()}
-        if tree.children_left[node] == _tree.TREE_LEAF:
-            return
-        f = encoder.features[tree.feature[node]]
-        t = float(tree.threshold[node])
-        below = {c for c in allowed[f] if encoder.maps[f].get(c, encoder.global_mean) <= t}
-        above = allowed[f] - below
-        left_allowed = {**{k: set(v) for k, v in allowed.items()}, f: below}
-        right_allowed = {**{k: set(v) for k, v in allowed.items()}, f: above}
-        walk(int(tree.children_left[node]), left_allowed)
-        walk(int(tree.children_right[node]), right_allowed)
-
-    walk(0, all_cats)
-    stats = (
-        df.with_columns(pl.Series("_cell", assigned))
-        .group_by("_cell")
-        .agg(
-            pl.len().alias("n_lines"),
-            pl.col("customer_id").n_unique().alias("n_customers"),
-            pl.col("item_id").n_unique().alias("n_items"),
-            pl.col("price_index").median().alias("median_price_index"),
-        )
-    )
-    out = []
-    for s in stats.sort("_cell").to_dicts():
-        cell = int(s["_cell"])
-        allowed = paths.get(cell, all_cats)
-        conds = []
-        for f in encoder.features:
-            if allowed[f] != all_cats[f] and allowed[f]:
-                shown = sorted(allowed[f])
-                if len(shown) <= len(all_cats[f]) / 2:
-                    conds.append(f"{f} IN {{{', '.join(shown)}}}")
-                else:
-                    excluded = sorted(all_cats[f] - allowed[f])
-                    conds.append(f"{f} NOT IN {{{', '.join(excluded)}}}")
-        out.append(
-            {
-                "leaf_id": cell,
-                "rule": " AND ".join(conds) if conds else "(all lines)",
-                "n_lines": s["n_lines"],
-                "n_customers": s["n_customers"],
-                "n_items": s["n_items"],
-                "median_price_index": s["median_price_index"],
             }
         )
     return out
