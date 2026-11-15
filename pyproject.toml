@@ -11,7 +11,7 @@ dependencies = [
     "pyyaml>=6.0",
     # Windows Smart App Control blocks the compiled extensions of newer wheels
     # on locked-down machines; elsewhere, current versions are fine.
-    "scikit-learn>=1.5,<1.6; sys_platform == 'win32'",
+    "scikit-learn>=1.5,<1.10; sys_platform == 'win32'",
     "scikit-learn>=1.5; sys_platform != 'win32'",
     "pyfixest>=0.25",
     "linearmodels>=6.1",
